@@ -19,11 +19,12 @@ done
 
 _vsv() {
 	local service="$1"
+	local facility="${2:-daemon}"
 	local LN_OPTS="-s"
 	local svdir="${PKGDESTDIR}/etc/sv/${service}"
 
-	if [ $# -lt 1 ]; then
-		msg_red "$pkgver: vsv: 1 argument expected: <service>\n"
+	if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+		msg_red "$pkgver: vsv: up to 2 arguments expected: <service> [<log facility>]\n"
 		return 1
 	fi
 
@@ -34,17 +35,25 @@ _vsv() {
 	vmkdir etc/sv
 	vcopy "${FILESDIR}/$service" etc/sv
 	if [ ! -L $svdir/run ]; then
+		grep -Fq 'exec 2>&1' $svdir/run || msg_warn "$pkgver: vsv: service '$service' does not contain 'exec 2>&1' to log stderr\n"
 		chmod 755 $svdir/run
 	fi
 	if [ -e $svdir/finish ] && [ ! -L $svdir/finish ]; then
 		chmod 755 $svdir/finish
 	fi
 	ln ${LN_OPTS} /run/runit/supervise.${service} $svdir/supervise
-	if [ -d $svdir/log ]; then
-		ln ${LN_OPTS} /run/runit/supervise.${service}-log $svdir/log/supervise
-		if [ -e $svdir/log/run ] && [ ! -L $svdir/log/run ]; then
-			chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
-		fi
+	if [ -d $svdir/log ] || [ -L $svdir/log ]; then
+		msg_warn "$pkgver: vsv: overriding default log service\n"
+	else
+		mkdir $svdir/log
+		cat <<-EOF > $svdir/log/run
+		#!/bin/sh
+		exec vlogger -t $service -p $facility
+		EOF
+	fi
+	ln ${LN_OPTS} /run/runit/supervise.${service}-log $svdir/log/supervise
+	if [ -e $svdir/log/run ] && [ ! -L $svdir/log/run ]; then
+		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
 	fi
 }
 
