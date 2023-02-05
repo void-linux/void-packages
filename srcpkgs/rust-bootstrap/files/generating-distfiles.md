@@ -6,6 +6,9 @@ so we have to generate distfiles for a few architectures as well, namely
 `cargo-bootstrap`, as the `ppc` cargo binaries provided by upstream have
 problems.
 
+Note: Void no longer officially supports PowerPC platforms,
+this guide is kept for historical reasons as well as for future reference.
+
 ### Set up appropriate masterdirs and remote-repositories
 
 This guide assumes you're on an x86\_64 machine. If you're not, please adapt the
