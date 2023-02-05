@@ -5,7 +5,7 @@
 for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 	# Those variables in chroot.sh will be kept
 	case "$var" in
-	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH)
+	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH | RUST_TARGET)
 		# xbps-src specific
 		;;
 	SOURCEFORGE_SITE | NONGNU_SITE | XORG_SITE | DEBIAN_SITE | GNOME_SITE)
