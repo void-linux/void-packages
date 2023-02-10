@@ -37,7 +37,7 @@ export CGO_CFLAGS="$CFLAGS"
 export CGO_CPPFLAGS="$CPPFLAGS"
 export CGO_CXXFLAGS="$CXXFLAGS"
 export CGO_LDFLAGS="$LDFLAGS"
-export CGO_ENABLED=1
+export CGO_ENABLED="${CGO_ENABLED:-1}"
 export GO111MODULE=auto
 case "$XBPS_TARGET_MACHINE" in
 	*-musl) export GOCACHE="${XBPS_HOSTDIR}/gocache-muslc" ;;

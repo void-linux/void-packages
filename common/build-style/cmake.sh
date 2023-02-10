@@ -55,6 +55,7 @@ _EOF
 	cmake_args+=" -DCMAKE_BUILD_TYPE=None"
 	cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib${XBPS_TARGET_WORDSIZE}"
 	cmake_args+=" -DCMAKE_INSTALL_SYSCONFDIR=/etc"
+	cmake_args+=" -DFETCHCONTENT_FULLY_DISCONNECTED=ON"
 
 	if [ "$CROSS_BUILD" ]; then
 		cmake_args+=" -DQT_HOST_PATH=/usr"

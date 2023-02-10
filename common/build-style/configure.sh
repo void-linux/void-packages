@@ -15,7 +15,7 @@ do_build() {
 }
 
 do_check() {
-	if [ -z "$make_cmd" ] && [ -z "$make_check_target" ]; then 
+	if [ -z "$make_cmd" ] && [ -z "$make_check_target" ]; then
 		if make -q check 2>/dev/null; then
 			:
 		else

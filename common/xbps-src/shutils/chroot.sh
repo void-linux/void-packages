@@ -89,7 +89,7 @@ PATH=/void-packages:/usr/bin
 exec env -i -- SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" \
     ${XBPS_ARCH+XBPS_ARCH=$XBPS_ARCH} ${XBPS_CHECK_PKGS+XBPS_CHECK_PKGS=$XBPS_CHECK_PKGS} \
     CCACHE_DIR="/host/ccache" IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
-    PS1="[\u@$XBPS_MASTERDIR \W]$ " /bin/bash +h
+    PS1="[\u@$XBPS_MASTERDIR \W]$ " /bin/bash +h "\$@"
 _EOF
 
     chmod 755 $XBPS_MASTERDIR/bin/xbps-shell
@@ -165,6 +165,11 @@ chroot_handler() {
     else
         env -i -- PATH="/usr/bin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
+            ${http_proxy:+http_proxy="${http_proxy}"} \
+            ${https_proxy:+https_proxy="${https_proxy}"} \
+            ${ftp_proxy:+ftp_proxy="${ftp_proxy}"} \
+            ${all_proxy:+all_proxy="${all_proxy}"} \
+            ${no_proxy:+no_proxy="${no_proxy}"} \
             ${HTTP_PROXY:+HTTP_PROXY="${HTTP_PROXY}"} \
             ${HTTPS_PROXY:+HTTPS_PROXY="${HTTPS_PROXY}"} \
             ${FTP_PROXY:+FTP_PROXY="${FTP_PROXY}"} \
@@ -209,16 +214,18 @@ chroot_sync_repodata() {
     # Update xbps alternative repository if set.
     mkdir -p $confdir
     if [ -n "$XBPS_ALT_REPOSITORY" ]; then
-        ( \
-            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}"; \
-            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree"; \
-            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/debug"; \
-            ) > $confdir/00-repository-alt-local.conf
+        cat <<- ! > $confdir/00-repository-alt-local.conf
+		repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/bootstrap
+		repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}
+		repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree
+		repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/debug
+		!
         if [ "$XBPS_MACHINE" = "x86_64" ]; then
-            ( \
-                echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib"; \
-                echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/nonfree"; \
-            ) >> $confdir/00-repository-alt-local.conf
+            cat <<- ! >> $confdir/00-repository-alt-local.conf
+			repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/bootstrap
+			repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib
+			repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/nonfree
+			!
         fi
     else
         rm -f $confdir/00-repository-alt-local.conf

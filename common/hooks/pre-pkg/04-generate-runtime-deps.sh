@@ -46,7 +46,7 @@ store_pkgdestdir_rundeps() {
 }
 
 hook() {
-    local depsftmp f lf j mapshlibs sorequires _curdep elfmagic
+    local depsftmp f lf j mapshlibs sorequires _curdep elfmagic broken_shlibs verify_deps
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -62,6 +62,10 @@ hook() {
 
     depsftmp=$(mktemp) || exit 1
     find ${PKGDESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
+
+    for f in ${shlib_requires}; do
+        verify_deps+=" ${f}"
+    done
 
     exec 3<&0 # save stdin
     exec < $depsftmp
@@ -100,7 +104,7 @@ hook() {
             soname=$(find ${PKGDESTDIR} -name "$f")
             if [ -z "$soname" ]; then
                 msg_red_nochroot "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!\n"
-                broken=1
+                broken_shlibs=1
             else
                 echo "   SONAME: $f <-> $pkgname (ignored)"
             fi
@@ -129,7 +133,7 @@ hook() {
         _rdepver=$($XBPS_UHELPER_CMD getpkgversion "${_rdep}" 2>/dev/null)
         if [ -z "${_pkgname}" -o -z "${_rdepver}" ]; then
             msg_red_nochroot "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!\n"
-            broken=1
+            broken_shlibs=1
             continue
         fi
         # Check if pkg is a subpkg of sourcepkg; if true, ignore version
@@ -155,15 +159,12 @@ hook() {
     #
     # If pkg uses any unknown SONAME error out.
     #
-    if [ -n "$broken" -a -z "$allow_unknown_shlibs" ]; then
+    if [ -n "$broken_shlibs" -a -z "$allow_unknown_shlibs" ]; then
         msg_error "$pkgver: cannot guess required shlibs, aborting!\n"
     fi
 
     store_pkgdestdir_rundeps
 
-    for f in ${shlib_requires}; do
-        sorequires+="${f} "
-    done
     if [ -n "${sorequires}" ]; then
         echo "${sorequires}" | xargs -n1 | sort | xargs > ${PKGDESTDIR}/shlib-requires
     fi

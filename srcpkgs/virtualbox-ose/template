@@ -1,6 +1,6 @@
 # Template file for 'virtualbox-ose'
 pkgname=virtualbox-ose
-version=6.1.36
+version=7.0.6
 revision=1
 short_desc="General-purpose full virtualizer for x86 hardware"
 maintainer="Orphaned <orphan@voidlinux.org>"
@@ -8,17 +8,21 @@ license="GPL-2.0-only, CDDL-1.0"
 homepage="https://www.virtualbox.org"
 changelog="https://www.virtualbox.org/wiki/Changelog"
 distfiles="http://download.virtualbox.org/virtualbox/${version}/VirtualBox-${version}.tar.bz2"
-checksum=e47942e42892c13c621869865e2b7b320340154f0fa74ecbdaf18fdaf70ef047
+checksum=f146d9a86a35af0abb010e628636fd800cb476cc2ce82f95b0c0ca876e1756ff
 
 nopie=yes
 lib32disabled=yes
 archs="x86_64"
 
-hostmakedepends="acpica-utils dev86 perl pkg-config qt5-tools tar yasm which"
+hostmakedepends="acpica-utils dev86 perl pkg-config qt5-tools tar yasm which glslang
+ vulkan-loader"
 makedepends="device-mapper-devel docbook-xsl gsoap-devel libcap-devel libcurl-devel
- libIDL-devel libvpx-devel libXcomposite-devel libXcursor-devel
+ libIDL-devel libvpx-devel libXcomposite-devel libXcursor-devel qt5-tools-devel
  libXinerama-devel libxslt-devel opus-devel pam-devel python3-devel qt5-x11extras-devel
- SDL-devel xorg-server-devel"
+ SDL-devel xorg-server-devel libtpms-devel libxml2-devel libvncserver-devel qt5-devel
+ openssl-devel libpng-devel zlib-devel dbus-devel device-mapper-devel liblvm2app-devel
+ libglvnd-devel libX11-devel libXt-devel libXcursor-devel pam-devel vde2-devel SDL2-devel
+ SDL2_ttf-devel SDL2_gfx-devel SDL2_image-devel SDL2_net-devel SDL2_mixer-devel"
 
 if [ "$XBPS_MACHINE" = "x86_64" ]; then
 	makedepends+=" gcc-multilib"
@@ -27,25 +31,21 @@ fi
 depends="virtualbox-ose-dkms-${version}_${revision} hicolor-icon-theme desktop-file-utils dbus"
 system_groups="vboxusers"
 
-pre_configure() {
+do_configure() {
 	cp ${FILESDIR}/LocalConfig.kmk .
 	ln -s /bin/echo makeself
-
-	echo 'VBOX_USE_SYSTEM_GL_HEADERS=true' >> LocalConfig.kmk
-}
-
-do_configure() {
 	./configure --disable-docs --disable-java --enable-vde \
 		--disable-python --disable-kmods --nofatal --enable-webservice
 }
 
 do_build() {
-	export USERNAME="$(whoami)"
+	export USERNAME="builder@void"
 	vsed -i  src/VBox/Main/webservice/Makefile.kmk \
 		-e "/webtest_LIBS/,/^webtest_/s/.*LIB_.*/\0 z/" \
 		-e "/vboxwebsrv_LIBS/,/^vboxwebsrv_/s/.*LIB_.*/\0 z/"
 	source ./env.sh
-	kmk ${makejobs} KBUILD_VERBOSE=2 all
+	kmk ${makejobs} KBUILD_VERBOSE=2 VBOX_WITH_QT5=1 all
+	# kmk ${makejobs} KBUILD_VERBOSE=2 VBOX_WITH_QT6=1 all
 }
 
 do_install() {
@@ -56,43 +56,47 @@ do_install() {
 	# virtualbox-ose.
 	#
 	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin
-	mkdir -p ${DESTDIR}/usr/{bin,lib/virtualbox/components,share/virtualbox/nls}
 
-	install -m0755 VBox.sh ${DESTDIR}/usr/bin/VBox
-	for f in VirtualBox VBoxManage VBoxSDL VBoxHeadless \
+	vmkdir usr/lib/virtualbox
+	vmkdir usr/share/virtualbox
+	vbin VBox.sh VBox
+	for f in VirtualBox VBoxManage VBoxHeadless \
 		VBoxBalloonCtrl vboxwebsrv; do
 		ln -sf VBox ${DESTDIR}/usr/bin/${f}
 	done
+
 	# components
-	install -m0755 components/* -t ${DESTDIR}/usr/lib/virtualbox/components
+	vcopy components usr/lib/virtualbox
+	vcopy dtrace usr/lib/virtualbox
+	vcopy ExtensionPacks usr/lib/virtualbox
+	vcopy tools usr/lib/virtualbox
 
 	# libs
 	install -m0755 *.so ${DESTDIR}/usr/lib/virtualbox
 	install -m0644 *.r0 *.fd ${DESTDIR}/usr/lib/virtualbox
 
 	# setuid
-	install -m4755 VBoxSDL VirtualBoxVM VBoxHeadless VBoxNetDHCP VBoxNetAdpCtl \
+	install -m4755 VirtualBoxVM VBoxHeadless VBoxNetDHCP VBoxNetAdpCtl \
 		VBoxNetNAT -t ${DESTDIR}/usr/lib/virtualbox
 
 	install -m0755 VirtualBox VBoxManage VBoxSVC VBoxExtPackHelperApp \
+		VBoxBugReport VBoxCpuReport VBoxDTrace vboximg-mount \
+		VBoxVolInfo xpidl \
 		VBoxXPCOMIPCD VBoxTestOGL VBoxBalloonCtrl vboxwebsrv webtest \
 		-t ${DESTDIR}/usr/lib/virtualbox
 
 	# locales
-	install -m0755 nls/*.qm -t ${DESTDIR}/usr/share/virtualbox/nls
+	vcopy nls usr/share/virtualbox
 
 	# scripts
 	install -m0755 VBoxCreateUSBNode.sh VBoxSysInfo.sh \
 		-t ${DESTDIR}/usr/share/virtualbox
 
 	# icons and desktop
-	install -D -m0644 VBox.png ${DESTDIR}/usr/share/pixmaps/VBox.png
-	install -D -m0644 virtualbox.desktop \
-		${DESTDIR}/usr/share/applications/virtualbox.desktop
-	sed -i -e "s|Icon=VBox|Icon=VBox.png|" \
-		${DESTDIR}/usr/share/applications/virtualbox.desktop
-	install -Dm644 virtualbox.xml \
-		${DESTDIR}/usr/share/mime/packages/virtualbox.xml
+	vinstall VBox.png 644 usr/share/pixmaps/
+	sed -i -e "s|Icon=VBox|Icon=VBox.png|" virtualbox.desktop
+	vinstall virtualbox.desktop 644 usr/share/applications/
+	vinstall virtualbox.xml 644 usr/share/mime/packages/
 	install -d ${DESTDIR}/usr/share/icons/hicolor
 	for i in icons/*; do
 		ldir=$(basename ${i})
@@ -104,7 +108,6 @@ do_install() {
 	mkdir -p ${DESTDIR}/etc/vbox
 	echo 'INSTALL_DIR=/usr/lib/virtualbox' > ${DESTDIR}/etc/vbox/vbox.cfg
 
-	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin
 	install -d ${DESTDIR}/usr/share/licenses/${pkgname}
 	install -m0644 ${wrksrc}/COPYING* \
 		${DESTDIR}/usr/share/licenses/${pkgname}
@@ -113,6 +116,8 @@ do_install() {
 	vinstall ${FILESDIR}/virtualbox.conf 644 usr/lib/modules-load.d
 
 	vsv vboxwebsrv
+
+	vdoc ${FILESDIR}/README.voidlinux
 }
 
 virtualbox-ose-dkms_package() {

@@ -173,7 +173,7 @@ do_install() {
 	if [ "$CROSS_BUILD" ]; then
 
 		local _TARGET_PLATFORM _TARGET_EXT_DIR
-		
+
 		# Get arch of the target and host platform by reading the rbconfig.rb
 		# of the cross ruby
 		_TARGET_PLATFORM="$(ruby -r \
