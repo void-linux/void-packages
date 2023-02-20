@@ -331,7 +331,7 @@ And then make a signature per package:
 If the RSA key was protected with a passphrase you'll have to type it, or alternatively set
 it via the `XBPS_PASSPHRASE` environment variable.
 
-Once the binary packages have been signed, check the repository contains the appropriate `hex fingerprint`:
+Once the binary packages have been signed, check if the repository contains the appropriate `hex fingerprint`:
 
 	$ xbps-query --repository=hostdir/binpkgs -vL
 	...
@@ -344,7 +344,7 @@ Each time a binary package is created, a package signature must be created with 
 ### Rebuilding and overwriting existing local packages
 
 Packages are overwritten on every build to make getting package with changed build options easy.
-To make xbps-src skip build and preserve first package build with with given version and revision,
+To make xbps-src skip build and preserve first package build with given version and revision,
 same as in official void repository, set `XBPS_PRESERVE_PKGS=yes` in `etc/conf` file.
 
 Reinstalling a package in your target `rootdir` can be easily done too:
