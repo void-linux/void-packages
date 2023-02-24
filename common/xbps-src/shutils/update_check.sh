@@ -116,7 +116,7 @@ update_check() {
                 pkgurlname="$(printf %s "$url" | cut -d/ -f5)"
                 url="https://sourceforge.net/projects/$pkgurlname/rss?limit=200";;
             *code.google.com*|*googlecode*)
-                url="http://code.google.com/p/$pkgname/downloads/list";;
+                url="https://code.google.com/p/$pkgname/downloads/list";;
             *launchpad.net*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4)"
                 url="https://launchpad.net/$pkgurlname/+download";;
