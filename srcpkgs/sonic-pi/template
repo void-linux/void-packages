@@ -1,0 +1,81 @@
+# Template file for 'sonic-pi'
+pkgname=sonic-pi
+version=4.5.0
+revision=1
+archs="x86_64"
+build_style=cmake
+build_wrksrc="app"
+configure_args="-DCMAKE_BUILD_TYPE=Release -DBUILD_IMGUI_INTERFACE=ON -DUSE_SYSTEM_LIBS=ON -DQSCINTILLA_INCLUDE_DIR=/usr/include/qt5 -DQSCINTILLA_LIBRARY=/usr/lib/libqscintilla2_qt5.so"
+makedepends="qscintilla-qt5-devel qt5-svg-devel SDL2-devel ruby-devel elixir pkg-config aubio-devel catch2 platform_folders-devel reproc++-devel kissfft-devel crossguid-git fmt-devel rtmidi-devel gl3w-git"
+depends="qscintilla-qt5 qt5-svg SDL2 supercollider sc3-plugins aubio platform_folders reproc++ kissfft fmt rtmidi ruby erlang libjack-pipewire"
+short_desc="Live Coding Music Synth for Everyone"
+maintainer="Nicolas Porcel <nicolasporcel06@gmail.com>"
+license="GPL-3.0-or-later"
+homepage="https://sonic-pi.net/"
+distfiles="https://github.com/samaaron/${pkgname}/archive/v${version}.tar.gz"
+checksum=@3a958ca3c1bb429f5d3cafaee0ed82aae96d5152f06a6a40b1c04154b6291c17
+
+pre_configure() {
+	ruby server/ruby/bin/compile-extensions.rb
+	ruby server/ruby/bin/i18n-tool.rb -t
+
+	cp gui/qt/utils/ruby_help.tmpl gui/qt/utils/ruby_help.h
+	ruby server/ruby/bin/qt-doc.rb
+}
+
+post_build() {
+	cd ${wrksrc}/app/server/beam/tau
+	MIX_ENV=prod mix tau.release
+	erl -noinput -eval \
+		'lists:foreach(fun(F) -> beam_lib:strip(F) end, filelib:wildcard("app/server/beam/tau/**/*.beam"))' \
+		-s init stop
+	rm _build/prod/rel/tau/bin/tau.bat
+}
+
+do_install() {
+	cd ${wrksrc}
+
+	INSTALL_DIR=opt/${pkgname}
+	vmkdir ${INSTALL_DIR}
+
+	vcopy bin ${INSTALL_DIR}
+	vcopy etc ${INSTALL_DIR}
+
+	vmkdir ${INSTALL_DIR}/app
+	vcopy app/config ${INSTALL_DIR}/app
+	vcopy app/server/native ${INSTALL_DIR}/app/server
+
+	# Ruby
+	RUBY_DIR=app/server/ruby
+	vmkdir ${INSTALL_DIR}/${RUBY_DIR}
+	vcopy ${RUBY_DIR}/*.rb ${INSTALL_DIR}/${RUBY_DIR}
+	vcopy ${RUBY_DIR}/bin ${INSTALL_DIR}/${RUBY_DIR}
+	vcopy ${RUBY_DIR}/lib ${INSTALL_DIR}/${RUBY_DIR}
+	vcopy ${RUBY_DIR}/rb-native ${INSTALL_DIR}/${RUBY_DIR}
+	for ruby_vendor in ${RUBY_DIR}/vendor/*; do
+		vendor_name=$(basename $ruby_vendor)
+		vmkdir ${INSTALL_DIR}/${RUBY_DIR}/vendor/${vendor_name}
+		vcopy ${RUBY_DIR}/vendor/${vendor_name}/lib ${INSTALL_DIR}/${RUBY_DIR}/vendor/${vendor_name}
+	done
+
+	BEAM_DIR=app/server/beam/tau
+	BEAM_BUILD_DIR=${BEAM_DIR}/_build/prod
+	vmkdir ${INSTALL_DIR}/${BEAM_DIR}/_build
+	vcopy ${BEAM_BUILD_DIR} ${INSTALL_DIR}/${BEAM_BUILD_DIR}
+	vinstall ${BEAM_DIR}/boot-lin.sh 0755 ${INSTALL_DIR}/${BEAM_DIR}
+
+	GUI_DIR=app/gui/qt
+	vmkdir ${INSTALL_DIR}/${GUI_DIR}
+	vcopy ${GUI_DIR}/lang ${INSTALL_DIR}/${GUI_DIR}
+	vcopy ${GUI_DIR}/theme ${INSTALL_DIR}/${GUI_DIR}
+
+	GUI_BIN_DIR=app/build/gui/qt
+	vmkdir ${INSTALL_DIR}/${GUI_BIN_DIR}
+	vinstall ${GUI_BIN_DIR}/sonic-pi 0755 ${INSTALL_DIR}/${GUI_BIN_DIR}
+
+	IMGUI_RES_DIR=app/gui/imgui/res
+	vmkdir ${INSTALL_DIR}/${IMGUI_RES_DIR}
+	vinstall ${IMGUI_RES_DIR}//Cousine-Regular.ttf 0644 ${INSTALL_DIR}/${IMGUI_RES_DIR}
+
+	vbin ${FILESDIR}/sonic-pi
+}
