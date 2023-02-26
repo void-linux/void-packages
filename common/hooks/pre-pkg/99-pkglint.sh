@@ -1,5 +1,32 @@
 # This hook checks for common issues related to void.
 
+pkg_lint_check_private_shlib() {
+	local _prefix _myshlib filename libname _failure
+	local mapshlibs=$XBPS_COMMONDIR/shlibs.private
+	local _shlib="$1"
+
+	filename="${_shlib%:*}"
+	libname=${filename%.so*}
+	_myshlib=$(grep "^${filename}:" "$XBPS_COMMONDIR/shlibs.private")
+	if [ -z "$_myshlib" ]; then
+		msg_normal "${pkgver}: ${_myshlib} not found in common/shlibs.private.\n"
+	elif [ "$_shlib" != "$_myshlib" ]; then
+		_failure=yes
+		_prefix="private:${libname}.so"
+		msg_red "${pkgver}: Private API change detected.\n"
+		msg_red "${pkgver}: Please update common/shlibs.private with:\n"
+		msg_red "${pkgver}:     ${filename}:${_shlib#*:}\n"
+		msg_red "${pkgver}: All reverse dependencies should also be revbumped to be rebuilt:\n"
+		_revdeps=$($XBPS_QUERY_XCMD -Rs ${_prefix} -p shlib-requires|cut -d: -f1)
+		for x in ${_revdeps}; do
+			msg_red "    ${x}\n"
+		done
+	fi
+	if [ "$_failure" ]; then
+		msg_error "${pkgver}: cannot continue with installation!\n"
+	fi
+}
+
 pkg_lint_check_shlib() {
 	local rev libname _shlib _pkgname _pattern
 	local filename="$1"
@@ -216,6 +243,11 @@ hook() {
 	fi
 
 	for filename in $(<${PKGDESTDIR}/shlib-provides); do
-		pkg_lint_check_shlib "$filename"
+		case "$filename" in
+		private:*)
+			pkg_lint_check_private_shlib "${filename#private:}" ;;
+		*)
+			pkg_lint_check_shlib "$filename" ;;
+		esac
 	done
 }
