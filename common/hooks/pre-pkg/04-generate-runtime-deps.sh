@@ -71,10 +71,10 @@ hook() {
     exec < $depsftmp
     while read f; do
         lf=${f#${PKGDESTDIR}}
-	    if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
-		    msg_normal "Skipping dependency scan for ${lf}\n"
-		    continue
-	    fi
+        if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
+            msg_normal "Skipping dependency scan for ${lf}\n"
+            continue
+        fi
         read -n4 elfmagic < "$f"
         if [ "$elfmagic" = $'\177ELF' ]; then
             for nlib in $($OBJDUMP -p "$f"|awk '/NEEDED/{print $2}'); do
