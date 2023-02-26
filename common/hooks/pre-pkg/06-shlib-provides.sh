@@ -1,6 +1,16 @@
 # This hook executes the following tasks:
 #	- generates shlib-provides file for xbps-create(1)
 
+has_private_shlib() {
+	local f="$1" _soname="$2"
+	${OBJDUMP} -p "$f" | awk '
+		/^Version definitions:/{v=1}
+		!v{next}
+		/_PRIVATE_API/{ print "yes"; exit}
+		/^$/{exit}
+	'
+}
+
 collect_sonames() {
 	local _destdir="$1" f _soname _fname _pattern
 	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)*$"
@@ -13,6 +23,7 @@ collect_sonames() {
 	fi
 
 	# real pkg
+	{
 	find ${_destdir} -type f -name "*.so*" | while read f; do
 		_fname="${f##*/}"
 		case "$(file -bi "$f")" in
@@ -25,19 +36,23 @@ collect_sonames() {
 			   [[ ${_soname} =~ ${_pattern} &&
 			   	( -e ${_destdir}/usr/lib/${_fname} ||
 				  -e ${_destdir}/usr/lib32/${_fname} ) ]]; then
-				echo "${_soname}" >> ${_tmpfile}
+				echo "${_soname}" >&3
 				echo "   SONAME ${_soname} from ${f##${_destdir}}"
+				if [ "$(has_private_shlib "$f")" ]; then
+					_private="private:$_soname:${libprivate:-${version}}"
+					echo "$_private" >&3
+				fi
 			fi
 			;;
 		esac
 	done
 
 	for f in ${shlib_provides}; do
-		echo "$f" >> ${_tmpfile}
+		echo "$f" >&3
 	done
+	} 3>${_tmpfile}
 	if [ -s "${_tmpfile}" ]; then
-		tr '\n' ' ' < "${_tmpfile}" > ${_destdir}/shlib-provides
-		echo >> ${_destdir}/shlib-provides
+		sort <${_tmpfile} | xargs >${_destdir}/shlib-provides
 	fi
 	rm -f ${_tmpfile}
 }
