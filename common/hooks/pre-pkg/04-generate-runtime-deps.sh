@@ -45,8 +45,21 @@ store_pkgdestdir_rundeps() {
         fi
 }
 
+get_private_shlib() {
+    local f="$1"
+    $OBJDUMP -p "$f" |
+    awk '
+        /^Version References:/{ vr=1; next }
+        !vr { next }
+        /required from/{ lname=substr($NF, 1, length($NF)-1) }
+        /_PRIVATE_API/{ print lname }
+    '
+}
+
 hook() {
-    local depsftmp f lf j mapshlibs sorequires _curdep elfmagic broken_shlibs verify_deps
+    local depsftmp f lf j mapshlibs sorequires _curdep elfmagic
+    local nlib broken_shlibs verify_deps
+    local napi private_deps
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -85,6 +98,10 @@ hook() {
                 done
                 [[ $found -eq 0 ]] && verify_deps="$verify_deps $nlib"
             done
+            napi="$(get_private_shlib "$f")"
+            if [ "$napi" ]; then
+                private_deps="$private_deps $napi"
+            fi
         fi
     done
     exec 0<&3 # restore stdin
@@ -165,7 +182,24 @@ hook() {
 
     store_pkgdestdir_rundeps
 
+    if [ -n "${private_deps}" ]; then
+        for x in ${private_deps}; do
+            if [ "$(find ${PKGDESTDIR} -name "${x}")" ]; then
+                : "self-provided"
+            elif _rdep=$(grep "^${x}" "$XBPS_COMMONDIR/shlibs.private"); then
+                _rdep="private:$_rdep"
+                sorequires="$sorequires $_rdep"
+            else
+                msg_red_nochroot " Untracked Private API: ${x}\n"
+                broken_shlibs=1
+            fi
+        done
+        if [ -n "$broken_shlibs" ]; then
+            msg_error "$pkgver: uses unknown private API, aborting!\n"
+        fi
+    fi
     if [ -n "${sorequires}" ]; then
-        echo "${sorequires}" | xargs -n1 | sort | xargs > ${PKGDESTDIR}/shlib-requires
+        echo "${sorequires}" |
+        xargs -n1 | sort | xargs > ${PKGDESTDIR}/shlib-requires
     fi
 }
