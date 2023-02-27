@@ -205,11 +205,8 @@ hook() {
 		# rename the subdirectory (top-level of distfiles) to $wrksrc
 		mv "$innerdir" "$wrksrc" &&
 		rmdir "$extractdir"
-	elif [ "$num_dirs" -gt 1 ] || [ -n "$create_wrksrc" ]; then
-		# rename the tmpdir to wrksrc
-		mv "$extractdir" "$wrksrc"
 	else
-		mkdir -p "$wrksrc"
+		mv "$extractdir" "$wrksrc"
 	fi ||
 		msg_error "$pkgver: failed to move sources to $wrksrc\n"
 }
