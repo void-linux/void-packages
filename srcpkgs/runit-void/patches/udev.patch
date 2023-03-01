@@ -1,0 +1,95 @@
+From 30be966515f6d766baa6d3da83c66efa66a9b725 Mon Sep 17 00:00:00 2001
+From: dkwo <nicolopiazzalunga@gmail.com>
+Date: Wed, 1 Mar 2023 15:42:53 -0500
+Subject: [PATCH] core-services/{02,99},rc.conf,shutdown.d/60: allow
+ alternative udevd
+
+---
+ core-services/02-udev.sh    | 27 +++++++++++++--------------
+ core-services/99-cleanup.sh | 11 +++++++++++
+ rc.conf                     |  5 +++++
+ shutdown.d/60-udev.sh       |  4 ----
+ 4 files changed, 29 insertions(+), 18 deletions(-)
+ delete mode 100644 shutdown.d/60-udev.sh
+
+diff --git a/core-services/02-udev.sh b/core-services/02-udev.sh
+index b08f8ca..2c46d55 100644
+--- a/core-services/02-udev.sh
++++ b/core-services/02-udev.sh
+@@ -2,18 +2,17 @@
+ 
+ [ -n "$VIRTUALIZATION" ] && return 0
+ 
+-if [ -x /usr/lib/systemd/systemd-udevd ]; then
+-    _udevd=/usr/lib/systemd/systemd-udevd
+-elif [ -x /sbin/udevd -o -x /bin/udevd ]; then
+-    _udevd=udevd
+-else
+-    msg_warn "cannot find udevd!"
+-fi
++msg "Starting device manager and waiting for devices to settle..."
++case $CONFIG_DEV in
++	udevd)
++		udevd --daemon
++		udevadm trigger --action=add --type=subsystems
++		udevadm trigger --action=add --type=devices
++		udevadm settle
++        ;;
+ 
+-if [ -n "${_udevd}" ]; then
+-    msg "Starting udev and waiting for devices to settle..."
+-    ${_udevd} --daemon
+-    udevadm trigger --action=add --type=subsystems
+-    udevadm trigger --action=add --type=devices
+-    udevadm settle
+-fi
++	mdevd)
++		mdevd & pid_mdevd=$!
++		mdevd-coldplug
++        ;;
++esac
+diff --git a/core-services/99-cleanup.sh b/core-services/99-cleanup.sh
+index f27f728..d9f3f98 100644
+--- a/core-services/99-cleanup.sh
++++ b/core-services/99-cleanup.sh
+@@ -8,3 +8,14 @@ if [ ! -e /var/log/btmp ]; then
+ fi
+ install -dm1777 /tmp/.X11-unix /tmp/.ICE-unix
+ rm -f /etc/nologin /forcefsck /forcequotacheck /fastboot
++
++msg "Killing device manager to make way for service..."
++case $CONFIG_DEV in
++	udevd)
++		udevadm control --exit
++	;;
++
++	mdevd)
++		kill "$pid_mdevd"
++	;;
++esac
+diff --git a/rc.conf b/rc.conf
+index aa3da51..8a5e9f4 100644
+--- a/rc.conf
++++ b/rc.conf
+@@ -45,3 +45,8 @@
+ # RNG, for example if you plan to replicate this file system image and do not
+ # have the wherewithal to first delete the contents of /var/lib/seedrng.
+ #SEEDRNG_SKIP_CREDIT=false
++
++# The device manager to run during the init process. This is killed once boot
++# is complete for a supervised version to take its place. Valid values are
++# currently 'mdevd' or 'udevd' (default).
++CONFIG_DEV=udevd
+diff --git a/shutdown.d/60-udev.sh b/shutdown.d/60-udev.sh
+deleted file mode 100644
+index dd42ff7..0000000
+--- a/shutdown.d/60-udev.sh
++++ /dev/null
+@@ -1,4 +0,0 @@
+-if [ -z "$VIRTUALIZATION" ]; then
+-    msg "Stopping udev..."
+-    udevadm control --exit
+-fi
+-- 
+2.40.0
+
