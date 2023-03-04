@@ -1,0 +1,80 @@
+# Template file for 'singularity'
+pkgname=singularity
+version=3.11.0
+revision=1
+build_style=go
+go_import_path=github.com/sylabs.io/singularity
+go_mod_mode=vendor
+configure_script=./mconfig
+configure_args="--prefix=/usr \
+		--exec-prefix=/usr \
+		--bindir=/usr/bin \
+		--libexecdir=/usr/libexec \
+		--sysconfdir=/etc \
+		--sharedstatedir=/var/lib \
+		--mandir=/usr/share/man \
+		--localstatedir=/var/lib \
+		--without-conmon \
+		-v"
+make_dirs="/var/lib/singularity/mnt/session 755 root root"
+hostmakedepends="wget pkg-config go cryptsetup"
+makedepends="libseccomp-devel glib-devel squashfs-tools runc"
+depends="squashfs-tools cryptsetup conmon"
+short_desc="HPC centric container platform"
+maintainer="Senwen Deng <void@snwn.de>"
+license="BSD-3-Clause-LBNL"
+homepage="https://sylabs.io/singularity/"
+distfiles="https://github.com/sylabs/${pkgname}/releases/download/v${version}/${pkgname}-ce-${version}.tar.gz"
+checksum=45c297f05065c7c920898af37acb781070b2330f141d7a566073197801577753
+
+post_configure() {
+	# cannot run binary built for another architecture
+	if ! [[ -z ${CROSS_BUILD} ]]; then
+		vsed -i \
+			-e '/feature: NO_NEW_PRIVS/,/feature: MS_SLAVE/{//!d}' \
+			./mlocal/checks/project-post.chk
+		# host go is needed to run mconfig
+		GOARCH=$(go env | grep GOHOSTARCH | sed "s/GOHOSTARCH=//" | tr -d '"') ${configure_script} ${configure_args} -c cc -x c++ -C ${XBPS_CROSS_TRIPLET}-gcc -X ${XBPS_CROSS_TRIPLET}-c++
+	else
+		${configure_script} ${configure_args}
+	fi
+}
+
+pre_build() {
+	# Fixup Makefile
+	# * Force use of vendored packages
+	# * Don't install bash completions into /etc/bash_completion.d
+	vsed -i \
+		-e 's@^GO_MODFLAGS := .*@GO_MODFLAGS := -mod=vendor@' \
+		-e "s/ldflags=\"/ldflags=\" -extld=${LD} /" \
+		-e 's@INSTALLFILES += $(bash_completion_INSTALL)@@' \
+		builddir/Makefile
+	
+	# target ld needs to be specified for go build in flags
+	if ! [[ -z ${CROSS_BUILD} ]]; then
+	vsed -i \
+		-e "s/ldflags=\"/ldflags=\" -extld=${LD} /" \
+		builddir/Makefile
+	fi
+}
+
+do_build() {
+	# host go is needed to generate some prerequisite codes
+	if ! [[ -z ${CROSS_BUILD} ]]; then
+		GOARCH=$(go env | grep GOHOSTARCH | sed "s/GOHOSTARCH=//" | tr -d '"') srcdir=$PWD make -C builddir old_config= codegen
+	fi
+	PATH="$PATH:/usr/aarch64-linux-gnu/usr/bin/" srcdir=$PWD make -C builddir old_config=
+}
+
+do_install() {
+	make DESTDIR="${DESTDIR}" -C builddir install all
+	chmod 0750 $DESTDIR/usr/libexec/singularity/bin/starter-suid
+	vlicense LICENSE.md
+	vcompletion builddir/etc/bash_completion.d/singularity bash
+}
+
+do_check() {
+	# XXX: tests require sudo, so skip for now.
+	# make -C builddir unit-test integration-test e2e-test
+	: "Pass"
+}
