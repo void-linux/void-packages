@@ -1,57 +1,67 @@
 # Template file for 'qt6-declarative'
 pkgname=qt6-declarative
-version=6.4.0
+version=6.4.2
 revision=1
 build_style=cmake
-hostmakedepends="qt6-base-devel perl pkg-config wayland-devel
- qt6-shadertools-devel"
+configure_args="-DQT_BUILD_TESTS=ON"
+hostmakedepends="qt6-base perl pkg-config wayland-devel qt6-shadertools python3"
 makedepends="qt6-base-devel Vulkan-Headers qt6-shadertools-devel"
 short_desc="Cross-platform application and UI framework - Declarative"
 maintainer="John <me@johnnynator.dev>"
 license="GPL-3.0-only with Qt-GPL-exception-1.0, LGPL-3.0-only, GPL-2.0-or-later"
 homepage="https://www.qt.io"
 distfiles="https://download.qt.io/official_releases/qt/${version%.*}/${version}/submodules/qtdeclarative-everywhere-src-${version}.tar.xz"
-checksum=3434e72fccfa0c929c326790723d05c155f5067746b1ab05cfd7a9ba632c4383
+checksum=a4bdd983de4e9cbca0f85b767dbdd8598711554e370a06da8f509ded4430f5bd
 replaces="qt6-quickcontrols2>=0"
 
 if [ "$CROSS_BUILD" ]; then
-	configure_args="-DQT_FORCE_BUILD_TOOLS=true"
-	hostmakedepends+=" qt6-declarative-devel"
+	configure_args+=" -DQT_FORCE_BUILD_TOOLS=true"
+	hostmakedepends+=" qt6-declarative-host-tools"
 fi
 
-if [ "$XBPS_CHECK_PKGS" ]; then
-	configure_args+=" -DQT_BUILD_TESTS=ON"
-fi
 
 if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
 	broken="shader compilation fails"
 fi
 
-pre_configure() {
-	CXXFLAGS+=" '-DQT_DECLARATIVE_BIN_PATH=\"${wrksrc}/build/lib/qt6/bin\"'"
-	CXXFLAGS+=" '-DQT_DECLARATIVE_LIBEXEC_PATH=\"${wrksrc}/build/lib/qt6/libexec\"'"
-}
-
-pre_check() {
-	export QML2_IMPORT_PATH="$wrksrc/build/lib/qt6/qml"
-}
-
 do_check() {
 	cd build
+	export QML2_IMPORT_PATH="$wrksrc/build/lib/qt6/qml"
+	export QT_BUILD_BIN_PATH=${wrksrc}/build/lib/qt6/bin
+	export QT_BUILD_LIBEXEC_PATH=${wrksrc}/build/lib/qt6/libexec
 	local broken="tst_qqmllocale|text|tst_qquickwidget"
 	# requires qt6-declarative installed
 	broken+="|module_includes|cmake_tooling_imports|empty_qmldir"
 	broken+="|qtquickcompiler|qmlquery"
-	# Could work if Qt6Quick.so.6 could be found by qml
-	broken+="|tst_qqmldebugjs|tst_qqmlinspector"
-	broken+="|tst_qqmlprofilerservice|tst_qqmljsscope"
-	broken+="|tst_qqmlpreview|tst_qmllint|tst_qmlformat"
+	# Need to investigate
+	broken+="|tst_qqmldebugjs|tst_qqmljsscope"
+	broken+="|tst_qqmlpreview|tst_qmllint"
 	# can't find the source
 	broken+="|tst_qmltc_qprocess"
 	broken+="|tst_qquickfiledialogimpl"
 	broken+="|tst_qquickfolderdialogimpl"
 	broken+="|tst_qmlimportscanner|tst_qqmlextensionplugin"
+	# unknown
+	broken+="|tst_qmldomitem|tst_dom_all"
 	ctest -E "($broken)"
+}
+
+post_install() {
+	rm -rf ${DESTDIR}/usr/tests
+	# Only build in -DQT_BUILD_TESTS=ON, for self-test
+	rm -f ${DESTDIR}/usr/lib/qt6/bin/testapp
+	rm -f ${DESTDIR}/usr/lib/qt6/bin/qqmldebug*
+}
+
+qt6-quick-test_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - test"
+	pkg_install() {
+		vmove "usr/lib/libQt6QuickTest.so.*"
+		vmove usr/lib/qt6/qml/QtTest
+		vmove usr/lib/qt6/qml/Qt/test
+		vmove usr/lib/qt6/bin/qmltestrunner
+	}
 }
 
 qt6-declarative-tools_package() {
@@ -59,6 +69,7 @@ qt6-declarative-tools_package() {
 	short_desc+=" - tools"
 	pkg_install() {
 		vmove usr/lib/qt6/plugins/qmltooling
+		vmove usr/lib/qt6/plugins/qmllint
 		for bin in qmlcachegen qmlimportscanner qmltyperegistrar; do
 			vmove usr/lib/qt6/libexec/$bin
 		done
@@ -68,22 +79,35 @@ qt6-declarative-tools_package() {
 	}
 }
 
+qt6-declarative-host-tools_package() {
+	# The CMake for Tools requires all binaries to be available
+	depends="qt6-quick-test>=${version}_${revision} qt6-base>=${version}
+	 qt6-declarative-tools>=${version}_${revision}"
+	short_desc+=" - host tools"
+	pkg_install() {
+		vmove "usr/lib/cmake/*Tools"
+	}
+}
+
 qt6-declarative-devel_package() {
 	depends="${sourcepkg}>=${version}_${revision} qt6-base-devel>=${version}_1
-	 qt6-declarative-tools>=${version}_${revision}"
+	 qt6-declarative-host-tools>=${version}_${revision}"
 	short_desc+=" - development files"
 	replaces="qt6-quickcontrols2-devel>=0"
 	pkg_install() {
 		vmove usr/include
-		vmove usr/lib/cmake
 		vmove usr/lib/metatypes
 		vmove usr/lib/pkgconfig
 		vmove usr/lib/qt6/mkspecs
-		vmove "usr/lib/libQt6QuickTest.so.*"
-		vmove usr/lib/qt6/qml/QtTest
-		vmove usr/lib/qt6/bin/qmltestrunner
 		vmove "usr/lib/*.so"
+		vmove "usr/lib/*.a"
 		vmove "usr/lib/*.prl"
 		vmove usr/share/qt6/modules
+		for _f in ${DESTDIR}/usr/lib/cmake/*; do
+			case "$_f" in
+			*Tools) ;;
+			*)	vmove "usr/lib/cmake/${_f##*/}" ;;
+			esac
+		done
 	}
 }

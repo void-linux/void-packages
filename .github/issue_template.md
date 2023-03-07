@@ -3,6 +3,6 @@
   https://github.com/void-linux/void-packages/issues/new/choose
 
   Don't request an update of a package, We have a script for that:
-  https://alpha.de.repo.voidlinux.org/void-updates/void-updates.txt
+  https://repo-default.voidlinux.org/void-updates/void-updates.txt
   However, a quality pull request may help.
 -->
