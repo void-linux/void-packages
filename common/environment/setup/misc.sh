@@ -1,14 +1,14 @@
 #
 # Common variables that can be used by xbps-src.
 #
-# SITE used for ditfiles mirrors. For use in $distfiles.
+# SITE used for distfiles mirrors. For use in $distfiles.
 set -a
 
 SOURCEFORGE_SITE="https://downloads.sourceforge.net/sourceforge"
 NONGNU_SITE="https://download.savannah.nongnu.org/releases"
 UBUNTU_SITE="http://archive.ubuntu.com/ubuntu/pool"
 XORG_SITE="https://www.x.org/releases/individual"
-DEBIAN_SITE="http://ftp.debian.org/debian/pool"
+DEBIAN_SITE="https://ftp.debian.org/debian/pool"
 GNOME_SITE="https://download.gnome.org/sources"
 KERNEL_SITE="https://www.kernel.org/pub/linux"
 CPAN_SITE="https://www.cpan.org/modules/by-module"

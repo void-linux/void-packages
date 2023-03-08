@@ -319,6 +319,14 @@ _void_cross_build_musl() {
 	make ${makejobs}
 	make DESTDIR=${wrksrc}/build_root/usr/${tgt} install
 
+	CFLAGS="-pipe -fPIC ${cross_musl_cflags}" \
+	CPPFLAGS="${cross_musl_cflags}" LDFLAGS="${cross_musl_ldflags}" \
+	${tgt}-gcc -pipe -fPIC ${cross_musl_cflags} ${cross_musl_ldflags} -fpie \
+		-c ${XBPS_SRCPKGDIR}/musl/files/__stack_chk_fail_local.c \
+		-o __stack_chk_fail_local.o
+	${tgt}-ar r libssp_nonshared.a __stack_chk_fail_local.o
+	cp libssp_nonshared.a ${wrksrc}/build_root/usr/${tgt}/usr/lib
+
 	touch ${wrksrc}/.musl_build_done
 }
 
@@ -417,6 +425,7 @@ _void_cross_build_gcc() {
 		--disable-libvtv \
 		--disable-libsanitizer \
 		--disable-libstdcxx-pch \
+		--disable-libssp \
 		--enable-shared \
 		--enable-threads=posix \
 		--enable-__cxa_atexit \
@@ -425,7 +434,6 @@ _void_cross_build_gcc() {
 		--enable-lto \
 		--enable-default-pie \
 		--enable-default-ssp \
-		--enable-libssp \
 		--with-gnu-ld \
 		--with-gnu-as \
 		--with-linker-hash-style=gnu \
@@ -600,6 +608,8 @@ do_install() {
 		for f in ${DESTDIR}/${sysroot}/usr/lib/ld-musl-*.so.*; do
 			ln -sf libc.so ${f}
 		done
+
+		cp libssp_nonshared.a ${DESTDIR}/${sysroot}/usr/lib/
 	else
 		# Install glibc
 		cd ${wrksrc}/glibc_build
