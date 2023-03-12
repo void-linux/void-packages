@@ -1,0 +1,2999 @@
+Index: qtwebengine-everywhere-src-5.15.7/configure.pri
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/configure.pri
++++ qtwebengine-everywhere-src-5.15.7/configure.pri
+@@ -144,6 +144,7 @@ defineTest(qtConfTest_detectArch) {
+     contains(QT_ARCH, "arm")|contains(QT_ARCH, "arm64"): return(true)
+     contains(QT_ARCH, "mips"): return(true)
+     contains(QT_ARCH, "mips64"): return(true)
++    contains(QT_ARCH, "riscv64"): return(true)
+     qtLog("Architecture not supported.")
+     return(false)
+ }
+Index: qtwebengine-everywhere-src-5.15.7/mkspecs/features/functions.prf
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/mkspecs/features/functions.prf
++++ qtwebengine-everywhere-src-5.15.7/mkspecs/features/functions.prf
+@@ -107,6 +107,7 @@ defineReplace(gnArch) {
+     contains(qtArch, "mips"): return(mipsel)
+     contains(qtArch, "mips64"): return(mips64el)
+     contains(qtArch, "mips64el"): return(mips64el)
++    contains(qtArch, "riscv64"): return(riscv64)
+     return(unknown)
+ }
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/base/process/launch_posix.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/base/process/launch_posix.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/base/process/launch_posix.cc
+@@ -704,7 +704,7 @@ NOINLINE pid_t CloneAndLongjmpInChild(un
+   alignas(16) char stack_buf[PTHREAD_STACK_MIN];
+ #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY) ||   \
+     defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_S390_FAMILY) || \
+-    defined(ARCH_CPU_PPC64_FAMILY)
++    defined(ARCH_CPU_PPC64_FAMILY) || defined(ARCH_CPU_RISCV_FAMILY)
+   // The stack grows downward.
+   void* stack = stack_buf + sizeof(stack_buf);
+ #else
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/build/build_config.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/build/build_config.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/build/build_config.h
+@@ -193,6 +193,11 @@
+ #define ARCH_CPU_32_BITS 1
+ #define ARCH_CPU_BIG_ENDIAN 1
+ #endif
++#elif defined(__riscv) && __riscv_xlen == 64
++#define ARCH_CPU_RISCV_FAMILY 1
++#define ARCH_CPU_RISCV64 1
++#define ARCH_CPU_64_BITS 1
++#define ARCH_CPU_LITTLE_ENDIAN 1
+ #else
+ #error Please add support for your architecture in build/build_config.h
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/build/config/BUILD.gn
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/build/config/BUILD.gn
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/build/config/BUILD.gn
+@@ -238,6 +238,7 @@ config("default_libs") {
+       "dl",
+       "pthread",
+       "rt",
++      "atomic",
+     ]
+   }
+ }
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/build/toolchain/linux/BUILD.gn
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/build/toolchain/linux/BUILD.gn
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/build/toolchain/linux/BUILD.gn
+@@ -298,3 +298,20 @@ gcc_toolchain("mips64") {
+     is_clang = false
+   }
+ }
++
++gcc_toolchain("riscv64") {
++  cc = "gcc"
++  cxx = "g++"
++
++  readelf = "readelf"
++  nm = "nm"
++  ar = "ar"
++  ld = cxx
++
++  toolchain_args = {
++    current_cpu = "riscv64"
++    current_os = "linux"
++    is_clang = false
++  }
++}
++
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/features.gni
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/features.gni
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/features.gni
+@@ -11,7 +11,8 @@ import("//build/config/nacl/config.gni")
+ use_seccomp_bpf = (is_linux || is_chromeos || is_android) &&
+                   (current_cpu == "x86" || current_cpu == "x64" ||
+                    current_cpu == "arm" || current_cpu == "arm64" ||
+-                   current_cpu == "mipsel" || current_cpu == "mips64el")
++                   current_cpu == "mipsel" || current_cpu == "mips64el" ||
++                   current_cpu == "riscv64")
+ 
+ use_seccomp_bpf = use_seccomp_bpf || is_nacl_nonsfi
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/bpf_dsl/linux_syscall_ranges.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/bpf_dsl/linux_syscall_ranges.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/bpf_dsl/linux_syscall_ranges.h
+@@ -56,6 +56,12 @@
+ #define MAX_PUBLIC_SYSCALL __NR_syscalls
+ #define MAX_SYSCALL MAX_PUBLIC_SYSCALL
+ 
++#elif defined(__riscv)
++
++#define MIN_SYSCALL 0u
++#define MAX_PUBLIC_SYSCALL 1024u
++#define MAX_SYSCALL MAX_PUBLIC_SYSCALL
++
+ #else
+ #error "Unsupported architecture"
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
+@@ -346,6 +346,46 @@ struct regs_struct {
+ #define SECCOMP_PT_PARM4(_regs) (_regs).regs[3]
+ #define SECCOMP_PT_PARM5(_regs) (_regs).regs[4]
+ #define SECCOMP_PT_PARM6(_regs) (_regs).regs[5]
++
++#elif defined(__riscv)
++struct regs_struct {
++  unsigned long regs[32];
++};
++
++#define SECCOMP_ARCH AUDIT_ARCH_RISCV64
++
++#define SECCOMP_REG(_ctx, _reg) ((_ctx)->uc_mcontext.__gregs[_reg])
++
++#define SECCOMP_RESULT(_ctx) SECCOMP_REG(_ctx, REG_A0)
++#define SECCOMP_SYSCALL(_ctx) SECCOMP_REG(_ctx, REG_A0+7)
++#define SECCOMP_IP(_ctx) (_ctx)->uc_mcontext.__gregs[REG_PC]
++#define SECCOMP_PARM1(_ctx) SECCOMP_REG(_ctx, REG_A0)
++#define SECCOMP_PARM2(_ctx) SECCOMP_REG(_ctx, REG_A0+1)
++#define SECCOMP_PARM3(_ctx) SECCOMP_REG(_ctx, REG_A0+2)
++#define SECCOMP_PARM4(_ctx) SECCOMP_REG(_ctx, REG_A0+3)
++#define SECCOMP_PARM5(_ctx) SECCOMP_REG(_ctx, REG_A0+4)
++#define SECCOMP_PARM6(_ctx) SECCOMP_REG(_ctx, REG_A0+5)
++
++#define SECCOMP_NR_IDX (offsetof(struct arch_seccomp_data, nr))
++#define SECCOMP_ARCH_IDX (offsetof(struct arch_seccomp_data, arch))
++#define SECCOMP_IP_MSB_IDX \
++  (offsetof(struct arch_seccomp_data, instruction_pointer) + 4)
++#define SECCOMP_IP_LSB_IDX \
++  (offsetof(struct arch_seccomp_data, instruction_pointer) + 0)
++#define SECCOMP_ARG_MSB_IDX(nr) \
++  (offsetof(struct arch_seccomp_data, args) + 8 * (nr) + 4)
++#define SECCOMP_ARG_LSB_IDX(nr) \
++  (offsetof(struct arch_seccomp_data, args) + 8 * (nr) + 0)
++
++#define SECCOMP_PT_RESULT(_regs) (_regs).regs[REG_A0]
++#define SECCOMP_PT_SYSCALL(_regs) (_regs).regs[REG_A0+7]
++#define SECCOMP_PT_IP(_regs) (_regs).regs[REG_PC]
++#define SECCOMP_PT_PARM1(_regs) (_regs).regs[REG_A0]
++#define SECCOMP_PT_PARM2(_regs) (_regs).regs[REG_A0+1]
++#define SECCOMP_PT_PARM3(_regs) (_regs).regs[REG_A0+2]
++#define SECCOMP_PT_PARM4(_regs) (_regs).regs[REG_A0+3]
++#define SECCOMP_PT_PARM5(_regs) (_regs).regs[REG_A0+4]
++#define SECCOMP_PT_PARM6(_regs) (_regs).regs[REG_A0+5]
+ #else
+ #error Unsupported target platform
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+@@ -181,7 +181,7 @@ ResultExpr EvaluateSyscallImpl(int fs_de
+     return RestrictFcntlCommands();
+ #endif
+ 
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+   // fork() is never used as a system call (clone() is used instead), but we
+   // have seen it in fallback code on Android.
+   if (sysno == __NR_fork) {
+@@ -231,7 +231,7 @@ ResultExpr EvaluateSyscallImpl(int fs_de
+   }
+ 
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+   if (sysno == __NR_mmap)
+     return RestrictMmapFlags();
+ #endif
+@@ -249,7 +249,7 @@ ResultExpr EvaluateSyscallImpl(int fs_de
+     return RestrictPrctl();
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+   if (sysno == __NR_socketpair) {
+     // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
+     static_assert(AF_UNIX == PF_UNIX,
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
+@@ -37,7 +37,7 @@
+ #include <sys/ioctl.h>
+ #include <sys/ptrace.h>
+ #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && !defined(__arm__) && \
+-    !defined(__aarch64__) && !defined(PTRACE_GET_THREAD_AREA)
++    !defined(__aarch64__) && !defined(__riscv) && !defined(PTRACE_GET_THREAD_AREA)
+ // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
+ // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
+ // asm/ptrace-abi.h doesn't exist on arm32 and PTRACE_GET_THREAD_AREA isn't
+@@ -406,7 +406,7 @@ ResultExpr RestrictPrlimitToGetrlimit(pi
+ ResultExpr RestrictPtrace() {
+   const Arg<int> request(0);
+   return Switch(request).CASES((
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+         PTRACE_GETREGS,
+         PTRACE_GETFPREGS,
+ #if defined(TRACE_GET_THREAD_AREA)
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+@@ -86,7 +86,7 @@ bool SyscallSets::IsUmask(int sysno) {
+ // Both EPERM and ENOENT are valid errno unless otherwise noted in comment.
+ bool SyscallSets::IsFileSystem(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_access:  // EPERM not a valid errno.
+     case __NR_chmod:
+     case __NR_chown:
+@@ -118,7 +118,7 @@ bool SyscallSets::IsFileSystem(int sysno
+     case __NR_faccessat:  // EPERM not a valid errno.
+     case __NR_fchmodat:
+     case __NR_fchownat:  // Should be called chownat ?
+-#if defined(__x86_64__) || defined(__aarch64__)
++#if defined(__x86_64__) || defined(__aarch64__) || defined(__riscv)
+     case __NR_newfstatat:  // fstatat(). EPERM not a valid errno.
+ #elif defined(__i386__) || defined(__arm__) || \
+     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
+@@ -201,7 +201,7 @@ bool SyscallSets::IsAllowedFileSystemAcc
+     case __NR_oldfstat:
+ #endif
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_sync_file_range:  // EPERM not a valid errno.
+ #elif defined(__arm__)
+     case __NR_arm_sync_file_range:  // EPERM not a valid errno.
+@@ -225,7 +225,7 @@ bool SyscallSets::IsDeniedFileSystemAcce
+     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
+     case __NR_ftruncate64:
+ #endif
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_getdents:    // EPERM not a valid errno.
+ #endif
+     case __NR_getdents64:  // EPERM not a valid errno.
+@@ -304,7 +304,7 @@ bool SyscallSets::IsProcessPrivilegeChan
+ bool SyscallSets::IsProcessGroupOrSession(int sysno) {
+   switch (sysno) {
+     case __NR_setpgid:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_getpgrp:
+ #endif
+     case __NR_setsid:
+@@ -333,7 +333,7 @@ bool SyscallSets::IsAllowedSignalHandlin
+     case __NR_rt_sigsuspend:
+     case __NR_rt_tgsigqueueinfo:
+     case __NR_sigaltstack:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_signalfd:
+ #endif
+     case __NR_signalfd4:
+@@ -357,12 +357,12 @@ bool SyscallSets::IsAllowedOperationOnFd
+   switch (sysno) {
+     case __NR_close:
+     case __NR_dup:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_dup2:
+ #endif
+     case __NR_dup3:
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_shutdown:
+ #endif
+       return true;
+@@ -401,7 +401,7 @@ bool SyscallSets::IsAllowedProcessStartO
+       return true;
+     case __NR_clone:  // Should be parameter-restricted.
+     case __NR_setns:  // Privileged.
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_fork:
+ #endif
+ #if defined(__i386__) || defined(__x86_64__)
+@@ -412,7 +412,7 @@ bool SyscallSets::IsAllowedProcessStartO
+ #endif
+     case __NR_set_tid_address:
+     case __NR_unshare:
+-#if !defined(__mips__) && !defined(__aarch64__)
++#if !defined(__mips__) && !defined(__aarch64__) && !defined(__riscv)
+     case __NR_vfork:
+ #endif
+     default:
+@@ -433,7 +433,7 @@ bool SyscallSets::IsAllowedFutex(int sys
+ 
+ bool SyscallSets::IsAllowedEpoll(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_epoll_create:
+     case __NR_epoll_wait:
+ #endif
+@@ -454,14 +454,14 @@ bool SyscallSets::IsAllowedEpoll(int sys
+ 
+ bool SyscallSets::IsAllowedGetOrModifySocket(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_pipe:
+ #endif
+     case __NR_pipe2:
+       return true;
+     default:
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_socketpair:  // We will want to inspect its argument.
+ #endif
+       return false;
+@@ -471,7 +471,7 @@ bool SyscallSets::IsAllowedGetOrModifySo
+ bool SyscallSets::IsDeniedGetOrModifySocket(int sysno) {
+   switch (sysno) {
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_accept:
+     case __NR_accept4:
+     case __NR_bind:
+@@ -525,7 +525,7 @@ bool SyscallSets::IsAllowedAddressSpaceA
+     case __NR_mincore:
+     case __NR_mlockall:
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_mmap:
+ #endif
+ #if defined(__i386__) || defined(__arm__) || \
+@@ -558,7 +558,7 @@ bool SyscallSets::IsAllowedGeneralIo(int
+     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
+     case __NR__llseek:
+ #endif
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_poll:
+ #endif
+     case __NR_ppoll:
+@@ -571,7 +571,7 @@ bool SyscallSets::IsAllowedGeneralIo(int
+     case __NR_recv:
+ #endif
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_recvfrom:  // Could specify source.
+     case __NR_recvmsg:   // Could specify source.
+ #endif
+@@ -586,7 +586,7 @@ bool SyscallSets::IsAllowedGeneralIo(int
+     case __NR_send:
+ #endif
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_sendmsg:  // Could specify destination.
+     case __NR_sendto:   // Could specify destination.
+ #endif
+@@ -636,7 +636,7 @@ bool SyscallSets::IsSeccomp(int sysno) {
+ bool SyscallSets::IsAllowedBasicScheduler(int sysno) {
+   switch (sysno) {
+     case __NR_sched_yield:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_pause:
+ #endif
+     case __NR_nanosleep:
+@@ -720,7 +720,7 @@ bool SyscallSets::IsNuma(int sysno) {
+     case __NR_getcpu:
+     case __NR_mbind:
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_migrate_pages:
+ #endif
+     case __NR_move_pages:
+@@ -749,7 +749,7 @@ bool SyscallSets::IsGlobalProcessEnviron
+   switch (sysno) {
+     case __NR_acct:  // Privileged.
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+     case __NR_getrlimit:
+ #endif
+ #if defined(__i386__) || defined(__arm__)
+@@ -784,7 +784,7 @@ bool SyscallSets::IsDebug(int sysno) {
+ 
+ bool SyscallSets::IsGlobalSystemStatus(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR__sysctl:
+     case __NR_sysfs:
+ #endif
+@@ -802,7 +802,7 @@ bool SyscallSets::IsGlobalSystemStatus(i
+ 
+ bool SyscallSets::IsEventFd(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_eventfd:
+ #endif
+     case __NR_eventfd2:
+@@ -838,7 +838,8 @@ bool SyscallSets::IsKeyManagement(int sy
+ }
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) || \
++    defined(__riscv)
+ bool SyscallSets::IsSystemVSemaphores(int sysno) {
+   switch (sysno) {
+     case __NR_semctl:
+@@ -854,7 +855,8 @@ bool SyscallSets::IsSystemVSemaphores(in
+ 
+ #if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || \
+     defined(__aarch64__) ||                                         \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) || \
++    defined(__riscv)
+ // These give a lot of ambient authority and bypass the setuid sandbox.
+ bool SyscallSets::IsSystemVSharedMemory(int sysno) {
+   switch (sysno) {
+@@ -870,7 +872,8 @@ bool SyscallSets::IsSystemVSharedMemory(
+ #endif
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) || \
++    defined(__riscv)
+ bool SyscallSets::IsSystemVMessageQueue(int sysno) {
+   switch (sysno) {
+     case __NR_msgctl:
+@@ -901,7 +904,8 @@ bool SyscallSets::IsSystemVIpc(int sysno
+ 
+ bool SyscallSets::IsAnySystemV(int sysno) {
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) || \
++    defined(__riscv)
+   return IsSystemVMessageQueue(sysno) || IsSystemVSemaphores(sysno) ||
+          IsSystemVSharedMemory(sysno);
+ #elif defined(__i386__) || \
+@@ -934,7 +938,7 @@ bool SyscallSets::IsAdvancedScheduler(in
+ bool SyscallSets::IsInotify(int sysno) {
+   switch (sysno) {
+     case __NR_inotify_add_watch:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_inotify_init:
+ #endif
+     case __NR_inotify_init1:
+@@ -1065,7 +1069,7 @@ bool SyscallSets::IsMisc(int sysno) {
+ #if defined(__x86_64__)
+     case __NR_tuxcall:
+ #endif
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_vserver:
+ #endif
+       return true;
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_sets.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_sets.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_sets.h
+@@ -49,7 +49,7 @@ class SANDBOX_EXPORT SyscallSets {
+ #endif
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+   static bool IsNetworkSocketInformation(int sysno);
+ #endif
+ 
+@@ -72,18 +72,21 @@ class SANDBOX_EXPORT SyscallSets {
+   static bool IsAsyncIo(int sysno);
+   static bool IsKeyManagement(int sysno);
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) || \
++    defined(__riscv)
+   static bool IsSystemVSemaphores(int sysno);
+ #endif
+ #if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || \
+     defined(__aarch64__) ||                                         \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) || \
++    defined(__riscv)
+   // These give a lot of ambient authority and bypass the setuid sandbox.
+   static bool IsSystemVSharedMemory(int sysno);
+ #endif
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) || \
++    defined(__riscv)
+   static bool IsSystemVMessageQueue(int sysno);
+ #endif
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc
+@@ -18,7 +18,7 @@ namespace sandbox {
+ namespace {
+ 
+ #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY) || \
+-    defined(ARCH_CPU_MIPS_FAMILY)
++    defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_RISCV_FAMILY)
+ // Number that's not currently used by any Linux kernel ABIs.
+ const int kInvalidSyscallNumber = 0x351d3;
+ #else
+@@ -312,6 +312,28 @@ asm(// We need to be able to tell the ke
+     "2:ret\n"
+     ".cfi_endproc\n"
+     ".size SyscallAsm, .-SyscallAsm\n"
++#elif defined(__riscv)
++    ".text\n"
++    ".align 2\n"
++    ".type SyscallAsm, %function\n"
++    "SyscallAsm:\n"
++    ".cfi_startproc\n"
++    "bgez a0,1f\n"
++    "la a0,2f\n"
++    "j 2f\n"
++    "1:mv a7, a0\n"
++    "ld a0, (t0)\n"
++    "ld a1, 8(t0)\n"
++    "ld a2, 16(t0)\n"
++    "ld a3, 24(t0)\n"
++    "ld a4, 32(t0)\n"
++    "ld a5, 40(t0)\n"
++    "ld a6, 48(t0)\n"
++    // Enter the kernel
++    "scall\n"
++    "2:ret\n"
++    ".cfi_endproc\n"
++    ".size SyscallAsm, .-SyscallAsm\n"
+ #endif
+     );  // asm
+ 
+@@ -429,6 +451,18 @@ intptr_t Syscall::Call(int nr,
+     ret = inout;
+   }
+ 
++#elif defined(__riscv)
++  intptr_t ret;
++  {
++    register intptr_t inout __asm__("a0") = nr;
++    register const intptr_t* data __asm__("t0") = args;
++    asm volatile("jal SyscallAsm\n"
++                 : "+r"(inout)
++		 : "r"(data)
++                 : "memory", "a1", "a2", "a3", "a4", "a5", "a6");
++    ret = inout;
++  }
++
+ #else
+ #error "Unimplemented architecture"
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/services/credentials.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/services/credentials.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/services/credentials.cc
+@@ -81,7 +81,7 @@ bool ChrootToSafeEmptyDir() {
+   pid_t pid = -1;
+   alignas(16) char stack_buf[PTHREAD_STACK_MIN];
+ #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY) || \
+-    defined(ARCH_CPU_MIPS_FAMILY)
++    defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_RISCV_FAMILY)
+   // The stack grows downward.
+   void* stack = stack_buf + sizeof(stack_buf);
+ #else
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/syscall_broker/broker_process.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/syscall_broker/broker_process.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/syscall_broker/broker_process.cc
+@@ -128,43 +128,43 @@ bool BrokerProcess::IsSyscallBrokerable(
+   // and are default disabled in Android. So, we should refuse to broker them
+   // to be consistent with the platform's restrictions.
+   switch (sysno) {
+-#if !defined(__aarch64__) && !defined(OS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__riscv)
+     case __NR_access:
+ #endif
+     case __NR_faccessat:
+       return !fast_check || allowed_command_set_.test(COMMAND_ACCESS);
+ 
+-#if !defined(__aarch64__) && !defined(OS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__riscv)
+     case __NR_mkdir:
+ #endif
+     case __NR_mkdirat:
+       return !fast_check || allowed_command_set_.test(COMMAND_MKDIR);
+ 
+-#if !defined(__aarch64__) && !defined(OS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__riscv)
+     case __NR_open:
+ #endif
+     case __NR_openat:
+       return !fast_check || allowed_command_set_.test(COMMAND_OPEN);
+ 
+-#if !defined(__aarch64__) && !defined(OS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__riscv)
+     case __NR_readlink:
+ #endif
+     case __NR_readlinkat:
+       return !fast_check || allowed_command_set_.test(COMMAND_READLINK);
+ 
+-#if !defined(__aarch64__) && !defined(OS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__riscv)
+     case __NR_rename:
+ #endif
+     case __NR_renameat:
+     case __NR_renameat2:
+       return !fast_check || allowed_command_set_.test(COMMAND_RENAME);
+ 
+-#if !defined(__aarch64__) && !defined(OS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__riscv)
+     case __NR_rmdir:
+       return !fast_check || allowed_command_set_.test(COMMAND_RMDIR);
+ #endif
+ 
+-#if !defined(__aarch64__) && !defined(OS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__riscv)
+     case __NR_stat:
+     case __NR_lstat:
+ #endif
+@@ -174,7 +174,7 @@ bool BrokerProcess::IsSyscallBrokerable(
+ #if defined(__NR_fstatat64)
+     case __NR_fstatat64:
+ #endif
+-#if defined(__x86_64__) || defined(__aarch64__)
++#if defined(__x86_64__) || defined(__aarch64__) || defined(__riscv)
+     case __NR_newfstatat:
+ #endif
+       return !fast_check || allowed_command_set_.test(COMMAND_STAT);
+@@ -189,7 +189,7 @@ bool BrokerProcess::IsSyscallBrokerable(
+       return !fast_check || allowed_command_set_.test(COMMAND_STAT);
+ #endif
+ 
+-#if !defined(__aarch64__) && !defined(OS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__riscv)
+     case __NR_unlink:
+       return !fast_check || allowed_command_set_.test(COMMAND_UNLINK);
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/linux_seccomp.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/system_headers/linux_seccomp.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/linux_seccomp.h
+@@ -41,6 +41,9 @@
+ #ifndef EM_AARCH64
+ #define EM_AARCH64 183
+ #endif
++#ifndef EM_RISCV
++#define EM_RISCV 243
++#endif
+ 
+ #ifndef __AUDIT_ARCH_64BIT
+ #define __AUDIT_ARCH_64BIT 0x80000000
+@@ -73,6 +76,9 @@
+ #ifndef AUDIT_ARCH_AARCH64
+ #define AUDIT_ARCH_AARCH64 (EM_AARCH64 | __AUDIT_ARCH_64BIT | __AUDIT_ARCH_LE)
+ #endif
++#ifndef AUDIT_ARCH_RISCV64
++#define AUDIT_ARCH_RISCV64 (EM_RISCV|__AUDIT_ARCH_64BIT|__AUDIT_ARCH_LE)
++#endif
+ 
+ // For prctl.h
+ #ifndef PR_SET_SECCOMP
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/linux_signal.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/system_headers/linux_signal.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/linux_signal.h
+@@ -13,7 +13,7 @@
+ // (not undefined, but defined different values and in different memory
+ // layouts). So, fill the gap here.
+ #if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__riscv)
+ 
+ #define LINUX_SIGHUP 1
+ #define LINUX_SIGINT 2
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/linux_stat.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/system_headers/linux_stat.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/linux_stat.h
+@@ -132,7 +132,7 @@ struct kernel_stat {
+   int st_blocks;
+   int st_pad4[14];
+ };
+-#elif defined(__aarch64__)
++#elif defined(__aarch64__) || defined(__riscv)
+ struct kernel_stat {
+   unsigned long st_dev;
+   unsigned long st_ino;
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/linux_syscalls.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/linux/system_headers/linux_syscalls.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/linux_syscalls.h
+@@ -35,5 +35,9 @@
+ #include "sandbox/linux/system_headers/arm64_linux_syscalls.h"
+ #endif
+ 
++#if defined(__riscv) && __riscv_xlen == 64
++#include "sandbox/linux/system_headers/riscv64_linux_syscalls.h"
++#endif
++
+ #endif  // SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_SYSCALLS_H_
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/riscv64_linux_syscalls.h
+===================================================================
+--- /dev/null
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/linux/system_headers/riscv64_linux_syscalls.h
+@@ -0,0 +1,1066 @@
++// Copyright 2014 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef SANDBOX_LINUX_SYSTEM_HEADERS_RISCV64_LINUX_SYSCALLS_H_
++#define SANDBOX_LINUX_SYSTEM_HEADERS_RISCV64_LINUX_SYSCALLS_H_
++
++#include <asm-generic/unistd.h>
++
++#if !defined(__NR_io_setup)
++#define __NR_io_setup 0
++#endif
++
++#if !defined(__NR_io_destroy)
++#define __NR_io_destroy 1
++#endif
++
++#if !defined(__NR_io_submit)
++#define __NR_io_submit 2
++#endif
++
++#if !defined(__NR_io_cancel)
++#define __NR_io_cancel 3
++#endif
++
++#if !defined(__NR_io_getevents)
++#define __NR_io_getevents 4
++#endif
++
++#if !defined(__NR_setxattr)
++#define __NR_setxattr 5
++#endif
++
++#if !defined(__NR_lsetxattr)
++#define __NR_lsetxattr 6
++#endif
++
++#if !defined(__NR_fsetxattr)
++#define __NR_fsetxattr 7
++#endif
++
++#if !defined(__NR_getxattr)
++#define __NR_getxattr 8
++#endif
++
++#if !defined(__NR_lgetxattr)
++#define __NR_lgetxattr 9
++#endif
++
++#if !defined(__NR_fgetxattr)
++#define __NR_fgetxattr 10
++#endif
++
++#if !defined(__NR_listxattr)
++#define __NR_listxattr 11
++#endif
++
++#if !defined(__NR_llistxattr)
++#define __NR_llistxattr 12
++#endif
++
++#if !defined(__NR_flistxattr)
++#define __NR_flistxattr 13
++#endif
++
++#if !defined(__NR_removexattr)
++#define __NR_removexattr 14
++#endif
++
++#if !defined(__NR_lremovexattr)
++#define __NR_lremovexattr 15
++#endif
++
++#if !defined(__NR_fremovexattr)
++#define __NR_fremovexattr 16
++#endif
++
++#if !defined(__NR_getcwd)
++#define __NR_getcwd 17
++#endif
++
++#if !defined(__NR_lookup_dcookie)
++#define __NR_lookup_dcookie 18
++#endif
++
++#if !defined(__NR_eventfd2)
++#define __NR_eventfd2 19
++#endif
++
++#if !defined(__NR_epoll_create1)
++#define __NR_epoll_create1 20
++#endif
++
++#if !defined(__NR_epoll_ctl)
++#define __NR_epoll_ctl 21
++#endif
++
++#if !defined(__NR_epoll_pwait)
++#define __NR_epoll_pwait 22
++#endif
++
++#if !defined(__NR_dup)
++#define __NR_dup 23
++#endif
++
++#if !defined(__NR_dup3)
++#define __NR_dup3 24
++#endif
++
++#if !defined(__NR_fcntl)
++#define __NR_fcntl 25
++#endif
++
++#if !defined(__NR_inotify_init1)
++#define __NR_inotify_init1 26
++#endif
++
++#if !defined(__NR_inotify_add_watch)
++#define __NR_inotify_add_watch 27
++#endif
++
++#if !defined(__NR_inotify_rm_watch)
++#define __NR_inotify_rm_watch 28
++#endif
++
++#if !defined(__NR_ioctl)
++#define __NR_ioctl 29
++#endif
++
++#if !defined(__NR_ioprio_set)
++#define __NR_ioprio_set 30
++#endif
++
++#if !defined(__NR_ioprio_get)
++#define __NR_ioprio_get 31
++#endif
++
++#if !defined(__NR_flock)
++#define __NR_flock 32
++#endif
++
++#if !defined(__NR_mknodat)
++#define __NR_mknodat 33
++#endif
++
++#if !defined(__NR_mkdirat)
++#define __NR_mkdirat 34
++#endif
++
++#if !defined(__NR_unlinkat)
++#define __NR_unlinkat 35
++#endif
++
++#if !defined(__NR_symlinkat)
++#define __NR_symlinkat 36
++#endif
++
++#if !defined(__NR_linkat)
++#define __NR_linkat 37
++#endif
++
++#if !defined(__NR_renameat)
++#define __NR_renameat 38
++#endif
++
++#if !defined(__NR_umount2)
++#define __NR_umount2 39
++#endif
++
++#if !defined(__NR_mount)
++#define __NR_mount 40
++#endif
++
++#if !defined(__NR_pivot_root)
++#define __NR_pivot_root 41
++#endif
++
++#if !defined(__NR_nfsservctl)
++#define __NR_nfsservctl 42
++#endif
++
++#if !defined(__NR_statfs)
++#define __NR_statfs 43
++#endif
++
++#if !defined(__NR_fstatfs)
++#define __NR_fstatfs 44
++#endif
++
++#if !defined(__NR_truncate)
++#define __NR_truncate 45
++#endif
++
++#if !defined(__NR_ftruncate)
++#define __NR_ftruncate 46
++#endif
++
++#if !defined(__NR_fallocate)
++#define __NR_fallocate 47
++#endif
++
++#if !defined(__NR_faccessat)
++#define __NR_faccessat 48
++#endif
++
++#if !defined(__NR_chdir)
++#define __NR_chdir 49
++#endif
++
++#if !defined(__NR_fchdir)
++#define __NR_fchdir 50
++#endif
++
++#if !defined(__NR_chroot)
++#define __NR_chroot 51
++#endif
++
++#if !defined(__NR_fchmod)
++#define __NR_fchmod 52
++#endif
++
++#if !defined(__NR_fchmodat)
++#define __NR_fchmodat 53
++#endif
++
++#if !defined(__NR_fchownat)
++#define __NR_fchownat 54
++#endif
++
++#if !defined(__NR_fchown)
++#define __NR_fchown 55
++#endif
++
++#if !defined(__NR_openat)
++#define __NR_openat 56
++#endif
++
++#if !defined(__NR_close)
++#define __NR_close 57
++#endif
++
++#if !defined(__NR_vhangup)
++#define __NR_vhangup 58
++#endif
++
++#if !defined(__NR_pipe2)
++#define __NR_pipe2 59
++#endif
++
++#if !defined(__NR_quotactl)
++#define __NR_quotactl 60
++#endif
++
++#if !defined(__NR_getdents64)
++#define __NR_getdents64 61
++#endif
++
++#if !defined(__NR_lseek)
++#define __NR_lseek 62
++#endif
++
++#if !defined(__NR_read)
++#define __NR_read 63
++#endif
++
++#if !defined(__NR_write)
++#define __NR_write 64
++#endif
++
++#if !defined(__NR_readv)
++#define __NR_readv 65
++#endif
++
++#if !defined(__NR_writev)
++#define __NR_writev 66
++#endif
++
++#if !defined(__NR_pread64)
++#define __NR_pread64 67
++#endif
++
++#if !defined(__NR_pwrite64)
++#define __NR_pwrite64 68
++#endif
++
++#if !defined(__NR_preadv)
++#define __NR_preadv 69
++#endif
++
++#if !defined(__NR_pwritev)
++#define __NR_pwritev 70
++#endif
++
++#if !defined(__NR_sendfile)
++#define __NR_sendfile 71
++#endif
++
++#if !defined(__NR_pselect6)
++#define __NR_pselect6 72
++#endif
++
++#if !defined(__NR_ppoll)
++#define __NR_ppoll 73
++#endif
++
++#if !defined(__NR_signalfd4)
++#define __NR_signalfd4 74
++#endif
++
++#if !defined(__NR_vmsplice)
++#define __NR_vmsplice 75
++#endif
++
++#if !defined(__NR_splice)
++#define __NR_splice 76
++#endif
++
++#if !defined(__NR_tee)
++#define __NR_tee 77
++#endif
++
++#if !defined(__NR_readlinkat)
++#define __NR_readlinkat 78
++#endif
++
++#if !defined(__NR_newfstatat)
++#define __NR_newfstatat 79
++#endif
++
++#if !defined(__NR_fstat)
++#define __NR_fstat 80
++#endif
++
++#if !defined(__NR_sync)
++#define __NR_sync 81
++#endif
++
++#if !defined(__NR_fsync)
++#define __NR_fsync 82
++#endif
++
++#if !defined(__NR_fdatasync)
++#define __NR_fdatasync 83
++#endif
++
++#if !defined(__NR_sync_file_range)
++#define __NR_sync_file_range 84
++#endif
++
++#if !defined(__NR_timerfd_create)
++#define __NR_timerfd_create 85
++#endif
++
++#if !defined(__NR_timerfd_settime)
++#define __NR_timerfd_settime 86
++#endif
++
++#if !defined(__NR_timerfd_gettime)
++#define __NR_timerfd_gettime 87
++#endif
++
++#if !defined(__NR_utimensat)
++#define __NR_utimensat 88
++#endif
++
++#if !defined(__NR_acct)
++#define __NR_acct 89
++#endif
++
++#if !defined(__NR_capget)
++#define __NR_capget 90
++#endif
++
++#if !defined(__NR_capset)
++#define __NR_capset 91
++#endif
++
++#if !defined(__NR_personality)
++#define __NR_personality 92
++#endif
++
++#if !defined(__NR_exit)
++#define __NR_exit 93
++#endif
++
++#if !defined(__NR_exit_group)
++#define __NR_exit_group 94
++#endif
++
++#if !defined(__NR_waitid)
++#define __NR_waitid 95
++#endif
++
++#if !defined(__NR_set_tid_address)
++#define __NR_set_tid_address 96
++#endif
++
++#if !defined(__NR_unshare)
++#define __NR_unshare 97
++#endif
++
++#if !defined(__NR_futex)
++#define __NR_futex 98
++#endif
++
++#if !defined(__NR_set_robust_list)
++#define __NR_set_robust_list 99
++#endif
++
++#if !defined(__NR_get_robust_list)
++#define __NR_get_robust_list 100
++#endif
++
++#if !defined(__NR_nanosleep)
++#define __NR_nanosleep 101
++#endif
++
++#if !defined(__NR_getitimer)
++#define __NR_getitimer 102
++#endif
++
++#if !defined(__NR_setitimer)
++#define __NR_setitimer 103
++#endif
++
++#if !defined(__NR_kexec_load)
++#define __NR_kexec_load 104
++#endif
++
++#if !defined(__NR_init_module)
++#define __NR_init_module 105
++#endif
++
++#if !defined(__NR_delete_module)
++#define __NR_delete_module 106
++#endif
++
++#if !defined(__NR_timer_create)
++#define __NR_timer_create 107
++#endif
++
++#if !defined(__NR_timer_gettime)
++#define __NR_timer_gettime 108
++#endif
++
++#if !defined(__NR_timer_getoverrun)
++#define __NR_timer_getoverrun 109
++#endif
++
++#if !defined(__NR_timer_settime)
++#define __NR_timer_settime 110
++#endif
++
++#if !defined(__NR_timer_delete)
++#define __NR_timer_delete 111
++#endif
++
++#if !defined(__NR_clock_settime)
++#define __NR_clock_settime 112
++#endif
++
++#if !defined(__NR_clock_gettime)
++#define __NR_clock_gettime 113
++#endif
++
++#if !defined(__NR_clock_getres)
++#define __NR_clock_getres 114
++#endif
++
++#if !defined(__NR_clock_nanosleep)
++#define __NR_clock_nanosleep 115
++#endif
++
++#if !defined(__NR_syslog)
++#define __NR_syslog 116
++#endif
++
++#if !defined(__NR_ptrace)
++#define __NR_ptrace 117
++#endif
++
++#if !defined(__NR_sched_setparam)
++#define __NR_sched_setparam 118
++#endif
++
++#if !defined(__NR_sched_setscheduler)
++#define __NR_sched_setscheduler 119
++#endif
++
++#if !defined(__NR_sched_getscheduler)
++#define __NR_sched_getscheduler 120
++#endif
++
++#if !defined(__NR_sched_getparam)
++#define __NR_sched_getparam 121
++#endif
++
++#if !defined(__NR_sched_setaffinity)
++#define __NR_sched_setaffinity 122
++#endif
++
++#if !defined(__NR_sched_getaffinity)
++#define __NR_sched_getaffinity 123
++#endif
++
++#if !defined(__NR_sched_yield)
++#define __NR_sched_yield 124
++#endif
++
++#if !defined(__NR_sched_get_priority_max)
++#define __NR_sched_get_priority_max 125
++#endif
++
++#if !defined(__NR_sched_get_priority_min)
++#define __NR_sched_get_priority_min 126
++#endif
++
++#if !defined(__NR_sched_rr_get_interval)
++#define __NR_sched_rr_get_interval 127
++#endif
++
++#if !defined(__NR_restart_syscall)
++#define __NR_restart_syscall 128
++#endif
++
++#if !defined(__NR_kill)
++#define __NR_kill 129
++#endif
++
++#if !defined(__NR_tkill)
++#define __NR_tkill 130
++#endif
++
++#if !defined(__NR_tgkill)
++#define __NR_tgkill 131
++#endif
++
++#if !defined(__NR_sigaltstack)
++#define __NR_sigaltstack 132
++#endif
++
++#if !defined(__NR_rt_sigsuspend)
++#define __NR_rt_sigsuspend 133
++#endif
++
++#if !defined(__NR_rt_sigaction)
++#define __NR_rt_sigaction 134
++#endif
++
++#if !defined(__NR_rt_sigprocmask)
++#define __NR_rt_sigprocmask 135
++#endif
++
++#if !defined(__NR_rt_sigpending)
++#define __NR_rt_sigpending 136
++#endif
++
++#if !defined(__NR_rt_sigtimedwait)
++#define __NR_rt_sigtimedwait 137
++#endif
++
++#if !defined(__NR_rt_sigqueueinfo)
++#define __NR_rt_sigqueueinfo 138
++#endif
++
++#if !defined(__NR_rt_sigreturn)
++#define __NR_rt_sigreturn 139
++#endif
++
++#if !defined(__NR_setpriority)
++#define __NR_setpriority 140
++#endif
++
++#if !defined(__NR_getpriority)
++#define __NR_getpriority 141
++#endif
++
++#if !defined(__NR_reboot)
++#define __NR_reboot 142
++#endif
++
++#if !defined(__NR_setregid)
++#define __NR_setregid 143
++#endif
++
++#if !defined(__NR_setgid)
++#define __NR_setgid 144
++#endif
++
++#if !defined(__NR_setreuid)
++#define __NR_setreuid 145
++#endif
++
++#if !defined(__NR_setuid)
++#define __NR_setuid 146
++#endif
++
++#if !defined(__NR_setresuid)
++#define __NR_setresuid 147
++#endif
++
++#if !defined(__NR_getresuid)
++#define __NR_getresuid 148
++#endif
++
++#if !defined(__NR_setresgid)
++#define __NR_setresgid 149
++#endif
++
++#if !defined(__NR_getresgid)
++#define __NR_getresgid 150
++#endif
++
++#if !defined(__NR_setfsuid)
++#define __NR_setfsuid 151
++#endif
++
++#if !defined(__NR_setfsgid)
++#define __NR_setfsgid 152
++#endif
++
++#if !defined(__NR_times)
++#define __NR_times 153
++#endif
++
++#if !defined(__NR_setpgid)
++#define __NR_setpgid 154
++#endif
++
++#if !defined(__NR_getpgid)
++#define __NR_getpgid 155
++#endif
++
++#if !defined(__NR_getsid)
++#define __NR_getsid 156
++#endif
++
++#if !defined(__NR_setsid)
++#define __NR_setsid 157
++#endif
++
++#if !defined(__NR_getgroups)
++#define __NR_getgroups 158
++#endif
++
++#if !defined(__NR_setgroups)
++#define __NR_setgroups 159
++#endif
++
++#if !defined(__NR_uname)
++#define __NR_uname 160
++#endif
++
++#if !defined(__NR_sethostname)
++#define __NR_sethostname 161
++#endif
++
++#if !defined(__NR_setdomainname)
++#define __NR_setdomainname 162
++#endif
++
++#if !defined(__NR_getrlimit)
++#define __NR_getrlimit 163
++#endif
++
++#if !defined(__NR_setrlimit)
++#define __NR_setrlimit 164
++#endif
++
++#if !defined(__NR_getrusage)
++#define __NR_getrusage 165
++#endif
++
++#if !defined(__NR_umask)
++#define __NR_umask 166
++#endif
++
++#if !defined(__NR_prctl)
++#define __NR_prctl 167
++#endif
++
++#if !defined(__NR_getcpu)
++#define __NR_getcpu 168
++#endif
++
++#if !defined(__NR_gettimeofday)
++#define __NR_gettimeofday 169
++#endif
++
++#if !defined(__NR_settimeofday)
++#define __NR_settimeofday 170
++#endif
++
++#if !defined(__NR_adjtimex)
++#define __NR_adjtimex 171
++#endif
++
++#if !defined(__NR_getpid)
++#define __NR_getpid 172
++#endif
++
++#if !defined(__NR_getppid)
++#define __NR_getppid 173
++#endif
++
++#if !defined(__NR_getuid)
++#define __NR_getuid 174
++#endif
++
++#if !defined(__NR_geteuid)
++#define __NR_geteuid 175
++#endif
++
++#if !defined(__NR_getgid)
++#define __NR_getgid 176
++#endif
++
++#if !defined(__NR_getegid)
++#define __NR_getegid 177
++#endif
++
++#if !defined(__NR_gettid)
++#define __NR_gettid 178
++#endif
++
++#if !defined(__NR_sysinfo)
++#define __NR_sysinfo 179
++#endif
++
++#if !defined(__NR_mq_open)
++#define __NR_mq_open 180
++#endif
++
++#if !defined(__NR_mq_unlink)
++#define __NR_mq_unlink 181
++#endif
++
++#if !defined(__NR_mq_timedsend)
++#define __NR_mq_timedsend 182
++#endif
++
++#if !defined(__NR_mq_timedreceive)
++#define __NR_mq_timedreceive 183
++#endif
++
++#if !defined(__NR_mq_notify)
++#define __NR_mq_notify 184
++#endif
++
++#if !defined(__NR_mq_getsetattr)
++#define __NR_mq_getsetattr 185
++#endif
++
++#if !defined(__NR_msgget)
++#define __NR_msgget 186
++#endif
++
++#if !defined(__NR_msgctl)
++#define __NR_msgctl 187
++#endif
++
++#if !defined(__NR_msgrcv)
++#define __NR_msgrcv 188
++#endif
++
++#if !defined(__NR_msgsnd)
++#define __NR_msgsnd 189
++#endif
++
++#if !defined(__NR_semget)
++#define __NR_semget 190
++#endif
++
++#if !defined(__NR_semctl)
++#define __NR_semctl 191
++#endif
++
++#if !defined(__NR_semtimedop)
++#define __NR_semtimedop 192
++#endif
++
++#if !defined(__NR_semop)
++#define __NR_semop 193
++#endif
++
++#if !defined(__NR_shmget)
++#define __NR_shmget 194
++#endif
++
++#if !defined(__NR_shmctl)
++#define __NR_shmctl 195
++#endif
++
++#if !defined(__NR_shmat)
++#define __NR_shmat 196
++#endif
++
++#if !defined(__NR_shmdt)
++#define __NR_shmdt 197
++#endif
++
++#if !defined(__NR_socket)
++#define __NR_socket 198
++#endif
++
++#if !defined(__NR_socketpair)
++#define __NR_socketpair 199
++#endif
++
++#if !defined(__NR_bind)
++#define __NR_bind 200
++#endif
++
++#if !defined(__NR_listen)
++#define __NR_listen 201
++#endif
++
++#if !defined(__NR_accept)
++#define __NR_accept 202
++#endif
++
++#if !defined(__NR_connect)
++#define __NR_connect 203
++#endif
++
++#if !defined(__NR_getsockname)
++#define __NR_getsockname 204
++#endif
++
++#if !defined(__NR_getpeername)
++#define __NR_getpeername 205
++#endif
++
++#if !defined(__NR_sendto)
++#define __NR_sendto 206
++#endif
++
++#if !defined(__NR_recvfrom)
++#define __NR_recvfrom 207
++#endif
++
++#if !defined(__NR_setsockopt)
++#define __NR_setsockopt 208
++#endif
++
++#if !defined(__NR_getsockopt)
++#define __NR_getsockopt 209
++#endif
++
++#if !defined(__NR_shutdown)
++#define __NR_shutdown 210
++#endif
++
++#if !defined(__NR_sendmsg)
++#define __NR_sendmsg 211
++#endif
++
++#if !defined(__NR_recvmsg)
++#define __NR_recvmsg 212
++#endif
++
++#if !defined(__NR_readahead)
++#define __NR_readahead 213
++#endif
++
++#if !defined(__NR_brk)
++#define __NR_brk 214
++#endif
++
++#if !defined(__NR_munmap)
++#define __NR_munmap 215
++#endif
++
++#if !defined(__NR_mremap)
++#define __NR_mremap 216
++#endif
++
++#if !defined(__NR_add_key)
++#define __NR_add_key 217
++#endif
++
++#if !defined(__NR_request_key)
++#define __NR_request_key 218
++#endif
++
++#if !defined(__NR_keyctl)
++#define __NR_keyctl 219
++#endif
++
++#if !defined(__NR_clone)
++#define __NR_clone 220
++#endif
++
++#if !defined(__NR_execve)
++#define __NR_execve 221
++#endif
++
++#if !defined(__NR_mmap)
++#define __NR_mmap 222
++#endif
++
++#if !defined(__NR_fadvise64)
++#define __NR_fadvise64 223
++#endif
++
++#if !defined(__NR_swapon)
++#define __NR_swapon 224
++#endif
++
++#if !defined(__NR_swapoff)
++#define __NR_swapoff 225
++#endif
++
++#if !defined(__NR_mprotect)
++#define __NR_mprotect 226
++#endif
++
++#if !defined(__NR_msync)
++#define __NR_msync 227
++#endif
++
++#if !defined(__NR_mlock)
++#define __NR_mlock 228
++#endif
++
++#if !defined(__NR_munlock)
++#define __NR_munlock 229
++#endif
++
++#if !defined(__NR_mlockall)
++#define __NR_mlockall 230
++#endif
++
++#if !defined(__NR_munlockall)
++#define __NR_munlockall 231
++#endif
++
++#if !defined(__NR_mincore)
++#define __NR_mincore 232
++#endif
++
++#if !defined(__NR_madvise)
++#define __NR_madvise 233
++#endif
++
++#if !defined(__NR_remap_file_pages)
++#define __NR_remap_file_pages 234
++#endif
++
++#if !defined(__NR_mbind)
++#define __NR_mbind 235
++#endif
++
++#if !defined(__NR_get_mempolicy)
++#define __NR_get_mempolicy 236
++#endif
++
++#if !defined(__NR_set_mempolicy)
++#define __NR_set_mempolicy 237
++#endif
++
++#if !defined(__NR_migrate_pages)
++#define __NR_migrate_pages 238
++#endif
++
++#if !defined(__NR_move_pages)
++#define __NR_move_pages 239
++#endif
++
++#if !defined(__NR_rt_tgsigqueueinfo)
++#define __NR_rt_tgsigqueueinfo 240
++#endif
++
++#if !defined(__NR_perf_event_open)
++#define __NR_perf_event_open 241
++#endif
++
++#if !defined(__NR_accept4)
++#define __NR_accept4 242
++#endif
++
++#if !defined(__NR_recvmmsg)
++#define __NR_recvmmsg 243
++#endif
++
++#if !defined(__NR_wait4)
++#define __NR_wait4 260
++#endif
++
++#if !defined(__NR_prlimit64)
++#define __NR_prlimit64 261
++#endif
++
++#if !defined(__NR_fanotify_init)
++#define __NR_fanotify_init 262
++#endif
++
++#if !defined(__NR_fanotify_mark)
++#define __NR_fanotify_mark 263
++#endif
++
++#if !defined(__NR_name_to_handle_at)
++#define __NR_name_to_handle_at 264
++#endif
++
++#if !defined(__NR_open_by_handle_at)
++#define __NR_open_by_handle_at 265
++#endif
++
++#if !defined(__NR_clock_adjtime)
++#define __NR_clock_adjtime 266
++#endif
++
++#if !defined(__NR_syncfs)
++#define __NR_syncfs 267
++#endif
++
++#if !defined(__NR_setns)
++#define __NR_setns 268
++#endif
++
++#if !defined(__NR_sendmmsg)
++#define __NR_sendmmsg 269
++#endif
++
++#if !defined(__NR_process_vm_readv)
++#define __NR_process_vm_readv 270
++#endif
++
++#if !defined(__NR_process_vm_writev)
++#define __NR_process_vm_writev 271
++#endif
++
++#if !defined(__NR_kcmp)
++#define __NR_kcmp 272
++#endif
++
++#if !defined(__NR_finit_module)
++#define __NR_finit_module 273
++#endif
++
++#if !defined(__NR_sched_setattr)
++#define __NR_sched_setattr 274
++#endif
++
++#if !defined(__NR_sched_getattr)
++#define __NR_sched_getattr 275
++#endif
++
++#if !defined(__NR_renameat2)
++#define __NR_renameat2 276
++#endif
++
++#if !defined(__NR_seccomp)
++#define __NR_seccomp 277
++#endif
++
++#if !defined(__NR_getrandom)
++#define __NR_getrandom 278
++#endif
++
++#if !defined(__NR_memfd_create)
++#define __NR_memfd_create 279
++#endif
++
++#endif  // SANDBOX_LINUX_SYSTEM_HEADERS_RISCV64_LINUX_SYSCALLS_H_
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
+@@ -38,7 +38,7 @@ ResultExpr CrosAmdGpuProcessPolicy::Eval
+     case __NR_sched_setscheduler:
+     case __NR_sysinfo:
+     case __NR_uname:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_readlink:
+     case __NR_stat:
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/policy/linux/bpf_gpu_policy_linux.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/policy/linux/bpf_gpu_policy_linux.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/policy/linux/bpf_gpu_policy_linux.cc
+@@ -70,7 +70,7 @@ ResultExpr GpuProcessPolicy::EvaluateSys
+     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
+     case __NR_ftruncate64:
+ #endif
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__riscv)
+     case __NR_getdents:
+ #endif
+     case __NR_getdents64:
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/policy/linux/sandbox_seccomp_bpf_linux.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/sandbox/policy/linux/sandbox_seccomp_bpf_linux.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/sandbox/policy/linux/sandbox_seccomp_bpf_linux.cc
+@@ -64,7 +64,7 @@ using sandbox::bpf_dsl::ResultExpr;
+ 
+ // Make sure that seccomp-bpf does not get disabled by mistake. Also make sure
+ // that we think twice about this when adding a new architecture.
+-#if !defined(ARCH_CPU_ARM64) && !defined(ARCH_CPU_MIPS64EL)
++#if !defined(ARCH_CPU_ARM64) && !defined(ARCH_CPU_MIPS64EL) && !defined(ARCH_CPU_RISCV64)
+ #error "Seccomp-bpf disabled on supported architecture!"
+ #endif  // !defined(ARCH_CPU_ARM64) && !defined(ARCH_CPU_MIPS64EL)
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/skia/BUILD.gn
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/skia/BUILD.gn
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/skia/BUILD.gn
+@@ -821,6 +821,8 @@ skia_source_set("skia_opts") {
+     sources = skia_opts.none_sources
+   } else if (current_cpu == "s390x") {
+     sources = skia_opts.none_sources
++  } else if (current_cpu == "riscv64") {
++    sources = skia_opts.none_sources
+   } else {
+     assert(false, "Need to port cpu specific stuff from skia_library_opts.gyp")
+   }
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/angle/gni/angle.gni
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/angle/gni/angle.gni
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/angle/gni/angle.gni
+@@ -54,7 +54,7 @@ angle_data_dir = "angledata"
+ declare_args() {
+   if (current_cpu == "arm64" || current_cpu == "x64" ||
+       current_cpu == "mips64el" || current_cpu == "s390x" ||
+-      current_cpu == "ppc64") {
++      current_cpu == "ppc64" || current_cpu == "riscv64") {
+     angle_64bit_current_cpu = true
+   } else if (current_cpu == "arm" || current_cpu == "x86" ||
+              current_cpu == "mipsel" || current_cpu == "s390" ||
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/angle/include/platform/PlatformMethods.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/angle/include/platform/PlatformMethods.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/angle/include/platform/PlatformMethods.h
+@@ -9,6 +9,7 @@
+ #ifndef ANGLE_PLATFORMMETHODS_H
+ #define ANGLE_PLATFORMMETHODS_H
+ 
++#include <stddef.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <array>
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/blink/renderer/platform/heap/asm/BUILD.gn
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/blink/renderer/platform/heap/asm/BUILD.gn
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/blink/renderer/platform/heap/asm/BUILD.gn
+@@ -38,6 +38,8 @@ if (current_cpu == "x86" || current_cpu
+       sources = [ "SaveRegisters_mips64.S" ]
+     } else if (current_cpu == "ppc64") {
+       sources = [ "SaveRegisters_ppc64.S" ]
++    } else if (current_cpu == "riscv64") {
++      sources = [ "SaveRegisters_riscv64.S" ]
+     }
+ 
+     if (current_cpu == "arm") {
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/blink/renderer/platform/heap/asm/SaveRegisters_riscv64.S
+===================================================================
+--- /dev/null
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/blink/renderer/platform/heap/asm/SaveRegisters_riscv64.S
+@@ -0,0 +1,45 @@
++/*
++ * typedef void (*PushAllRegistersCallback)(ThreadState*, intptr_t*);
++ * extern "C" void PushAllRegisters(ThreadState*, PushAllRegistersCallback)
++ */
++
++.type PushAllRegisters, %function
++.global PushAllRegisters
++.hidden PushAllRegisters
++PushAllRegisters:
++        /* Push all callee-saves registers to get them
++         * on the stack for conservative stack scanning.
++         * Reserve space for callee-saved registers and return address.
++         */
++        addi sp,sp,-112
++        /* Save the callee-saved registers and the return address. */
++        sd ra,0(sp)
++        sd s0,8(sp)
++        sd s1,16(sp)
++        sd s2,24(sp)
++        sd s3,32(sp)
++        sd s4,40(sp)
++        sd s5,48(sp)
++        sd s6,56(sp)
++        sd s7,64(sp)
++        sd s8,72(sp)
++        sd s9,80(sp)
++        sd s10,88(sp)
++        sd s11,96(sp)
++        /* Note: the callee-saved floating point registers do not need to be
++         * copied to the stack, because fp registers never hold heap pointers
++         * and so do not need to be kept visible to the garbage collector.
++         * Pass the first argument untouched in a0 and the
++         * stack pointer to the callback.
++         */
++        mv ra,a1
++        mv a1,sp
++        jalr ra
++        /* Restore return address, adjust stack and return.
++         * Note: the copied registers do not need to be reloaded here,
++         * because they were preserved by the called routine.
++         */
++        ld ra,0(sp)
++        addi sp,sp,112
++        ret
++.size PushAllRegisters, . - PushAllRegisters
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/boringssl/src/include/openssl/base.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/boringssl/src/include/openssl/base.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/boringssl/src/include/openssl/base.h
+@@ -114,6 +114,8 @@ extern "C" {
+ #define OPENSSL_32_BIT
+ #elif defined(__myriad2__)
+ #define OPENSSL_32_BIT
++#elif defined(__riscv) && __riscv_xlen == 64
++#define OPENSSL_64_BIT
+ #else
+ // Note BoringSSL only supports standard 32-bit and 64-bit two's-complement,
+ // little-endian architectures. Functions will not produce the correct answer
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/raw_context_cpu.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/raw_context_cpu.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/raw_context_cpu.h
+@@ -44,6 +44,8 @@ typedef MDRawContextARM RawContextCPU;
+ typedef MDRawContextARM64_Old RawContextCPU;
+ #elif defined(__mips__)
+ typedef MDRawContextMIPS RawContextCPU;
++#elif defined(__riscv)
++typedef MDRawContextRISCV64 RawContextCPU;
+ #else
+ #error "This code has not been ported to your platform yet."
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
+@@ -270,7 +270,23 @@ void ThreadInfo::FillCPUContext(RawConte
+   out->float_save.fir = mcontext.fpc_eir;
+ #endif
+ }
+-#endif  // __mips__
++#elif defined(__riscv)
++
++uintptr_t ThreadInfo::GetInstructionPointer() const {
++  return mcontext.__gregs[REG_PC];
++}
++
++void ThreadInfo::FillCPUContext(RawContextCPU* out) const {
++  out->context_flags = MD_CONTEXT_RISCV64_FULL;
++
++  my_memcpy (out->iregs, mcontext.__gregs, MD_CONTEXT_RISCV64_GPR_COUNT * 8);
++
++  out->float_save.fcsr = mcontext.__fpregs.__d.__fcsr;
++  my_memcpy(&out->float_save.regs, &mcontext.__fpregs.__d.__f,
++      MD_FLOATINGSAVEAREA_RISCV64_FPR_COUNT * 8);
++}
++
++#endif  // __riscv
+ 
+ void ThreadInfo::GetGeneralPurposeRegisters(void** gp_regs, size_t* size) {
+   assert(gp_regs || size);
+@@ -279,6 +295,11 @@ void ThreadInfo::GetGeneralPurposeRegist
+     *gp_regs = mcontext.gregs;
+   if (size)
+     *size = sizeof(mcontext.gregs);
++#elif defined(__riscv)
++  if (gp_regs)
++    *gp_regs = mcontext.__gregs;
++  if (size)
++    *size = sizeof(mcontext.__gregs);
+ #else
+   if (gp_regs)
+     *gp_regs = &regs;
+@@ -294,6 +315,11 @@ void ThreadInfo::GetFloatingPointRegiste
+     *fp_regs = &mcontext.fpregs;
+   if (size)
+     *size = sizeof(mcontext.fpregs);
++#elif defined(__riscv)
++  if (fp_regs)
++    *fp_regs = &mcontext.__fpregs;
++  if (size)
++    *size = sizeof(mcontext.__fpregs);
+ #else
+   if (fp_regs)
+     *fp_regs = &fpregs;
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.h
+@@ -68,7 +68,7 @@ struct ThreadInfo {
+   // Use the structures defined in <sys/user.h>
+   struct user_regs_struct regs;
+   struct user_fpsimd_struct fpregs;
+-#elif defined(__mips__)
++#elif defined(__mips__) || defined(__riscv)
+   // Use the structure defined in <sys/ucontext.h>.
+   mcontext_t mcontext;
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
+@@ -461,7 +461,7 @@ bool ExceptionHandler::HandleSignal(int
+     memcpy(&g_crash_context_.float_state, fp_ptr,
+            sizeof(g_crash_context_.float_state));
+   }
+-#elif !defined(__ARM_EABI__) && !defined(__mips__)
++#elif !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+   // FP state is not part of user ABI on ARM Linux.
+   // In case of MIPS Linux FP state is already part of ucontext_t
+   // and 'float_state' is not a member of CrashContext.
+@@ -701,7 +701,7 @@ bool ExceptionHandler::WriteMinidump() {
+   }
+ #endif
+ 
+-#if !defined(__ARM_EABI__) && !defined(__aarch64__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__aarch64__) && !defined(__mips__) && !defined(__riscv)
+   // FPU state is not part of ARM EABI ucontext_t.
+   memcpy(&context.float_state, context.context.uc_mcontext.fpregs,
+          sizeof(context.float_state));
+@@ -726,6 +726,9 @@ bool ExceptionHandler::WriteMinidump() {
+ #elif defined(__mips__)
+   context.siginfo.si_addr =
+       reinterpret_cast<void*>(context.context.uc_mcontext.pc);
++#elif defined(__riscv)
++  context.siginfo.si_addr =
++      reinterpret_cast<void*>(context.context.uc_mcontext.__gregs[REG_PC]);
+ #else
+ #error "This code has not been ported to your platform yet."
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.h
+@@ -192,7 +192,7 @@ class ExceptionHandler {
+     siginfo_t siginfo;
+     pid_t tid;  // the crashing thread.
+     ucontext_t context;
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+     // #ifdef this out because FP state is not part of user ABI for Linux ARM.
+     // In case of MIPS Linux FP state is already part of ucontext_t so
+     // 'float_state' is not required.
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/microdump_writer/microdump_writer.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/microdump_writer/microdump_writer.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/microdump_writer/microdump_writer.cc
+@@ -138,7 +138,7 @@ class MicrodumpWriter {
+                   const MicrodumpExtraInfo& microdump_extra_info,
+                   LinuxDumper* dumper)
+       : ucontext_(context ? &context->context : NULL),
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+         float_state_(context ? &context->float_state : NULL),
+ #endif
+         dumper_(dumper),
+@@ -337,6 +337,12 @@ class MicrodumpWriter {
+ # else
+ #  error "This mips ABI is currently not supported (n32)"
+ #endif
++#elif defined(__riscv)
++# if __riscv_xlen == 64
++    const char kArch[] = "riscv64";
++# else
++#  error "This RISC-V ABI is currently not supported"
++#endif
+ #else
+ #error "This code has not been ported to your platform yet"
+ #endif
+@@ -409,7 +415,7 @@ class MicrodumpWriter {
+   void DumpCPUState() {
+     RawContextCPU cpu;
+     my_memset(&cpu, 0, sizeof(RawContextCPU));
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+     UContextReader::FillCPUContext(&cpu, ucontext_, float_state_);
+ #else
+     UContextReader::FillCPUContext(&cpu, ucontext_);
+@@ -605,7 +611,7 @@ class MicrodumpWriter {
+   void* Alloc(unsigned bytes) { return dumper_->allocator()->Alloc(bytes); }
+ 
+   const ucontext_t* const ucontext_;
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+   const google_breakpad::fpstate_t* const float_state_;
+ #endif
+   LinuxDumper* dumper_;
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_core_dumper.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_core_dumper.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_core_dumper.cc
+@@ -112,6 +112,9 @@ bool LinuxCoreDumper::GetThreadInfoByInd
+ #elif defined(__mips__)
+   stack_pointer =
+       reinterpret_cast<uint8_t*>(info->mcontext.gregs[MD_CONTEXT_MIPS_REG_SP]);
++#elif defined(__riscv)
++  stack_pointer =
++      reinterpret_cast<uint8_t*>(info->mcontext.__gregs[MD_CONTEXT_RISCV64_REG_SP]);
+ #else
+ #error "This code hasn't been ported to your platform yet."
+ #endif
+@@ -208,6 +211,8 @@ bool LinuxCoreDumper::EnumerateThreads()
+         info.mcontext.mdlo = status->pr_reg[EF_LO];
+         info.mcontext.mdhi = status->pr_reg[EF_HI];
+         info.mcontext.pc = status->pr_reg[EF_CP0_EPC];
++#elif defined(__riscv)
++        memcpy(info.mcontext.__gregs, status->pr_reg, sizeof(info.mcontext.__gregs));
+ #else  // __mips__
+         memcpy(&info.regs, status->pr_reg, sizeof(info.regs));
+ #endif  // __mips__
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_dumper.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_dumper.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_dumper.h
+@@ -63,7 +63,8 @@ namespace google_breakpad {
+  (defined(__mips__) && _MIPS_SIM == _ABIO32)
+ typedef Elf32_auxv_t elf_aux_entry;
+ #elif defined(__x86_64) || defined(__aarch64__) || \
+-     (defined(__mips__) && _MIPS_SIM != _ABIO32)
++     (defined(__mips__) && _MIPS_SIM != _ABIO32) || \
++     (defined(__riscv) && __riscv_xlen == 64)
+ typedef Elf64_auxv_t elf_aux_entry;
+ #endif
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_ptrace_dumper.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_ptrace_dumper.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_ptrace_dumper.cc
+@@ -298,6 +298,9 @@ bool LinuxPtraceDumper::GetThreadInfoByI
+ #elif defined(__mips__)
+   stack_pointer =
+       reinterpret_cast<uint8_t*>(info->mcontext.gregs[MD_CONTEXT_MIPS_REG_SP]);
++#elif defined(__riscv)
++  stack_pointer =
++      reinterpret_cast<uint8_t*>(info->mcontext.__gregs[MD_CONTEXT_RISCV64_REG_SP]);
+ #else
+ #error "This code hasn't been ported to your platform yet."
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.cc
+@@ -136,7 +136,7 @@ class MinidumpWriter {
+       : fd_(minidump_fd),
+         path_(minidump_path),
+         ucontext_(context ? &context->context : NULL),
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+         float_state_(context ? &context->float_state : NULL),
+ #endif
+         dumper_(dumper),
+@@ -468,7 +468,7 @@ class MinidumpWriter {
+         if (!cpu.Allocate())
+           return false;
+         my_memset(cpu.get(), 0, sizeof(RawContextCPU));
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+         UContextReader::FillCPUContext(cpu.get(), ucontext_, float_state_);
+ #else
+         UContextReader::FillCPUContext(cpu.get(), ucontext_);
+@@ -897,7 +897,7 @@ class MinidumpWriter {
+     dirent->location.rva = 0;
+   }
+ 
+-#if defined(__i386__) || defined(__x86_64__) || defined(__mips__)
++#if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || defined(__riscv)
+   bool WriteCPUInformation(MDRawSystemInfo* sys_info) {
+     char vendor_id[sizeof(sys_info->cpu.x86_cpu_info.vendor_id) + 1] = {0};
+     static const char vendor_id_name[] = "vendor_id";
+@@ -925,6 +925,12 @@ class MinidumpWriter {
+ # else
+ #  error "This mips ABI is currently not supported (n32)"
+ #endif
++#elif defined(__riscv)
++# if __riscv_xlen == 64
++	MD_CPU_ARCHITECTURE_RISCV64;
++# else
++#  error "This RISC-V ABI is currently not supported"
++# endif
+ #elif defined(__i386__)
+         MD_CPU_ARCHITECTURE_X86;
+ #else
+@@ -1333,7 +1339,7 @@ class MinidumpWriter {
+   const char* path_;  // Path to the file where the minidum should be written.
+ 
+   const ucontext_t* const ucontext_;  // also from the signal handler
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+   const google_breakpad::fpstate_t* const float_state_;  // ditto
+ #endif
+   LinuxDumper* dumper_;
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.h
+@@ -48,7 +48,7 @@ class ExceptionHandler;
+ 
+ #if defined(__aarch64__)
+ typedef struct fpsimd_context fpstate_t;
+-#elif !defined(__ARM_EABI__) && !defined(__mips__)
++#elif !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+ typedef std::remove_pointer<fpregset_t>::type fpstate_t;
+ #endif
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/breakpad_getcontext.S
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/breakpad_getcontext.S
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/breakpad_getcontext.S
+@@ -481,6 +481,68 @@ breakpad_getcontext:
+   .cfi_endproc
+   .size breakpad_getcontext, . - breakpad_getcontext
+ 
++#elif defined(__riscv) && __riscv_xlen == 64
++
++#define __NR_rt_sigprocmask 135
++#define _NSIG8 64 / 8
++#define SIG_BLOCK 0
++
++  .text
++  .global breakpad_getcontext
++  .hidden breakpad_getcontext
++  .type breakpad_getcontext, @function
++  .align 2
++breakpad_getcontext:
++  sd ra, MCONTEXT_GREGS_OFFSET + 0*8(a0)
++  sd ra, MCONTEXT_GREGS_OFFSET + 1*8(a0)
++  sd sp, MCONTEXT_GREGS_OFFSET + 2*8(a0)
++  sd s0, MCONTEXT_GREGS_OFFSET + 8*8(a0)
++  sd s1, MCONTEXT_GREGS_OFFSET + 9*8(a0)
++  sd x0, MCONTEXT_GREGS_OFFSET + 10*8(a0)	/* return 0 by overwriting a0.  */
++  sd s2, MCONTEXT_GREGS_OFFSET + 18*8(a0)
++  sd s3, MCONTEXT_GREGS_OFFSET + 19*8(a0)
++  sd s4, MCONTEXT_GREGS_OFFSET + 20*8(a0)
++  sd s5, MCONTEXT_GREGS_OFFSET + 21*8(a0)
++  sd s6, MCONTEXT_GREGS_OFFSET + 22*8(a0)
++  sd s7, MCONTEXT_GREGS_OFFSET + 23*8(a0)
++  sd s8, MCONTEXT_GREGS_OFFSET + 24*8(a0)
++  sd s9, MCONTEXT_GREGS_OFFSET + 25*8(a0)
++  sd s10, MCONTEXT_GREGS_OFFSET + 26*8(a0)
++  sd s11, MCONTEXT_GREGS_OFFSET + 27*8(a0)
++
++#ifndef __riscv_float_abi_soft
++  frsr	a1
++
++  fsd fs0, MCONTEXT_FPREGS_OFFSET + 8*8(a0)
++  fsd fs1, MCONTEXT_FPREGS_OFFSET + 9*8(a0)
++  fsd fs2, MCONTEXT_FPREGS_OFFSET + 18*8(a0)
++  fsd fs3, MCONTEXT_FPREGS_OFFSET + 19*8(a0)
++  fsd fs4, MCONTEXT_FPREGS_OFFSET + 20*8(a0)
++  fsd fs5, MCONTEXT_FPREGS_OFFSET + 21*8(a0)
++  fsd fs6, MCONTEXT_FPREGS_OFFSET + 22*8(a0)
++  fsd fs7, MCONTEXT_FPREGS_OFFSET + 23*8(a0)
++  fsd fs8, MCONTEXT_FPREGS_OFFSET + 24*8(a0)
++  fsd fs9, MCONTEXT_FPREGS_OFFSET + 25*8(a0)
++  fsd fs10, MCONTEXT_FPREGS_OFFSET + 26*8(a0)
++  fsd fs11, MCONTEXT_FPREGS_OFFSET + 27*8(a0)
++
++  sw	a1, MCONTEXT_FSR_OFFSET(a0)
++#endif /* __riscv_float_abi_soft */
++
++/* rt_sigprocmask (SIG_BLOCK, NULL, &ucp->uc_sigmask, _NSIG / 8) */
++  li	a3, _NSIG8
++  add	a2, a0, UCONTEXT_SIGMASK_OFFSET
++  mv	a1, zero
++  li	a0, SIG_BLOCK
++
++  li	a7, __NR_rt_sigprocmask
++  scall
++
++  /* Always return 0 for success, even if sigprocmask failed. */
++  mv	a0, zero
++  ret
++  .size breakpad_getcontext, . - breakpad_getcontext
++
+ #else
+ #error "This file has not been ported for your CPU!"
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/memory_mapped_file.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/memory_mapped_file.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/memory_mapped_file.cc
+@@ -65,7 +65,8 @@ bool MemoryMappedFile::Map(const char* p
+   }
+ 
+ #if defined(__x86_64__) || defined(__aarch64__) || \
+-   (defined(__mips__) && _MIPS_SIM == _ABI64)
++   (defined(__mips__) && _MIPS_SIM == _ABI64) || \
++   (defined(__riscv) && __riscv_xlen == 64)
+ 
+   struct kernel_stat st;
+   if (sys_fstat(fd, &st) == -1 || st.st_size < 0) {
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/ucontext_constants.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/ucontext_constants.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/common/linux/ucontext_constants.h
+@@ -146,6 +146,14 @@
+ #endif
+ #define FPREGS_OFFSET_MXCSR  24
+ 
++#elif defined(__riscv)
++
++#define UCONTEXT_SIGMASK_OFFSET   40
++
++#define MCONTEXT_GREGS_OFFSET     176
++#define MCONTEXT_FPREGS_OFFSET    432
++#define MCONTEXT_FSR_OFFSET       (MCONTEXT_FPREGS_OFFSET + 32*8)
++
+ #else
+ #error "This header has not been ported for your CPU"
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_cpu_riscv64.h
+===================================================================
+--- /dev/null
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_cpu_riscv64.h
+@@ -0,0 +1,121 @@
++/* Copyright 2013 Google Inc.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *
++ *     * Redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ * copyright notice, this list of conditions and the following disclaimer
++ * in the documentation and/or other materials provided with the
++ * distribution.
++ *     * Neither the name of Google Inc. nor the names of its
++ * contributors may be used to endorse or promote products derived from
++ * this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
++
++/* minidump_format.h: A cross-platform reimplementation of minidump-related
++ * portions of DbgHelp.h from the Windows Platform SDK.
++ *
++ * (This is C99 source, please don't corrupt it with C++.)
++ *
++ * This file contains the necessary definitions to read minidump files
++ * produced on ARM.  These files may be read on any platform provided
++ * that the alignments of these structures on the processing system are
++ * identical to the alignments of these structures on the producing system.
++ * For this reason, precise-sized types are used.  The structures defined
++ * by this file have been laid out to minimize alignment problems by
++ * ensuring that all members are aligned on their natural boundaries.
++ * In some cases, tail-padding may be significant when different ABIs specify
++ * different tail-padding behaviors.  To avoid problems when reading or
++ * writing affected structures, MD_*_SIZE macros are provided where needed,
++ * containing the useful size of the structures without padding.
++ *
++ * Structures that are defined by Microsoft to contain a zero-length array
++ * are instead defined here to contain an array with one element, as
++ * zero-length arrays are forbidden by standard C and C++.  In these cases,
++ * *_minsize constants are provided to be used in place of sizeof.  For a
++ * cleaner interface to these sizes when using C++, see minidump_size.h.
++ *
++ * These structures are also sufficient to populate minidump files.
++ *
++ * Because precise data type sizes are crucial for this implementation to
++ * function properly and portably, a set of primitive types with known sizes
++ * are used as the basis of each structure defined by this file.
++ *
++ * Author: Colin Blundell
++ */
++
++/*
++ * RISCV64 support
++ */
++
++#ifndef GOOGLE_BREAKPAD_COMMON_MINIDUMP_CPU_RISCV64_H__
++#define GOOGLE_BREAKPAD_COMMON_MINIDUMP_CPU_RISCV64_H__
++
++#include "google_breakpad/common/breakpad_types.h"
++
++#define MD_FLOATINGSAVEAREA_RISCV64_FPR_COUNT 32
++#define MD_CONTEXT_RISCV64_GPR_COUNT 32
++
++typedef struct {
++  /* 32 64-bit floating point registers, f0 .. f31. */
++  uint64_t regs[MD_FLOATINGSAVEAREA_RISCV64_FPR_COUNT];
++
++  uint32_t fcsr;       /* FPU control and status register */
++} MDFloatingSaveAreaRISCV64;
++
++/* For (MDRawContextRISCV64).context_flags.  These values indicate the type of
++ * context stored in the structure. */
++#define MD_CONTEXT_RISCV64 0x00400000
++#define MD_CONTEXT_RISCV64_CONTROL (MD_CONTEXT_RISCV64 | 0x00000001)
++#define MD_CONTEXT_RISCV64_INTEGER (MD_CONTEXT_RISCV64 | 0x00000002)
++#define MD_CONTEXT_RISCV64_FLOATING_POINT (MD_CONTEXT_RISCV64 | 0x00000004)
++#define MD_CONTEXT_RISCV64_DEBUG (MD_CONTEXT_RISCV64 | 0x00000008)
++#define MD_CONTEXT_RISCV64_FULL (MD_CONTEXT_RISCV64_CONTROL | \
++                               MD_CONTEXT_RISCV64_INTEGER | \
++                               MD_CONTEXT_RISCV64_FLOATING_POINT)
++#define MD_CONTEXT_RISCV64_ALL (MD_CONTEXT_RISCV64_FULL | MD_CONTEXT_RISCV64_DEBUG)
++
++typedef struct {
++  /* Determines which fields of this struct are populated */
++  uint32_t context_flags;
++
++  /* 32 64-bit integer registers, x1 .. x31 + the PC
++   * Note the following fixed uses:
++   *   x8 is the frame pointer
++   *   x1 is the link register
++   *   x2 is the stack pointer
++   *   The PC is effectively x0.
++   */
++  uint64_t iregs[MD_CONTEXT_RISCV64_GPR_COUNT];
++
++  /* The next field is included with MD_CONTEXT64_ARM_FLOATING_POINT */
++  MDFloatingSaveAreaRISCV64 float_save;
++
++} MDRawContextRISCV64;
++
++/* Indices into iregs for registers with a dedicated or conventional
++ * purpose.
++ */
++enum MDRISCV64RegisterNumbers {
++  MD_CONTEXT_RISCV64_REG_FP     = 8,
++  MD_CONTEXT_RISCV64_REG_RA     = 1,
++  MD_CONTEXT_RISCV64_REG_SP     = 2,
++  MD_CONTEXT_RISCV64_REG_PC     = 0
++};
++
++#endif  /* GOOGLE_BREAKPAD_COMMON_MINIDUMP_CPU_RISCV64_H__ */
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_format.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_format.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_format.h
+@@ -118,6 +118,7 @@ typedef struct {
+ #include "minidump_cpu_mips.h"
+ #include "minidump_cpu_ppc.h"
+ #include "minidump_cpu_ppc64.h"
++#include "minidump_cpu_riscv64.h"
+ #include "minidump_cpu_sparc.h"
+ #include "minidump_cpu_x86.h"
+ 
+@@ -660,6 +661,7 @@ typedef enum {
+   MD_CPU_ARCHITECTURE_PPC64     = 0x8002, /* Breakpad-defined value for PPC64 */
+   MD_CPU_ARCHITECTURE_ARM64_OLD = 0x8003, /* Breakpad-defined value for ARM64 */
+   MD_CPU_ARCHITECTURE_MIPS64    = 0x8004, /* Breakpad-defined value for MIPS64 */
++  MD_CPU_ARCHITECTURE_RISCV64   = 0x8005, /* Breakpad-defined value for RISCV64 */
+   MD_CPU_ARCHITECTURE_UNKNOWN   = 0xffff  /* PROCESSOR_ARCHITECTURE_UNKNOWN */
+ } MDCPUArchitecture;
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/crashpad/crashpad/util/linux/ptracer.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/crashpad/crashpad/util/linux/ptracer.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/crashpad/crashpad/util/linux/ptracer.cc
+@@ -398,6 +398,51 @@ bool GetThreadArea64(pid_t tid,
+   return true;
+ }
+ 
++#elif defined(ARCH_CPU_RISCV_FAMILY)
++
++template <typename Destination>
++bool GetRegisterSet(pid_t tid, int set, Destination* dest, bool can_log) {
++  iovec iov;
++  iov.iov_base = dest;
++  iov.iov_len = sizeof(*dest);
++  if (ptrace(PTRACE_GETREGSET, tid, reinterpret_cast<void*>(set), &iov) != 0) {
++    PLOG_IF(ERROR, can_log) << "ptrace";
++    return false;
++  }
++  if (iov.iov_len != sizeof(*dest)) {
++    LOG_IF(ERROR, can_log) << "Unexpected registers size";
++    return false;
++  }
++  return true;
++}
++
++bool GetFloatingPointRegisters32(pid_t tid,
++                                 FloatContext* context,
++                                 bool can_log) {
++  return false;
++}
++
++bool GetFloatingPointRegisters64(pid_t tid,
++                                 FloatContext* context,
++                                 bool can_log) {
++  return GetRegisterSet(tid, NT_PRFPREG, &context->f64.f, can_log);
++}
++
++bool GetThreadArea32(pid_t tid,
++                     const ThreadContext& context,
++                     LinuxVMAddress* address,
++                     bool can_log) {
++  return false;
++}
++
++bool GetThreadArea64(pid_t tid,
++                     const ThreadContext& context,
++                     LinuxVMAddress* address,
++                     bool can_log) {
++  *address = context.t64.tp;
++  return true;
++}
++
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/crashpad/crashpad/util/linux/thread_info.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/crashpad/crashpad/util/linux/thread_info.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/crashpad/crashpad/util/linux/thread_info.h
+@@ -79,6 +79,40 @@ union ThreadContext {
+     uint32_t cp0_status;
+     uint32_t cp0_cause;
+     uint32_t padding1_;
++#elif defined(ARCH_CPU_RISCV_FAMILY)
++    // Reflects user_regs_struct in asm/ptrace.h.
++    uint32_t pc;
++    uint32_t ra;
++    uint32_t sp;
++    uint32_t gp;
++    uint32_t tp;
++    uint32_t t0;
++    uint32_t t1;
++    uint32_t t2;
++    uint32_t s0;
++    uint32_t s1;
++    uint32_t a0;
++    uint32_t a1;
++    uint32_t a2;
++    uint32_t a3;
++    uint32_t a4;
++    uint32_t a5;
++    uint32_t a6;
++    uint32_t a7;
++    uint32_t s2;
++    uint32_t s3;
++    uint32_t s4;
++    uint32_t s5;
++    uint32_t s6;
++    uint32_t s7;
++    uint32_t s8;
++    uint32_t s9;
++    uint32_t s10;
++    uint32_t s11;
++    uint32_t t3;
++    uint32_t t4;
++    uint32_t t5;
++    uint32_t t6;
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY
+@@ -132,6 +166,40 @@ union ThreadContext {
+     uint64_t cp0_badvaddr;
+     uint64_t cp0_status;
+     uint64_t cp0_cause;
++#elif defined(ARCH_CPU_RISCV_FAMILY)
++    // Reflects user_regs_struct in asm/ptrace.h.
++    uint64_t pc;
++    uint64_t ra;
++    uint64_t sp;
++    uint64_t gp;
++    uint64_t tp;
++    uint64_t t0;
++    uint64_t t1;
++    uint64_t t2;
++    uint64_t s0;
++    uint64_t s1;
++    uint64_t a0;
++    uint64_t a1;
++    uint64_t a2;
++    uint64_t a3;
++    uint64_t a4;
++    uint64_t a5;
++    uint64_t a6;
++    uint64_t a7;
++    uint64_t s2;
++    uint64_t s3;
++    uint64_t s4;
++    uint64_t s5;
++    uint64_t s6;
++    uint64_t s7;
++    uint64_t s8;
++    uint64_t s9;
++    uint64_t s10;
++    uint64_t s11;
++    uint64_t t3;
++    uint64_t t4;
++    uint64_t t5;
++    uint64_t t6;
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY
+@@ -143,11 +211,12 @@ union ThreadContext {
+   using NativeThreadContext = user_regs;
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+ // No appropriate NativeThreadsContext type available for MIPS
++#elif defined(ARCH_CPU_RISCV_FAMILY)
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY || ARCH_CPU_ARM64
+ 
+-#if !defined(ARCH_CPU_MIPS_FAMILY)
++#if !defined(ARCH_CPU_MIPS_FAMILY) && !defined(ARCH_CPU_RISCV_FAMILY)
+ #if defined(ARCH_CPU_32_BITS)
+   static_assert(sizeof(t32_t) == sizeof(NativeThreadContext), "Size mismatch");
+ #else  // ARCH_CPU_64_BITS
+@@ -218,6 +287,9 @@ union FloatContext {
+     } fpregs[32];
+     uint32_t fpcsr;
+     uint32_t fpu_id;
++#elif defined(ARCH_CPU_RISCV_FAMILY)
++    uint64_t f[32];
++    uint32_t fcsr;
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY
+@@ -252,6 +324,9 @@ union FloatContext {
+     double fpregs[32];
+     uint32_t fpcsr;
+     uint32_t fpu_id;
++#elif defined(ARCH_CPU_RISCV_FAMILY)
++    uint64_t f[32];
++    uint32_t fcsr;
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY
+@@ -280,6 +355,7 @@ union FloatContext {
+   static_assert(sizeof(f64) == sizeof(user_fpsimd_struct), "Size mismatch");
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+ // No appropriate floating point context native type for available MIPS.
++#elif defined(ARCH_CPU_RISCV_FAMILY)
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/dav1d/config/linux/riscv64/config.h
+===================================================================
+--- /dev/null
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/dav1d/config/linux/riscv64/config.h
+@@ -0,0 +1,38 @@
++/*
++ * Autogenerated by the Meson build system.
++ * Do not edit, your changes will be lost.
++ */
++
++#pragma once
++
++#define ARCH_AARCH64 0
++
++#define ARCH_ARM 0
++
++#define ARCH_PPC64LE 0
++
++#define ARCH_X86 0
++
++#define ARCH_X86_32 0
++
++#define ARCH_X86_64 0
++
++#define CONFIG_16BPC 1
++
++#define CONFIG_8BPC 1
++
++// #define CONFIG_LOG 1 -- Logging is controlled by Chromium
++
++#define ENDIANNESS_BIG 0
++
++#define HAVE_ASM 0
++
++#define HAVE_AS_FUNC 0
++
++#define HAVE_CLOCK_GETTIME 1
++
++#define HAVE_GETAUXVAL 1
++
++#define HAVE_POSIX_MEMALIGN 1
++
++#define HAVE_UNISTD_H 1
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/lss/linux_syscall_support.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/lss/linux_syscall_support.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/lss/linux_syscall_support.h
+@@ -88,7 +88,7 @@
+  */
+ #if (defined(__i386__) || defined(__x86_64__) || defined(__ARM_ARCH_3__) ||   \
+      defined(__mips__) || defined(__PPC__) || defined(__ARM_EABI__) || \
+-     defined(__aarch64__) || defined(__s390__)) \
++     defined(__aarch64__) || defined(__s390__) || defined(__riscv)) \
+   && (defined(__linux) || defined(__ANDROID__))
+ 
+ #ifndef SYS_CPLUSPLUS
+@@ -301,7 +301,7 @@ struct kernel_old_sigaction {
+ } __attribute__((packed,aligned(4)));
+ #elif (defined(__mips__) && _MIPS_SIM == _MIPS_SIM_ABI32)
+   #define kernel_old_sigaction kernel_sigaction
+-#elif defined(__aarch64__)
++#elif defined(__aarch64__) || defined(__riscv)
+   // No kernel_old_sigaction defined for arm64.
+ #endif
+ 
+@@ -519,7 +519,7 @@ struct kernel_stat {
+   int                st_blocks;
+   int                st_pad4[14];
+ };
+-#elif defined(__aarch64__)
++#elif defined(__aarch64__) || defined(__riscv)
+ struct kernel_stat {
+   unsigned long      st_dev;
+   unsigned long      st_ino;
+@@ -1065,7 +1065,7 @@ struct kernel_statfs {
+ #define __NR_getrandom          (__NR_SYSCALL_BASE + 384)
+ #endif
+ /* End of ARM 3/EABI definitions                                             */
+-#elif defined(__aarch64__)
++#elif defined(__aarch64__) || defined(__riscv)
+ #ifndef __NR_setxattr
+ #define __NR_setxattr             5
+ #endif
+@@ -1880,7 +1880,7 @@ struct kernel_statfs {
+ 
+   #undef  LSS_RETURN
+   #if (defined(__i386__) || defined(__x86_64__) || defined(__ARM_ARCH_3__) \
+-       || defined(__ARM_EABI__) || defined(__aarch64__) || defined(__s390__))
++       || defined(__ARM_EABI__) || defined(__aarch64__) || defined(__s390__) || defined(__riscv))
+   /* Failing system calls return a negative result in the range of
+    * -1..-4095. These are "errno" values with the sign inverted.
+    */
+@@ -3373,6 +3373,122 @@ struct kernel_statfs {
+       }
+       LSS_RETURN(int, __ret);
+     }
++  #elif defined(__riscv)
++    #undef LSS_REG
++    #define LSS_REG(r,a) register int64_t __r##r __asm__("a"#r) = (int64_t)a
++    #undef  LSS_BODY
++    #define LSS_BODY(type,name,args...)                                       \
++          register int64_t __res_a0 __asm__("a0");                           \
++          register int64_t __a7 __asm__("a7") = __NR_##name;                 \
++	  int64_t __res;                                                      \
++          __asm__ __volatile__ ("scall\n"                                     \
++                                : "=r"(__res_a0)                              \
++                                : "r"(__a7) , ## args                         \
++                                : "memory");                                  \
++          __res = __res_a0;                                                   \
++          LSS_RETURN(type, __res)
++    #undef _syscall0
++    #define _syscall0(type, name)                                             \
++      type LSS_NAME(name)(void) {                                             \
++        LSS_BODY(type, name);                                                 \
++      }
++    #undef _syscall1
++    #define _syscall1(type, name, type1, arg1)                                \
++      type LSS_NAME(name)(type1 arg1) {                                       \
++        LSS_REG(0, arg1); LSS_BODY(type, name, "r"(__r0));                    \
++      }
++    #undef _syscall2
++    #define _syscall2(type, name, type1, arg1, type2, arg2)                   \
++      type LSS_NAME(name)(type1 arg1, type2 arg2) {                           \
++        LSS_REG(0, arg1); LSS_REG(1, arg2);                                   \
++        LSS_BODY(type, name, "r"(__r0), "r"(__r1));                           \
++      }
++    #undef _syscall3
++    #define _syscall3(type, name, type1, arg1, type2, arg2, type3, arg3)      \
++      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3) {               \
++        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
++        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2));                \
++      }
++    #undef _syscall4
++    #define _syscall4(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4)  \
++      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4) {   \
++        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
++        LSS_REG(3, arg4);                                                     \
++        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3));     \
++      }
++    #undef _syscall5
++    #define _syscall5(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
++                      type5,arg5)                                             \
++      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
++                          type5 arg5) {                                       \
++        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
++        LSS_REG(3, arg4); LSS_REG(4, arg5);                                   \
++        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3),      \
++                             "r"(__r4));                                      \
++      }
++    #undef _syscall6
++    #define _syscall6(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
++                      type5,arg5,type6,arg6)                                  \
++      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
++                          type5 arg5, type6 arg6) {                           \
++        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
++        LSS_REG(3, arg4); LSS_REG(4, arg5); LSS_REG(5, arg6);                 \
++        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3),      \
++                             "r"(__r4), "r"(__r5));                           \
++      }
++
++    LSS_INLINE int LSS_NAME(clone)(int (*fn)(void *), void *child_stack,
++                                   int flags, void *arg, int *parent_tidptr,
++                                   void *newtls, int *child_tidptr) {
++      int64_t __res;
++      {
++        register int64_t __res_a0 __asm__("a0");
++        register uint64_t __flags __asm__("a0") = flags;
++        register void *__stack __asm__("a1") = child_stack;
++        register void *__ptid  __asm__("a2") = parent_tidptr;
++        register void *__tls   __asm__("a3") = newtls;
++        register int  *__ctid  __asm__("a4") = child_tidptr;
++        __asm__ __volatile__(/* Push "arg" and "fn" onto the stack that will be
++                              * used by the child.
++                              */
++                             "addi    %2,%2,-16\n"
++			     "sd      %1, 0(%2)\n"
++			     "sd      %4, 8(%2)\n"
++
++                             /* %a0 = syscall(%a0 = flags,
++                              *               %a1 = child_stack,
++                              *               %a2 = parent_tidptr,
++                              *               %a3 = newtls,
++                              *               %a4 = child_tidptr)
++                              */
++                             "li      a7, %8\n"
++                             "scall\n"
++
++                             /* if (%a0 != 0)
++                              *   return %a0;
++                              */
++                             "bnez    %0, 1f\n"
++
++                             /* In the child, now. Call "fn(arg)".
++                              */
++                             "ld      a1, 0(sp)\n"
++                             "ld      a0, 8(sp)\n"
++                             "jalr    a1\n"
++
++                             /* Call _exit(%a0).
++                              */
++                             "li      a7, %9\n"
++                             "scall\n"
++                           "1:\n"
++                             : "=r" (__res_a0)
++                             : "r"(fn), "r"(__stack), "r"(__flags), "r"(arg),
++                               "r"(__ptid), "r"(__tls), "r"(__ctid),
++                               "i"(__NR_clone), "i"(__NR_exit)
++                             : "cc", "memory");
++        __res = __res_a0;
++      }
++      LSS_RETURN(int, __res);
++    }
+   #endif
+   #define __NR__exit   __NR_exit
+   #define __NR__gettid __NR_gettid
+@@ -4181,7 +4297,7 @@ struct kernel_statfs {
+       LSS_SC_BODY(4, int, 8, d, type, protocol, sv);
+     }
+   #endif
+-  #if defined(__ARM_EABI__) || defined (__aarch64__)
++  #if defined(__ARM_EABI__) || defined (__aarch64__) || defined(__riscv)
+     LSS_INLINE _syscall3(ssize_t, recvmsg, int, s, struct kernel_msghdr*, msg,
+                          int, flags)
+     LSS_INLINE _syscall3(ssize_t, sendmsg, int, s, const struct kernel_msghdr*,
+@@ -4503,7 +4619,7 @@ struct kernel_statfs {
+ // TODO: define this in an arch-independant way instead of inlining the clone
+ //       syscall body.
+ 
+-# if defined(__aarch64__)
++# if defined(__aarch64__) || defined(__riscv)
+   LSS_INLINE pid_t LSS_NAME(fork)(void) {
+     // No fork syscall on aarch64 - implement by means of the clone syscall.
+     // Note that this does not reset glibc's cached view of the PID/TID, so
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/swiftshader/third_party/llvm-10.0/BUILD.gn
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/swiftshader/third_party/llvm-10.0/BUILD.gn
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/swiftshader/third_party/llvm-10.0/BUILD.gn
+@@ -149,6 +149,7 @@ swiftshader_llvm_source_set("swiftshader
+     deps += [ ":swiftshader_llvm_ppc" ]
+   } else if (current_cpu == "x86" || current_cpu == "x64") {
+     deps += [ ":swiftshader_llvm_x86" ]
++  } else if (current_cpu == "riscv64") {
+   } else {
+     assert(false, "Unsupported current_cpu")
+   }
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/webrtc/modules/desktop_capture/differ_block.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/webrtc/modules/desktop_capture/differ_block.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/webrtc/modules/desktop_capture/differ_block.cc
+@@ -30,7 +30,7 @@ bool VectorDifference(const uint8_t* ima
+   static bool (*diff_proc)(const uint8_t*, const uint8_t*) = nullptr;
+ 
+   if (!diff_proc) {
+-#if defined(WEBRTC_ARCH_ARM_FAMILY) || defined(WEBRTC_ARCH_MIPS_FAMILY)
++#if defined(WEBRTC_ARCH_ARM_FAMILY) || defined(WEBRTC_ARCH_MIPS_FAMILY) || defined(WEBRTC_ARCH_RISCV_FAMILY)
+     // For ARM and MIPS processors, always use C version.
+     // TODO(hclam): Implement a NEON version.
+     diff_proc = &VectorDifference_C;
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/webrtc/rtc_base/system/arch.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/chromium/third_party/webrtc/rtc_base/system/arch.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/chromium/third_party/webrtc/rtc_base/system/arch.h
+@@ -50,6 +50,10 @@
+ #elif defined(__EMSCRIPTEN__)
+ #define WEBRTC_ARCH_32_BITS
+ #define WEBRTC_ARCH_LITTLE_ENDIAN
++#elif defined(__riscv) && __riscv_xlen == 64
++#define WEBRTC_ARCH_RISCV_FAMILY
++#define WEBRTC_ARCH_64_BITS
++#define WEBRTC_ARCH_LITTLE_ENDIAN
+ #else
+ #error Please add support for your architecture in rtc_base/system/arch.h
+ #endif
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/gn/tools/gn/args.cc
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/gn/tools/gn/args.cc
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/gn/tools/gn/args.cc
+@@ -329,6 +329,7 @@ void Args::SetSystemVarsLocked(Scope* de
+   static const char kMips64[] = "mips64el";
+   static const char kS390X[] = "s390x";
+   static const char kPPC64[] = "ppc64";
++  static const char kRiscv64[] = "riscv64";
+   const char* arch = nullptr;
+ 
+   // Set the host CPU architecture based on the underlying OS, not
+@@ -353,6 +354,8 @@ void Args::SetSystemVarsLocked(Scope* de
+     // This allows us to use the same toolchain as ppc64 BE
+     // and specific flags are included using the host_byteorder logic.
+     arch = kPPC64;
++  else if (os_arch == "riscv64")
++    arch = kRiscv64;
+   else
+     CHECK(false) << "OS architecture not handled. (" << os_arch << ")";
+ 
+Index: qtwebengine-everywhere-src-5.15.7/src/3rdparty/gn/util/build_config.h
+===================================================================
+--- qtwebengine-everywhere-src-5.15.7.orig/src/3rdparty/gn/util/build_config.h
++++ qtwebengine-everywhere-src-5.15.7/src/3rdparty/gn/util/build_config.h
+@@ -172,6 +172,16 @@
+ #define ARCH_CPU_32_BITS 1
+ #define ARCH_CPU_BIG_ENDIAN 1
+ #endif
++#elif defined(__riscv)
++#define ARCH_CPU_RISCV_FAMILY 1
++#if __riscv_xlen == 64
++#define ARCH_CPU_RISCV64 1
++#define ARCH_CPU_64_BITS 1
++#else
++#define ARCH_CPU_RISCV32 1
++#define ARCH_CPU_32_BITS 1
++#endif
++#define ARCH_CPU_LITTLE_ENDIAN 1
+ #else
+ #error Please add support for your architecture in build_config.h
+ #endif
