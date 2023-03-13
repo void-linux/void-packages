@@ -21,7 +21,8 @@ while read -r pkg; do
 				$ROOTDIR $ADDREPO \
 				-Sny \
 				"$subpkg" "$(xbps-uhelper getpkgname "$dep")"
-			if [ $? -eq 8 ]; then
+			ret="$?"
+			if [ "$ret" -eq 8 ] || [ "$ret" -eq 11 ]; then
 				/bin/echo -e "\x1b[31mFailed to install '$subpkg' and '$dep'\x1b[0m"
 				exit 1
 			fi
