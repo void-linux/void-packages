@@ -1,0 +1,87 @@
+https://github.com/dlang/dmd/commit/4aa97119c2d7c81ce3ac8bf5027cd83db63dda0d
+https://github.com/dlang/dmd/pull/21249/commits/0307cefd7c563aaaf86eccedd56b8b872f8566c3
+
+--- a/gcc/config/linux-d.cc
++++ b/gcc/config/linux-d.cc
+@@ -25,6 +25,7 @@ along with GCC; see the file COPYING3.
+ 
+ /* Implement TARGET_D_OS_VERSIONS for Linux targets.  */
+ 
++#define LIBDRUNTIME_MUSL_PRE_TIME64 0
+ static void
+ linux_d_os_builtins (void)
+ {
+@@ -42,8 +43,12 @@ linux_d_os_builtins (void)
+     d_add_builtin_version ("CRuntime_UClibc");
+   else if (OPTION_BIONIC)
+     d_add_builtin_version ("CRuntime_Bionic");
+-  else if (OPTION_MUSL)
++  else if (OPTION_MUSL) {
+     d_add_builtin_version ("CRuntime_Musl");
++#if LIBDRUNTIME_MUSL_PRE_TIME64
++    d_add_builtin_version ("CRuntime_Musl_Pre_Time64");
++#endif
++  }
+ }
+ 
+ /* Handle a call to `__traits(getTargetInfo, "objectFormat")'.  */
+--- a/libphobos/libdruntime/core/sys/posix/time.d
++++ b/libphobos/libdruntime/core/sys/posix/time.d
+@@ -198,11 +198,47 @@ int timer_settime(timer_t, int, const sc
+ 
+ version (linux)
+ {
++  version (CRuntime_Musl) {
++    version (CRuntime_Musl_Pre_Time64) {
++      struct timespec
++      {
++          time_t  tv_sec;
++          c_long  tv_nsec;
++      }
++    } else version (BigEndian) {
++      struct timespec
++      {
++          time_t  tv_sec;
++          static if (time_t.sizeof != c_long.sizeof) {
++            c_long  __tv_nsec_pad;
++          }
++          c_long  tv_nsec;
++      }
++    } else version (LittleEndian) {
++      struct timespec
++      {
++          time_t  tv_sec;
++          c_long  tv_nsec;
++          static if (time_t.sizeof != c_long.sizeof) {
++            c_long  __tv_nsec_pad;
++          }
++      }
++    } else {
++      static assert(false, "Unsupported platform");
++    }
++    static assert(timespec.sizeof == 2 * time_t.sizeof);
++    version (CRuntime_Musl_Pre_Time64) {
++        static assert(time_t.sizeof == c_long.sizeof);
++    } else {
++        static assert(time_t.sizeof == 8);
++    }
++  } else {
+     struct timespec
+     {
+         time_t  tv_sec;
+         c_long  tv_nsec;
+     }
++  }
+ }
+ else version (Darwin)
+ {
+--- a/gcc/d/dmd/cond.d
++++ b/gcc/d/dmd/cond.d
+@@ -669,6 +669,7 @@ extern (C++) final class VersionConditio
+             case "CRuntime_Glibc":
+             case "CRuntime_Microsoft":
+             case "CRuntime_Musl":
++            case "CRuntime_Musl_Pre_Time64":
+             case "CRuntime_Newlib":
+             case "CRuntime_UClibc":
+             case "CRuntime_WASI":
