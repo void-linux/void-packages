@@ -1,6 +1,6 @@
 # Template file for 'ldc'
 pkgname=ldc
-version=1.31.0
+version=1.35.0
 revision=1
 build_style=cmake
 configure_args="
@@ -11,30 +11,173 @@ configure_args="
  -DCOMPILE_D_MODULES_SEPARATELY=ON
  -DC_SYSTEM_LIBS='unwind;m;pthread;rt;dl'"
 conf_files="/etc/ldc2.conf"
-hostmakedepends="dmd llvm15 perl pkg-config"
+hostmakedepends="gdmd llvm perl pkg-config"
 makedepends="libcurl-devel libffi-devel ncurses-devel zlib-devel
- llvm-libunwind-devel"
-depends="ldc-runtime llvm-libunwind-devel"
-checkdepends="python3"
+ llvm-libunwind-devel llvm"
+depends="ldc-runtime-devel llvm-libunwind-devel"
+checkdepends="python3 gdb"
 short_desc="Portable D programming language compiler based on LLVM"
 maintainer="Auri <me@aurieh.me>"
 license="BSD-3-Clause, BSL-1.0"
 homepage="https://wiki.dlang.org/LDC"
 changelog="https://raw.githubusercontent.com/ldc-developers/ldc/master/CHANGELOG.md"
 distfiles="https://github.com/ldc-developers/ldc/releases/download/v${version}/ldc-${version}-src.tar.gz"
-checksum=f1c8ece9e1e35806c3441bf24fbe666cddd8eef375592c19cd8fee4701cd5458
+checksum=6e296993706c76c093e609139aa0b3f8704355fa0f3756f6758d78d44226dfa0
 nopie=yes
-nocross="dmd compilation fails on cross"
 # tests timeout on musl; also require unpackaged python3-lit
-make_check=no
+# make_check=no
+subpackages="ldc-runtime-debug ldc-runtime ldc-runtime-devel"
+
+case "$XBPS_TARGET_MACHINE" in
+	i686) _triplet="i686-pc-linux-gnu";;
+	i686-musl) _triplet="i686-linux-musl";;
+	x86_64) _triplet="x86_64-linux-gnu";;
+	x86_64-musl) _triplet="x86_64-linux-musl";;
+	armv5tel) _triplet="arm-linux-gnueabi";;
+	armv5tel-musl) _triplet="arm-linux-musleabi";;
+	armv6l) _triplet="arm-linux-gnueabihf";;
+	armv7l) _triplet="armv7l-linux-gnueabihf";;
+	armv6l-musl) _triplet="arm-linux-musleabihf";;
+	armv7l-musl) _triplet="armv7l-linux-musleabihf";;
+	aarch64) _triplet="aarch64-linux-gnu";;
+	aarch64-musl) _triplet="aarch64-linux-musl";;
+	ppc) _triplet="powerpc-linux-gnu";;
+	ppc-musl) _triplet="powerpc-linux-musl";;
+	ppcle) _triplet="powerpcle-linux-gnu";;
+	ppcle-musl) _triplet="powerpcle-linux-musl";;
+	ppc64le) _triplet="powerpc64le-linux-gnu";;
+	ppc64le-musl) _triplet="powerpc64le-linux-musl";;
+	ppc64) _triplet="powerpc64-linux-gnu";;
+	ppc64-musl) _triplet="powerpc64-linux-musl";;
+	mips-musl) _triplet="mips-linux-musl";;
+	mipshf-musl) _triplet="mips-linux-muslhf";;
+	mipsel-musl) _triplet="mipsel-linux-musl";;
+	mipselhf-musl) _triplet="mipsel-linux-muslhf";;
+esac
+export DFLAGS="-mtriple=${_triplet}"
+
+pre_configure() {
+	local _ldc _major _minor _pver
+
+	unset DFLAGS
+	# First build ldc by gdc
+	mkdir -p build-stage1
+	CC=$CC_FOR_BUILD CFLAGS="$CFLAGS_FOR_BUILD" \
+	CXX=$CXX_FOR_BUILD CXXFLAGS="$CXXFLAGS_FOR_BUILD" \
+	LD=$LD_FOR_BUILD LDFLAGS="$LDFLAGS_FOR_BUILD" \
+	cmake -GNinja -DD_COMPILER=gdmd \
+		-S $PWD -B $PWD/build-stage1
+	ninja -C build-stage1
+
+	# Then build ldc-runtime for stage1 ldc
+	cat <<-EOF >"${XBPS_WRAPPERDIR}/ldmd2"
+	#!/bin/sh
+	exec "$wrksrc/build-stage1/bin/ldmd2" -mtriple="$_triplet" "\$@"
+	EOF
+	cat <<-EOF >"${XBPS_WRAPPERDIR}/ldc2"
+	#!/bin/sh
+	exec "$wrksrc/build-stage1/bin/ldc2" -mtriple="$_triplet" "\$@"
+	EOF
+	_ldmd="${XBPS_WRAPPERDIR}/ldmd2"
+	_ldc="${XBPS_WRAPPERDIR}/ldc2"
+	chmod +x "${_ldmd}"
+	chmod +x "${_ldc}"
+
+	export DFLAGS=-mtriple=${_triplet}
+	# get _major _minor and _pver
+	source build-stage1/dmd.version
+	mkdir -p build-stage2
+	CFLAGS="-DNDEBUG ${CFLAGS/ -pipe / }" \
+	CXXFLAGS="-DNDEBUG ${CXXFLAGS/ -pipe / }" \
+	cmake -GNinja \
+		-DD_COMPILER="$_ldmd" -DLDC_EXE_FULL="$_ldc" \
+		-DDMDFE_MAJOR_VERSION=$_major \
+		-DDMDFE_MINOR_VERSION=$_minor \
+		-DDMDFE_PATCH_VERSION=$_pver \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_LIBDIR="lib${XBPS_TARGET_WORDSIZE}" \
+		-DLIB_SUFFIX="${XBPS_TARGET_WORDSIZE}" \
+		-DCMAKE_INSTALL_SYSCONFDIR=/etc \
+		-S $PWD/runtime -B $PWD/build-stage2
+	ninja -C build-stage2
+
+	cat <<-EOF >build-stage1/bin/ldc2.conf
+	default:
+	{
+	    switches = [
+		"-defaultlib=phobos2-ldc,druntime-ldc",
+	    ];
+	    post-switches = [
+		"-I$PWD/runtime/druntime/src",
+		"-I$PWD/build-stage2/runtime/import",
+		"-I$PWD/runtime/jit-rt/d",
+		"-I$PWD/runtime/phobos",
+	    ];
+	    lib-dirs = [
+		"$PWD/build-stage2/lib${XBPS_TARGET_WORDSIZE}",
+	    ];
+	    rpath = "";
+	};
+
+	"^wasm(32|64)-":
+	{
+	    switches = [
+		"-defaultlib=",
+		"-L-z", "-Lstack-size=1048576",
+		"-L--stack-first",
+		"-L--export-dynamic",
+	    ];
+	    lib-dirs = [];
+	};
+	EOF
+
+	configure_args+=" -DD_COMPILER=${_ldmd}"
+	configure_args+=" -DXLDC_EXE_FULL=${_ldc}"
+	configure_args+=" -DLIB_SUFFIX=${XBPS_TARGET_WORDSIZE}"
+}
+
+pre_check() {
+	ninja -C build ${makejobs} ldc2-unittest \
+		druntime-test-runner-debug-shared \
+		druntime-test-runner-shared \
+		phobos2-test-runner-debug-shared \
+		phobos2-test-runner-shared \
+		build-run-dmd-testsuite
+	# has unknown type; cast it to its declared type
+	rm -f tests/dmd/runnable/gdb14313.d \
+		tests/dmd/runnable/gdb4181.d
+}
 
 post_install() {
-	vlicense LICENSE
+	sed -i -e "
+	/rpath/ s,\"/usr/lib[36][24]\",\"\",
+	s;\"/usr/lib[36][24]\",;\"/usr/lib\",;
+	" "$DESTDIR/etc/ldc2.conf"
 }
 
 ldc-runtime_package() {
 	short_desc+=" - D runtime"
 	pkg_install() {
-		vmove "usr/lib/*.so*"
+		vlicense LICENSE
+		vmove "usr/lib/*.so.*"
+	}
+}
+
+ldc-runtime-debug_package() {
+	short_desc+=" - D runtime - debug version"
+	pkg_install() {
+		vlicense LICENSE
+		vmove "usr/lib/*-debug-*.so.*"
+	}
+}
+
+ldc-runtime-devel_package() {
+	short_desc+=" - D runtime - development files"
+	depends="ldc-runtime ldc-runtime-debug llvm-libunwind-devel"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/*.o"
+		vmove "usr/lib/*.so"
 	}
 }
