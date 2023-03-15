@@ -1,9 +1,7 @@
 # Template file for 'firebird3'
 pkgname=firebird3
-version=3.0.6.33328
+version=3.0.10
 revision=1
-_build=0
-_uver=${version//./_}
 build_style=gnu-configure
 build_helper="qemu"
 configure_args="--prefix=/usr
@@ -23,22 +21,35 @@ configure_args="--prefix=/usr
  --with-fbmisc
  --without-fbsample
  --without-fbsample-db
- --with-system-icu
  --with-system-editline"
-hostmakedepends="automake libtool pkg-config icu"
+# unrecognized options: --with-system-icu
+hostmakedepends="automake libtool pkg-config icu rsync"
 makedepends="boost-devel libedit-devel icu-devel ncurses-devel libatomic_ops-devel
  libtommath-devel zlib-devel"
 short_desc="Relational database offering many ANSI SQL standard features (V3)"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="custom"
 homepage="https://www.firebirdsql.org/en/start/"
-distfiles="https://github.com/FirebirdSQL/firebird/releases/download/R${_uver%_*}/Firebird-${version}-${_build}.tar.bz2"
-checksum=34c1d2a29bbaf288e682cd1b5f8083f2baf73f351062245ace0bee35a3f7d35f
+distfiles="https://github.com/FirebirdSQL/firebird/archive/refs/tags/v${version}.tar.gz"
+checksum=636bb3c4b4d982dd5fac7c8f2fb08789fa6d7815cecf6dd9cceb86743d7f10b9
 replaces="firebird>=0"
 nocross="Fails to build gpre_boot for host but builds for target"
 
 CFLAGS="-fno-strict-aliasing"
 CXXFLAGS="-fno-delete-null-pointer-checks -Wno-deprecated -Wno-deprecated-declarations"
+
+# Create firebird system user/group
+system_accounts="_firebird _firebird"
+_firebird_homedir="/var/lib/firebird"
+_firebird_descr="Firebird Database Owner"
+triggers="system-accounts"
+
+conf_files="
+ /etc/firebird/databases.conf
+ /etc/firebird/fbtrace.conf
+ /etc/firebird/firebird.conf
+ /etc/firebird/plugins.conf
+ /var/lib/firebird/system/security3.fdb"
 
 if [ "$CROSS_BUILD" ]; then
 	configure_args+=" --enable-binreloc"
@@ -97,8 +108,6 @@ pre_configure() {
 }
 
 do_install() {
-	local _lib _v0=${version%.*} _v1=${version%.*.*} _v2=${version%.*.*.*}
-
 	cd ${wrksrc}/gen
 	./install/makeInstallImage.sh
 
@@ -111,11 +120,13 @@ do_install() {
 	vlicense doc/license/IDPL.txt IDPL
 	vlicense doc/license/README.license.usage.txt LICENSE
 
-	cp -pR gen/buildroot/* ${DESTDIR}/
+	# cp -pR gen/buildroot/* ${DESTDIR}/
+	rsync -a --exclude '*.sh' gen/buildroot/ ${DESTDIR}/ # exclude old broken scripts
+	mv ${DESTDIR}/usr/bin/isql{,-fb} # fix conflict firebird3 and unixodbc
 
-	# TODO: create superserver?
-	# system account?
-	# runit service?
+	vsv firebird3 # runit service, default ServerMode = Super, see: /etc/firebird/firebird.conf
+	vinstall ${FILESDIR}/firebird.xinetd 644 etc/xinetd.d firebird3 # xinetd, need ServerMode = Classic
+	vbin ${FILESDIR}/firebird-fix-perm-fdb
 	# Example https://aur.archlinux.org/cgit/aur.git/tree/PKGBUILD?h=firebird-superserver
 }
 
