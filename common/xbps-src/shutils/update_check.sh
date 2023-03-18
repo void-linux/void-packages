@@ -177,15 +177,13 @@ update_check() {
                 url="https://software.sil.org/$pkgurlname/download/"
                 pkgname="${pkgname#font-}"
                 pkgname="${pkgname#sil-}"
-                pkgname="$(echo "$pkgname" | sed 's/-/ /g;s/[a-z]*/\u&/g;s/ //g')"
-                rx="($pkgname|${pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
+                _pkgname="${pkgname//-/}"
+                rx="($_pkgname|${_pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
             *software.sil.org/*)
-                pkgurlname=$(printf '%s\n' "$url" | cut -d/ -f4)
-                url="https://software.sil.org/$pkgurlname/download/"
                 pkgname="${pkgname#font-}"
                 pkgname="${pkgname#sil-}"
-                pkgname="$(echo "$pkgname" | sed 's/-/ /g;s/[a-z]*/\u&/g;s/ //g')"
-                rx="($pkgname|${pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
+                _pkgname="${pkgname//-/}"
+                rx="($_pkgname|${_pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
             esac
         fi
 
