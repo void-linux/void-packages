@@ -71,6 +71,7 @@ update_check() {
               *crates.io*|\
               *codeberg.org*|\
               *hg.sr.ht*|\
+              *software.sil.org*|\
               *git.sr.ht*)
                 continue
                 ;;
@@ -171,6 +172,20 @@ update_check() {
                 rx='<guid>\Q'"${url%/*}"'\E/(v-?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=</guid>)' ;;
             *pkgs.fedoraproject.org*)
                 url="https://pkgs.fedoraproject.org/repo/pkgs/$pkgname" ;;
+            *software.sil.org/downloads/*)
+                pkgurlname=$(printf '%s\n' "$url" | cut -d/ -f6)
+                url="https://software.sil.org/$pkgurlname/download/"
+                pkgname="${pkgname#font-}"
+                pkgname="${pkgname#sil-}"
+                pkgname="$(echo "$pkgname" | sed 's/-/ /g;s/[a-z]*/\u&/g;s/ //g')"
+                rx="($pkgname|${pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
+            *software.sil.org/*)
+                pkgurlname=$(printf '%s\n' "$url" | cut -d/ -f4)
+                url="https://software.sil.org/$pkgurlname/download/"
+                pkgname="${pkgname#font-}"
+                pkgname="${pkgname#sil-}"
+                pkgname="$(echo "$pkgname" | sed 's/-/ /g;s/[a-z]*/\u&/g;s/ //g')"
+                rx="($pkgname|${pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
             esac
         fi
 
