@@ -9,7 +9,7 @@ unalias -a
 # disable wildcards helper
 _noglob_helper() {
        set +f
-       "$@"
+       IFS= "$@"
 }
 
 # Apply _noglob to v* commands
