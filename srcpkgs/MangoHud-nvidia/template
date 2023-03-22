@@ -1,0 +1,84 @@
+# Template file for 'MangoHud-nvidia'
+pkgname=MangoHud-nvidia
+version=0.6.9
+revision=1
+build_style=meson
+configure_args="-Dwith_xnvctrl=disabled -Dwith_nvml=enabled -Duse_system_spdlog=enabled"
+hostmakedepends="python3-Mako glslang pkg-config"
+makedepends="libglvnd-devel dbus-devel vulkan-loader spdlog"
+short_desc="Vulkan and OpenGL overlay for monitoring FPS, temperatures and more"
+maintainer="gmbeard <gmbeard@googlemail.com>"
+license="MIT,custom:NVIDIA"
+homepage="https://github.com/flightlessmango/MangoHud"
+distfiles="https://github.com/flightlessmango/MangoHud/releases/download/v${version}-1/MangoHud-v${version}-1-Source.tar.xz"
+checksum=30d9336b60cbc7fdc2a1ba86ec62b9fb7f2986a2b0f6196ca347f5c13e583c6d
+conflicts=MangoHud
+repository=nonfree
+
+post_patch() {
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		patch -Np1 -i ${FILESDIR}/musl.patch
+	fi
+}
+
+# Ensure that each eligible architecture ships its multilib layer files.
+# This allows us to not have to ship these files in the current *-32bit packages
+_generate_counterpart_vulkan_layer() {
+
+	local arch=${XBPS_TARGET_MACHINE%-*}
+	local oarch
+	local olibdir="/usr/lib32/"
+
+	if [ "${XBPS_TARGET_WORDSIZE}" = "32" ]; then
+		olibdir="/usr/lib64/"
+	fi
+
+	# Deduce the current and counterpart archs based on meson's cpu_family,
+	# which is what the build uses to name the layer files...
+	# (https://mesonbuild.com/Reference-tables.html#cpu-families)
+	case "${arch}" in
+		aarch64)
+			oarch="arm"
+			;;
+		armv[67]l)
+			arch="arm"
+			oarch="aarch64"
+			;;
+		x86_64)
+			oarch="x86"
+			;;
+		i686)
+			arch="x86"
+			oarch="x86_64"
+			;;
+		ppc64*)
+			arch="ppc64"
+			oarch="ppc"
+			;;
+		ppc|ppcle)
+			arch="ppc"
+			oarch="ppc64"
+			;;
+		*) ;; # no counterparts
+	esac
+
+	if [ -n "${oarch}" ]; then
+		local layer="${DESTDIR}/usr/share/vulkan/implicit_layer.d/MangoHud.${arch}.json"
+
+		sed "s#/usr/lib${XBPS_TARGET_WORDSIZE}/#${olibdir}#g" \
+			"${layer}" > "${layer/.${arch}/.${oarch}}"
+	fi
+}
+
+post_install() {
+	_generate_counterpart_vulkan_layer
+
+	# Extract the NVIDIA license from the nvml.h header
+	head -n $( \
+		awk '/NVML API Reference/{ print NR-1; exit }' ${wrksrc}/include/nvml.h \
+		) ${wrksrc}/include/nvml.h \
+		| sed 's;^\([/ ]\?\)\*/\?;;g' >${wrksrc}/LICENSE-NVIDIA
+
+	vlicense LICENSE
+	vlicense LICENSE-NVIDIA
+}
