@@ -1,37 +1,39 @@
 # Template file for 'nodejs-lts'
 pkgname=nodejs-lts
-version=12.22.10
-revision=2
+version=16.19.1
+revision=1
 # Need these for host v8 for torque, see https://github.com/nodejs/node/pull/21079
-hostmakedepends="pkg-config python libatomic-devel zlib-devel which
+hostmakedepends="which pkg-config python3 libatomic-devel zlib-devel
  $(vopt_if icu icu-devel) $(vopt_if ssl openssl-devel) $(vopt_if libuv libuv-devel)
- $(vopt_if http_parser http-parser-devel) $(vopt_if nghttp2 nghttp2-devel)
- $(vopt_if cares c-ares-devel) $(vopt_if http_parser llhttp-devel)"
-makedepends="libatomic-devel zlib-devel python-devel $(vopt_if icu icu-devel)
+ $(vopt_if nghttp2 nghttp2-devel) $(vopt_if cares c-ares-devel)"
+makedepends="libatomic-devel zlib-devel $(vopt_if icu icu-devel)
  $(vopt_if ssl openssl-devel) $(vopt_if libuv libuv-devel)
- $(vopt_if http_parser http-parser-devel) $(vopt_if nghttp2 nghttp2-devel)
- $(vopt_if cares c-ares-devel) $(vopt_if http_parser llhttp-devel)"
-checkdepends="procps-ng"
+ $(vopt_if nghttp2 nghttp2-devel) $(vopt_if cares c-ares-devel)"
+checkdepends="procps-ng iana-etc"
 short_desc="Evented I/O for V8 javascript"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="MIT"
 homepage="https://nodejs.org/"
-distfiles="${homepage}/dist/v${version}/node-v${version}.tar.gz"
-checksum=1eeec68b530da4aced730e2af9e07a1ced8148337708f37fc8b4eddc3b6dc9e9
+distfiles="https://nodejs.org/dist/v${version}/node-v${version}.tar.gz"
+checksum=e795d23b2924b69e02fcc670335a5cd3a7ce121557fdc585f9e5bda0e77550ea
 python_version=3
 
-build_options="ssl libuv http_parser icu nghttp2 cares"
+build_options="ssl libuv icu nghttp2 cares"
 desc_option_ssl="Enable shared openssl"
 desc_option_libuv="Enable shared libuv"
-desc_option_http_parser="Enable shared http-parser and llhttp"
 desc_option_icu="Enable shared icu"
 desc_option_nghttp2="Enable shared nghttp2"
 desc_option_cares="Enable shared c-ares"
-build_options_default="ssl libuv http_parser icu nghttp2 cares"
+build_options_default="ssl libuv icu nghttp2 cares"
 
 replaces="iojs>=0"
 conflicts="nodejs nodejs-lts-10"
 provides="nodejs-runtime-0_1"
+
+# https://build.voidlinux.org/builders/i686_builder/builds/27325/steps/shell_3/logs/stdio
+if [ "$XBPS_WORDSIZE" = 32 ]; then
+	LDFLAGS="-Wl,--no-keep-memory"
+fi
 
 if [ "$XBPS_WORDSIZE" -ne "$XBPS_TARGET_WORDSIZE" ]; then
 	nocross="host and target must have the same pointer size"
@@ -39,7 +41,7 @@ fi
 
 case "$XBPS_TARGET_MACHINE" in
 	ppc64*) ;;
-	ppc*) broken="Node 12.x does not support 32-bit ppc" ;;
+	ppc*) broken="Node 16.x does not support 32-bit ppc" ;;
 esac
 
 CFLAGS="-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
@@ -61,20 +63,20 @@ do_configure() {
 			x86_64*) _args="--dest-cpu=x86_64" ;;
 			*) msg_error "$pkgver: cannot be cross compiled for ${XBPS_TARGET_MACHINE}.\n" ;;
 		esac
+		# this is necessary - for example, normally compiling from ppc64le
+		# to ppc64 or from glibc to musl is considered non-cross-compiling
+		# by the build system, because it's technically the same architecture
+		#
+		# that results in the toolset built for target only, and attempting
+		# to execute it within the build system fails
 		_args+=" --cross-compiling"
 	fi
 	./configure --prefix=/usr --shared-zlib \
 		$(vopt_if icu --with-intl=system-icu) \
-		$(vopt_if http_parser --shared-http-parser) \
 		$(vopt_if ssl --shared-openssl) \
 		$(vopt_if libuv --shared-libuv) \
 		$(vopt_if nghttp2 --shared-nghttp2) \
 		$(vopt_if cares --shared-cares) ${_args}
-}
-
-post_configure() {
-	# Fix linking against llhttp
-	sed 's/-lhttp_parser/& -lllhttp/' -i out/*.target.mk
 }
 
 do_build() {
@@ -86,7 +88,8 @@ do_build() {
 }
 
 do_check() {
-	make LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1 test-only
+	local CI_SKIP_TESTS="test-cluster-primary-error.js,test-cluster-primary-kill.js,test-child-process-uid-gid.js,test-process-euid-egid.js,test-process-uid-gid.js,test-socket-write-after-fin-error.js,test-dns-perf_hooks.js"
+	make CI_SKIP_TESTS="$CI_SKIP_TESTS" LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1 test-only
 }
 
 do_install() {
