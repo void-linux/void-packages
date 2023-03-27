@@ -56,9 +56,12 @@ hook() {
 		*.tbz)        cursufx="tbz";;
 		*.tar.gz)     cursufx="tgz";;
 		*.tgz)        cursufx="tgz";;
+		*.tar.zst)    cursufx="tzst";;
+		*.tzst)       cursufx="tzst";;
 		*.gz)         cursufx="gz";;
 		*.xz)         cursufx="xz";;
 		*.bz2)        cursufx="bz2";;
+		*.zst)        cursufx="zst";;
 		*.tar)        cursufx="tar";;
 		*.zip)        cursufx="zip";;
 		*.rpm)        cursufx="rpm";;
@@ -74,13 +77,13 @@ hook() {
 		esac
 
 		case ${cursufx} in
-		tar|txz|tbz|tlz|tgz|crate)
+		tar|txz|tbz|tlz|tgz|tzst|crate)
 			$TAR_CMD -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C "$extractdir"
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
 			;;
-		gz|bz2|xz)
+		gz|bz2|xz|zst)
 			cp -f $srcdir/$curfile "$extractdir"
 			cd "$extractdir"
 			case ${cursufx} in
@@ -90,8 +93,11 @@ hook() {
 			bz2)
 				bunzip2 -f $curfile
 				;;
-			*)
+			xz)
 				unxz -f $curfile
+				;;
+			zst)
+				unzstd $curfile
 				;;
 			esac
 			;;

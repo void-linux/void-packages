@@ -4,13 +4,18 @@
 do_configure() {
 	local qmake
 	local qmake_args
+	local qt
 	if [ -x "/usr/lib/qt5/bin/qmake" ]; then
 		qmake="/usr/lib/qt5/bin/qmake"
+		qt="qt5"
+	elif [ -x "/usr/lib/qt6/bin/qmake" ]; then
+		qmake="/usr/lib/qt6/bin/qmake"
+		qt="qt6"
 	fi
 	if [ -z "${qmake}" ]; then
 		msg_error "${pkgver}: Could not find qmake - missing in hostmakedepends?\n"
 	fi
-	if [ "$CROSS_BUILD" ] && [ "$qmake" == "/usr/lib/qt5/bin/qmake" ]; then
+	if [ "$CROSS_BUILD" ]; then
 		case $XBPS_TARGET_MACHINE in
 			i686*) _qt_arch=i386;;
 			x86_64*) _qt_arch=x86_64;;
@@ -26,13 +31,13 @@ MAKEFILE_GENERATOR      = UNIX
 CONFIG                 += incremental no_qt_rpath
 QMAKE_INCREMENTAL_STYLE = sublib
 
-include(/usr/lib/qt5/mkspecs/common/linux.conf)
-include(/usr/lib/qt5/mkspecs/common/gcc-base-unix.conf)
-include(/usr/lib/qt5/mkspecs/common/g++-unix.conf)
+include(/usr/lib/${qt}/mkspecs/common/linux.conf)
+include(/usr/lib/${qt}/mkspecs/common/gcc-base-unix.conf)
+include(/usr/lib/${qt}/mkspecs/common/g++-unix.conf)
 
-QMAKE_TARGET_CONFIG     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qconfig.pri
-QMAKE_TARGET_MODULE     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qmodule.pri
-QMAKEMODULES            = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/modules
+QMAKE_TARGET_CONFIG     = ${XBPS_CROSS_BASE}/usr/lib/${qt}/mkspecs/qconfig.pri
+QMAKE_TARGET_MODULE     = ${XBPS_CROSS_BASE}/usr/lib/${qt}/mkspecs/qmodule.pri
+QMAKEMODULES            = ${XBPS_CROSS_BASE}/usr/lib/${qt}/mkspecs/modules
 QMAKE_CC                = ${CC}
 QMAKE_CXX               = ${CXX}
 QMAKE_LINK              = ${CXX}
@@ -49,7 +54,7 @@ QMAKE_CXXFLAGS          = ${CXXFLAGS}
 QMAKE_LFLAGS            = ${LDFLAGS}
 load(qt_config)
 _EOF
-		echo "#include \"${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/linux-g++/qplatformdefs.h\"" > "${wrksrc}/.target-spec/linux-g++/qplatformdefs.h"
+		echo "#include \"${XBPS_CROSS_BASE}/usr/lib/${qt}/mkspecs/linux-g++/qplatformdefs.h\"" > "${wrksrc}/.target-spec/linux-g++/qplatformdefs.h"
 
 		mkdir -p "${wrksrc}/.host-spec/linux-g++"
 		cat > "${wrksrc}/.host-spec/linux-g++/qmake.conf" <<_EOF
@@ -57,12 +62,12 @@ MAKEFILE_GENERATOR      = UNIX
 CONFIG                 += incremental no_qt_rpath
 QMAKE_INCREMENTAL_STYLE = sublib
 
-include(/usr/lib/qt5/mkspecs/common/linux.conf)
-include(/usr/lib/qt5/mkspecs/common/gcc-base-unix.conf)
-include(/usr/lib/qt5/mkspecs/common/g++-unix.conf)
+include(/usr/lib/${qt}/mkspecs/common/linux.conf)
+include(/usr/lib/${qt}/mkspecs/common/gcc-base-unix.conf)
+include(/usr/lib/${qt}/mkspecs/common/g++-unix.conf)
 
-QMAKE_TARGET_CONFIG     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qconfig.pri
-QMAKE_TARGET_MODULE     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qmodule.pri
+QMAKE_TARGET_CONFIG     = ${XBPS_CROSS_BASE}/usr/lib/${qt}/mkspecs/qconfig.pri
+QMAKE_TARGET_MODULE     = ${XBPS_CROSS_BASE}/usr/lib/${qt}/mkspecs/qmodule.pri
 QMAKE_CC                = ${CC_host}
 QMAKE_CXX               = ${CXX_host}
 QMAKE_LINK              = ${CXX_host}
@@ -79,29 +84,30 @@ QMAKE_CXXFLAGS          = ${CXXFLAGS_host}
 QMAKE_LFLAGS            = ${LDFLAGS_host}
 load(qt_config)
 _EOF
-echo '#include "/usr/lib/qt5/mkspecs/linux-g++/qplatformdefs.h"' > "${wrksrc}/.host-spec/linux-g++/qplatformdefs.h"
+echo '#include "/usr/lib/${qt}/mkspecs/linux-g++/qplatformdefs.h"' > "${wrksrc}/.host-spec/linux-g++/qplatformdefs.h"
 		cat > "${wrksrc}/qt.conf" <<_EOF
 [Paths]
 Sysroot=${XBPS_CROSS_BASE}
 Prefix=/usr
-ArchData=${XBPS_CROSS_BASE}/usr/lib/qt5
-Data=${XBPS_CROSS_BASE}/usr/share/qt5
-Documentation=${XBPS_CROSS_BASE}/usr/share/doc/qt5
-Headers=${XBPS_CROSS_BASE}/usr/include/qt5
+ArchData=${XBPS_CROSS_BASE}/usr/lib/${qt}
+Data=${XBPS_CROSS_BASE}/usr/share/${qt}
+Documentation=${XBPS_CROSS_BASE}/usr/share/doc/${qt}
+Headers=${XBPS_CROSS_BASE}/usr/include/${qt}
 Libraries=${XBPS_CROSS_BASE}/usr/lib
-LibraryExecutables=/usr/lib/qt5/libexec
-Binaries=/usr/lib/qt5/bin
+LibraryExecutables=/usr/lib/${qt}/libexec
+Binaries=/usr/lib/${qt}/bin
 Tests=${XBPS_CROSS_BASE}/usr/tests
-Plugins=/usr/lib/qt5/plugins
-Imports=${XBPS_CROSS_BASE}/usr/lib/qt5/imports
-Qml2Imports=${XBPS_CROSS_BASE}/usr/lib/qt5/qml
-Translations=${XBPS_CROSS_BASE}/usr/share/qt5/translations
+Plugins=/usr/lib/${qt}/plugins
+Imports=${XBPS_CROSS_BASE}/usr/lib/${qt}/imports
+Qml2Imports=${XBPS_CROSS_BASE}/usr/lib/${qt}/qml
+Translations=${XBPS_CROSS_BASE}/usr/share/${qt}/translations
 Settings=${XBPS_CROSS_BASE}/etc/xdg
-Examples=${XBPS_CROSS_BASE}/usr/share/qt5/examples
+Examples=${XBPS_CROSS_BASE}/usr/share/${qt}/examples
 HostPrefix=/usr
-HostData=/usr/lib/qt5
-HostBinaries=/usr/lib/qt5/bin
+HostData=/usr/lib/${qt}
+HostBinaries=/usr/lib/${qt}/bin
 HostLibraries=/usr/lib
+HostLibraryExecutables=/usr/lib/${qt}/libexec
 Spec=${wrksrc}/.host-spec/linux-g++
 TargetSpec=${wrksrc}/.target-spec/linux-g++
 _EOF
