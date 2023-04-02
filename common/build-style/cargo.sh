@@ -5,14 +5,14 @@
 do_build() {
 	: ${make_cmd:=cargo auditable}
 
-	${make_cmd} build --release --target ${RUST_TARGET} ${configure_args}
+	${make_cmd} build --release --locked --target ${RUST_TARGET} ${configure_args}
 }
 
 do_check() {
 	: ${make_cmd:=cargo auditable}
 
-	${make_check_pre} ${make_cmd} test --release --target ${RUST_TARGET} ${configure_args} \
-		${make_check_args}
+	${make_check_pre} ${make_cmd} test --release --locked --target ${RUST_TARGET} \
+		${configure_args} ${make_check_args}
 }
 
 do_install() {
