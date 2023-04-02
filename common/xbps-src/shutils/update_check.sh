@@ -94,7 +94,7 @@ update_check() {
                 echo "(folder) fetching $urlpfx and scanning with $rx" 1>&2
             fi
             skipdirs=
-            curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$urlpfx" |
+            curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" -Lsf "$urlpfx" |
                 grep -Po -i "$rx" |
                 # sort -V places 1.1/ before 1/, but 1A/ before 1.1A/
                 sed -e 's:$:A:' -e 's:/A$:A/:' | sort -Vru | sed -e 's:A/$:/A:' -e 's:A$::' |
@@ -200,7 +200,7 @@ update_check() {
         if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
             echo "fetching $url and scanning with $rx" 1>&2
         fi
-        curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
+        curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" -Lsf "$url" |
             grep -Po -i "$rx"
         fetchedurls[$url]=yes
     done |
