@@ -1,0 +1,193 @@
+From ae0b1f66c707cff09bfde54aade784a016559a34 Mon Sep 17 00:00:00 2001
+From: Rich Ercolani <214141+rincebrain@users.noreply.github.com>
+Date: Mon, 27 Mar 2023 14:29:19 -0400
+Subject: [PATCH] linux 6.3 compat: add another bdev_io_acct case
+
+Linux 6.3+, and backports from it (6.2.8+), changed the
+signatures on bdev_io_{start,end}_acct.  Add a case for it.
+
+Reviewed-by: Brian Behlendorf <behlendorf1@llnl.gov>
+Signed-off-by: Rich Ercolani <rincebrain@gmail.com>
+Closes #14658
+Closes #14668
+---
+ config/kernel-generic_io_acct.m4              | 98 ++++++++++++-------
+ include/os/linux/kernel/linux/blkdev_compat.h | 10 +-
+ 2 files changed, 69 insertions(+), 39 deletions(-)
+
+diff --git a/config/kernel-generic_io_acct.m4 b/config/kernel-generic_io_acct.m4
+index a8a448c6fe9..a6a10900429 100644
+--- a/config/kernel-generic_io_acct.m4
++++ b/config/kernel-generic_io_acct.m4
+@@ -2,7 +2,20 @@ dnl #
+ dnl # Check for generic io accounting interface.
+ dnl #
+ AC_DEFUN([ZFS_AC_KERNEL_SRC_GENERIC_IO_ACCT], [
+-	ZFS_LINUX_TEST_SRC([bdev_io_acct], [
++	ZFS_LINUX_TEST_SRC([bdev_io_acct_63], [
++		#include <linux/blkdev.h>
++	], [
++		struct block_device *bdev = NULL;
++		struct bio *bio = NULL;
++		unsigned long passed_time = 0;
++		unsigned long start_time;
++
++		start_time = bdev_start_io_acct(bdev, bio_op(bio),
++		    passed_time);
++		bdev_end_io_acct(bdev, bio_op(bio), bio_sectors(bio), start_time);
++	])
++
++	ZFS_LINUX_TEST_SRC([bdev_io_acct_old], [
+ 		#include <linux/blkdev.h>
+ 	], [
+ 		struct block_device *bdev = NULL;
+@@ -63,74 +76,85 @@ AC_DEFUN([ZFS_AC_KERNEL_SRC_GENERIC_IO_ACCT], [
+ 
+ AC_DEFUN([ZFS_AC_KERNEL_GENERIC_IO_ACCT], [
+ 	dnl #
+-	dnl # 5.19 API,
++	dnl # Linux 6.3, and then backports thereof, changed
++	dnl # the signatures on bdev_start_io_acct/bdev_end_io_acct
+ 	dnl #
+-	dnl # disk_start_io_acct() and disk_end_io_acct() have been replaced by
+-	dnl # bdev_start_io_acct() and bdev_end_io_acct().
+-	dnl #
+-	AC_MSG_CHECKING([whether generic bdev_*_io_acct() are available])
+-	ZFS_LINUX_TEST_RESULT([bdev_io_acct], [
++	AC_MSG_CHECKING([whether 6.3+ bdev_*_io_acct() are available])
++	ZFS_LINUX_TEST_RESULT([bdev_io_acct_63], [
+ 		AC_MSG_RESULT(yes)
+-		AC_DEFINE(HAVE_BDEV_IO_ACCT, 1, [bdev_*_io_acct() available])
++		AC_DEFINE(HAVE_BDEV_IO_ACCT_63, 1, [bdev_*_io_acct() available])
+ 	], [
+ 		AC_MSG_RESULT(no)
+ 
+ 		dnl #
+-		dnl # 5.12 API,
++		dnl # 5.19 API,
+ 		dnl #
+-		dnl # bio_start_io_acct() and bio_end_io_acct() became GPL-exported
+-		dnl # so use disk_start_io_acct() and disk_end_io_acct() instead
++		dnl # disk_start_io_acct() and disk_end_io_acct() have been replaced by
++		dnl # bdev_start_io_acct() and bdev_end_io_acct().
+ 		dnl #
+-		AC_MSG_CHECKING([whether generic disk_*_io_acct() are available])
+-		ZFS_LINUX_TEST_RESULT([disk_io_acct], [
++		AC_MSG_CHECKING([whether pre-6.3 bdev_*_io_acct() are available])
++		ZFS_LINUX_TEST_RESULT([bdev_io_acct_old], [
+ 			AC_MSG_RESULT(yes)
+-			AC_DEFINE(HAVE_DISK_IO_ACCT, 1, [disk_*_io_acct() available])
++			AC_DEFINE(HAVE_BDEV_IO_ACCT_OLD, 1, [bdev_*_io_acct() available])
+ 		], [
+ 			AC_MSG_RESULT(no)
+-
+ 			dnl #
+-			dnl # 5.7 API,
++			dnl # 5.12 API,
+ 			dnl #
+-			dnl # Added bio_start_io_acct() and bio_end_io_acct() helpers.
++			dnl # bio_start_io_acct() and bio_end_io_acct() became GPL-exported
++			dnl # so use disk_start_io_acct() and disk_end_io_acct() instead
+ 			dnl #
+-			AC_MSG_CHECKING([whether generic bio_*_io_acct() are available])
+-			ZFS_LINUX_TEST_RESULT([bio_io_acct], [
++			AC_MSG_CHECKING([whether generic disk_*_io_acct() are available])
++			ZFS_LINUX_TEST_RESULT([disk_io_acct], [
+ 				AC_MSG_RESULT(yes)
+-				AC_DEFINE(HAVE_BIO_IO_ACCT, 1, [bio_*_io_acct() available])
++				AC_DEFINE(HAVE_DISK_IO_ACCT, 1, [disk_*_io_acct() available])
+ 			], [
+ 				AC_MSG_RESULT(no)
+ 
+ 				dnl #
+-				dnl # 4.14 API,
++				dnl # 5.7 API,
+ 				dnl #
+-				dnl # generic_start_io_acct/generic_end_io_acct now require
+-				dnl # request_queue to be provided. No functional changes,
+-				dnl # but preparation for inflight accounting.
++				dnl # Added bio_start_io_acct() and bio_end_io_acct() helpers.
+ 				dnl #
+-				AC_MSG_CHECKING([whether generic_*_io_acct wants 4 args])
+-				ZFS_LINUX_TEST_RESULT_SYMBOL([generic_acct_4args],
+-				    [generic_start_io_acct], [block/bio.c], [
++				AC_MSG_CHECKING([whether generic bio_*_io_acct() are available])
++				ZFS_LINUX_TEST_RESULT([bio_io_acct], [
+ 					AC_MSG_RESULT(yes)
+-					AC_DEFINE(HAVE_GENERIC_IO_ACCT_4ARG, 1,
+-					    [generic_*_io_acct() 4 arg available])
++					AC_DEFINE(HAVE_BIO_IO_ACCT, 1, [bio_*_io_acct() available])
+ 				], [
+ 					AC_MSG_RESULT(no)
+ 
+ 					dnl #
+-					dnl # 3.19 API addition
++					dnl # 4.14 API,
+ 					dnl #
+-					dnl # torvalds/linux@394ffa50 allows us to increment
+-					dnl # iostat counters without generic_make_request().
++					dnl # generic_start_io_acct/generic_end_io_acct now require
++					dnl # request_queue to be provided. No functional changes,
++					dnl # but preparation for inflight accounting.
+ 					dnl #
+-					AC_MSG_CHECKING(
+-					    [whether generic_*_io_acct wants 3 args])
+-					ZFS_LINUX_TEST_RESULT_SYMBOL([generic_acct_3args],
++					AC_MSG_CHECKING([whether generic_*_io_acct wants 4 args])
++					ZFS_LINUX_TEST_RESULT_SYMBOL([generic_acct_4args],
+ 					    [generic_start_io_acct], [block/bio.c], [
+ 						AC_MSG_RESULT(yes)
+-						AC_DEFINE(HAVE_GENERIC_IO_ACCT_3ARG, 1,
+-						    [generic_*_io_acct() 3 arg available])
++						AC_DEFINE(HAVE_GENERIC_IO_ACCT_4ARG, 1,
++						    [generic_*_io_acct() 4 arg available])
+ 					], [
+ 						AC_MSG_RESULT(no)
++
++						dnl #
++						dnl # 3.19 API addition
++						dnl #
++						dnl # torvalds/linux@394ffa50 allows us to increment
++						dnl # iostat counters without generic_make_request().
++						dnl #
++						AC_MSG_CHECKING(
++						    [whether generic_*_io_acct wants 3 args])
++						ZFS_LINUX_TEST_RESULT_SYMBOL([generic_acct_3args],
++						    [generic_start_io_acct], [block/bio.c], [
++							AC_MSG_RESULT(yes)
++							AC_DEFINE(HAVE_GENERIC_IO_ACCT_3ARG, 1,
++							    [generic_*_io_acct() 3 arg available])
++						], [
++							AC_MSG_RESULT(no)
++						])
+ 					])
+ 				])
+ 			])
+diff --git a/include/os/linux/kernel/linux/blkdev_compat.h b/include/os/linux/kernel/linux/blkdev_compat.h
+index f04eb5b2593..c7405ffab8b 100644
+--- a/include/os/linux/kernel/linux/blkdev_compat.h
++++ b/include/os/linux/kernel/linux/blkdev_compat.h
+@@ -592,7 +592,10 @@ blk_generic_start_io_acct(struct request_queue *q __attribute__((unused)),
+     struct gendisk *disk __attribute__((unused)),
+     int rw __attribute__((unused)), struct bio *bio)
+ {
+-#if defined(HAVE_BDEV_IO_ACCT)
++#if defined(HAVE_BDEV_IO_ACCT_63)
++	return (bdev_start_io_acct(bio->bi_bdev, bio_op(bio),
++	    jiffies));
++#elif defined(HAVE_BDEV_IO_ACCT_OLD)
+ 	return (bdev_start_io_acct(bio->bi_bdev, bio_sectors(bio),
+ 	    bio_op(bio), jiffies));
+ #elif defined(HAVE_DISK_IO_ACCT)
+@@ -618,7 +621,10 @@ blk_generic_end_io_acct(struct request_queue *q __attribute__((unused)),
+     struct gendisk *disk __attribute__((unused)),
+     int rw __attribute__((unused)), struct bio *bio, unsigned long start_time)
+ {
+-#if defined(HAVE_BDEV_IO_ACCT)
++#if defined(HAVE_BDEV_IO_ACCT_63)
++	bdev_end_io_acct(bio->bi_bdev, bio_op(bio), bio_sectors(bio),
++	    start_time);
++#elif defined(HAVE_BDEV_IO_ACCT_OLD)
+ 	bdev_end_io_acct(bio->bi_bdev, bio_op(bio), start_time);
+ #elif defined(HAVE_DISK_IO_ACCT)
+ 	disk_end_io_acct(disk, bio_op(bio), start_time);
