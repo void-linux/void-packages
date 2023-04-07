@@ -138,7 +138,12 @@ install_pkg_deps() {
 
     [ -z "$pkgname" ] && return 2
     [ -z "$XBPS_CHECK_PKGS" ] && unset checkdepends
-    [[ $build_style ]] && style=" [$build_style]"
+
+    if [[ $build_style ]] || [[ $build_helper ]]; then
+        style=" with"
+    fi
+
+    [[ $build_style ]] && style+=" [$build_style]"
 
     for s in $build_helper; do
         style+=" [$s]"
