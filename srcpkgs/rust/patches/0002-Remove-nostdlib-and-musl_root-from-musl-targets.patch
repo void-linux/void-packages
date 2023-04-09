@@ -17,14 +17,14 @@ extended by various void contributors to match our musl setup
  9 files changed, 3 insertions(+), 181 deletions(-)
 
 diff --git a/compiler/rustc_target/src/spec/crt_objects.rs b/compiler/rustc_target/src/spec/crt_objects.rs
-index 52ac3622e..f35e5b9d8 100644
+index c126390f5..7aef73d3b 100644
 --- a/compiler/rustc_target/src/spec/crt_objects.rs
 +++ b/compiler/rustc_target/src/spec/crt_objects.rs
 @@ -63,28 +63,6 @@ pub(super) fn all(obj: &'static str) -> CrtObjects {
      ])
  }
  
--pub(super) fn pre_musl_fallback() -> CrtObjects {
+-pub(super) fn pre_musl_self_contained() -> CrtObjects {
 -    new(&[
 -        (LinkOutputKind::DynamicNoPicExe, &["crt1.o", "crti.o", "crtbegin.o"]),
 -        (LinkOutputKind::DynamicPicExe, &["Scrt1.o", "crti.o", "crtbeginS.o"]),
@@ -35,7 +35,7 @@ index 52ac3622e..f35e5b9d8 100644
 -    ])
 -}
 -
--pub(super) fn post_musl_fallback() -> CrtObjects {
+-pub(super) fn post_musl_self_contained() -> CrtObjects {
 -    new(&[
 -        (LinkOutputKind::DynamicNoPicExe, &["crtend.o", "crtn.o"]),
 -        (LinkOutputKind::DynamicPicExe, &["crtendS.o", "crtn.o"]),
@@ -46,24 +46,24 @@ index 52ac3622e..f35e5b9d8 100644
 -    ])
 -}
 -
- pub(super) fn pre_mingw_fallback() -> CrtObjects {
+ pub(super) fn pre_mingw_self_contained() -> CrtObjects {
      new(&[
          (LinkOutputKind::DynamicNoPicExe, &["crt2.o", "rsbegin.o"]),
 diff --git a/compiler/rustc_target/src/spec/linux_musl_base.rs b/compiler/rustc_target/src/spec/linux_musl_base.rs
-index 207a87ab0..88f807a58 100644
+index 61553e71b..88f807a58 100644
 --- a/compiler/rustc_target/src/spec/linux_musl_base.rs
 +++ b/compiler/rustc_target/src/spec/linux_musl_base.rs
 @@ -1,16 +1,9 @@
--use crate::spec::crt_objects::{self, CrtObjectsFallback};
+-use crate::spec::crt_objects::{self, LinkSelfContainedDefault};
  use crate::spec::TargetOptions;
  
  pub fn opts() -> TargetOptions {
      let mut base = super::linux_base::opts();
  
      base.env = "musl".into();
--    base.pre_link_objects_fallback = crt_objects::pre_musl_fallback();
--    base.post_link_objects_fallback = crt_objects::post_musl_fallback();
--    base.crt_objects_fallback = Some(CrtObjectsFallback::Musl);
+-    base.pre_link_objects_self_contained = crt_objects::pre_musl_self_contained();
+-    base.post_link_objects_self_contained = crt_objects::post_musl_self_contained();
+-    base.link_self_contained = LinkSelfContainedDefault::Musl;
 -
 -    // These targets statically link libc by default
 -    base.crt_static_default = true;
@@ -71,11 +71,11 @@ index 207a87ab0..88f807a58 100644
      base
  }
 diff --git a/config.toml.example b/config.toml.example
-index b3284050f..62ac07f87 100644
+index ca54cbd2d..beec9bb04 100644
 --- a/config.toml.example
 +++ b/config.toml.example
-@@ -523,14 +523,6 @@ changelog-seen = 2
- # supplementary build information, like distro-specific package versions.
+@@ -540,14 +540,6 @@ changelog-seen = 2
+ # behavior -- this may lead to miscompilations or other bugs.
  #description = <none> (string)
  
 -# The root location of the musl installation directory. The library directory
@@ -90,10 +90,10 @@ index b3284050f..62ac07f87 100644
  # platforms to ensure that the compiler is usable by default from the build
  # directory (as it links to a number of dynamic libraries). This may not be
 diff --git a/src/bootstrap/cc_detect.rs b/src/bootstrap/cc_detect.rs
-index dca782c29..8eb35ea43 100644
+index 7128d542a..668245f3c 100644
 --- a/src/bootstrap/cc_detect.rs
 +++ b/src/bootstrap/cc_detect.rs
-@@ -97,7 +97,7 @@ pub fn find(build: &mut Build) {
+@@ -101,7 +101,7 @@ pub fn find(build: &mut Build) {
          if let Some(cc) = config.and_then(|c| c.cc.as_ref()) {
              cfg.compiler(cc);
          } else {
@@ -102,7 +102,7 @@ index dca782c29..8eb35ea43 100644
          }
  
          let compiler = cfg.get_compiler();
-@@ -125,7 +125,7 @@ pub fn find(build: &mut Build) {
+@@ -122,7 +122,7 @@ pub fn find(build: &mut Build) {
              cfg.compiler(cxx);
              true
          } else if build.hosts.contains(&target) || build.build == target {
@@ -111,7 +111,7 @@ index dca782c29..8eb35ea43 100644
              true
          } else {
              // Use an auto-detected compiler (or one configured via `CXX_target_triple` env vars).
-@@ -161,7 +161,6 @@ fn set_compiler(
+@@ -158,7 +158,6 @@ fn set_compiler(
      compiler: Language,
      target: TargetSelection,
      config: Option<&Target>,
@@ -119,7 +119,7 @@ index dca782c29..8eb35ea43 100644
  ) {
      match &*target.triple {
          // When compiling for android we may have the NDK configured in the
-@@ -204,26 +203,6 @@ fn set_compiler(
+@@ -194,26 +193,6 @@ fn set_compiler(
              }
          }
  
@@ -147,10 +147,10 @@ index dca782c29..8eb35ea43 100644
      }
  }
 diff --git a/src/bootstrap/compile.rs b/src/bootstrap/compile.rs
-index b4807d1ab..ce483bf6b 100644
+index 0deed3f99..0bddac5d1 100644
 --- a/src/bootstrap/compile.rs
 +++ b/src/bootstrap/compile.rs
-@@ -200,39 +200,7 @@ fn copy_self_contained_objects(
+@@ -228,39 +228,7 @@ fn copy_self_contained_objects(
      let mut target_deps = vec![];
  
      // Copies the libc and CRT objects.
@@ -191,7 +191,7 @@ index b4807d1ab..ce483bf6b 100644
          let srcdir = builder
              .wasi_root(target)
              .unwrap_or_else(|| {
-@@ -316,15 +284,6 @@ pub fn std_cargo(builder: &Builder<'_>, target: TargetSelection, stage: u32, car
+@@ -344,15 +312,6 @@ pub fn std_cargo(builder: &Builder<'_>, target: TargetSelection, stage: u32, car
              .arg("--manifest-path")
              .arg(builder.src.join("library/test/Cargo.toml"));
  
@@ -208,10 +208,10 @@ index b4807d1ab..ce483bf6b 100644
              if let Some(p) = builder.wasi_root(target) {
                  let root = format!("native={}/lib/wasm32-wasi", p.to_str().unwrap());
 diff --git a/src/bootstrap/config.rs b/src/bootstrap/config.rs
-index 146077419..18a764689 100644
+index d8c15c76e..53f95e49b 100644
 --- a/src/bootstrap/config.rs
 +++ b/src/bootstrap/config.rs
-@@ -186,7 +186,6 @@ pub struct Config {
+@@ -200,7 +200,6 @@ pub struct Config {
      pub missing_tools: bool,
  
      // Fallback musl-root for all targets
@@ -219,7 +219,7 @@ index 146077419..18a764689 100644
      pub prefix: Option<PathBuf>,
      pub sysconfdir: Option<PathBuf>,
      pub datadir: Option<PathBuf>,
-@@ -400,8 +399,6 @@ pub struct Target {
+@@ -440,8 +439,6 @@ pub struct Target {
      pub sanitizers: Option<bool>,
      pub profiler: Option<bool>,
      pub crt_static: Option<bool>,
@@ -228,7 +228,7 @@ index 146077419..18a764689 100644
      pub wasi_root: Option<PathBuf>,
      pub qemu_rootfs: Option<PathBuf>,
      pub no_std: bool,
-@@ -689,7 +686,6 @@ define_config! {
+@@ -734,7 +731,6 @@ define_config! {
          default_linker: Option<String> = "default-linker",
          channel: Option<String> = "channel",
          description: Option<String> = "description",
@@ -236,7 +236,7 @@ index 146077419..18a764689 100644
          rpath: Option<bool> = "rpath",
          verbose_tests: Option<bool> = "verbose-tests",
          optimize_tests: Option<bool> = "optimize-tests",
-@@ -734,8 +730,6 @@ define_config! {
+@@ -781,8 +777,6 @@ define_config! {
          sanitizers: Option<bool> = "sanitizers",
          profiler: Option<bool> = "profiler",
          crt_static: Option<bool> = "crt-static",
@@ -245,7 +245,7 @@ index 146077419..18a764689 100644
          wasi_root: Option<String> = "wasi-root",
          qemu_rootfs: Option<String> = "qemu-rootfs",
          no_std: Option<bool> = "no-std",
-@@ -1107,7 +1101,6 @@ impl Config {
+@@ -1187,7 +1181,6 @@ impl Config {
              set(&mut config.llvm_tools_enabled, rust.llvm_tools);
              config.rustc_parallel = rust.parallel_compiler.unwrap_or(false);
              config.rustc_default_linker = rust.default_linker;
@@ -253,7 +253,7 @@ index 146077419..18a764689 100644
              config.save_toolstates = rust.save_toolstates.map(PathBuf::from);
              set(&mut config.deny_warnings, flags.deny_warnings.or(rust.deny_warnings));
              set(&mut config.backtrace_on_ice, rust.backtrace_on_ice);
-@@ -1164,8 +1157,6 @@ impl Config {
+@@ -1251,8 +1244,6 @@ impl Config {
                  target.ranlib = cfg.ranlib.map(PathBuf::from);
                  target.linker = cfg.linker.map(PathBuf::from);
                  target.crt_static = cfg.crt_static;
@@ -263,10 +263,10 @@ index 146077419..18a764689 100644
                  target.qemu_rootfs = cfg.qemu_rootfs.map(PathBuf::from);
                  target.sanitizers = cfg.sanitizers;
 diff --git a/src/bootstrap/configure.py b/src/bootstrap/configure.py
-index 2fc036082..91737e0ea 100755
+index 6b139decb..a2e19b8f4 100755
 --- a/src/bootstrap/configure.py
 +++ b/src/bootstrap/configure.py
-@@ -114,34 +114,6 @@ v("aarch64-linux-android-ndk", "target.aarch64-linux-android.android-ndk",
+@@ -112,34 +112,6 @@ v("aarch64-linux-android-ndk", "target.aarch64-linux-android.android-ndk",
    "aarch64-linux-android NDK standalone path")
  v("x86_64-linux-android-ndk", "target.x86_64-linux-android.android-ndk",
    "x86_64-linux-android NDK standalone path")
@@ -302,10 +302,10 @@ index 2fc036082..91737e0ea 100755
    "rootfs in qemu testing, you probably don't want to use this")
  v("qemu-aarch64-rootfs", "target.aarch64-unknown-linux-gnu.qemu-rootfs",
 diff --git a/src/bootstrap/lib.rs b/src/bootstrap/lib.rs
-index b603ae90a..0a7012dbd 100644
+index 3ed534523..c7c7a75f0 100644
 --- a/src/bootstrap/lib.rs
 +++ b/src/bootstrap/lib.rs
-@@ -1153,25 +1153,6 @@ impl Build {
+@@ -1181,25 +1181,6 @@ impl Build {
          }
      }
  
@@ -332,7 +332,7 @@ index b603ae90a..0a7012dbd 100644
      fn wasi_root(&self, target: TargetSelection) -> Option<&Path> {
          self.config.target_config.get(&target).and_then(|t| t.wasi_root.as_ref()).map(|p| &**p)
 diff --git a/src/bootstrap/sanity.rs b/src/bootstrap/sanity.rs
-index 64c5dd7ae..b8f9104ea 100644
+index 8a40b0f64..59e11d304 100644
 --- a/src/bootstrap/sanity.rs
 +++ b/src/bootstrap/sanity.rs
 @@ -11,7 +11,6 @@
@@ -343,7 +343,7 @@ index 64c5dd7ae..b8f9104ea 100644
  use std::path::PathBuf;
  use std::process::Command;
  
-@@ -190,28 +189,6 @@ than building it.
+@@ -205,28 +204,6 @@ than building it.
              }
          }
  
@@ -369,9 +369,6 @@ index 64c5dd7ae..b8f9104ea 100644
 -            }
 -        }
 -
-         if need_cmake && target.contains("msvc") {
-             // There are three builds of cmake on windows: MSVC, MinGW, and
-             // Cygwin. The Cygwin build does not have generators for Visual
--- 
-2.37.2
-
+         // Some environments don't want or need these tools, such as when testing Miri.
+         // FIXME: it would be better to refactor this code to split necessary setup from pure sanity
+         // checks, and have a regular flag for skipping the latter. Also see
