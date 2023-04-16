@@ -105,7 +105,7 @@ remove_pkg_statedir() {
 remove_pkg() {
     local cross="$1" _destdir f
 
-    [ -z $pkgname ] && msg_error "unexistent package, aborting.\n"
+    [ -z $pkgname ] && msg_error "nonexistent package, aborting.\n"
 
     if [ -n "$cross" ]; then
         _destdir="$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET"

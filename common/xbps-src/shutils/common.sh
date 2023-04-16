@@ -415,7 +415,7 @@ setup_pkg() {
     done
 
     if [ ! -f ${XBPS_SRCPKGDIR}/${basepkg}/template ]; then
-        msg_error "xbps-src: unexistent file: ${XBPS_SRCPKGDIR}/${basepkg}/template\n"
+        msg_error "xbps-src: nonexistent file: ${XBPS_SRCPKGDIR}/${basepkg}/template\n"
     fi
     if [ -n "$cross" ]; then
         export CROSS_BUILD="$cross"
