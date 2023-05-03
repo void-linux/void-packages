@@ -1,0 +1,85 @@
+Patch-Source: https://gist.github.com/q66/1d48bbbec3a9319af587628a67b5e477
+--
+From 0731e96271e4c899f4f9c06d67cb605ee50d4e9b Mon Sep 17 00:00:00 2001
+From: Daniel Kolesa <daniel@octaforge.org>
+Date: Wed, 3 May 2023 01:36:56 +0200
+Subject: [PATCH] llvm: HACK: pessimize alias analysis to fix firefox
+
+This is probably not good, but it's what allows us to get
+firefox fixed for the time being, so...
+
+Ref: https://github.com/llvm/llvm-project/issues/58776
+---
+ llvm/lib/Analysis/BasicAliasAnalysis.cpp      |  2 ++
+ .../lib/Target/AMDGPU/AMDGPUAliasAnalysis.cpp | 36 +++++++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/llvm/lib/Analysis/BasicAliasAnalysis.cpp b/llvm/lib/Analysis/BasicAliasAnalysis.cpp
+index dc728c1cb..e0f5789c6 100644
+--- a/llvm/lib/Analysis/BasicAliasAnalysis.cpp
++++ b/llvm/lib/Analysis/BasicAliasAnalysis.cpp
+@@ -698,6 +698,7 @@ ModRefInfo BasicAAResult::getModRefInfoMask(const MemoryLocation &Loc,
+     if (IgnoreLocals && isa<AllocaInst>(V))
+       continue;
+ 
++#if 0
+     // If the location points to memory that is known to be invariant for
+     // the life of the underlying SSA value, then we can exclude Mod from
+     // the set of valid memory effects.
+@@ -710,6 +711,7 @@ ModRefInfo BasicAAResult::getModRefInfoMask(const MemoryLocation &Loc,
+         continue;
+       }
+     }
++#endif
+ 
+     // A global constant can't be mutated.
+     if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
+diff --git a/llvm/lib/Target/AMDGPU/AMDGPUAliasAnalysis.cpp b/llvm/lib/Target/AMDGPU/AMDGPUAliasAnalysis.cpp
+index 8155c895e..6e3558e16 100644
+--- a/llvm/lib/Target/AMDGPU/AMDGPUAliasAnalysis.cpp
++++ b/llvm/lib/Target/AMDGPU/AMDGPUAliasAnalysis.cpp
+@@ -138,5 +138,41 @@ ModRefInfo AMDGPUAAResult::getModRefInfoMask(const MemoryLocation &Loc,
+       AS == AMDGPUAS::CONSTANT_ADDRESS_32BIT)
+     return ModRefInfo::NoModRef;
+ 
++  if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(Base)) {
++    if (GV->isConstant())
++      return ModRefInfo::NoModRef;
++  } else if (const Argument *Arg = dyn_cast<Argument>(Base)) {
++    const Function *F = Arg->getParent();
++
++    // Only assume constant memory for arguments on kernels.
++    switch (F->getCallingConv()) {
++    default:
++      return AAResultBase::getModRefInfoMask(Loc, AAQI, IgnoreLocals);
++    case CallingConv::AMDGPU_LS:
++    case CallingConv::AMDGPU_HS:
++    case CallingConv::AMDGPU_ES:
++    case CallingConv::AMDGPU_GS:
++    case CallingConv::AMDGPU_VS:
++    case CallingConv::AMDGPU_PS:
++    case CallingConv::AMDGPU_CS:
++    case CallingConv::AMDGPU_KERNEL:
++    case CallingConv::SPIR_KERNEL:
++      break;
++    }
++
++    unsigned ArgNo = Arg->getArgNo();
++    /* On an argument, ReadOnly attribute indicates that the function does
++       not write through this pointer argument, even though it may write
++       to the memory that the pointer points to.
++       On an argument, ReadNone attribute indicates that the function does
++       not dereference that pointer argument, even though it may read or write
++       the memory that the pointer points to if accessed through other pointers.
++     */
++    if (F->hasParamAttribute(ArgNo, Attribute::NoAlias) &&
++        (F->hasParamAttribute(ArgNo, Attribute::ReadNone) ||
++         F->hasParamAttribute(ArgNo, Attribute::ReadOnly))) {
++      return ModRefInfo::NoModRef;
++    }
++  }
+   return AAResultBase::getModRefInfoMask(Loc, AAQI, IgnoreLocals);
+ }
+-- 
+2.39.0
+
