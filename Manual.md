@@ -304,7 +304,7 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`. See [license](#var_license) for when to use it.
 
-- *vsv()* `vsv <service>`
+- *vsv()* `vsv <service> [<facility>]`
 
 	Installs `service` from `${FILESDIR}` to /etc/sv. The service must
 	be a directory containing at least a run script. Note the `supervise`
@@ -312,6 +312,11 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	is automatically made executable by this function.
 	For further information on how to create a new service directory see
 	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
+	A `log` sub-service will be automatically created if one does not exist in
+	`${FILESDIR}/$service`, containing `exec vlogger -t $service -p $facility`.
+	if a second argument is not specified, the `daemon` facility is used.
+	For more information about `vlogger` and available values for the facility,
+	see [vlogger(1)](https://man.voidlinux.org/vlogger.1).
 
 - *vsed()* `vsed -i <file> -e <regex>`
 
@@ -417,7 +422,7 @@ Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, cus
   and thus have and require no license should use
   `Public Domain`.
 
-  Note: `MIT`, `BSD`, `ISC` and custom licenses
+  Note: `AGPL`, `MIT`, `BSD`, `ISC`, `X11`, and custom licenses
   require the license file to be supplied with the binary package.
 
 - `maintainer` A string in the form of `name <user@domain>`.  The email for this field

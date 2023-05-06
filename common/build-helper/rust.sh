@@ -12,7 +12,7 @@ if [ "$CROSS_BUILD" ]; then
 	_XBPS_CROSS_RUST_TARGET_ENV="${_XBPS_CROSS_RUST_TARGET_ENV//-/_}"
 	export CARGO_TARGET_${_XBPS_CROSS_RUST_TARGET_ENV}_LINKER="$CC"
 	unset _XBPS_CROSS_RUST_TARGET_ENV
-	
+
 	# Define equivalent of TOML config in environment
 	# [build]
 	# target = ${RUST_TARGET}
@@ -25,7 +25,7 @@ if [ "$CROSS_BUILD" ]; then
 	export HOST_CFLAGS="-O2"
 
 	# Crates that use bindgen via build.rs are not cross-aware unless these are set
-	export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=${XBPS_CROSS_BASE} -I${XBPS_CROSS_BASE}/usr/include"
+	export BINDGEN_EXTRA_CLANG_ARGS+=" --sysroot=${XBPS_CROSS_BASE} -I${XBPS_CROSS_BASE}/usr/include"
 else
 	unset CARGO_BUILD_TARGET
 fi
@@ -39,7 +39,7 @@ export GETTEXT_LIB_DIR="${XBPS_CROSS_BASE}/usr/lib/gettext"
 export GETTEXT_INCLUDE_DIR="${XBPS_CROSS_BASE}/usr/include"
 
 # libssh2-sys
-export LIBSSH2_SYS_USE_PKG_CONFIG=1 
+export LIBSSH2_SYS_USE_PKG_CONFIG=1
 
 # sodium-sys
 export SODIUM_LIB_DIR="${XBPS_CROSS_BASE}/usr/include"
@@ -51,3 +51,9 @@ export OPENSSL_NO_VENDOR=1
 
 # pcre2-sys, only necessary for musl targets
 export PCRE2_SYS_STATIC=0
+
+# zstd-sys
+export ZSTD_SYS_USE_PKG_CONFIG=1
+
+# onig-sys
+export RUSTONIG_SYSTEM_LIBONIG=1

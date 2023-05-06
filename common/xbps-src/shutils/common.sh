@@ -415,7 +415,7 @@ setup_pkg() {
     done
 
     if [ ! -f ${XBPS_SRCPKGDIR}/${basepkg}/template ]; then
-        msg_error "xbps-src: unexistent file: ${XBPS_SRCPKGDIR}/${basepkg}/template\n"
+        msg_error "xbps-src: nonexistent file: ${XBPS_SRCPKGDIR}/${basepkg}/template\n"
     fi
     if [ -n "$cross" ]; then
         export CROSS_BUILD="$cross"
@@ -476,6 +476,12 @@ setup_pkg() {
             msg_error "$pkgver: missing do_install() function!\n"
         fi
     fi
+
+    for x in ${hostmakedepends} ${makedepends} ${checkdepends}; do
+        if [[ $x = *[\<\>]* || $x =~ -[^-_]*[0-9][^-_]*_[0-9_]+$ ]]; then
+            msg_error "$pkgver: specifying version in build dependency '$x' is invalid, template version is used always\n"
+        fi
+    done
 
     FILESDIR=$XBPS_SRCPKGDIR/$sourcepkg/files
     PATCHESDIR=$XBPS_SRCPKGDIR/$sourcepkg/patches

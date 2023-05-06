@@ -56,9 +56,12 @@ hook() {
 		*.tbz)        cursufx="tbz";;
 		*.tar.gz)     cursufx="tgz";;
 		*.tgz)        cursufx="tgz";;
+		*.tar.zst)    cursufx="tzst";;
+		*.tzst)       cursufx="tzst";;
 		*.gz)         cursufx="gz";;
 		*.xz)         cursufx="xz";;
 		*.bz2)        cursufx="bz2";;
+		*.zst)        cursufx="zst";;
 		*.tar)        cursufx="tar";;
 		*.zip)        cursufx="zip";;
 		*.rpm)        cursufx="rpm";;
@@ -74,13 +77,13 @@ hook() {
 		esac
 
 		case ${cursufx} in
-		tar|txz|tbz|tlz|tgz|crate)
+		tar|txz|tbz|tlz|tgz|tzst|crate)
 			$TAR_CMD -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C "$extractdir"
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
 			;;
-		gz|bz2|xz)
+		gz|bz2|xz|zst)
 			cp -f $srcdir/$curfile "$extractdir"
 			cd "$extractdir"
 			case ${cursufx} in
@@ -90,8 +93,11 @@ hook() {
 			bz2)
 				bunzip2 -f $curfile
 				;;
-			*)
+			xz)
 				unxz -f $curfile
+				;;
+			zst)
+				unzstd $curfile
 				;;
 			esac
 			;;
@@ -163,13 +169,14 @@ hook() {
 		esac
 	done
 
+	cd "$extractdir"
 	# find "$extractdir" -mindepth 1 -maxdepth 1 -printf '1\n' | wc -l
 	# However, it requires GNU's find
 	num_dirs=0
-	for f in "$extractdir"/* "$extractdir"/.*; do
+	for f in * .*; do
 		if [ -e "$f" ] || [ -L "$f" ]; then
 			case "$f" in
-			*/. | */..) ;;
+			. | ..) ;;
 			*)
 				innerdir="$f"
 				num_dirs=$(( num_dirs + 1 ))
@@ -177,16 +184,35 @@ hook() {
 			esac
 		fi
 	done
+	# Special case for num_dirs = 2, and it contains metadata
+	if [ "$num_dirs" != 2 ] || [ "$create_wrksrc" ]; then
+		:
+	elif grep -q 'xmlns="http://pear[.]php[.]net/dtd/package' package.xml 2>/dev/null
+	then
+		# PHP modules' metadata
+		rm -f package.xml
+		for f in */; do innerdir="$f"; done
+		num_dirs=1
+	else
+		for f in *; do
+			# AppleDouble encoded Macintosh file
+			if [ -e "$f" ] && [ -e "._$f" ]; then
+				rm -f "._$f"
+				num_dirs=1
+				innerdir="$f"
+				break
+			fi
+		done
+	fi
 	rm -rf "$wrksrc"
+	innerdir="$extractdir/$innerdir"
+	cd "$XBPS_BUILDDIR"
 	if [ "$num_dirs" = 1 ] && [ -d "$innerdir" ] && [ -z "$create_wrksrc" ]; then
 		# rename the subdirectory (top-level of distfiles) to $wrksrc
 		mv "$innerdir" "$wrksrc" &&
 		rmdir "$extractdir"
-	elif [ "$num_dirs" -gt 1 ] || [ -n "$create_wrksrc" ]; then
-		# rename the tmpdir to wrksrc
-		mv "$extractdir" "$wrksrc"
 	else
-		mkdir -p "$wrksrc"
+		mv "$extractdir" "$wrksrc"
 	fi ||
 		msg_error "$pkgver: failed to move sources to $wrksrc\n"
 }

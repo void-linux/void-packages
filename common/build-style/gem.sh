@@ -5,7 +5,7 @@ do_install() {
 	: ${gem_cmd:=gem}
 
 	local _GEMDIR _INSTDIR
-	
+
 	_GEMDIR=$($gem_cmd env gemdir)
 	_INSTDIR=${DESTDIR}/${_GEMDIR}/gems/${pkgname#ruby-}-${version}
 

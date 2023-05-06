@@ -2,7 +2,7 @@
 #
 # xlint.sh
 
-[ "$XLINT" ] || exit 0 
+[ "$XLINT" ] || exit 0
 
 EXITCODE=0
 read base tip < /tmp/revisions

@@ -7,7 +7,7 @@
 #   build_style=slashpackage
 #   build_wrksrc=${pkgname}-${version}
 #   distfiles=<download link>
-# 
+#
 # example (daemontools)
 #
 #   Template file for 'daemontools'

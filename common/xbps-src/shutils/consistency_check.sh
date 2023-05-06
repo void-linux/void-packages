@@ -22,7 +22,7 @@ consistency_convert_pkgname () {
                 ;;
         esac
         case "$dep" in
-            *\<*|*\>*|*=*) 
+            *\<*|*\>*|*=*)
                 printf "%s %s %s\n" "$dep" "$origname" "$deplabel"
                 continue
                 ;;

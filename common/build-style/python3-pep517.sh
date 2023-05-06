@@ -14,7 +14,18 @@ do_check() {
 		if python3 -c 'import xdist' >/dev/null 2>&1; then
 			testjobs="-n $XBPS_MAKEJOBS"
 		fi
-		${make_check_pre} python3 -m pytest ${testjobs} ${make_check_args} ${make_check_target}
+
+		if [ -z "${make_install_target}" ]; then
+			local wheelbase="${pkgname#python3-}"
+			make_install_target="dist/${wheelbase//-/_}-${version}-*-*-*.whl"
+		fi
+
+		local testdir="tmp/$(date +%s)"
+		python3 -m installer --destdir "${testdir}" \
+			${make_install_args} ${make_install_target}
+
+		PATH="${testdir}/usr/bin:${PATH}" PYTHONPATH="${testdir}/${py3_sitelib}" \
+			${make_check_pre} pytest3 ${testjobs} ${make_check_args} ${make_check_target}
 	else
 		msg_warn "Unable to determine tests for PEP517 Python templates\n"
 		return 0

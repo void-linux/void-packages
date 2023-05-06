@@ -71,6 +71,7 @@ update_check() {
               *crates.io*|\
               *codeberg.org*|\
               *hg.sr.ht*|\
+              *software.sil.org*|\
               *git.sr.ht*)
                 continue
                 ;;
@@ -116,7 +117,7 @@ update_check() {
                 pkgurlname="$(printf %s "$url" | cut -d/ -f5)"
                 url="https://sourceforge.net/projects/$pkgurlname/rss?limit=200";;
             *code.google.com*|*googlecode*)
-                url="http://code.google.com/p/$pkgname/downloads/list";;
+                url="https://code.google.com/p/$pkgname/downloads/list";;
             *launchpad.net*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4)"
                 url="https://launchpad.net/$pkgurlname/+download";;
@@ -129,7 +130,7 @@ update_check() {
             *github.com*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$pkgurlname/tags"
-                rx='/archive/refs/tags/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz")';;
+                rx='/archive/refs/tags/(v?|\Q'"$pkgname"'\E[-_])?\K[\d.]+(?=\.tar\.gz")';;
             *//gitlab.*|*code.videolan.org*)
                 case "$url" in
                     */-/*) pkgurlname="$(printf %s "$url" | sed -e 's%/-/.*%%g; s%/$%%')";;
@@ -171,6 +172,18 @@ update_check() {
                 rx='<guid>\Q'"${url%/*}"'\E/(v-?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=</guid>)' ;;
             *pkgs.fedoraproject.org*)
                 url="https://pkgs.fedoraproject.org/repo/pkgs/$pkgname" ;;
+            *software.sil.org/downloads/*)
+                pkgurlname=$(printf '%s\n' "$url" | cut -d/ -f6)
+                url="https://software.sil.org/$pkgurlname/download/"
+                pkgname="${pkgname#font-}"
+                pkgname="${pkgname#sil-}"
+                _pkgname="${pkgname//-/}"
+                rx="($_pkgname|${_pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
+            *software.sil.org/*)
+                pkgname="${pkgname#font-}"
+                pkgname="${pkgname#sil-}"
+                _pkgname="${pkgname//-/}"
+                rx="($_pkgname|${_pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
             esac
         fi
 
