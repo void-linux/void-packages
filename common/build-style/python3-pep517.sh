@@ -20,7 +20,7 @@ do_check() {
 			make_install_target="dist/${wheelbase//-/_}-${version}-*-*-*.whl"
 		fi
 
-		local testdir="tmp/$(date +%s)"
+		local testdir="${wrksrc}/tmp/$(date +%s)"
 		python3 -m installer --destdir "${testdir}" \
 			${make_install_args} ${make_install_target}
 
