@@ -1,0 +1,211 @@
+From b64ad27d8dfeeecaaa8a98051252a32c9d998df4 Mon Sep 17 00:00:00 2001
+From: Friedemann Kleint <Friedemann.Kleint@qt.io>
+Date: Thu, 9 Jun 2022 16:50:41 +0200
+Subject: [PATCH] libshiboken: Fix a crash in Shiboken::Object::isValid() for
+ Python 3.11
+
+The function is passed type objects for class methods, which caused
+it to crash.
+
+The first clause did not catch this, and so it was cast to SbkObject
+below.
+
+Add a type check to prevent this.
+
+Pick-to: 6.3 6.2 5.15
+Task-number: PYSIDE-1960
+Change-Id: Icfdd6fefb7156ac5961444bd5395109849a1d66e
+Reviewed-by: Christian Tismer <tismer@stackless.com>
+Reviewed-by: Qt CI Bot <qt_ci_bot@qt-project.org>
+---
+ sources/shiboken2/libshiboken/basewrapper.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sources/shiboken2/libshiboken/basewrapper.cpp b/sources/shiboken2/libshiboken/basewrapper.cpp
+index d866d13..19418c8 100644
+--- a/sources/shiboken2/libshiboken/basewrapper.cpp
++++ b/sources/shiboken2/libshiboken/basewrapper.cpp
+@@ -1468,6 +1468,7 @@ bool setCppPointer(SbkObject *sbkObj, PyTypeObject *desiredType, void *cptr)
+ bool isValid(PyObject *pyObj)
+ {
+     if (!pyObj || pyObj == Py_None
++        || PyType_Check(pyObj) != 0
+         || Py_TYPE(Py_TYPE(pyObj)) != SbkObjectType_TypeF()) {
+         return true;
+     }
+-- 
+2.35.3
+
+From 77fdd690ca14e97b4c800c4127362ca0c83a716a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Miro=20Hron=C4=8Dok?= <miro@hroncok.cz>
+Date: Thu, 9 Jun 2022 13:45:07 +0200
+Subject: [PATCH] Fix usage of Py_TYPE() for Python 3.11
+
+The macro was changed to a function, no longer allowing for assignment.
+---
+ sources/pyside2/libpyside/pysideqflags.cpp    | 2 +-
+ sources/pyside2/libpyside/pysidesignal.cpp    | 2 +-
+ sources/pyside2/libpyside/pysideweakref.cpp   | 2 +-
+ sources/shiboken2/libshiboken/basewrapper.cpp | 4 ++--
+ sources/shiboken2/libshiboken/sbkenum.cpp     | 2 +-
+ 5 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/sources/pyside2/libpyside/pysideqflags.cpp b/sources/pyside2/libpyside/pysideqflags.cpp
+index b141ce1..ef0c8f4 100644
+--- a/sources/pyside2/libpyside/pysideqflags.cpp
++++ b/sources/pyside2/libpyside/pysideqflags.cpp
+@@ -187,7 +187,7 @@ namespace QFlags
+         }
+         newspec.slots = SbkNewQFlagsType_spec.slots;
+         PyTypeObject *type = (PyTypeObject *)SbkType_FromSpec(&newspec);
+-        Py_TYPE(type) = &PyType_Type;
++        Py_SET_TYPE(type, &PyType_Type);
+ 
+         PySideQFlagsType *flagsType = reinterpret_cast<PySideQFlagsType *>(type);
+         PepType_PFTP(flagsType)->converterPtr = &PepType_PFTP(flagsType)->converter;
+diff --git a/sources/pyside2/libpyside/pysidesignal.cpp b/sources/pyside2/libpyside/pysidesignal.cpp
+index 5c03031..5e42dba 100644
+--- a/sources/pyside2/libpyside/pysidesignal.cpp
++++ b/sources/pyside2/libpyside/pysidesignal.cpp
+@@ -162,7 +162,7 @@ PyTypeObject *PySideSignalTypeF(void)
+     if (!type) {
+         type = reinterpret_cast<PyTypeObject *>(SbkType_FromSpec(&PySideSignalType_spec));
+         PyTypeObject *hold = Py_TYPE(type);
+-        Py_TYPE(type) = PySideMetaSignalTypeF();
++        Py_SET_TYPE(type, PySideMetaSignalTypeF());
+         Py_INCREF(Py_TYPE(type));
+         Py_DECREF(hold);
+     }
+diff --git a/sources/pyside2/libpyside/pysideweakref.cpp b/sources/pyside2/libpyside/pysideweakref.cpp
+index cd90634..730990f 100644
+--- a/sources/pyside2/libpyside/pysideweakref.cpp
++++ b/sources/pyside2/libpyside/pysideweakref.cpp
+@@ -90,7 +90,7 @@ PyObject *create(PyObject *obj, PySideWeakRefFunction func, void *userData)
+ 
+     if (Py_TYPE(PySideCallableObjectTypeF()) == 0)
+     {
+-        Py_TYPE(PySideCallableObjectTypeF()) = &PyType_Type;
++        Py_SET_TYPE(PySideCallableObjectTypeF(), &PyType_Type);
+         PyType_Ready(PySideCallableObjectTypeF());
+     }
+ 
+diff --git a/sources/shiboken2/libshiboken/basewrapper.cpp b/sources/shiboken2/libshiboken/basewrapper.cpp
+index 19418c8..0cc6fad 100644
+--- a/sources/shiboken2/libshiboken/basewrapper.cpp
++++ b/sources/shiboken2/libshiboken/basewrapper.cpp
+@@ -366,7 +366,7 @@ SbkObjectType *SbkObject_TypeF(void)
+     static PyTypeObject *type = nullptr;
+     if (!type) {
+         type = reinterpret_cast<PyTypeObject *>(SbkType_FromSpec(&SbkObject_Type_spec));
+-        Py_TYPE(type) = SbkObjectType_TypeF();
++        Py_SET_TYPE(type, SbkObjectType_TypeF());
+         Py_INCREF(Py_TYPE(type));
+         type->tp_weaklistoffset = offsetof(SbkObject, weakreflist);
+         type->tp_dictoffset = offsetof(SbkObject, ob_dict);
+@@ -1110,7 +1110,7 @@ introduceWrapperType(PyObject *enclosingObject,
+     typeSpec->slots[0].pfunc = reinterpret_cast<void *>(baseType ? baseType : SbkObject_TypeF());
+ 
+     PyObject *heaptype = SbkType_FromSpecWithBases(typeSpec, baseTypes);
+-    Py_TYPE(heaptype) = SbkObjectType_TypeF();
++    Py_SET_TYPE(heaptype, SbkObjectType_TypeF());
+     Py_INCREF(Py_TYPE(heaptype));
+     auto *type = reinterpret_cast<SbkObjectType *>(heaptype);
+ #if PY_VERSION_HEX < 0x03000000
+diff --git a/sources/shiboken2/libshiboken/sbkenum.cpp b/sources/shiboken2/libshiboken/sbkenum.cpp
+index 369b264..edcdc16 100644
+--- a/sources/shiboken2/libshiboken/sbkenum.cpp
++++ b/sources/shiboken2/libshiboken/sbkenum.cpp
+@@ -753,7 +753,7 @@
+     PyTuple_SetItem(bases, 0, reinterpret_cast<PyObject *>(basetype));
+     auto *type = reinterpret_cast<PyTypeObject *>(SbkType_FromSpecWithBases(&newspec, bases));
+     PyErr_Print();
+-    Py_TYPE(type) = SbkEnumType_TypeF();
++    Py_SET_TYPE(type, SbkEnumType_TypeF());
+ 
+     auto *enumType = reinterpret_cast<SbkEnumType *>(type);
+     PepType_SETP(enumType)->cppName = cppName;
+--
+2.35.3
+
+From a09a1db8391243e6bb290ee66bb6e3afbb114c61 Mon Sep 17 00:00:00 2001
+From: Friedemann Kleint <Friedemann.Kleint@qt.io>
+Date: Fri, 24 Jun 2022 09:22:01 +0200
+Subject: libshiboken: Fix crashes with static strings in Python 3.11
+
+In Python 3.11, some strings come with a refcount above decimal
+1000000000, apparently indicating that they are interned. Replace the
+mechanism by PyUnicode_InternFromString().
+
+Task-number: PYSIDE-1960
+Pick-to: 6.3 6.2 5.15
+Change-Id: I6436afee351f89da5814b5d6bc76970b1b508168
+Reviewed-by: Qt CI Bot <qt_ci_bot@qt-project.org>
+Reviewed-by: Christian Tismer <tismer@stackless.com>
+Upstream: https://code.qt.io/cgit/pyside/pyside-setup.git/commit/?id=a09a1db8391243e6bb290ee66bb6e3afbb114c61
+
+---
+ sources/shiboken6/libshiboken/sbkstring.cpp | 19 +++++++++++++++++--
+ 1 file changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/sources/shiboken6/libshiboken/sbkstring.cpp b/sources/shiboken6/libshiboken/sbkstring.cpp
+index 7fd20173c..36fe50369 100644
+--- a/sources/shiboken2/libshiboken/sbkstring.cpp
++++ b/sources/shiboken2/libshiboken/sbkstring.cpp
+@@ -5,8 +5,14 @@
+ #include "sbkstaticstrings_p.h"
+ #include "autodecref.h"
+ 
+-#include <vector>
+-#include <unordered_set>
++#if PY_VERSION_HEX >= 0x030B0000 || defined(Py_LIMITED_API)
++#  define USE_INTERN_STRINGS
++#endif
++
++#ifndef USE_INTERN_STRINGS
++#  include <vector>
++#  include <unordered_set>
++#endif
+ 
+ namespace Shiboken
+ {
+@@ -179,6 +185,13 @@ Py_ssize_t len(PyObject *str)
+ //     PyObject *attr = PyObject_GetAttr(obj, name());
+ //
+ 
++#ifdef USE_INTERN_STRINGS
++PyObject *createStaticString(const char *str)
++{
++     return PyUnicode_InternFromString(str);
++}
++#else
++
+ using StaticStrings = std::unordered_set<PyObject *>;
+ 
+ static void finalizeStaticStrings();    // forward
+@@ -225,6 +238,8 @@ PyObject *createStaticString(const char *str)
+     return result;
+ }
+ 
++#endif // !USE_INTERN_STRINGS
++
+ ///////////////////////////////////////////////////////////////////////
+ //
+ // PYSIDE-1019: Helper function for snake_case vs. camelCase names
+-- 
+cgit v1.2.1
+
+From 0000000000000000000000000000000000000000 Wed Jun 29 00:00:00 2022
+From: Petr Viktorin <pviktori@redhat.com>
+Subject: Enable building for Python 3.11
+
+diff -rU3 pyside-setup-opensource-src-5.15.2-orig/build_scripts/config.py pyside-setup-opensource-src-5.15.2/build_scripts/config.py
+--- pyside-setup-opensource-src-5.15.2-orig/build_scripts/config.py	2022-01-05 14:26:23.000000000 +0100
++++ pyside-setup-opensource-src-5.15.2/build_scripts/config.py	2022-06-29 14:38:24.918102384 +0200
+@@ -94,6 +94,7 @@
+             'Programming Language :: Python :: 3.8',
+             'Programming Language :: Python :: 3.9',
+             'Programming Language :: Python :: 3.10',
++            'Programming Language :: Python :: 3.11',
+         ]
+ 
+         self.setup_script_dir = None

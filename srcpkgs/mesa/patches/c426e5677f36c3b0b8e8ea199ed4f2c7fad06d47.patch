@@ -1,0 +1,77 @@
+From c426e5677f36c3b0b8e8ea199ed4f2c7fad06d47 Mon Sep 17 00:00:00 2001
+From: Erico Nunes <nunes.erico@gmail.com>
+Date: Sun, 12 Feb 2023 22:33:30 +0100
+Subject: [PATCH] lima: don't use resource_from_handle while creating scanout
+
+resource_from_handle implementations create an additional reference to
+the scanout resource, which caused lima to leak those resources after
+commit ad4d7ca8332488be8a75aff001f00306a9f6402e.
+
+Do as the other drivers do and import the bo directly while creating
+the scanount resource.
+
+Cc: 22.3 mesa-stable
+Closes: https://gitlab.freedesktop.org/mesa/mesa/-/issues/8198
+Signed-off-by: Erico Nunes <nunes.erico@gmail.com>
+Reviewed-by: Vasily Khoruzhick <anarsoul@gmail.com>
+Part-of: <https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/21330>
+---
+ src/gallium/drivers/lima/lima_resource.c | 26 ++++++++++++++++++------
+ 1 file changed, 20 insertions(+), 6 deletions(-)
+
+diff --git a/src/gallium/drivers/lima/lima_resource.c b/src/gallium/drivers/lima/lima_resource.c
+index 54869ec03d24..0b7691f2b46f 100644
+--- a/src/gallium/drivers/lima/lima_resource.c
++++ b/src/gallium/drivers/lima/lima_resource.c
+@@ -59,7 +59,10 @@ lima_resource_create_scanout(struct pipe_screen *pscreen,
+    struct lima_screen *screen = lima_screen(pscreen);
+    struct renderonly_scanout *scanout;
+    struct winsys_handle handle;
+-   struct pipe_resource *pres;
++
++   struct lima_resource *res = CALLOC_STRUCT(lima_resource);
++   if (!res)
++      return NULL;
+ 
+    struct pipe_resource scanout_templat = *templat;
+    scanout_templat.width0 = width;
+@@ -71,20 +74,31 @@ lima_resource_create_scanout(struct pipe_screen *pscreen,
+    if (!scanout)
+       return NULL;
+ 
++   res->base = *templat;
++   res->base.screen = pscreen;
++   pipe_reference_init(&res->base.reference, 1);
++   res->levels[0].offset = handle.offset;
++   res->levels[0].stride = handle.stride;
++
+    assert(handle.type == WINSYS_HANDLE_TYPE_FD);
+-   pres = pscreen->resource_from_handle(pscreen, templat, &handle,
+-                                        PIPE_HANDLE_USAGE_FRAMEBUFFER_WRITE);
++   res->bo = lima_bo_import(screen, &handle);
++   if (!res->bo) {
++      FREE(res);
++      return NULL;
++   }
++
++   res->modifier_constant = true;
+ 
+    close(handle.handle);
+-   if (!pres) {
++   if (!res->bo) {
+       renderonly_scanout_destroy(scanout, screen->ro);
++      FREE(res);
+       return NULL;
+    }
+ 
+-   struct lima_resource *res = lima_resource(pres);
+    res->scanout = scanout;
+ 
+-   return pres;
++   return &res->base;
+ }
+ 
+ static uint32_t
+-- 
+GitLab
+

@@ -1,0 +1,59 @@
+From 9cf13067cb5088626ba7ee1ec4c42ec59c7995a0 Mon Sep 17 00:00:00 2001
+From: Fangrui Song <i@maskray.me>
+Date: Mon, 11 Jul 2022 12:53:34 -0700
+Subject: [PATCH] [sanitizer] Remove #include <linux/fs.h> to resolve
+ fsconfig_command/mount_attr conflict with glibc 2.36
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+It is generally not a good idea to mix usage of glibc headers and Linux UAPI
+headers (https://sourceware.org/glibc/wiki/Synchronizing_Headers). In glibc
+since 7eae6a91e9b1670330c9f15730082c91c0b1d570 (milestone: 2.36), sys/mount.h
+defines `fsconfig_command` which conflicts with linux/mount.h:
+
+    .../usr/include/linux/mount.h:95:6: error: redeclaration of ‘enum fsconfig_command’
+
+Remove #include <linux/fs.h> which pulls in linux/mount.h. Expand its 4 macros manually.
+Android sys/mount.h doesn't define BLKBSZGET and it still needs linux/fs.h.
+In the long term we should move Linux specific definitions to sanitizer_platform_limits_linux.cpp
+but this commit is easy to cherry pick into older compiler-rt releases.
+
+Fix https://github.com/llvm/llvm-project/issues/56421
+
+Reviewed By: #sanitizers, vitalybuka, zatrazz
+
+Differential Revision: https://reviews.llvm.org/D129471
+---
+ .../sanitizer_platform_limits_posix.cpp                | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cpp b/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cpp
+index 4bd425435d56d..3a94b260686f1 100644
+--- a/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cpp
++++ b/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cpp
+@@ -73,7 +73,9 @@
+ #include <sys/vt.h>
+ #include <linux/cdrom.h>
+ #include <linux/fd.h>
++#if SANITIZER_ANDROID
+ #include <linux/fs.h>
++#endif
+ #include <linux/hdreg.h>
+ #include <linux/input.h>
+ #include <linux/ioctl.h>
+@@ -876,10 +878,10 @@ unsigned struct_ElfW_Phdr_sz = sizeof(Elf_Phdr);
+   unsigned IOCTL_EVIOCGPROP = IOCTL_NOT_PRESENT;
+   unsigned IOCTL_EVIOCSKEYCODE_V2 = IOCTL_NOT_PRESENT;
+ #endif
+-  unsigned IOCTL_FS_IOC_GETFLAGS = FS_IOC_GETFLAGS;
+-  unsigned IOCTL_FS_IOC_GETVERSION = FS_IOC_GETVERSION;
+-  unsigned IOCTL_FS_IOC_SETFLAGS = FS_IOC_SETFLAGS;
+-  unsigned IOCTL_FS_IOC_SETVERSION = FS_IOC_SETVERSION;
++  unsigned IOCTL_FS_IOC_GETFLAGS = _IOR('f', 1, long);
++  unsigned IOCTL_FS_IOC_GETVERSION = _IOR('v', 1, long);
++  unsigned IOCTL_FS_IOC_SETFLAGS = _IOW('f', 2, long);
++  unsigned IOCTL_FS_IOC_SETVERSION = _IOW('v', 2, long);
+   unsigned IOCTL_GIO_CMAP = GIO_CMAP;
+   unsigned IOCTL_GIO_FONT = GIO_FONT;
+   unsigned IOCTL_GIO_UNIMAP = GIO_UNIMAP;

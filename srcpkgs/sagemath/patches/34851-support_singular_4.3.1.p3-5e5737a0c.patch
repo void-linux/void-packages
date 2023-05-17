@@ -1,0 +1,205 @@
+diff --git a/build/pkgs/singular/checksums.ini b/build/pkgs/singular/checksums.ini
+index 2e33a405d36..313463d2fea 100644
+--- a/build/pkgs/singular/checksums.ini
++++ b/build/pkgs/singular/checksums.ini
+@@ -1,5 +1,5 @@
+ tarball=singular-VERSION.tar.gz
+-sha1=6c2b622d3681e2de3d58d30c654d43d3e32b720c
+-md5=abb1e37c794472e7760655358ab66054
+-cksum=17455733
++sha1=28bb3ee97ef48d04dfa96de182fd93eebe08426c
++md5=fc0a4f5720dadba45a52ee94324ce00c
++cksum=1573851737
+ upstream_url=ftp://jim.mathematik.uni-kl.de/pub/Math/Singular/SOURCES/4-3-1/singular-VERSION.tar.gz
+diff --git a/build/pkgs/singular/package-version.txt b/build/pkgs/singular/package-version.txt
+index 11300c77e7d..66e2bede53a 100644
+--- a/build/pkgs/singular/package-version.txt
++++ b/build/pkgs/singular/package-version.txt
+@@ -1 +1 @@
+-4.3.1p1
++4.3.1p3
+diff --git a/src/sage/libs/singular/decl.pxd b/src/sage/libs/singular/decl.pxd
+index 8e3ac314b67..747a6b1e2fb 100644
+--- a/src/sage/libs/singular/decl.pxd
++++ b/src/sage/libs/singular/decl.pxd
+@@ -574,7 +574,7 @@ cdef extern from "singular/Singular/libsingular.h":
+ 
+     # gets a component out of a polynomial vector
+ 
+-    poly *pTakeOutComp1(poly **, int)
++    poly *pTakeOutComp(poly **, int)
+ 
+     # deep copy p
+ 
+diff --git a/src/sage/libs/singular/singular.pyx b/src/sage/libs/singular/singular.pyx
+index d8ea7b07f3c..3a1271cd59f 100644
+--- a/src/sage/libs/singular/singular.pyx
++++ b/src/sage/libs/singular/singular.pyx
+@@ -1726,20 +1726,21 @@ cdef int overflow_check(unsigned long e, ring *_ring) except -1:
+ 
+     Whether an overflow occurs or not partially depends
+     on the number of variables in the ring. See trac ticket
+-    :trac:`11856`. With Singular 4, it is by default optimized
+-    for at least 4 variables on 64-bit and 2 variables on 32-bit,
+-    which in both cases makes a maximal default exponent of
+-    2^16-1.
++    :trac:`11856`.
+ 
+     EXAMPLES::
+ 
+         sage: P.<x,y> = QQ[]
+-        sage: y^(2^16-1)
+-        y^65535
+-        sage: y^2^16
++        sage: y^(2^30)
++        Traceback (most recent call last):             # 32-bit
++        ...                                            # 32-bit
++        OverflowError: exponent overflow (1073741824)  # 32-bit
++        y^1073741824  # 64-bit
++        sage: y^2^32
+         Traceback (most recent call last):
+         ...
+-        OverflowError: exponent overflow (65536)
++        OverflowError: Python int too large to convert to C unsigned long  # 32-bit
++        OverflowError: exponent overflow (4294967296)  # 64-bit
+     """
+     if unlikely(e > _ring.bitmask):
+         raise OverflowError("exponent overflow (%d)"%(e))
+diff --git a/src/sage/rings/polynomial/multi_polynomial_ideal.py b/src/sage/rings/polynomial/multi_polynomial_ideal.py
+index 7dc058a22f0..71494eddbc0 100644
+--- a/src/sage/rings/polynomial/multi_polynomial_ideal.py
++++ b/src/sage/rings/polynomial/multi_polynomial_ideal.py
+@@ -60,7 +60,7 @@
+ Note that the result of a computation is not necessarily reduced::
+ 
+     sage: (a+b)^17
+-    256*a*b^16 + 256*b^17
++    a*b^16 + b^17
+     sage: S(17) == 0
+     True
+ 
+diff --git a/src/sage/rings/polynomial/multi_polynomial_libsingular.pyx b/src/sage/rings/polynomial/multi_polynomial_libsingular.pyx
+index 4dad016b33f..9bf67dd1425 100644
+--- a/src/sage/rings/polynomial/multi_polynomial_libsingular.pyx
++++ b/src/sage/rings/polynomial/multi_polynomial_libsingular.pyx
+@@ -193,7 +193,7 @@ from sage.libs.singular.decl cimport (
+     p_IsUnit, p_IsOne, p_Series, p_Head, idInit, fast_map_common_subexp, id_Delete,
+     p_IsHomogeneous, p_Homogen, p_Totaldegree,pLDeg1_Totaldegree, singclap_pdivide, singclap_factorize,
+     idLift, IDELEMS, On, Off, SW_USE_CHINREM_GCD, SW_USE_EZGCD,
+-    p_LmIsConstant, pTakeOutComp1, singclap_gcd, pp_Mult_qq, p_GetMaxExp,
++    p_LmIsConstant, pTakeOutComp, singclap_gcd, pp_Mult_qq, p_GetMaxExp,
+     pLength, kNF, p_Neg, p_Minus_mm_Mult_qq, p_Plus_mm_Mult_qq,
+     pDiff, singclap_resultant, p_Normalize,
+     prCopyR, prCopyR_NoSort)
+@@ -1587,7 +1587,8 @@ cdef class MPolynomialRing_libsingular(MPolynomialRing_base):
+             9/4
+ 
+             sage: P.monomial_quotient(x,y) # Note the wrong result
+-            x*y^65535*z^65535
++            x*y^65535*z^65535      # 32-bit
++            x*y^1048575*z^1048575  # 64-bit
+ 
+             sage: P.monomial_quotient(x,P(1))
+             x
+@@ -2247,10 +2248,11 @@ cdef class MPolynomial_libsingular(MPolynomial):
+             9/4*x^2 - 1/4*y^2 - y - 1
+ 
+             sage: P.<x,y> = PolynomialRing(QQ,order='lex')
+-            sage: (x^2^15) * x^2^15
++            sage: (x^2^32) * x^2^32
+             Traceback (most recent call last):
+             ...
+-            OverflowError: exponent overflow (...)
++            OverflowError: Python int too large to convert to C unsigned long  # 32-bit
++            OverflowError: exponent overflow (...)  # 64-bit
+         """
+         # all currently implemented rings are commutative
+         cdef poly *_p
+@@ -2371,10 +2373,11 @@ cdef class MPolynomial_libsingular(MPolynomial):
+             ValueError: not a 2nd power
+ 
+             sage: P.<x,y> = PolynomialRing(QQ,order='lex')
+-            sage: (x+y^2^15)^10
++            sage: (x+y^2^32)^10
+             Traceback (most recent call last):
+             ....
+-            OverflowError: exponent overflow (...)
++            OverflowError: Python int too large to convert to C unsigned long  # 32-bit
++            OverflowError: exponent overflow (...)  # 64-bit
+ 
+         Test fractional powers (:trac:`22329`)::
+ 
+@@ -3461,7 +3464,7 @@ cdef class MPolynomial_libsingular(MPolynomial):
+             x^10000
+             no overflow
+ 
+-            sage: n = 1000
++            sage: n = 100000
+             sage: try:
+             ....:     f = x^n
+             ....:     f.subs(x = x^n)
+@@ -4567,7 +4570,7 @@ cdef class MPolynomial_libsingular(MPolynomial):
+         l = []
+         for i from 0 <= i < IDELEMS(res):
+             for j from 1 <= j <= IDELEMS(_I):
+-                l.append( new_MP(parent, pTakeOutComp1(&res.m[i], j)) )
++                l.append( new_MP(parent, pTakeOutComp(&res.m[i], 1)) )
+ 
+         id_Delete(&fI, r)
+         id_Delete(&_I, r)
+@@ -4635,7 +4638,7 @@ cdef class MPolynomial_libsingular(MPolynomial):
+ 
+             sage: f = 3*x
+             sage: f.reduce([2*x,y])
+-            3*x
++            x
+ 
+         The reduction is not canonical when ``I`` is not a Groebner
+         basis::
+diff --git a/src/sage/rings/polynomial/plural.pyx b/src/sage/rings/polynomial/plural.pyx
+index 1c9f35e56ba..587511c3888 100644
+--- a/src/sage/rings/polynomial/plural.pyx
++++ b/src/sage/rings/polynomial/plural.pyx
+@@ -1619,10 +1619,10 @@ cdef class NCPolynomial_plural(RingElement):
+             sage: P = A.g_algebra(relations={y*x:-x*y + z},  order='lex')
+             sage: P.inject_variables()
+             Defining x, z, y
+-            sage: (x^2^15) * x^2^15
++            sage: (x^2^31) * x^2^31
+             Traceback (most recent call last):
+             ...
+-            OverflowError: exponent overflow (65536)
++            OverflowError: exponent overflow (2147483648)
+         """
+         # all currently implemented rings are commutative
+         cdef poly *_p
+@@ -1689,10 +1689,10 @@ cdef class NCPolynomial_plural(RingElement):
+             sage: P = A.g_algebra(relations={y*x:-x*y + z},  order='lex')
+             sage: P.inject_variables()
+             Defining x, z, y
+-            sage: (x+y^2^15)^10
++            sage: (x+y^2^31)^10
+             Traceback (most recent call last):
+             ....
+-            OverflowError: exponent overflow (327680)
++            OverflowError: exponent overflow (2147483648)
+         """
+         if type(exp) is not Integer:
+             try:
+diff --git a/src/sage/structure/element.pyx b/src/sage/structure/element.pyx
+index b5d83ef71b6..5c45b3fb528 100644
+--- a/src/sage/structure/element.pyx
++++ b/src/sage/structure/element.pyx
+@@ -2705,10 +2705,10 @@ cdef class RingElement(ModuleElement):
+         with Singular 4::
+ 
+             sage: K.<x,y> = ZZ[]
+-            sage: (x^12345)^54321
++            sage: (x^123456)^654321
+             Traceback (most recent call last):
+             ...
+-            OverflowError: exponent overflow (670592745)
++            OverflowError: exponent overflow (...)
+         """
+         return arith_generic_power(self, n)
+ 

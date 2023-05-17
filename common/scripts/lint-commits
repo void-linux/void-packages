@@ -1,0 +1,66 @@
+#!/bin/sh
+
+die() {
+	printf '%s\n' "$*" >&2
+	exit 1
+}
+
+command -v git >/dev/null 2>&1 ||
+die "neither chroot-git nor git could be found!"
+
+rev_parse() {
+	if [ -n "$1" ]; then
+		git rev-parse --verify "$1"
+	else
+		shift
+		while test "$#" != 0
+		do
+			git rev-parse --verify "$1" 2>/dev/null && return
+			shift
+		done
+		return 1
+	fi
+}
+
+base=$(rev_parse "$1" FETCH_HEAD ORIG_HEAD) || die "base commit not found"
+tip=$(rev_parse "$2" HEAD) || die "tip commit not found"
+status=0
+
+for cmt in $(git rev-list --abbrev-commit $base..$tip)
+do
+	git cat-file commit "$cmt" |
+	awk -vC="$cmt" '
+	# skip header
+	/^$/ && !msg { msg = 1; next }
+	/^author .*noreply/ && !msg {
+		print "::error title=Commit Lint::" C ": authored by noreply email";
+		ret=1;
+	}
+	/^author .*(localhost|localdomain|[(]none[)])/ && !msg {
+		print "::error title=Commit Lint::" C ": authored by localhost email";
+		ret=1;
+	}
+	!msg { next }
+	# 3: long-line-is-banned-except-footnote-like-this-for-url
+	(NF > 2) && (length > 80) {
+		print "::error title=Commit Lint::" C ": long line: " $0
+		ret = 1
+	}
+	!subject {
+		if (length > 50) { print "::warning title=Commit Lint::" C ": subject is a bit long" }
+		if (!($0 ~ ":" || $0 ~ "^Take over maintainership " || $0 ~ "^Orphan ")) { print "::error title=Commit Lint::" C ": subject does not follow CONTRIBUTING.md guildelines"; exit 1 }
+		# Below check is too noisy?
+		# if (!($0 ~ "^New package:" || $0 ~ ".*: update to")) {
+		# 	print "::warning title=Commit Lint::" C ": not new package/update/removal?"
+		# }
+		subject = 1; next
+	}
+	/^$/ { body = 1; next }
+	!body {
+		print "::error title=Commit Lint::" C ": second line must be blank"
+		ret = 1
+	}
+	END { exit ret }
+	' || status=1
+done
+exit $status

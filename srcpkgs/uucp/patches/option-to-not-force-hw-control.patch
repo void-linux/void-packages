@@ -1,0 +1,321 @@
+Description: avoid forcing hw control
+Author: Michal Suchanek
+Index: uucp-1.07/conn.h
+===================================================================
+--- uucp-1.07.orig/conn.h	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/conn.h	2013-12-04 11:20:26.022181350 +0100
+@@ -117,7 +117,7 @@
+   boolean (*pfunlock) P((struct sconnection *qconn));
+   /* Open the connection.  */
+   boolean (*pfopen) P((struct sconnection *qconn, long ibaud,
+-		       boolean fwait, boolean fuser));
++		       boolean fwait, boolean fuser, boolean nortscts));
+   /* Close the connection.  */
+   boolean (*pfclose) P((struct sconnection *qconn,
+ 			pointer puuconf,
+@@ -198,7 +198,7 @@
+    than the effective permissions.  */
+ extern boolean fconn_open P((struct sconnection *qconn, long ibaud,
+ 			     long ihighbaud, boolean fwait,
+-			     boolean fuser));
++			     boolean fuser, boolean nortscts));
+ 
+ /* Close a connection.  The fsuccess argument is TRUE if the
+    conversation completed normally, FALSE if it is being aborted.  */
+Index: uucp-1.07/cu.c
+===================================================================
+--- uucp-1.07.orig/cu.c	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/cu.c	2013-12-04 11:27:03.353425764 +0100
+@@ -223,6 +223,7 @@
+   { "baud", required_argument, NULL, 's' },
+   { "mapcr", no_argument, NULL, 't' },
+   { "nostop", no_argument, NULL, 3 },
++  { "nortscts", no_argument, NULL, 'f' },
+   { "system", required_argument, NULL, 'z' },
+   { "config", required_argument, NULL, 'I' },
+   { "debug", required_argument, NULL, 'x' },
+@@ -258,6 +259,8 @@
+   enum txonxoffsetting txonxoff = XONXOFF_ON;
+   /* -I: configuration file name.  */
+   const char *zconfig = NULL;
++  /* -f: no hardware flow control */
++  boolean nortscts = FALSE;
+   int iopt;
+   pointer puuconf;
+   int iuuconf;
+@@ -295,7 +298,7 @@
+ 	}
+     }
+ 
+-  while ((iopt = getopt_long (argc, argv, "a:c:deE:hnI:l:op:s:tvx:z:",
++  while ((iopt = getopt_long (argc, argv, "a:c:deE:fhnI:l:op:s:tvx:z:",
+ 			      asCulongopts, (int *) NULL)) != EOF)
+     {
+       switch (iopt)
+@@ -322,6 +325,11 @@
+ 	  zCuvar_escape = optarg;
+ 	  break;
+ 
++	case 'f':
++	  /* No hardware flow control.  */
++	  nortscts = TRUE;
++	  break;
++
+ 	case 'h':
+ 	  /* Local echo.  */
+ 	  fCulocalecho = TRUE;
+@@ -682,7 +690,7 @@
+ 	}
+ 
+       /* Here we have locked a connection to use.  */
+-      if (! fconn_open (&sconn, iusebaud, ihighbaud, FALSE, sinfo.fdirect))
++      if (! fconn_open (&sconn, iusebaud, ihighbaud, FALSE, sinfo.fdirect, nortscts))
+ 	ucuabort ();
+ 
+       fCuclose_conn = TRUE;
+Index: uucp-1.07/conn.c
+===================================================================
+--- uucp-1.07.orig/conn.c	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/conn.c	2013-12-04 11:20:26.026181299 +0100
+@@ -114,12 +114,13 @@
+ /* Open a connection.  */
+ 
+ boolean
+-fconn_open (qconn, ibaud, ihighbaud, fwait, fuser)
++fconn_open (qconn, ibaud, ihighbaud, fwait, fuser, nortscts)
+      struct sconnection *qconn;
+      long ibaud;
+      long ihighbaud;
+      boolean fwait;
+      boolean fuser;
++     boolean nortscts;
+ {
+   boolean fret;
+ 
+@@ -177,7 +178,7 @@
+   else
+     ulog_device (qconn->qport->uuconf_zname);
+ 
+-  fret = (*qconn->qcmds->pfopen) (qconn, ibaud, fwait, fuser);
++  fret = (*qconn->qcmds->pfopen) (qconn, ibaud, fwait, fuser, nortscts);
+ 
+   if (! fret)
+     ulog_device ((const char *) NULL);
+Index: uucp-1.07/uucico.c
+===================================================================
+--- uucp-1.07.orig/uucico.c	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/uucico.c	2013-12-04 11:20:26.026181299 +0100
+@@ -695,7 +695,7 @@
+ 
+       if (fret)
+ 	{
+-	  if (! fconn_open (&sconn, (long) 0, (long) 0, TRUE, FALSE))
++	  if (! fconn_open (&sconn, (long) 0, (long) 0, TRUE, FALSE, FALSE))
+ 	    fret = FALSE;
+ 	  qConn = &sconn;
+ 	}
+@@ -714,7 +714,7 @@
+ 				     (struct uuconf_dialer *) NULL,
+ 				     TRUE)
+ 		      || ! fconn_open (&sconn, (long) 0, (long) 0, TRUE,
+-				       FALSE))
++				       FALSE, FALSE))
+ 		    break;
+ 		}
+ 	      fret = FALSE;
+@@ -1176,7 +1176,7 @@
+     }
+ 
+   if (! fconn_open (&sconn, qsys->uuconf_ibaud, qsys->uuconf_ihighbaud,
+-		    FALSE, FALSE))
++		    FALSE, FALSE, FALSE))
+     {
+       terr = STATUS_PORT_FAILED;
+       fret = FALSE;
+Index: uucp-1.07/unix/pipe.c
+===================================================================
+--- uucp-1.07.orig/unix/pipe.c	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/unix/pipe.c	2013-12-04 11:20:26.026181299 +0100
+@@ -49,7 +49,7 @@
+ 
+ static void uspipe_free P((struct sconnection *qconn));
+ static boolean fspipe_open P((struct sconnection *qconn, long ibaud,
+-			      boolean fwait, boolean fuser));
++			      boolean fwait, boolean fuser, boolean nortscts));
+ static boolean fspipe_close P((struct sconnection *qconn,
+ 			       pointer puuconf,
+ 			       struct uuconf_dialer *qdialer,
+@@ -115,11 +115,12 @@
+ 
+ /*ARGSUSED*/
+ static boolean
+-fspipe_open (qconn, ibaud, fwait, fuser)
++fspipe_open (qconn, ibaud, fwait, fuser, nortscts)
+      struct sconnection *qconn ATTRIBUTE_UNUSED;
+      long ibaud ATTRIBUTE_UNUSED;
+      boolean fwait;
+      boolean fuser ATTRIBUTE_UNUSED;
++     boolean nortscts ATTRIBUTE_UNUSED;
+ {
+   /* We don't do incoming waits on pipes.  */
+   if (fwait)
+Index: uucp-1.07/unix/serial.c
+===================================================================
+--- uucp-1.07.orig/unix/serial.c	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/unix/serial.c	2013-12-04 11:20:26.026181299 +0100
+@@ -246,11 +246,11 @@
+ 				boolean fwait, boolean fuser,
+ 				enum tclocal_setting tlocal));
+ static boolean fsstdin_open P((struct sconnection *qconn, long ibaud,
+-			       boolean fwait, boolean fuser));
++			       boolean fwait, boolean fuser, boolean nortscts));
+ static boolean fsmodem_open P((struct sconnection *qconn, long ibaud,
+-			       boolean fwait, boolean fuser));
++			       boolean fwait, boolean fuser, boolean nortscts));
+ static boolean fsdirect_open P((struct sconnection *qconn, long ibaud,
+-				boolean fwait, boolean fuser));
++				boolean fwait, boolean fuser, boolean nortscts));
+ static boolean fsblock P((struct ssysdep_conn *q, boolean fblock));
+ static boolean fsserial_close P((struct ssysdep_conn *q));
+ static boolean fsstdin_close P((struct sconnection *qconn,
+@@ -1308,11 +1308,12 @@
+    call to fsblock.  */
+ 
+ static boolean
+-fsstdin_open (qconn, ibaud, fwait, fuser)
++fsstdin_open (qconn, ibaud, fwait, fuser, nortscts)
+      struct sconnection *qconn;
+      long ibaud;
+      boolean fwait;
+      boolean fuser;
++     boolean nortscts;
+ {
+   struct ssysdep_conn *q;
+ 
+@@ -1323,6 +1324,9 @@
+   q->o = q->ord;
+   if (! fsserial_open (qconn, ibaud, fwait, fuser, IGNORE_CLOCAL))
+     return FALSE;
++  if (nortscts
++      && ! fsserial_hardflow (qconn, FALSE))
++    return FALSE;
+   q->iwr_flags = fcntl (q->owr, F_GETFL, 0);
+   if (q->iwr_flags < 0)
+     {
+@@ -1335,11 +1339,12 @@
+ /* Open a modem port.  */
+ 
+ static boolean
+-fsmodem_open (qconn, ibaud, fwait, fuser)
++fsmodem_open (qconn, ibaud, fwait, fuser, nortscts)
+      struct sconnection *qconn;
+      long ibaud;
+      boolean fwait;
+      boolean fuser;
++     boolean nortscts;
+ {
+   struct uuconf_modem_port *qm;
+ 
+@@ -1356,7 +1361,10 @@
+      out, because some modems don't assert the necessary signals until
+      they see carrier.  Instead, we turn on hardware flow control in
+      fsmodem_carrier.  */
+-  if (fwait
++  if (nortscts
++      && ! fsserial_hardflow (qconn, FALSE))
++    return FALSE;
++  else if (fwait
+       && ! fsserial_hardflow (qconn, qm->uuconf_fhardflow))
+     return FALSE;
+ 
+@@ -1366,11 +1374,12 @@
+ /* Open a direct port.  */
+ 
+ static boolean
+-fsdirect_open (qconn, ibaud, fwait, fuser)
++fsdirect_open (qconn, ibaud, fwait, fuser, nortscts)
+      struct sconnection *qconn;
+      long ibaud;
+      boolean fwait;
+      boolean fuser;
++     boolean nortscts;
+ {
+   struct uuconf_direct_port *qd;
+ 
+@@ -1383,7 +1392,7 @@
+ 
+   /* Always turn on hardware flow control for a direct port when it is
+      opened.  There is no other sensible time to turn it on.  */
+-  return fsserial_hardflow (qconn, qd->uuconf_fhardflow);
++  return fsserial_hardflow (qconn, qd->uuconf_fhardflow && ! nortscts);
+ }
+ 
+ /* Change the blocking status of the port.  We keep track of the
+Index: uucp-1.07/unix/tcp.c
+===================================================================
+--- uucp-1.07.orig/unix/tcp.c	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/unix/tcp.c	2013-12-04 11:20:26.026181299 +0100
+@@ -78,7 +78,7 @@
+ #endif
+ static boolean ftcp_set_flags P((struct ssysdep_conn *qsysdep));
+ static boolean ftcp_open P((struct sconnection *qconn, long ibaud,
+-			    boolean fwait, boolean fuser));
++			    boolean fwait, boolean fuser, boolean nortscts));
+ static boolean ftcp_close P((struct sconnection *qconn,
+ 			     pointer puuconf,
+ 			     struct uuconf_dialer *qdialer,
+@@ -208,11 +208,12 @@
+    system.  */
+ 
+ static boolean
+-ftcp_open (qconn, ibaud, fwait, fuser)
++ftcp_open (qconn, ibaud, fwait, fuser, nortscts)
+      struct sconnection *qconn;
+      long ibaud ATTRIBUTE_UNUSED;
+      boolean fwait;
+      boolean fuser ATTRIBUTE_UNUSED;
++     boolean nortscts ATTRIBUTE_UNUSED;
+ {
+   struct ssysdep_conn *qsysdep;
+   const char *zport;
+Index: uucp-1.07/unix/tli.c
+===================================================================
+--- uucp-1.07.orig/unix/tli.c	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/unix/tli.c	2013-12-04 11:20:26.026181299 +0100
+@@ -106,7 +106,7 @@
+ static void utli_free P((struct sconnection *qconn));
+ static boolean ftli_push P((struct sconnection *qconn));
+ static boolean ftli_open P((struct sconnection *qconn, long ibaud,
+-			    boolean fwait, boolean fuser));
++			    boolean fwait, boolean fuser, boolean nortscts));
+ static boolean ftli_close P((struct sconnection *qconn,
+ 			     pointer puuconf,
+ 			     struct uuconf_dialer *qdialer,
+@@ -238,11 +238,12 @@
+    system.  */
+ 
+ static boolean
+-ftli_open (qconn, ibaud, fwait, fuser)
++ftli_open (qconn, ibaud, fwait, fuser, nortscts)
+      struct sconnection *qconn;
+      long ibaud;
+      boolean fwait;
+      boolean fuser ATTRIBUTE_UNUSED;
++     boolean nortscts ATTRIBUTE_UNUSED;
+ {
+   struct ssysdep_conn *qsysdep;
+   const char *zdevice;
+Index: uucp-1.07/cu.1
+===================================================================
+--- uucp-1.07.orig/cu.1	2013-12-04 11:20:23.722208868 +0100
++++ uucp-1.07/cu.1	2013-12-04 11:20:26.026181299 +0100
+@@ -231,6 +231,9 @@
+ .B \-\-nostop
+ Turn off XON/XOFF handling (it is on by default).
+ .TP 5
++.B \-f, \-\-nortscts
++Do not use hardware flow control.
++.TP 5
+ .B \-E char, \-\-escape char
+ Set the escape character.  Initially
+ .B ~

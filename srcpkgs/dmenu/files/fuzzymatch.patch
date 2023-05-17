@@ -1,0 +1,134 @@
+diff --git a/dmenu.c b/dmenu.c
+--- a/dmenu.c
++++ b/dmenu.c
+@@ -32,6 +32,7 @@ struct item {
+ 	char *text;
+ 	struct item *left, *right;
+ 	int out;
++	int distance;
+ };
+ 
+ static char text[BUFSIZ] = "";
+@@ -264,6 +265,86 @@ match(void)
+ 	calcoffsets();
+ }
+ 
++int
++compare_distance(const void *a, const void *b)
++{
++	struct item *da = *(struct item **) a;
++	struct item *db = *(struct item **) b;
++
++	if (!db)
++		return 1;
++	if (!da)
++		return -1;
++
++	return da->distance - db->distance;
++}
++
++void
++fuzzymatch(void)
++{
++	/* bang - we have so much memory */
++	struct item *it;
++	struct item **fuzzymatches = NULL;
++	char c;
++	int number_of_matches = 0, i, pidx, sidx, eidx;
++	int text_len = strlen(text), itext_len;
++
++	matches = matchend = NULL;
++
++	/* walk through all items */
++	for (it = items; it && it->text; it++) {
++		if (text_len) {
++			itext_len = strlen(it->text);
++			pidx = 0;
++			sidx = eidx = -1;
++			/* walk through item text */
++			for (i = 0; i < itext_len && (c = it->text[i]); i++) {
++				/* fuzzy match pattern */
++				if (text[pidx] == c) {
++					if(sidx == -1)
++						sidx = i;
++					pidx++;
++					if (pidx == text_len) {
++						eidx = i;
++						break;
++					}
++				}
++			}
++			/* build list of matches */
++			if (eidx != -1) {
++				/* compute distance */
++				/* factor in 30% of sidx and distance between eidx and total
++				 * text length .. let's see how it works */
++				it->distance = eidx - sidx + (itext_len - eidx + sidx) / 3;
++				appenditem(it, &matches, &matchend);
++				number_of_matches++;
++			}
++		} else {
++			appenditem(it, &matches, &matchend);
++		}
++	}
++
++	if (number_of_matches) {
++		/* initialize array with matches */
++		if (!(fuzzymatches = realloc(fuzzymatches, number_of_matches * sizeof(struct item*))))
++			die("cannot realloc %u bytes:", number_of_matches * sizeof(struct item*));
++		for (i = 0, it = matches; it && i < number_of_matches; i++, it = it->right) {
++			fuzzymatches[i] = it;
++		}
++		/* sort matches according to distance */
++		qsort(fuzzymatches, number_of_matches, sizeof(struct item*), compare_distance);
++		/* rebuild list of matches */
++		matches = matchend = NULL;
++		for (i = 0, it = fuzzymatches[i];  i < number_of_matches && it && \
++				it->text; i++, it = fuzzymatches[i]) {
++			appenditem(it, &matches, &matchend);
++		}
++		free(fuzzymatches);
++	}
++	curr = sel = matches;
++	calcoffsets();
++}
++
+ static void
+ insert(const char *str, ssize_t n)
+ {
+@@ -274,7 +355,7 @@ insert(const char *str, ssize_t n)
+ 	if (n > 0)
+ 		memcpy(&text[cursor], str, n);
+ 	cursor += n;
+-	match();
++	fuzzymatch();
+ }
+ 
+ static size_t
+@@ -343,7 +424,7 @@ keypress(XKeyEvent *ev)
+ 
+ 		case XK_k: /* delete right */
+ 			text[cursor] = '\0';
+-			match();
++			fuzzymatch();
+ 			break;
+ 		case XK_u: /* delete left */
+ 			insert(NULL, 0 - cursor);
+@@ -492,7 +573,7 @@ insert:
+ 		strncpy(text, sel->text, sizeof text - 1);
+ 		text[sizeof text - 1] = '\0';
+ 		cursor = strlen(text);
+-		match();
++		fuzzymatch();
+ 		break;
+ 	}
+ 
+@@ -653,7 +734,7 @@ setup(void)
+ 	}
+ 	promptw = (prompt && *prompt) ? TEXTW(prompt) - lrpad / 4 : 0;
+ 	inputw = MIN(inputw, mw/3);
+-	match();
++	fuzzymatch();
+ 
+ 	/* create menu window */
+ 	swa.override_redirect = True;
