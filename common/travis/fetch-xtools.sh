@@ -4,7 +4,7 @@
 
 TAR=tar
 command -v bsdtar >/dev/null && TAR=bsdtar
-URL="https://github.com/leahneukirchen/xtools/archive/master.tar.gz"
+URL="https://github.com/classabbyamp/xtools/archive/xshellcheck.tar.gz"
 FILE="xtools.tar.gz"
 
 mkdir -p /tmp/bin
