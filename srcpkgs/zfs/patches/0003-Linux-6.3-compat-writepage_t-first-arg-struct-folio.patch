@@ -1,0 +1,130 @@
+From 81c5dcc1a944decba3353b8832c339166cbb1b37 Mon Sep 17 00:00:00 2001
+From: youzhongyang <youzhong@gmail.com>
+Date: Wed, 5 Apr 2023 13:01:38 -0400
+Subject: [PATCH 3/5] Linux 6.3 compat: writepage_t first arg struct folio*
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The type def of writepage_t in kernel 6.3 is changed to take
+struct folio* as the first argument. We need to detect this
+change and pass correct function to write_cache_pages().
+
+Reviewed-by: Brian Behlendorf <behlendorf1@llnl.gov>
+Reviewed-by: Brian Atkinson <batkinson@lanl.gov>
+Signed-off-by: Youzhong Yang <yyang@mathworks.com>
+Closes #14699
+
+Modified-from: 8eb2f2605717572d92041534a0556d6d75c47d99
+Signed-off-by: Đoàn Trần Công Danh <congdanhqx@gmail.com>
+---
+ config/kernel-writepage_t.m4   | 26 ++++++++++++++++++++++++++
+ config/kernel.m4               |  2 ++
+ module/os/linux/zfs/zpl_file.c | 27 +++++++++++++++++++++++++--
+ 3 files changed, 53 insertions(+), 2 deletions(-)
+ create mode 100644 config/kernel-writepage_t.m4
+
+diff --git a/config/kernel-writepage_t.m4 b/config/kernel-writepage_t.m4
+new file mode 100644
+index 000000000..3a0cffd98
+--- /dev/null
++++ b/config/kernel-writepage_t.m4
+@@ -0,0 +1,26 @@
++AC_DEFUN([ZFS_AC_KERNEL_SRC_WRITEPAGE_T], [
++	dnl #
++	dnl # 6.3 API change
++	dnl # The writepage_t function type now has its first argument as
++	dnl # struct folio* instead of struct page*
++	dnl #
++	ZFS_LINUX_TEST_SRC([writepage_t_folio], [
++		#include <linux/writeback.h>
++		int putpage(struct folio *folio,
++		    struct writeback_control *wbc, void *data)
++		{ return 0; }
++		writepage_t func = putpage;
++	],[])
++])
++
++AC_DEFUN([ZFS_AC_KERNEL_WRITEPAGE_T], [
++	AC_MSG_CHECKING([whether int (*writepage_t)() takes struct folio*])
++	ZFS_LINUX_TEST_RESULT([writepage_t_folio], [
++		AC_MSG_RESULT(yes)
++		AC_DEFINE(HAVE_WRITEPAGE_T_FOLIO, 1,
++		   [int (*writepage_t)() takes struct folio*])
++	],[
++		AC_MSG_RESULT(no)
++	])
++])
++
+diff --git a/config/kernel.m4 b/config/kernel.m4
+index 7806da7a8..f6743acac 100644
+--- a/config/kernel.m4
++++ b/config/kernel.m4
+@@ -144,6 +144,7 @@ AC_DEFUN([ZFS_AC_KERNEL_TEST_SRC], [
+ 	ZFS_AC_KERNEL_SRC_KTHREAD
+ 	ZFS_AC_KERNEL_SRC_ZERO_PAGE
+ 	ZFS_AC_KERNEL_SRC___COPY_FROM_USER_INATOMIC
++	ZFS_AC_KERNEL_SRC_WRITEPAGE_T
+ 
+ 	AC_MSG_CHECKING([for available kernel interfaces])
+ 	ZFS_LINUX_TEST_COMPILE_ALL([kabi])
+@@ -261,6 +262,7 @@ AC_DEFUN([ZFS_AC_KERNEL_TEST_RESULT], [
+ 	ZFS_AC_KERNEL_KTHREAD
+ 	ZFS_AC_KERNEL_ZERO_PAGE
+ 	ZFS_AC_KERNEL___COPY_FROM_USER_INATOMIC
++	ZFS_AC_KERNEL_WRITEPAGE_T
+ ])
+ 
+ dnl #
+diff --git a/module/os/linux/zfs/zpl_file.c b/module/os/linux/zfs/zpl_file.c
+index 38d2bd147..25030cb2d 100644
+--- a/module/os/linux/zfs/zpl_file.c
++++ b/module/os/linux/zfs/zpl_file.c
+@@ -701,6 +701,29 @@ zpl_putpage(struct page *pp, struct writeback_control *wbc, void *data)
+ 	return (0);
+ }
+ 
++#ifdef HAVE_WRITEPAGE_T_FOLIO
++static int
++zpl_putfolio(struct folio *pp, struct writeback_control *wbc, void *data)
++{
++	(void) zpl_putpage(&pp->page, wbc, data);
++	return (0);
++}
++#endif
++
++static inline int
++zpl_write_cache_pages(struct address_space *mapping,
++    struct writeback_control *wbc, void *data)
++{
++	int result;
++
++#ifdef HAVE_WRITEPAGE_T_FOLIO
++	result = write_cache_pages(mapping, wbc, zpl_putfolio, data);
++#else
++	result = write_cache_pages(mapping, wbc, zpl_putpage, data);
++#endif
++	return (result);
++}
++
+ static int
+ zpl_writepages(struct address_space *mapping, struct writeback_control *wbc)
+ {
+@@ -723,7 +746,7 @@ zpl_writepages(struct address_space *mapping, struct writeback_control *wbc)
+ 	 * and then we commit it all in one go.
+ 	 */
+ 	wbc->sync_mode = WB_SYNC_NONE;
+-	result = write_cache_pages(mapping, wbc, zpl_putpage, mapping);
++	result = zpl_write_cache_pages(mapping, wbc, mapping);
+ 	if (sync_mode != wbc->sync_mode) {
+ 		ZPL_ENTER(zfsvfs);
+ 		ZPL_VERIFY_ZP(zp);
+@@ -739,7 +762,7 @@ zpl_writepages(struct address_space *mapping, struct writeback_control *wbc)
+ 		 * details). That being said, this is a no-op in most cases.
+ 		 */
+ 		wbc->sync_mode = sync_mode;
+-		result = write_cache_pages(mapping, wbc, zpl_putpage, mapping);
++		result = zpl_write_cache_pages(mapping, wbc, mapping);
+ 	}
+ 	return (result);
+ }
