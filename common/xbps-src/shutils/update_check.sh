@@ -136,7 +136,7 @@ update_check() {
                     */-/*) pkgurlname="$(printf %s "$url" | sed -e 's%/-/.*%%g; s%/$%%')";;
                     *) pkgurlname="$(printf %s "$url" | cut -d / -f 1-5)";;
                 esac
-                url="$pkgurlname/tags"
+                url="$pkgurlname/-/tags"
                 rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d.]+(?=\.tar\.gz")';;
             *bitbucket.org*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
