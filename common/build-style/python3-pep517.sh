@@ -9,15 +9,12 @@ do_build() {
 }
 
 do_check() {
+	: ${make_install_target:="dist/*.whl"}
+
 	local testjobs
 	if python3 -c 'import pytest' >/dev/null 2>&1; then
 		if python3 -c 'import xdist' >/dev/null 2>&1; then
 			testjobs="-n $XBPS_MAKEJOBS"
-		fi
-
-		if [ -z "${make_install_target}" ]; then
-			local wheelbase="${pkgname#python3-}"
-			make_install_target="dist/${wheelbase//-/_}-${version}-*-*-*.whl"
 		fi
 
 		local testdir="${wrksrc}/tmp/$(date +%s)"
@@ -33,11 +30,8 @@ do_check() {
 }
 
 do_install() {
-	if [ -z "${make_install_target}" ]; then
-		# Default wheel name normalizes hyphens to underscores
-		local wheelbase="${pkgname#python3-}"
-		make_install_target="dist/${wheelbase//-/_}-${version}-*-*-*.whl"
-	fi
+	: ${make_install_args:=--no-compile-bytecode}
+	: ${make_install_target:="dist/*.whl"}
 
 	python3 -m installer --destdir ${DESTDIR} \
 		${make_install_args} ${make_install_target}
