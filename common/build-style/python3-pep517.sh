@@ -19,7 +19,7 @@ do_check() {
 		testjobs="-n $XBPS_MAKEJOBS"
 	fi
 
-	local testdir="${wrksrc}/tmp/$(date +%s)"
+	local testdir="${wrksrc}/.xbps-testdir/$(date +%s)"
 	python3 -m installer --destdir "${testdir}" \
 		${make_install_args} ${make_install_target:-dist/*.whl}
 
