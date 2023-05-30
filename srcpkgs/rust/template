@@ -8,7 +8,7 @@
 # uploaded to https://repo-default.voidlinux.org/distfiles/
 #
 pkgname=rust
-version=1.69.0
+version=1.70.0
 revision=1
 hostmakedepends="cmake curl pkg-config python3 tar cargo-bootstrap"
 makedepends="libffi-devel ncurses-devel libxml2-devel zlib-devel llvm15"
@@ -18,9 +18,10 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="MIT, Apache-2.0"
 homepage="https://www.rust-lang.org/"
 distfiles="https://static.rust-lang.org/dist/rustc-${version}-src.tar.gz"
-checksum=fb05971867ad6ccabbd3720279f5a94b99f61024923187b56bb5c455fa3cf60f
+checksum=b2bfae000b7a5040e4ec4bbc50a09f21548190cb7570b0ed77358368413bd27c
 lib32disabled=yes
 make_check=no # CBA for now
+python_version=3 # needed for python files in rust-src
 
 build_options="bindist"
 desc_option_bindist="Generate tarballs for bootstrap"
@@ -70,97 +71,85 @@ post_patch() {
 }
 
 do_configure() {
-	local _local_rebuild _use_debug _use_debug_rustc _use_rpath _use_docs _llvm_shared
+	local _local_rebuild _debug _debug_rustc _rpath _docs _llvm_shared
+	local _cross_args
 
 	if [ "$CROSS_BUILD" ]; then
-		_local_rebuild="true"
+		_local_rebuild="enable"
 	else
-		_local_rebuild="false"
+		_local_rebuild="disable"
 	fi
 
 	# disable rustc debug info as it bloats up rust-std significantly
 	# set to 1 or 2 if you wish to have debug info for rustc, it won't
 	# link on 32-bit platforms though (too big)
-	_use_debug_rustc="0"
+	_debug_rustc="0"
 	# just disable debug for now
-	_use_debug="0"
+	_debug="0"
 
 	# if true, the binaries will be built with rpath, so the binaries will be
 	# usable directly from the build directory, this is not desirable for
 	# packaging but is useful when building bootstrap binaries
 	if [ "$build_option_bindist" ]; then
-		_use_rpath="true"
-		_use_docs="false"
-		_llvm_shared="false"
+		_rpath="enable"
+		_docs="disable"
+		_llvm_shared="disable"
 	else
-		_use_rpath="false"
-		_use_docs="true"
-		_llvm_shared="true"
+		_rpath="disable"
+		_docs="enable"
+		_llvm_shared="enable"
 	fi
-
-	cat > config.toml <<- EOF
-		changelog-seen = 2
-		[llvm]
-		ninja = false
-		link-shared = ${_llvm_shared}
-		[build]
-		build = "${RUST_BUILD}"
-		host = [ "${RUST_TARGET}" ]
-		target = [ "${RUST_TARGET}" ]
-		cargo = "/usr/bin/cargo"
-		rustc = "/usr/bin/rustc"
-		submodules = false
-		python = "python3"
-		locked-deps = true
-		vendor = true
-		full-bootstrap = false
-		local-rebuild = ${_local_rebuild}
-		extended = false
-		docs = ${_use_docs}
-		tools = []
-		[install]
-		prefix = "/usr"
-		[rust]
-		optimize = true
-		debug = false
-		codegen-units = 1
-		codegen-units-std = 1
-		debuginfo-level = ${_use_debug}
-		debuginfo-level-rustc = ${_use_debug_rustc}
-		debuginfo-level-tests = 0
-		incremental = false
-		parallel-compiler = false
-		channel = "stable"
-		description = "Void Linux"
-		rpath = ${_use_rpath}
-		verbose-tests = true
-		dist-src = false
-		jemalloc = false
-		llvm-libunwind = "no"
-		codegen-tests = false
-		[dist]
-		src-tarball = false
-		[target.${RUST_BUILD}]
-		llvm-config = "/usr/bin/llvm-config"
-		crt-static = false
-		cc = "${CC_host:-$CC}"
-		cxx = "${CXX_host:-$CXX}"
-		ar = "${AR_host:-$AR}"
-		linker = "${CC_host:-$CC}"
-	EOF
 
 	if [ "$CROSS_BUILD" ]; then
-		cat >> config.toml <<- EOF
-			[target.${RUST_TARGET}]
-			llvm-config = "/usr/bin/llvm-config"
-			crt-static = false
-			cc = "${CC}"
-			cxx = "${CXX}"
-			ar = "${AR}"
-			linker = "${CC}"
-			sysroot = "${XBPS_CROSS_BASE}"
-		EOF
+		_cross_args="--set=target.${RUST_TARGET}.llvm-config=/usr/bin/llvm-config
+		 --set=target.${RUST_TARGET}.crt-static=false
+		 --set=target.${RUST_TARGET}.cc=${CC}
+		 --set=target.${RUST_TARGET}.cxx=${CXX}
+		 --set=target.${RUST_TARGET}.ar=${AR}
+		 --set=target.${RUST_TARGET}.linker=${CC}"
 	fi
+
+	./configure \
+		--build="${RUST_BUILD}" \
+		--host="${RUST_TARGET}" \
+		--target="${RUST_TARGET}" \
+		--prefix=/usr \
+		--python=python3 \
+		--enable-vendor \
+		--enable-locked-deps \
+		--enable-verbose-tests \
+		--disable-full-bootstrap \
+		--disable-extended \
+		--disable-codegen-tests \
+		--disable-dist-src \
+		--${_llvm_shared}-llvm-link-shared \
+		--${_rpath}-rpath \
+		--${_local_rebuild}-local-rebuild \
+		--${_docs}-docs \
+		--debuginfo-level="${_debug}" \
+		--debuginfo-level-rustc="${_debug_rustc}" \
+		--debuginfo-level-tests=0 \
+		--release-channel=stable \
+		--release-description="Void Linux" \
+		--llvm-libunwind=no \
+		--llvm-config=/usr/bin/llvm-config \
+		--set="rust.optimize=true" \
+		--set="rust.debug=false" \
+		--set="rust.codegen-units=1" \
+		--set="rust.codegen-units-std=1" \
+		--set="rust.incremental=false" \
+		--set="rust.parallel-compiler=false" \
+		--set="rust.jemalloc=false" \
+		--set="build.submodules=false" \
+		--set="build.rustc=/usr/bin/rustc" \
+		--set="build.cargo=/usr/bin/cargo" \
+		--set="target.${RUST_BUILD}.crt-static=false" \
+		--set="target.${RUST_BUILD}.cc=${CC_host:-$CC}" \
+		--set="target.${RUST_BUILD}.cxx=${CXX_host:-$CXX}" \
+		--set="target.${RUST_BUILD}.ar=${AR_host:-$AR}" \
+		--set="target.${RUST_BUILD}.linker=${CC_host:-$CC}" \
+		--set="dist.src-tarball=false" \
+		${_cross_args}
 }
 
 # Set the correct CFLAGS for the build host, we have to compile libbacktrace
@@ -213,6 +202,8 @@ do_install() {
 	 -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
 	tar xf build/dist/rust-docs-${version}-${RUST_TARGET}.tar.gz \
 	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
+	tar xf build/dist/rust-src-${version}.tar.gz \
+	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
 
 	vlicense COPYRIGHT
 	vlicense LICENSE-APACHE
@@ -237,6 +228,14 @@ rust-std_package() {
 		depends="libexecinfo-devel"
 	fi
 	pkg_install() {
-		vmove usr/lib/rustlib
+		vmove usr/lib/rustlib/${RUST_TARGET}
+		vmove usr/lib/rustlib/rustc-src
+	}
+}
+
+rust-src_package() {
+	short_desc+=" - source code"
+	pkg_install() {
+		vmove usr/lib/rustlib/src
 	}
 }
