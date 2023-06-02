@@ -51,3 +51,9 @@ export OPENSSL_NO_VENDOR=1
 
 # pcre2-sys, only necessary for musl targets
 export PCRE2_SYS_STATIC=0
+
+# zstd-sys
+export ZSTD_SYS_USE_PKG_CONFIG=1
+
+# onig-sys
+export RUSTONIG_SYSTEM_LIBONIG=1

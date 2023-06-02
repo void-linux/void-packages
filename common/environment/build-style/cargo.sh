@@ -8,4 +8,6 @@ if [ "$CROSS_BUILD" ]; then
 	makedepends+=" rust-std"
 fi
 
+export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
 build_helper+=" rust"

@@ -94,9 +94,9 @@ _vman() {
 		suffix=${target##*.}
 	fi
 
-	if  [[ $target =~ (.*)\.([a-z][a-z](_[A-Z][A-Z])?)\.(.*) ]]
+	if  [[ $target =~ (.*)\.([a-z][a-z](_[A-Z][A-Z])?(\.[^.]+)?)\.(.*) ]]
 	then
-		name=${BASH_REMATCH[1]}.${BASH_REMATCH[4]}
+		name=${BASH_REMATCH[1]}.${BASH_REMATCH[5]}
 		mandir=${BASH_REMATCH[2]}/man${suffix:0:1}
 	else
 		name=$target
