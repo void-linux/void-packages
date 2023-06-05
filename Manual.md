@@ -1320,6 +1320,8 @@ Ideally those files should not exceed 80 chars per line.
 subpackages can also have their own `INSTALL.msg` and `REMOVE.msg` files, simply create them
 as `srcpkgs/<pkgname>/<subpkg>.INSTALL.msg` or `srcpkgs/<pkgname>/<subpkg>.REMOVE.msg` respectively.
 
+This should only be used for critical messages, like warning users of breaking changes.
+
 <a id="runtime_account_creation"></a>
 ### Creating system accounts/groups at runtime
 
