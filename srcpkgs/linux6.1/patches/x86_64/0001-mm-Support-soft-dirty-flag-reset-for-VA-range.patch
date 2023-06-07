@@ -1,0 +1,244 @@
+From 5ae86c8436b83762bc6cf46bea1da6ace2d3f50e Mon Sep 17 00:00:00 2001
+From: Paul Gofman <pgofman@codeweavers.com>
+Date: Wed, 6 May 2020 14:37:44 +0300
+Subject: [PATCH 1/2] mm: Support soft dirty flag reset for VA range.
+
+---
+ fs/proc/task_mmu.c | 129 ++++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 103 insertions(+), 26 deletions(-)
+
+diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
+index 3cec6fbef725..7c7865028f10 100644
+--- a/fs/proc/task_mmu.c
++++ b/fs/proc/task_mmu.c
+@@ -1032,6 +1032,8 @@ enum clear_refs_types {
+
+ struct clear_refs_private {
+ 	enum clear_refs_types type;
++	unsigned long start, end;
++	bool clear_range;
+ };
+
+ #ifdef CONFIG_MEM_SOFT_DIRTY
+@@ -1125,6 +1127,8 @@ static int clear_refs_pte_range(pmd_t *pmd, unsigned long addr,
+ 	spinlock_t *ptl;
+ 	struct page *page;
+
++	BUG_ON(addr < cp->start || end > cp->end);
++
+ 	ptl = pmd_trans_huge_lock(pmd, vma);
+ 	if (ptl) {
+ 		if (cp->type == CLEAR_REFS_SOFT_DIRTY) {
+@@ -1181,9 +1185,11 @@ static int clear_refs_test_walk(unsigned long start, unsigned long end,
+ 	struct clear_refs_private *cp = walk->private;
+ 	struct vm_area_struct *vma = walk->vma;
+
+-	if (vma->vm_flags & VM_PFNMAP)
++	if (!cp->clear_range && (vma->vm_flags & VM_PFNMAP))
+ 		return 1;
+
++	BUG_ON(start < cp->start || end > cp->end);
++
+ 	/*
+ 	 * Writing 1 to /proc/pid/clear_refs affects all pages.
+ 	 * Writing 2 to /proc/pid/clear_refs only affects anonymous pages.
+@@ -1206,10 +1212,12 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
+ 				size_t count, loff_t *ppos)
+ {
+ 	struct task_struct *task;
+-	char buffer[PROC_NUMBUF];
++	char buffer[18];
+ 	struct mm_struct *mm;
+ 	struct vm_area_struct *vma;
+ 	enum clear_refs_types type;
++	unsigned long start, end;
++	bool clear_range;
+ 	int itype;
+ 	int rv;
+
+@@ -1218,12 +1226,34 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
+ 		count = sizeof(buffer) - 1;
+ 	if (copy_from_user(buffer, buf, count))
+ 		return -EFAULT;
+-	rv = kstrtoint(strstrip(buffer), 10, &itype);
+-	if (rv < 0)
+-		return rv;
+-	type = (enum clear_refs_types)itype;
+-	if (type < CLEAR_REFS_ALL || type >= CLEAR_REFS_LAST)
+-		return -EINVAL;
++
++	if (buffer[0] == '6')
++	{
++		static int once;
++
++		if (!once++)
++			printk(KERN_DEBUG "task_mmu: Using POC clear refs range implementation.\n");
++
++		if (count != 17)
++			return -EINVAL;
++
++		type = CLEAR_REFS_SOFT_DIRTY;
++		start = *(unsigned long *)(buffer + 1);
++		end = *(unsigned long *)(buffer + 1 + 8);
++	}
++	else
++	{
++		rv = kstrtoint(strstrip(buffer), 10, &itype);
++		if (rv < 0)
++			return rv;
++		type = (enum clear_refs_types)itype;
++
++		if (type < CLEAR_REFS_ALL || type >= CLEAR_REFS_LAST)
++			return -EINVAL;
++
++		start = 0;
++		end = -1UL;
++	}
+
+ 	task = get_proc_task(file_inode(file));
+ 	if (!task)
+@@ -1235,40 +1265,86 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
+ 			.type = type,
+ 		};
+
+-		if (mmap_write_lock_killable(mm)) {
+-			count = -EINTR;
+-			goto out_mm;
++		if (start || end != -1UL)
++		{
++			start = min(start, -1) & PAGE_MASK;
++			end = min(end, -1) & PAGE_MASK;
++
++			if (start >= end)
++			{
++				count = -EINVAL;
++				goto out_mm;
++			}
++			clear_range = true;
+ 		}
++		else
++		{
++			clear_range = false;
++		}
++
++		cp.start = start;
++		cp.end = end;
++		cp.clear_range = clear_range;
++
+ 		if (type == CLEAR_REFS_MM_HIWATER_RSS) {
++			if (mmap_write_lock_killable(mm)) {
++				count = -EINTR;
++				goto out_mm;
++			}
++
+ 			/*
+ 			 * Writing 5 to /proc/pid/clear_refs resets the peak
+ 			 * resident set size to this mm's current rss value.
+ 			 */
+ 			reset_mm_hiwater_rss(mm);
+-			goto out_unlock;
++			mmap_write_unlock(mm);
++			goto out_mm;
+ 		}
+
+ 		if (type == CLEAR_REFS_SOFT_DIRTY) {
+-			mas_for_each(&mas, vma, ULONG_MAX) {
+-				if (!(vma->vm_flags & VM_SOFTDIRTY))
+-					continue;
+-				vma->vm_flags &= ~VM_SOFTDIRTY;
+-				vma_set_page_prot(vma);
++			if (mmap_read_lock_killable(mm)) {
++				count = -EINTR;
++				goto out_mm;
+ 			}
+-
++			if (!clear_range)
++				mas_for_each(&mas, vma, ULONG_MAX) {
++				    if (!(vma->vm_flags & VM_SOFTDIRTY))
++					    continue;
++				    mmap_read_unlock(mm);
++				    if (mmap_write_lock_killable(mm)) {
++					    count = -EINTR;
++					    goto out_mm;
++				    }
++				    mas_for_each(&mas, vma, ULONG_MAX) {
++					    vma->vm_flags &= ~VM_SOFTDIRTY;
++					    vma_set_page_prot(vma);
++				    }
++				    mmap_write_downgrade(mm);
++				    break;
++				}
+ 			inc_tlb_flush_pending(mm);
+ 			mmu_notifier_range_init(&range, MMU_NOTIFY_SOFT_DIRTY,
+-						0, NULL, mm, 0, -1UL);
++						0, NULL, mm, start, end);
+ 			mmu_notifier_invalidate_range_start(&range);
+ 		}
+-		walk_page_range(mm, 0, -1, &clear_refs_walk_ops, &cp);
++		else
++		{
++			if (mmap_write_lock_killable(mm)) {
++				count = -EINTR;
++				goto out_mm;
++			}
++		}
++		walk_page_range(mm, start, end == -1UL ? -1 : end, &clear_refs_walk_ops, &cp);
+ 		if (type == CLEAR_REFS_SOFT_DIRTY) {
+ 			mmu_notifier_invalidate_range_end(&range);
+ 			flush_tlb_mm(mm);
+ 			dec_tlb_flush_pending(mm);
++			mmap_read_unlock(mm);
++		}
++		else
++		{
++			mmap_write_unlock(mm);
+ 		}
+-out_unlock:
+-		mmap_write_unlock(mm);
+ out_mm:
+ 		mmput(mm);
+ 	}
+@@ -1301,6 +1377,7 @@ struct pagemapread {
+ #define PM_PFRAME_MASK		GENMASK_ULL(PM_PFRAME_BITS - 1, 0)
+ #define PM_SOFT_DIRTY		BIT_ULL(55)
+ #define PM_MMAP_EXCLUSIVE	BIT_ULL(56)
++#define PM_SOFT_DIRTY_PAGE	BIT_ULL(57)
+ #define PM_UFFD_WP		BIT_ULL(57)
+ #define PM_FILE			BIT_ULL(61)
+ #define PM_SWAP			BIT_ULL(62)
+@@ -1373,13 +1450,13 @@ static pagemap_entry_t pte_to_pagemap_entry(struct pagemapread *pm,
+ 		flags |= PM_PRESENT;
+ 		page = vm_normal_page(vma, addr, pte);
+ 		if (pte_soft_dirty(pte))
+-			flags |= PM_SOFT_DIRTY;
++			flags |= PM_SOFT_DIRTY | PM_SOFT_DIRTY_PAGE;
+ 		if (pte_uffd_wp(pte))
+ 			flags |= PM_UFFD_WP;
+ 	} else if (is_swap_pte(pte)) {
+ 		swp_entry_t entry;
+ 		if (pte_swp_soft_dirty(pte))
+-			flags |= PM_SOFT_DIRTY;
++			flags |= PM_SOFT_DIRTY | PM_SOFT_DIRTY_PAGE;
+ 		if (pte_swp_uffd_wp(pte))
+ 			flags |= PM_UFFD_WP;
+ 		entry = pte_to_swp_entry(pte);
+@@ -1500,7 +1500,7 @@
+
+ 			flags |= PM_PRESENT;
+ 			if (pmd_soft_dirty(pmd))
+-				flags |= PM_SOFT_DIRTY;
++				flags |= PM_SOFT_DIRTY | PM_SOFT_DIRTY_PAGE;
+ 			if (pmd_uffd_wp(pmd))
+ 				flags |= PM_UFFD_WP;
+ 			if (pm->show_pfn)
+@@ -1442,7 +1519,7 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
+ 			}
+ 			flags |= PM_SWAP;
+ 			if (pmd_swp_soft_dirty(pmd))
+-				flags |= PM_SOFT_DIRTY;
++				flags |= PM_SOFT_DIRTY | PM_SOFT_DIRTY_PAGE;
+ 			if (pmd_swp_uffd_wp(pmd))
+ 				flags |= PM_UFFD_WP;
+ 			VM_BUG_ON(!is_pmd_migration_entry(pmd));
+--
+2.30.2
