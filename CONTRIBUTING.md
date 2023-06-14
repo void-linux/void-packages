@@ -20,6 +20,7 @@ while not meeting any of the following requirements, is a good candidate for the
 In particular, new themes are highly unlikely to be accepted.
 Simple shell scripts are unlikely to be accepted unless they provide considerable value to a broad user base.
 New fonts may be accepted if they provide value beyond aesthetics (e.g. they contain glyphs for a script missing in already packaged fonts).
+Packages related to cryptocurrencies (wallets, miners, nodes, etc) are not accepted.
 
 Browser forks, including those based on Chromium and Firefox, are generally not accepted.
 Such forks require heavy patching, maintenance and hours of build time.
