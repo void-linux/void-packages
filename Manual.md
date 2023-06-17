@@ -995,13 +995,11 @@ system. Additional arguments may be passed to the `zig build` invocation using
 For packages that use the Python module build method (`setup.py` or
 [PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
 
-- `python-module` to build *both* Python 2.x and 3.x modules
+- `python2-module` to build Python 2.x modules
 
-- `python2-module` to build Python 2.x only modules
+- `python3-module` to build Python 3.x modules
 
-- `python3-module` to build Python 3.x only modules
-
-- `python3-pep517` to build Python 3.x only modules that provide a PEP 517 build description without
+- `python3-pep517` to build Python 3.x modules that provide a PEP 517 build description without
 a `setup.py` script
 
 Environment variables for a specific `build_style` can be declared in a filename
