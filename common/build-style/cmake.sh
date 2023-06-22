@@ -72,6 +72,7 @@ _EOF
 	cmake_args+=" -DCMAKE_INSTALL_SBINDIR=bin"
 
 	export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Ninja}"
+	PATH="$PATH:/usr/libexec/xbps-src/bin"
 	# Remove -pipe: https://gitlab.kitware.com/cmake/cmake/issues/19590
 	CFLAGS="-DNDEBUG ${CFLAGS/ -pipe / }" CXXFLAGS="-DNDEBUG ${CXXFLAGS/ -pipe / }" \
 		cmake ${cmake_args} ${configure_args} \
