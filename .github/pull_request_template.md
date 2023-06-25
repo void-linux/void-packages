@@ -3,6 +3,12 @@
 #### Testing the changes
 - I tested the changes in this PR: **YES**|**briefly**|**NO**
 
+#### Maintainer
+- I am the maintainer of packages in this PR: **YES**|**NO**
+<!-- if you are not the maintainer of the package,
+find the github username of the maintainer via github blame and mention them here -->
+- Maintainer: @
+
 <!--
 #### New package
 - This new package conforms to the [package requirements](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md#package-requirements): **YES**|**NO**
