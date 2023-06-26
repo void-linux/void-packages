@@ -5,7 +5,8 @@ packages for XBPS, the `Void Linux` native packaging system.
 
 *Table of Contents*
 
-* [Introduction](#Introduction)
+* The XBPS source packages manual
+	* [Introduction](#Introduction)
 	* [Package build phases](#buildphase)
 	* [Package naming conventions](#namingconventions)
 		* [Libraries](#libs)
@@ -33,13 +34,14 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Writing runit services](#writing_runit_services)
 	* [32bit packages](#32bit_pkgs)
 	* [Subpackages](#pkgs_sub)
-	* [Development packages](#pkgs_development)
-	* [Data packages](#pkgs_data)
-	* [Documentation packages](#pkgs_documentation)
-	* [Python packages](#pkgs_python)
-	* [Go packages](#pkgs_go)
-	* [Haskell packages](#pkgs_haskell)
-	* [Font packages](#pkgs_font)
+	* [Some package classes](#pkgs_classes)
+		* [Development packages](#pkgs_development)
+		* [Data packages](#pkgs_data)
+		* [Documentation packages](#pkgs_documentation)
+		* [Python packages](#pkgs_python)
+		* [Go packages](#pkgs_go)
+		* [Haskell packages](#pkgs_haskell)
+		* [Font packages](#pkgs_font)
 	* [Renaming a package](#pkg_rename)
 	* [Removing a package](#pkg_remove)
 	* [XBPS Triggers](#xbps_triggers)
@@ -72,10 +74,10 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Void specific documentation](#documentation)
 	* [Notes](#notes)
 	* [Contributing via git](#contributing)
-* [Help](#help)
+	* [Help](#help)
 
 <a id="Introduction"></a>
-## Introduction
+### Introduction
 
 The `void-packages` repository contains all the
 recipes to download, compile and build binary packages for Void Linux.
@@ -841,10 +843,10 @@ not a particular package is present in `makedepends` or `hostmakedepends`, that
 package shouldn't be added as a build time dependency.
 
 <a id="repositories"></a>
-#### Repositories
+### Repositories
 
 <a id="repo_by_branch"></a>
-##### Repositories defined by Branch
+#### Repositories defined by Branch
 
 The global repository takes the name of
 the current branch, except if the name of the branch is master. Then the resulting
@@ -852,7 +854,7 @@ repository will be at the global scope. The usage scenario is that the user can
 update multiple packages in a second branch without polluting his local repository.
 
 <a id="pkg_defined_repo"></a>
-##### Package defined Repositories
+#### Package defined Repositories
 
 The second way to define a repository is by setting the `repository` variable in
 a template. This way the maintainer can define repositories for a specific
@@ -1474,8 +1476,11 @@ destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
 Subpackages are processed always in alphabetical order; To force a custom order,
 the `subpackages` variable can be declared with the wanted order.
 
+<a id="pkgs_classes"></a>
+### Some package classes
+
 <a id="pkgs_development"></a>
-### Development packages
+#### Development packages
 
 A development package, commonly generated as a subpackage, shall only contain
 files required for development, that is, headers, static libraries, shared
@@ -1505,7 +1510,7 @@ following subset of files from the main package:
 * Vala bindings `usr/share/vala`
 
 <a id="pkgs_data"></a>
-### Data packages
+#### Data packages
 
 Another common subpackage type is the `-data` subpackage. This subpackage
 type used to split architecture independent, big(ger) or huge amounts
@@ -1517,7 +1522,7 @@ The main package must then have `depends="${pkgname}-data-${version}_${revision}
 possibly in addition to other, non-automatic depends.
 
 <a id="pkgs_documentation"></a>
-### Documentation packages
+#### Documentation packages
 
 Packages intended for user interaction do not always unconditionally require
 their documentation part. A user who does not want to e.g. develop
@@ -1532,7 +1537,7 @@ amounts of documentation for no reason. Thus the size of the documentation part 
 be your guidance to decide whether or not to split off a `-doc` subpackage.
 
 <a id="pkgs_python"></a>
-### Python packages
+#### Python packages
 
 Python packages should be built with the `python{,2,3}-module` build style, if possible.
 This sets some environment variables required to allow cross compilation. Support to allow
@@ -1593,7 +1598,7 @@ Also, a set of useful variables are defined to use in the templates:
 python versions.
 
 <a id="pkgs_go"></a>
-### Go packages
+#### Go packages
 
 Go packages should be built with the `go` build style, if possible.
 The `go` build style takes care of downloading Go dependencies and
@@ -1627,7 +1632,7 @@ The path to the package's source inside `$GOPATH` is available as
 `$GOSRCPATH`.
 
 <a id="pkgs_haskell"></a>
-### Haskell packages
+#### Haskell packages
 
 We build Haskell package using `stack` from
 [Stackage](http://www.stackage.org/), generally the LTS versions.
@@ -1645,7 +1650,7 @@ The following variables influence how Haskell packages are built:
   you can add your `--flag ...` parameters there.
 
 <a id="pkgs_font"></a>
-### Font packages
+#### Font packages
 
 Font packages are very straightforward to write, they are always set with the
 following variables:
@@ -1902,7 +1907,7 @@ If it is running under another architecture it tries to use the host's `install-
 utility.
 
 <a id="triggers_initramfs_regenerate"></a>
-### initramfs-regenerate
+#### initramfs-regenerate
 
 The initramfs-regenerate trigger will trigger the regeneration of all kernel
 initramfs images after package installation or removal. The trigger must be
@@ -2151,7 +2156,7 @@ to pull in new changes:
     $ git pull --rebase upstream master
 
 <a id="help"></a>
-## Help
+### Help
 
 If after reading this `manual` you still need some kind of help, please join
 us at `#xbps` via IRC at `irc.libera.chat`.
