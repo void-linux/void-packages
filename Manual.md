@@ -789,24 +789,25 @@ should be listed in `checkdepends` and will be installed as if they were part of
 <a id="deps_runtime"></a>
 Lastly, a package may require certain dependencies at runtime, without which it
 is unusable. These dependencies, when they aren't detected automatically by
-XBPS, should be listed in `depends`. This is mostly relevant for Perl and Python
-modules and other programs that use `dlopen(3)` instead of dynamically linking.
+XBPS, should be listed in `depends`.
 
-Dependencies for ELF objects are detected automatically by `xbps-src`, hence runtime
-dependencies must not be specified in templates via `$depends` with the following exceptions:
+Libraries linked by ELF objects are detected automatically by `xbps-src`, hence they
+must not be specified in templates via `depends`. This variable should list:
 
+- executables called as separate processes.
 - ELF objects using dlopen(3).
-- non ELF objects, i.e perl/python/ruby/etc modules.
-- Overriding the minimal version specified in the `shlibs` file.
+- non-object code, e.g. C headers, perl/python/ruby/etc modules.
+- data files.
+- overriding the minimal version specified in the `common/shlibs` file.
 
 The runtime dependencies for ELF objects are detected by checking which SONAMEs
 they require and then the SONAMEs are mapped to a binary package name with a minimal
-required version. The `shlibs` file in the `void-packages/common` directory
+required version. The `common/shlibs` file
 sets up the `<SONAME> <pkgname>>=<version>` mappings.
 
 For example the `foo-1.0_1` package provides the `libfoo.so.1` SONAME and
-software requiring this library will link to `libfoo`; the resulting binary
-package will have a run-time dependency to `foo>=1.0_1` package as specified in
+software requiring this library will link to `libfoo.so.1`; the resulting binary
+package will have a run-time dependency on `foo>=1.0_1` package as specified in
 `common/shlibs`:
 
 ```
@@ -820,13 +821,13 @@ libfoo.so.1 foo-1.0_1
 - The second field specified the package name and minimal version required.
 - A third optional field (usually set to `ignore`) can be used to skip checks in soname bumps.
 
-Dependencies declared via `${depends}` are not installed to the master directory, rather are
+Dependencies declared via `depends` are not installed to the master directory, rather they are
 only checked if they exist as binary packages, and are built automatically by `xbps-src` if
 the specified version is not in the local repository.
 
 As a special case, `virtual` dependencies may be specified as runtime dependencies in the
-`${depends}` template variable. Several different packages can provide common functionality by
-declaring a virtual name and version in the `${provides}` template variable (e.g.,
+`depends` template variable. Several different packages can provide common functionality by
+declaring a virtual name and version in the `provides` template variable (e.g.
 `provides="vpkg-0.1_1"`). Packages that rely on the common functionality without concern for the
 specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
 (e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
