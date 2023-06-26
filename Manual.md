@@ -27,7 +27,6 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Build helper scripts](#build_helper)
 	* [Functions](#functions)
 	* [Build options](#build_options)
-		* [Runtime dependencies](#deps_runtime)
 	* [INSTALL and REMOVE files](#install_remove_files)
 	* [INSTALL.msg and REMOVE.msg files](#install_remove_files_msg)
 	* [Creating system accounts/groups at runtime](#runtime_account_creation)
@@ -787,10 +786,54 @@ should be listed in `checkdepends` and will be installed as if they were part of
   a D-Bus session for applications that need it
 - `git`: some test suites run the `git` command
 
+<a id="deps_runtime"></a>
 Lastly, a package may require certain dependencies at runtime, without which it
 is unusable. These dependencies, when they aren't detected automatically by
 XBPS, should be listed in `depends`. This is mostly relevant for Perl and Python
 modules and other programs that use `dlopen(3)` instead of dynamically linking.
+
+Dependencies for ELF objects are detected automatically by `xbps-src`, hence runtime
+dependencies must not be specified in templates via `$depends` with the following exceptions:
+
+- ELF objects using dlopen(3).
+- non ELF objects, i.e perl/python/ruby/etc modules.
+- Overriding the minimal version specified in the `shlibs` file.
+
+The runtime dependencies for ELF objects are detected by checking which SONAMEs
+they require and then the SONAMEs are mapped to a binary package name with a minimal
+required version. The `shlibs` file in the `void-packages/common` directory
+sets up the `<SONAME> <pkgname>>=<version>` mappings.
+
+For example the `foo-1.0_1` package provides the `libfoo.so.1` SONAME and
+software requiring this library will link to `libfoo`; the resulting binary
+package will have a run-time dependency to `foo>=1.0_1` package as specified in
+`common/shlibs`:
+
+```
+# common/shlibs
+...
+libfoo.so.1 foo-1.0_1
+...
+```
+
+- The first field specifies the SONAME.
+- The second field specified the package name and minimal version required.
+- A third optional field (usually set to `ignore`) can be used to skip checks in soname bumps.
+
+Dependencies declared via `${depends}` are not installed to the master directory, rather are
+only checked if they exist as binary packages, and are built automatically by `xbps-src` if
+the specified version is not in the local repository.
+
+As a special case, `virtual` dependencies may be specified as runtime dependencies in the
+`${depends}` template variable. Several different packages can provide common functionality by
+declaring a virtual name and version in the `${provides}` template variable (e.g.,
+`provides="vpkg-0.1_1"`). Packages that rely on the common functionality without concern for the
+specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
+(e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
+virtual packages will be confirmed to exist and will be built if necessary. A map from virtual
+packages to their default providers is defined in `etc/defaults.virtual`. Individual mappings can be
+overridden by local preferences in `etc/virtual`. Comments in `etc/defaults.virtual` provide more
+information on this map.
 
 Finally, as a general rule, if a package is built the exact same way whether or
 not a particular package is present in `makedepends` or `hostmakedepends`, that
@@ -1213,52 +1256,6 @@ Example: `XBPS_PKG_OPTIONS_xorg_server=opt`.
 
 The list of supported package build options and its description is defined in the
 `common/options.description` file.
-
-<a id="deps_runtime"></a>
-#### Runtime dependencies
-
-Dependencies for ELF objects are detected automatically by `xbps-src`, hence runtime
-dependencies must not be specified in templates via `$depends` with the following exceptions:
-
-- ELF objects using dlopen(3).
-- non ELF objects, i.e perl/python/ruby/etc modules.
-- Overriding the minimal version specified in the `shlibs` file.
-
-The runtime dependencies for ELF objects are detected by checking which SONAMEs
-they require and then the SONAMEs are mapped to a binary package name with a minimal
-required version. The `shlibs` file in the `void-packages/common` directory
-sets up the `<SONAME> <pkgname>>=<version>` mappings.
-
-For example the `foo-1.0_1` package provides the `libfoo.so.1` SONAME and
-software requiring this library will link to `libfoo`; the resulting binary
-package will have a run-time dependency to `foo>=1.0_1` package as specified in
-`common/shlibs`:
-
-```
-# common/shlibs
-...
-libfoo.so.1 foo-1.0_1
-...
-```
-
-- The first field specifies the SONAME.
-- The second field specified the package name and minimal version required.
-- A third optional field (usually set to `ignore`) can be used to skip checks in soname bumps.
-
-Dependencies declared via `${depends}` are not installed to the master directory, rather are
-only checked if they exist as binary packages, and are built automatically by `xbps-src` if
-the specified version is not in the local repository.
-
-As a special case, `virtual` dependencies may be specified as runtime dependencies in the
-`${depends}` template variable. Several different packages can provide common functionality by
-declaring a virtual name and version in the `${provides}` template variable (e.g.,
-`provides="vpkg-0.1_1"`). Packages that rely on the common functionality without concern for the
-specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
-(e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
-virtual packages will be confirmed to exist and will be built if necessary. A map from virtual
-packages to their default providers is defined in `etc/defaults.virtual`. Individual mappings can be
-overridden by local preferences in `etc/virtual`. Comments in `etc/defaults.virtual` provide more
-information on this map.
 
 <a id="install_remove_files"></a>
 ### INSTALL and REMOVE files
