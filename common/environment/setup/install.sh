@@ -13,7 +13,7 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
+for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv vicons; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
 
@@ -273,4 +273,19 @@ _vcompletion() {
 			return 1
 			;;
 	esac
+}
+
+_vicons() {
+	local icon_name_scheme="$1" name="$2"
+
+	if [ -z "$icon_name_scheme" ]; then
+		msg_red "$pkgver: vicons: 1 argument expected: <icon_name_scheme>\n"
+		return 1
+	fi
+
+	_name="${name:-${pkgname}.png}"
+	for x in 16 32 64 128 256 512 1024; do
+		_file="${icon_name_scheme/\%/$x}"
+		[ -f "$_file" ] && vinstall "$_file" 644 "usr/share/icons/hicolor/${x}x${x}/apps/$_name"
+	done
 }

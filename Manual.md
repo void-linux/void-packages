@@ -335,6 +335,14 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	it will default to `pkgname`. The `shell` argument can be one of `bash`,
 	`fish` or `zsh`.
 
+- *vicons()* `<icon_name_scheme> [<name>]`
+
+	Installs icons of all supported resolutions (e.g. 512px) in the correct
+	location and skips the ones that don't exist for the provided pattern.
+	Therefore it replaces all occurences of `%` in `icon_name_scheme` with the
+	resolution of the current iteration, for example `512`. By default icons are
+	stored by their package name with png as extension if no `name` is provided.
+
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
 <a id="global_vars"></a>
