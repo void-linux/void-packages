@@ -1204,6 +1204,11 @@ package accordingly. Additionally, the following functions are available:
   Outputs `-D<property>=true` if the option is set, or
   `-D<property>=false` otherwise.
 
+- *vopt_feature()* `vopt_feature <option> <property>`
+
+  Same as `vopt_bool`, but uses `-D<property=enabled` and
+	`-D<property>=disabled` respectively. 
+
 The following example shows how to change a source package that uses GNU
 configure to enable a new build option to support PNG images:
 
