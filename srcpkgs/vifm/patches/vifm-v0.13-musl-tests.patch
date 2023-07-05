@@ -1,0 +1,139 @@
+diff --git a/src/filelist.c b/src/filelist.c
+index 1e63c1120..e5fe0131e 100644
+--- a/src/filelist.c
++++ b/src/filelist.c
+@@ -329,7 +329,11 @@ flist_free_view(view_t *view)
+ 	modview_info_free(view->vi);
+ 	view->vi = NULL;
+ 
+-	regfree(&view->primary_group);
++	if(view->primary_group_set)
++	{
++		regfree(&view->primary_group);
++		view->primary_group_set = 0;
++	}
+ 
+ 	marks_clear_view(view);
+ 
+diff --git a/src/opt_handlers.c b/src/opt_handlers.c
+index f655da5da..69935d669 100644
+--- a/src/opt_handlers.c
++++ b/src/opt_handlers.c
+@@ -3250,9 +3250,13 @@ set_sortgroups(view_t *view, char **opt, char value[])
+ 	{
+ 		if(scope == OPT_LOCAL)
+ 		{
+-			regfree(&view->primary_group);
++			if(view->primary_group_set)
++			{
++				regfree(&view->primary_group);
++			}
+ 			(void)regexp_compile(&view->primary_group, first,
+ 					REG_EXTENDED | REG_ICASE);
++			view->primary_group_set = 1;
+ 		}
+ 		free(first);
+ 	}
+diff --git a/src/sort.c b/src/sort.c
+index 792364aa6..75efad5ef 100644
+--- a/src/sort.c
++++ b/src/sort.c
+@@ -43,6 +43,10 @@
+ #include "status.h"
+ #include "types.h"
+ 
++#ifdef HAVE_STRVERSCMP_FUNC
++#    undef HAVE_STRVERSCMP_FUNC
++#endif
++
+ static void sort_tree_slice(dir_entry_t *entries, const dir_entry_t *children,
+ 		size_t nchildren, int root);
+ static void sort_sequence(dir_entry_t *entries, size_t nentries);
+diff --git a/src/ui/fileview.c b/src/ui/fileview.c
+index 7a4b9f189..4539e0530 100644
+--- a/src/ui/fileview.c
++++ b/src/ui/fileview.c
+@@ -215,6 +215,7 @@ fview_init(view_t *view)
+ 	view->sort_groups_g = strdup("");
+ 	(void)regexp_compile(&view->primary_group, view->sort_groups,
+ 			REG_EXTENDED | REG_ICASE);
++	view->primary_group_set = 1;
+ 
+ 	view->preview_prg = strdup("");
+ 	view->preview_prg_g = strdup("");
+diff --git a/src/ui/ui.h b/src/ui/ui.h
+index 91c90eb49..69654d4c6 100644
+--- a/src/ui/ui.h
++++ b/src/ui/ui.h
+@@ -448,6 +448,9 @@ struct view_t
+ 	char *sort_groups, *sort_groups_g;
+ 	/* Primary group of sort_groups (not sort_groups_g) in compiled form. */
+ 	regex_t primary_group;
++	/* Indicates that primary_group was initialized, which is used to avoid
++	 * freeing uninitialized data or freeing it twice. */
++	int primary_group_set;
+ 
+ 	int history_num;    /* Number of used history elements. */
+ 	int history_pos;    /* Current position in history. */
+diff --git a/tests/misc/sort.c b/tests/misc/sort.c
+index bad2120ee..4b9ce6a3b 100644
+--- a/tests/misc/sort.c
++++ b/tests/misc/sort.c
+@@ -424,8 +424,13 @@ TEST(groups_sorting_works)
+ 	lwin.dir_entry[6].origin = lwin.curr_dir;
+ 
+ 	update_string(&lwin.sort_groups, "-(done|todo).*");
++	if(lwin.primary_group_set)
++	{
++		regfree(&lwin.primary_group);
++	}
+ 	(void)regcomp(&lwin.primary_group, "-(done|todo).*",
+ 			REG_EXTENDED | REG_ICASE);
++	lwin.primary_group_set = 1;
+ 
+ 	/* Ascending sorting. */
+ 
+@@ -458,15 +463,17 @@ TEST(groups_sorting_works)
+ 	assert_string_equal("11-todo-publish", lwin.dir_entry[4].name);
+ 	assert_string_equal("1-done", lwin.dir_entry[5].name);
+ 	assert_string_equal("3-done", lwin.dir_entry[6].name);
+-
+-	regfree(&lwin.primary_group);
+-	update_string(&lwin.sort_groups, NULL);
+ }
+ 
+ TEST(global_groups_sorts_entries_list)
+ {
+ 	update_string(&lwin.sort_groups_g, "([0-9])");
++	if(lwin.primary_group_set)
++	{
++		regfree(&lwin.primary_group);
++	}
+ 	(void)regcomp(&lwin.primary_group, "([a-z])", REG_EXTENDED | REG_ICASE);
++	lwin.primary_group_set = 1;
+ 
+ 	lwin.sort_g[0] = SK_BY_GROUPS;
+ 	lwin.sort_g[1] = SK_BY_NAME;
+diff --git a/tests/test-support/test-utils.c b/tests/test-support/test-utils.c
+index 6938d0538..bb449d441 100644
+--- a/tests/test-support/test-utils.c
++++ b/tests/test-support/test-utils.c
+@@ -32,6 +32,7 @@
+ #include "../../src/utils/macros.h"
+ #include "../../src/utils/matcher.h"
+ #include "../../src/utils/path.h"
++#include "../../src/utils/regexp.h"
+ #include "../../src/utils/str.h"
+ #include "../../src/utils/string_array.h"
+ #include "../../src/utils/utils.h"
+@@ -253,6 +254,10 @@ view_setup(view_t *view)
+ 	memset(&view->sort[1], SK_NONE, sizeof(view->sort) - 1);
+ 	memcpy(view->sort_g, view->sort, sizeof(view->sort_g));
+ 
++	/* The code assumes that this field is initialized. */
++	assert_success(regexp_compile(&view->primary_group, "", REG_ICASE));
++	view->primary_group_set = 1;
++
+ 	view->custom.entry_count = 0;
+ 	view->custom.entries = NULL;
+ 
