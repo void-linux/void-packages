@@ -1,0 +1,154 @@
+From c97f144231afbeb4215659d5c685fdf1e3fe5612 Mon Sep 17 00:00:00 2001
+From: xaizek <xaizek@posteo.net>
+Date: Sat, 8 Jul 2023 15:02:37 +0300
+Subject: [PATCH] Fix running tests with musl libc
+
+Thanks to Henrik Holst (a.k.a. hholst80).
+---
+ ChangeLog                       |  3 +++
+ src/filelist.c                  |  6 +++++-
+ src/opt_handlers.c              |  6 +++++-
+ src/ui/fileview.c               |  1 +
+ src/ui/ui.h                     |  3 +++
+ tests/misc/sort.c               | 13 ++++++++++---
+ tests/test-support/test-utils.c |  5 +++++
+ 7 files changed, 32 insertions(+), 5 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index 21803c9e6..e6fcf5a36 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -78,6 +78,9 @@
+ 
+ 	Fixed performance degradation after preview consumes lots of color pairs.
+ 
++	Fixed running tests with musl libc.  Thanks to Henrik Holst (a.k.a.
++	hholst80).
++
+ 0.13-beta to 0.13 (2023-04-04)
+ 
+ 	Made "withicase" and "withrcase" affect how files are sorted before
+diff --git a/src/filelist.c b/src/filelist.c
+index 28d26c69f..a7121f238 100644
+--- a/src/filelist.c
++++ b/src/filelist.c
+@@ -329,7 +329,11 @@ flist_free_view(view_t *view)
+ 	modview_info_free(view->vi);
+ 	view->vi = NULL;
+ 
+-	regfree(&view->primary_group);
++	if(view->primary_group_set)
++	{
++		regfree(&view->primary_group);
++		view->primary_group_set = 0;
++	}
+ 
+ 	marks_clear_view(view);
+ 
+diff --git a/src/opt_handlers.c b/src/opt_handlers.c
+index 5d1c000b0..9905b2b7f 100644
+--- a/src/opt_handlers.c
++++ b/src/opt_handlers.c
+@@ -3301,9 +3301,13 @@ set_sortgroups(view_t *view, char **opt, char value[])
+ 	{
+ 		if(scope == OPT_LOCAL)
+ 		{
+-			regfree(&view->primary_group);
++			if(view->primary_group_set)
++			{
++				regfree(&view->primary_group);
++			}
+ 			(void)regexp_compile(&view->primary_group, first,
+ 					REG_EXTENDED | REG_ICASE);
++			view->primary_group_set = 1;
+ 		}
+ 		free(first);
+ 	}
+diff --git a/src/ui/fileview.c b/src/ui/fileview.c
+index 11c80fe8b..ef5f422be 100644
+--- a/src/ui/fileview.c
++++ b/src/ui/fileview.c
+@@ -253,6 +253,7 @@ fview_init(view_t *view)
+ 	view->sort_groups_g = strdup("");
+ 	(void)regexp_compile(&view->primary_group, view->sort_groups,
+ 			REG_EXTENDED | REG_ICASE);
++	view->primary_group_set = 1;
+ 
+ 	view->preview_prg = strdup("");
+ 	view->preview_prg_g = strdup("");
+diff --git a/src/ui/ui.h b/src/ui/ui.h
+index c9fee0782..886eb9d38 100644
+--- a/src/ui/ui.h
++++ b/src/ui/ui.h
+@@ -449,6 +449,9 @@ struct view_t
+ 	char *sort_groups, *sort_groups_g;
+ 	/* Primary group of sort_groups (not sort_groups_g) in compiled form. */
+ 	regex_t primary_group;
++	/* Indicates that primary_group was initialized, which is used to avoid
++	 * freeing uninitialized data or freeing it twice. */
++	int primary_group_set;
+ 
+ 	int history_num;    /* Number of used history elements. */
+ 	int history_pos;    /* Current position in history. */
+diff --git a/tests/misc/sort.c b/tests/misc/sort.c
+index 9938414b5..3db71db5b 100644
+--- a/tests/misc/sort.c
++++ b/tests/misc/sort.c
+@@ -409,8 +409,13 @@ TEST(groups_sorting_works)
+ 	lwin.dir_entry[6].origin = lwin.curr_dir;
+ 
+ 	update_string(&lwin.sort_groups, "-(done|todo).*");
++	if(lwin.primary_group_set)
++	{
++		regfree(&lwin.primary_group);
++	}
+ 	(void)regcomp(&lwin.primary_group, "-(done|todo).*",
+ 			REG_EXTENDED | REG_ICASE);
++	lwin.primary_group_set = 1;
+ 
+ 	/* Ascending sorting. */
+ 
+@@ -437,15 +442,17 @@ TEST(groups_sorting_works)
+ 	assert_string_equal("11-todo-publish", lwin.dir_entry[4].name);
+ 	assert_string_equal("1-done", lwin.dir_entry[5].name);
+ 	assert_string_equal("3-done", lwin.dir_entry[6].name);
+-
+-	regfree(&lwin.primary_group);
+-	update_string(&lwin.sort_groups, NULL);
+ }
+ 
+ TEST(global_groups_sorts_entries_list)
+ {
+ 	update_string(&lwin.sort_groups_g, "([0-9])");
++	if(lwin.primary_group_set)
++	{
++		regfree(&lwin.primary_group);
++	}
+ 	(void)regcomp(&lwin.primary_group, "([a-z])", REG_EXTENDED | REG_ICASE);
++	lwin.primary_group_set = 1;
+ 
+ 	dir_entry_t entry_list[] = { { .name = "a1" }, { .name = "b0" } };
+ 	entries_t entries = { entry_list, 2 };
+diff --git a/tests/test-support/test-utils.c b/tests/test-support/test-utils.c
+index 932bdc9c9..e3d9ba694 100644
+--- a/tests/test-support/test-utils.c
++++ b/tests/test-support/test-utils.c
+@@ -32,6 +32,7 @@
+ #include "../../src/utils/macros.h"
+ #include "../../src/utils/matcher.h"
+ #include "../../src/utils/path.h"
++#include "../../src/utils/regexp.h"
+ #include "../../src/utils/str.h"
+ #include "../../src/utils/string_array.h"
+ #include "../../src/utils/utils.h"
+@@ -254,6 +255,10 @@ view_setup(view_t *view)
+ 	view_set_sort(view->sort, SK_BY_NAME, SK_NONE);
+ 	view_set_sort(view->sort_g, SK_BY_NAME, SK_NONE);
+ 
++	/* The code assumes that this field is initialized. */
++	assert_success(regexp_compile(&view->primary_group, "", REG_ICASE));
++	view->primary_group_set = 1;
++
+ 	view->custom.entry_count = 0;
+ 	view->custom.entries = NULL;
+ 
