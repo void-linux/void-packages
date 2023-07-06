@@ -1,0 +1,238 @@
+Patch-Source: https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=267709
+Patch-Source: https://hg.mozilla.org/mozilla-central/rev/f54162b2c1f2fe52c6137ab2c3469a1944f58b27
+--- a/xpcom/idl-parser/xpidl/xpidl.py
++++ b/xpcom/idl-parser/xpidl/xpidl.py
+@@ -1633,13 +1633,13 @@ class IDLParser(object):
+     t_ignore = " \t"
+ 
+     def t_multilinecomment(self, t):
+-        r"/\*(?s).*?\*/"
++        r"/\*(\n|.)*?\*/"
+         t.lexer.lineno += t.value.count("\n")
+         if t.value.startswith("/**"):
+             self._doccomments.append(t.value)
+ 
+     def t_singlelinecomment(self, t):
+-        r"(?m)//.*?$"
++        r"//[^\n]*"
+ 
+     def t_IID(self, t):
+         return t
+@@ -1652,7 +1652,7 @@ class IDLParser(object):
+         return t
+ 
+     def t_LCDATA(self, t):
+-        r"(?s)%\{[ ]*C\+\+[ ]*\n(?P<cdata>.*?\n?)%\}[ ]*(C\+\+)?"
++        r"%\{[ ]*C\+\+[ ]*\n(?P<cdata>(\n|.)*?\n?)%\}[ ]*(C\+\+)?"
+         t.type = "CDATA"
+         t.value = t.lexer.lexmatch.group("cdata")
+         t.lexer.lineno += t.value.count("\n")
+
+
+# HG changeset patch
+# User ahochheiden <ahochheiden@mozilla.com>
+# Date 1654151264 0
+# Node ID f54162b2c1f2fe52c6137ab2c3469a1944f58b27
+# Parent  6e7776492240c27732840d65a33dcc440fa1aba0
+Bug 1769631 - Remove 'U' from 'mode' parameters for various 'open' calls to ensure Python3.11 compatibility r=firefox-build-system-reviewers,glandium
+
+The 'U' flag represents "universal newline". It has been deprecated
+since Python3.3. Since then "universal newline" is the default when a
+file is opened in text mode (not bytes). In Python3.11 using the 'U'
+flag throws errors. There should be no harm in removing 'U' from 'open'
+everywhere it is used, and doing allows the use of Python3.11.
+
+For more reading see: https://docs.python.org/3.11/whatsnew/3.11.html#changes-in-the-python-api
+
+Differential Revision: https://phabricator.services.mozilla.com/D147721
+
+diff --git a/dom/base/usecounters.py b/dom/base/usecounters.py
+--- a/dom/base/usecounters.py
++++ b/dom/base/usecounters.py
+@@ -3,17 +3,17 @@
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ import collections
+ import re
+ 
+ 
+ def read_conf(conf_filename):
+     # Can't read/write from a single StringIO, so make a new one for reading.
+-    stream = open(conf_filename, "rU")
++    stream = open(conf_filename, "r")
+ 
+     def parse_counters(stream):
+         for line_num, line in enumerate(stream):
+             line = line.rstrip("\n")
+             if not line or line.startswith("//"):
+                 # empty line or comment
+                 continue
+             m = re.match(r"method ([A-Za-z0-9]+)\.([A-Za-z0-9]+)$", line)
+diff --git a/python/mozbuild/mozbuild/action/process_define_files.py b/python/mozbuild/mozbuild/action/process_define_files.py
+--- a/python/mozbuild/mozbuild/action/process_define_files.py
++++ b/python/mozbuild/mozbuild/action/process_define_files.py
+@@ -31,17 +31,17 @@ def process_define_file(output, input):
+ 
+     config = PartialConfigEnvironment(topobjdir)
+ 
+     if mozpath.basedir(
+         path, [mozpath.join(topsrcdir, "js/src")]
+     ) and not config.substs.get("JS_STANDALONE"):
+         config = PartialConfigEnvironment(mozpath.join(topobjdir, "js", "src"))
+ 
+-    with open(path, "rU") as input:
++    with open(path, "r") as input:
+         r = re.compile(
+             "^\s*#\s*(?P<cmd>[a-z]+)(?:\s+(?P<name>\S+)(?:\s+(?P<value>\S+))?)?", re.U
+         )
+         for l in input:
+             m = r.match(l)
+             if m:
+                 cmd = m.group("cmd")
+                 name = m.group("name")
+diff --git a/python/mozbuild/mozbuild/backend/base.py b/python/mozbuild/mozbuild/backend/base.py
+--- a/python/mozbuild/mozbuild/backend/base.py
++++ b/python/mozbuild/mozbuild/backend/base.py
+@@ -267,17 +267,17 @@ class BuildBackend(LoggingMixin):
+         If an exception is raised, |mach build| will fail with a
+         non-zero exit code.
+         """
+         self._write_purgecaches(config)
+ 
+         return status
+ 
+     @contextmanager
+-    def _write_file(self, path=None, fh=None, readmode="rU"):
++    def _write_file(self, path=None, fh=None, readmode="r"):
+         """Context manager to write a file.
+ 
+         This is a glorified wrapper around FileAvoidWrite with integration to
+         update the summary data on this instance.
+ 
+         Example usage:
+ 
+             with self._write_file('foo.txt') as fh:
+diff --git a/python/mozbuild/mozbuild/preprocessor.py b/python/mozbuild/mozbuild/preprocessor.py
+--- a/python/mozbuild/mozbuild/preprocessor.py
++++ b/python/mozbuild/mozbuild/preprocessor.py
+@@ -526,17 +526,17 @@ class Preprocessor:
+             if not options.output:
+                 raise Preprocessor.Error(
+                     self, "--depend doesn't work with stdout", None
+                 )
+             depfile = get_output_file(options.depend)
+ 
+         if args:
+             for f in args:
+-                with io.open(f, "rU", encoding="utf-8") as input:
++                with io.open(f, "r", encoding="utf-8") as input:
+                     self.processFile(input=input, output=out)
+             if depfile:
+                 mk = Makefile()
+                 mk.create_rule([six.ensure_text(options.output)]).add_dependencies(
+                     self.includes
+                 )
+                 mk.dump(depfile)
+                 depfile.close()
+@@ -855,17 +855,17 @@ class Preprocessor:
+         self.checkLineNumbers = False
+         if isName:
+             try:
+                 args = _to_text(args)
+                 if filters:
+                     args = self.applyFilters(args)
+                 if not os.path.isabs(args):
+                     args = os.path.join(self.curdir, args)
+-                args = io.open(args, "rU", encoding="utf-8")
++                args = io.open(args, "r", encoding="utf-8")
+             except Preprocessor.Error:
+                 raise
+             except Exception:
+                 raise Preprocessor.Error(self, "FILE_NOT_FOUND", _to_text(args))
+         self.checkLineNumbers = bool(
+             re.search("\.(js|jsm|java|webidl)(?:\.in)?$", args.name)
+         )
+         oldFile = self.context["FILE"]
+@@ -909,17 +909,17 @@ class Preprocessor:
+ 
+     def do_error(self, args):
+         raise Preprocessor.Error(self, "Error: ", _to_text(args))
+ 
+ 
+ def preprocess(includes=[sys.stdin], defines={}, output=sys.stdout, marker="#"):
+     pp = Preprocessor(defines=defines, marker=marker)
+     for f in includes:
+-        with io.open(f, "rU", encoding="utf-8") as input:
++        with io.open(f, "r", encoding="utf-8") as input:
+             pp.processFile(input=input, output=output)
+     return pp.includes
+ 
+ 
+ # Keep this module independently executable.
+ if __name__ == "__main__":
+     pp = Preprocessor()
+     pp.handleCommandLine(None, True)
+diff --git a/python/mozbuild/mozbuild/util.py b/python/mozbuild/mozbuild/util.py
+--- a/python/mozbuild/mozbuild/util.py
++++ b/python/mozbuild/mozbuild/util.py
+@@ -231,17 +231,17 @@ class FileAvoidWrite(BytesIO):
+     enabled by default because it a) doesn't make sense for binary files b)
+     could add unwanted overhead to calls.
+ 
+     Additionally, there is dry run mode where the file is not actually written
+     out, but reports whether the file was existing and would have been updated
+     still occur, as well as diff capture if requested.
+     """
+ 
+-    def __init__(self, filename, capture_diff=False, dry_run=False, readmode="rU"):
++    def __init__(self, filename, capture_diff=False, dry_run=False, readmode="r"):
+         BytesIO.__init__(self)
+         self.name = filename
+         assert type(capture_diff) == bool
+         assert type(dry_run) == bool
+         assert "r" in readmode
+         self._capture_diff = capture_diff
+         self._write_to_file = not dry_run
+         self.diff = None
+diff --git a/python/mozbuild/mozpack/files.py b/python/mozbuild/mozpack/files.py
+--- a/python/mozbuild/mozpack/files.py
++++ b/python/mozbuild/mozpack/files.py
+@@ -549,17 +549,17 @@ class PreprocessedFile(BaseFile):
+         self.defines = defines
+         self.extra_depends = list(extra_depends or [])
+         self.silence_missing_directive_warnings = silence_missing_directive_warnings
+ 
+     def inputs(self):
+         pp = Preprocessor(defines=self.defines, marker=self.marker)
+         pp.setSilenceDirectiveWarnings(self.silence_missing_directive_warnings)
+ 
+-        with _open(self.path, "rU") as input:
++        with _open(self.path, "r") as input:
+             with _open(os.devnull, "w") as output:
+                 pp.processFile(input=input, output=output)
+ 
+         # This always yields at least self.path.
+         return pp.includes
+ 
+     def copy(self, dest, skip_if_older=True):
+         """
+@@ -606,17 +606,17 @@ class PreprocessedFile(BaseFile):
+             return False
+ 
+         deps_out = None
+         if self.depfile:
+             deps_out = FileAvoidWrite(self.depfile)
+         pp = Preprocessor(defines=self.defines, marker=self.marker)
+         pp.setSilenceDirectiveWarnings(self.silence_missing_directive_warnings)
+ 
+-        with _open(self.path, "rU") as input:
++        with _open(self.path, "r") as input:
+             pp.processFile(input=input, output=dest, depfile=deps_out)
+ 
+         dest.close()
+         if self.depfile:
+             deps_out.close()
+ 
+         return True
+ 
+
