@@ -33,7 +33,7 @@ do_check() {
 	python3 -m installer --destdir "${testdir}" \
 		${make_install_args} ${make_install_target:-dist/*.whl}
 
-	PATH="${testdir}/usr/bin:${PATH}" PYTHONPATH="${testdir}/${py3_sitelib}" \
+	PATH="${testdir}/usr/bin:${PATH}" PYTHONPATH="${testdir}/${py3_sitelib}" PY_IGNORE_IMPORTMISMATCH=1 \
 		${make_check_pre} pytest3 ${testjobs} ${make_check_args} ${make_check_target}
 }
 
