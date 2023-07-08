@@ -20,9 +20,17 @@ base="$(git merge-base origin/HEAD "$tip")"
 echo "$base $tip" >/tmp/revisions
 
 /bin/echo -e '\x1b[32mChanged packages:\x1b[0m'
-git diff-tree -r --no-renames --name-only --diff-filter=AM \
+git diff-tree -r --no-renames --name-only --diff-filter=M \
 	"$base" "$tip" \
 	-- 'srcpkgs/*/template' |
 	cut -d/ -f 2 |
 	tee /tmp/templates |
+	sed "s/^/  /" >&2
+/bin/echo -e '\x1b[32mNew packages:\x1b[0m'
+git diff-tree -r --no-renames --name-only --diff-filter=A \
+	"$base" "$tip" \
+	-- 'srcpkgs/*/template' |
+	cut -d/ -f 2 |
+	tee -a /tmp/templates |
+	tee /tmp/new-templates |
 	sed "s/^/  /" >&2
