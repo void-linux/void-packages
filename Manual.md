@@ -905,6 +905,10 @@ in url. Defaults to `(|v|$pkgname)[-_.]*`.
 part that follows numeric part of version directory
 in url. Defaults to `(|\.x)`.
 
+- `disabled` can be set to disable update checking for the package,
+in cases where checking for updates is impossible or does not make sense.
+This should be set to a string describing why it is disabled.
+
 <a id="patches"></a>
 ### Handling patches
 
