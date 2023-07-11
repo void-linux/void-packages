@@ -30,7 +30,12 @@ vextract() {
 	local archive="$1"
 	local ret=0
 
-	TAR_CMD="$(command -v bsdtar)"
+	# When tar is explicitly put *first* in hostmakedepends
+	# Some packages require tar to build but not for extraction
+	case "$hostmakedepends " in
+	"tar "*)   TAR_CMD="tar" ;;
+	esac
+	[ -z "$TAR_CMD" ] && TAR_CMD="$(command -v bsdtar)"
 	[ -z "$TAR_CMD" ] && TAR_CMD="$(command -v tar)"
 	[ -z "$TAR_CMD" ] && msg_error "xbps-src: no suitable tar cmd (bsdtar, tar)\n"
 	case "$archive" in
