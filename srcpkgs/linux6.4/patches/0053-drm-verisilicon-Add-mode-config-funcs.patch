@@ -1,0 +1,261 @@
+From 14dad8f744599d67842860fb914e8662ba7dd669 Mon Sep 17 00:00:00 2001
+From: Keith Zhao <keith.zhao@starfivetech.com>
+Date: Fri, 2 Jun 2023 15:40:39 +0800
+Subject: [PATCH 53/72] drm/verisilicon: Add mode config funcs
+
+Add mode setting functions for JH7110 SoC.
+
+Signed-off-by: Keith Zhao <keith.zhao@starfivetech.com>
+---
+ drivers/gpu/drm/verisilicon/Makefile |   1 +
+ drivers/gpu/drm/verisilicon/vs_drv.c |   3 +
+ drivers/gpu/drm/verisilicon/vs_fb.c  | 181 +++++++++++++++++++++++++++
+ drivers/gpu/drm/verisilicon/vs_fb.h  |  15 +++
+ 4 files changed, 200 insertions(+)
+ create mode 100644 drivers/gpu/drm/verisilicon/vs_fb.c
+ create mode 100644 drivers/gpu/drm/verisilicon/vs_fb.h
+
+diff --git a/drivers/gpu/drm/verisilicon/Makefile b/drivers/gpu/drm/verisilicon/Makefile
+index 30360e370e47..38254dc5d98d 100644
+--- a/drivers/gpu/drm/verisilicon/Makefile
++++ b/drivers/gpu/drm/verisilicon/Makefile
+@@ -1,6 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0
+ 
+ vs_drm-objs := vs_drv.o \
++		vs_fb.o \
+ 		vs_gem.o
+ 
+ obj-$(CONFIG_DRM_VERISILICON) += vs_drm.o
+diff --git a/drivers/gpu/drm/verisilicon/vs_drv.c b/drivers/gpu/drm/verisilicon/vs_drv.c
+index e0a2fc43b55f..d84aacd751bc 100644
+--- a/drivers/gpu/drm/verisilicon/vs_drv.c
++++ b/drivers/gpu/drm/verisilicon/vs_drv.c
+@@ -30,6 +30,7 @@
+ #include <drm/drm_vblank.h>
+ 
+ #include "vs_drv.h"
++#include "vs_fb.h"
+ #include "vs_gem.h"
+ 
+ #define DRV_NAME	"starfive"
+@@ -118,6 +119,8 @@ static int vs_drm_bind(struct device *dev)
+ 	if (ret)
+ 		goto err_mode;
+ 
++	vs_mode_config_init(drm_dev);
++
+ 	ret = drm_vblank_init(drm_dev, drm_dev->mode_config.num_crtc);
+ 	if (ret)
+ 		goto err_bind;
+diff --git a/drivers/gpu/drm/verisilicon/vs_fb.c b/drivers/gpu/drm/verisilicon/vs_fb.c
+new file mode 100644
+index 000000000000..3e85f7365084
+--- /dev/null
++++ b/drivers/gpu/drm/verisilicon/vs_fb.c
+@@ -0,0 +1,181 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Copyright (C) 2023 VeriSilicon Holdings Co., Ltd.
++ */
++
++#include <linux/module.h>
++#include <linux/version.h>
++
++#include <drm/drm_damage_helper.h>
++#include <drm/drm_fb_helper.h>
++#include <drm/drm_crtc.h>
++#include <drm/drm_crtc_helper.h>
++#include <drm/drm_fourcc.h>
++#include <drm/drm_framebuffer.h>
++#include <drm/drm_gem.h>
++#include <drm/drm_gem_framebuffer_helper.h>
++
++#include "vs_fb.h"
++#include "vs_gem.h"
++
++#define fourcc_mod_vs_get_type(val) \
++	(((val) & DRM_FORMAT_MOD_VS_TYPE_MASK) >> 54)
++
++static struct drm_framebuffer_funcs vs_fb_funcs = {
++	.create_handle	= drm_gem_fb_create_handle,
++	.destroy	= drm_gem_fb_destroy,
++	.dirty		= drm_atomic_helper_dirtyfb,
++};
++
++static struct drm_framebuffer *
++vs_fb_alloc(struct drm_device *dev, const struct drm_mode_fb_cmd2 *mode_cmd,
++	    struct vs_gem_object **obj, unsigned int num_planes)
++{
++	struct drm_framebuffer *fb;
++	int ret, i;
++
++	fb = kzalloc(sizeof(*fb), GFP_KERNEL);
++	if (!fb)
++		return ERR_PTR(-ENOMEM);
++
++	drm_helper_mode_fill_fb_struct(dev, fb, mode_cmd);
++
++	for (i = 0; i < num_planes; i++)
++		fb->obj[i] = &obj[i]->base;
++
++	ret = drm_framebuffer_init(dev, fb, &vs_fb_funcs);
++	if (ret) {
++		dev_err(dev->dev, "Failed to initialize framebuffer: %d\n",
++			ret);
++		kfree(fb);
++		return ERR_PTR(ret);
++	}
++
++	return fb;
++}
++
++static struct drm_framebuffer *vs_fb_create(struct drm_device *dev,
++					    struct drm_file *file_priv,
++					    const struct drm_mode_fb_cmd2 *mode_cmd)
++{
++	struct drm_framebuffer *fb;
++	const struct drm_format_info *info;
++	struct vs_gem_object *objs[MAX_NUM_PLANES];
++	struct drm_gem_object *obj;
++	unsigned int height, size;
++	unsigned char i, num_planes;
++	int ret = 0;
++
++	info = drm_get_format_info(dev, mode_cmd);
++	if (!info)
++		return ERR_PTR(-EINVAL);
++
++	num_planes = info->num_planes;
++	if (num_planes > MAX_NUM_PLANES)
++		return ERR_PTR(-EINVAL);
++
++	for (i = 0; i < num_planes; i++) {
++		obj = drm_gem_object_lookup(file_priv, mode_cmd->handles[i]);
++		if (!obj) {
++			dev_err(dev->dev, "Failed to lookup GEM object.\n");
++			ret = -ENXIO;
++			goto err;
++		}
++
++		height = drm_format_info_plane_height(info,
++						      mode_cmd->height, i);
++
++		size = height * mode_cmd->pitches[i] + mode_cmd->offsets[i];
++
++		if (obj->size < size) {
++			drm_gem_object_put(obj);
++
++			ret = -EINVAL;
++			goto err;
++		}
++
++		objs[i] = to_vs_gem_object(obj);
++	}
++
++	fb = vs_fb_alloc(dev, mode_cmd, objs, i);
++	if (IS_ERR(fb)) {
++		ret = PTR_ERR(fb);
++		goto err;
++	}
++
++	return fb;
++
++err:
++	for (; i > 0; i--)
++		drm_gem_object_put(&objs[i - 1]->base);
++
++	return ERR_PTR(ret);
++}
++
++struct vs_gem_object *vs_fb_get_gem_obj(struct drm_framebuffer *fb,
++					unsigned char plane)
++{
++	if (plane > MAX_NUM_PLANES)
++		return NULL;
++
++	return to_vs_gem_object(fb->obj[plane]);
++}
++
++static const struct drm_format_info vs_formats[] = {
++	{.format = DRM_FORMAT_NV12, .depth = 0, .num_planes = 2, .char_per_block = { 20, 40, 0 },
++	 .block_w = { 4, 4, 0 }, .block_h = { 4, 4, 0 }, .hsub = 2, .vsub = 2, .is_yuv = true},
++	{.format = DRM_FORMAT_YUV444, .depth = 0, .num_planes = 3, .char_per_block = { 20, 20, 20 },
++	 .block_w = { 4, 4, 4 }, .block_h = { 4, 4, 4 }, .hsub = 1, .vsub = 1, .is_yuv = true},
++};
++
++static const struct drm_format_info *
++vs_lookup_format_info(const struct drm_format_info formats[],
++		      int num_formats, u32 format)
++{
++	int i;
++
++	for (i = 0; i < num_formats; i++) {
++		if (formats[i].format == format)
++			return &formats[i];
++	}
++
++	return NULL;
++}
++
++static const struct drm_format_info *
++vs_get_format_info(const struct drm_mode_fb_cmd2 *cmd)
++{
++	if (fourcc_mod_vs_get_type(cmd->modifier[0]) ==
++		DRM_FORMAT_MOD_VS_TYPE_CUSTOM_10BIT)
++		return vs_lookup_format_info(vs_formats, ARRAY_SIZE(vs_formats),
++									 cmd->pixel_format);
++	else
++		return NULL;
++}
++
++static const struct drm_mode_config_funcs vs_mode_config_funcs = {
++	.fb_create			 = vs_fb_create,
++	.get_format_info	 = vs_get_format_info,
++	.output_poll_changed = drm_fb_helper_output_poll_changed,
++	.atomic_check		 = drm_atomic_helper_check,
++	.atomic_commit		 = drm_atomic_helper_commit,
++};
++
++static struct drm_mode_config_helper_funcs vs_mode_config_helpers = {
++	.atomic_commit_tail = drm_atomic_helper_commit_tail_rpm,
++};
++
++void vs_mode_config_init(struct drm_device *dev)
++{
++	dev->mode_config.fb_modifiers_not_supported = false;
++
++	if (dev->mode_config.max_width == 0 ||
++	    dev->mode_config.max_height == 0) {
++		dev->mode_config.min_width  = 0;
++		dev->mode_config.min_height = 0;
++		dev->mode_config.max_width  = 4096;
++		dev->mode_config.max_height = 4096;
++	}
++	dev->mode_config.funcs = &vs_mode_config_funcs;
++	dev->mode_config.helper_private = &vs_mode_config_helpers;
++}
+diff --git a/drivers/gpu/drm/verisilicon/vs_fb.h b/drivers/gpu/drm/verisilicon/vs_fb.h
+new file mode 100644
+index 000000000000..78dda8e42894
+--- /dev/null
++++ b/drivers/gpu/drm/verisilicon/vs_fb.h
+@@ -0,0 +1,15 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Copyright (C) 2023 VeriSilicon Holdings Co., Ltd.
++ */
++
++#ifndef __VS_FB_H__
++#define __VS_FB_H__
++
++#define MAX_NUM_PLANES		3 /* colour format plane */
++
++struct vs_gem_object *vs_fb_get_gem_obj(struct drm_framebuffer *fb,
++					unsigned char plane);
++
++void vs_mode_config_init(struct drm_device *dev);
++#endif /* __VS_FB_H__ */
+-- 
+2.41.0
+

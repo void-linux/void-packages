@@ -1,0 +1,80 @@
+From 88ecfcfde5f230eaee509dd19c37b6b811a37a7f Mon Sep 17 00:00:00 2001
+From: William Qiu <william.qiu@starfivetech.com>
+Date: Mon, 19 Jun 2023 16:35:16 +0800
+Subject: [PATCH 18/72] spi: cadence-quadspi: Add clock configuration for
+ StarFive JH7110 QSPI
+
+Add QSPI clock operation in device probe.
+
+Signed-off-by: William Qiu <william.qiu@starfivetech.com>
+Reviewed-by: Hal Feng <hal.feng@starfivetech.com>
+Reported-by: kernel test robot <lkp@intel.com>
+Closes: https://lore.kernel.org/oe-kbuild-all/202306022017.UbwjjWRN-lkp@intel.com/
+Reported-by: Julia Lawall <julia.lawall@inria.fr>
+Closes: https://lore.kernel.org/r/202306040644.6ZHs55x4-lkp@intel.com/
+---
+ drivers/spi/spi-cadence-quadspi.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/drivers/spi/spi-cadence-quadspi.c b/drivers/spi/spi-cadence-quadspi.c
+index 32449bef4415..dfd2d0b9aaba 100644
+--- a/drivers/spi/spi-cadence-quadspi.c
++++ b/drivers/spi/spi-cadence-quadspi.c
+@@ -63,6 +63,8 @@ struct cqspi_st {
+ 	struct platform_device	*pdev;
+ 	struct spi_master	*master;
+ 	struct clk		*clk;
++	struct clk_bulk_data	*clks;
++	int			num_clks;
+ 	unsigned int		sclk;
+ 
+ 	void __iomem		*iobase;
+@@ -1715,6 +1717,16 @@ static int cqspi_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	if (of_device_is_compatible(pdev->dev.of_node, "starfive,jh7110-qspi")) {
++		cqspi->num_clks = devm_clk_bulk_get_all(dev, &cqspi->clks);
++		if (cqspi->num_clks < 0) {
++			dev_err(dev, "Cannot claim clock: %u\n", cqspi->num_clks);
++			return -EINVAL;
++		}
++
++		ret = clk_bulk_prepare_enable(cqspi->num_clks, cqspi->clks);
++		if (ret)
++			dev_err(dev, "Cannot enable clock clks\n");
++
+ 		rstc_ref = devm_reset_control_get_optional_exclusive(dev, "rstc_ref");
+ 		if (IS_ERR(rstc_ref)) {
+ 			ret = PTR_ERR(rstc_ref);
+@@ -1819,6 +1831,9 @@ static void cqspi_remove(struct platform_device *pdev)
+ 
+ 	clk_disable_unprepare(cqspi->clk);
+ 
++	if (of_device_is_compatible(pdev->dev.of_node, "starfive,jh7110-qspi"))
++		clk_bulk_disable_unprepare(cqspi->num_clks, cqspi->clks);
++
+ 	pm_runtime_put_sync(&pdev->dev);
+ 	pm_runtime_disable(&pdev->dev);
+ }
+@@ -1834,6 +1849,9 @@ static int cqspi_suspend(struct device *dev)
+ 
+ 	clk_disable_unprepare(cqspi->clk);
+ 
++	if (of_device_is_compatible(dev->of_node, "starfive,jh7110-qspi"))
++		clk_bulk_disable_unprepare(cqspi->num_clks, cqspi->clks);
++
+ 	return ret;
+ }
+ 
+@@ -1843,6 +1861,8 @@ static int cqspi_resume(struct device *dev)
+ 	struct spi_master *master = dev_get_drvdata(dev);
+ 
+ 	clk_prepare_enable(cqspi->clk);
++	if (of_device_is_compatible(dev->of_node, "starfive,jh7110-qspi"))
++		clk_bulk_prepare_enable(cqspi->num_clks, cqspi->clks);
+ 	cqspi_wait_idle(cqspi);
+ 	cqspi_controller_init(cqspi);
+ 
+-- 
+2.41.0
+
