@@ -82,6 +82,29 @@ The checksum can be updated automatically with the `xgensum` helper from the [xt
 
     $ xgensum -i <pkgname>
 
+### Adopting a template
+
+If a template is orphaned (maintained by `orphan@voidlinux.org`) or the current `maintainer` has not contributed to
+Void in over a year, template maintainership can be adopted by someone else. To ensure a template gets the care it needs,
+template adopters should be familiar with the package and have an established history of contributions to Void.
+Those who have contributed several updates, especially for the template in question, are good candidates for template
+maintainership.
+
+It is best to adopt a template when making another change to it. When adopting the template, add your name or username
+and email to the `maintainer` field in the template, and mention the adoption in your commit message, for example:
+
+    libfoo: update to 1.2.3, adopt.
+
+### Orphaning a template
+
+If you no longer wish to maintain a template, you can remove yourself as maintainer by setting the `maintainer` field in
+the template to `Orphaned <orphan@voidlinux.org>`. The commit message should mention this, for example:
+
+    libfoo: orphan.
+
+It is not necessary to make other changes to the template when orphaning, and incrementing the revision (triggering a
+rebuild) is not necessary either.
+
 ### Committing your changes
 
 After making your changes, please check that the package builds successfully. From the top level directory of your local copy of the `void-packages` repository, run:
