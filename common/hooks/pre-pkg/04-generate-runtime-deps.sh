@@ -46,14 +46,12 @@ store_pkgdestdir_rundeps() {
 }
 
 hook() {
-    local depsftmp f lf j mapshlibs sorequires _curdep elfmagic broken_shlibs verify_deps
+    local depsftmp f lf j sorequires _curdep elfmagic verify_rdeps
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
     # error via msg_error().
     trap - ERR
-
-    mapshlibs=$XBPS_COMMONDIR/shlibs
 
     if [ -n "$noverifyrdeps" ]; then
         store_pkgdestdir_rundeps
@@ -95,10 +93,28 @@ hook() {
     # above, the mapping is done thru the common/shlibs file.
     #
     for f in ${verify_deps}; do
-        unset _f j rdep _rdep rdepcnt soname _pkgname _rdepver found
+        unset _f j rdep rdepver _rdep rdepcurrent rdepcnt soname _pkgname _rdepver found
         _f=$(echo "$f"|sed -E 's|\+|\\+|g')
-        rdep="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|cut -d ' ' -f2)"
-        rdepcnt="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|cut -d ' ' -f2|wc -l)"
+        # get rdep pkgname in current version
+        rdepcurrent="$($XBPS_QUERY_CMD -p shlib-provides -s "${_f}" | cut -d: -f1)"
+        rdep=
+        if [ -n "$rdepcurrent" ]; then
+            # extract just pkgname
+            rdepname="$($XBPS_UHELPER_CMD getpkgname "$rdepcurrent")"
+            # look into the template of the rdep to figure out which version
+            # should be used for the shlib dependency
+            shlibs=$(
+                shlibs=
+                source_file $XBPS_SRCPKGDIR/$rdepname/template
+                if type ${rdepname}_package >/dev/null 2>&1; then
+                    ${rdepname}_package
+                fi
+                echo "$shlibs"
+            );
+            rdepver="$(echo $shlibs | grep -E "^${_f}=.*$" | cut -d '=' -f2)"
+            rdep="${rdepname}-${rdepver}"
+        fi
+        rdepcnt=1 # FIXME
         if [ -z "$rdep" ]; then
             # Ignore libs by current pkg
             soname=$(find ${PKGDESTDIR} -name "$f")
