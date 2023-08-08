@@ -6,11 +6,17 @@ collect_sonames() {
 	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)*$"
 	local _versioned_pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)+$"
 	local _tmpfile=$(mktemp) || exit 1
+	local _mainpkg="$2"
+	local _shlib_dir="${XBPS_STATEDIR}/shlib-provides"
+	local _no_soname=$(mktemp) || exit 1
 
+	mkdir -p "${_shlib_dir}" || exit 1
 	if [ ! -d ${_destdir} ]; then
 		rm -f ${_tmpfile}
+		rm -f ${_no_soname}
 		return 0
 	fi
+
 
 	# real pkg
 	find ${_destdir} -type f -name "*.so*" | while read f; do
@@ -18,7 +24,12 @@ collect_sonames() {
 		case "$(file -bi "$f")" in
 		application/x-sharedlib*|application/x-pie-executable*)
 			# shared library
-			_soname=$(${OBJDUMP} -p "$f"|grep SONAME|awk '{print $2}')
+			_soname=$(${OBJDUMP} -p "$f"|awk '/SONAME/{print $2}')
+			if [ -n "$noshlibprovides" ]; then
+				# register all shared lib for rt-deps between sub-pkg
+				echo "${_fname}" >>${_no_soname}
+				continue
+			fi
 			# Register all versioned sonames, and
 			# unversioned sonames only when in libdir.
 			if [[ ${_soname} =~ ${_versioned_pattern} ]] ||
@@ -27,6 +38,9 @@ collect_sonames() {
 				  -e ${_destdir}/usr/lib32/${_fname} ) ]]; then
 				echo "${_soname}" >> ${_tmpfile}
 				echo "   SONAME ${_soname} from ${f##${_destdir}}"
+			else
+				# register all shared lib for rt-deps between sub-pkg
+				echo "${_fname}" >>${_no_soname}
 			fi
 			;;
 		esac
@@ -38,6 +52,14 @@ collect_sonames() {
 	if [ -s "${_tmpfile}" ]; then
 		tr '\n' ' ' < "${_tmpfile}" > ${_destdir}/shlib-provides
 		echo >> ${_destdir}/shlib-provides
+		if [ "$_mainpkg" ]; then
+			cp "${_tmpfile}" "${_shlib_dir}/${pkgname}.soname"
+		fi
+	fi
+	if [ "$_mainpkg" ] && [ -s "${_no_soname}" ]; then
+		mv "${_no_soname}" "${_shlib_dir}/${pkgname}.nosoname"
+	else
+		rm -f ${_no_soname}
 	fi
 	rm -f ${_tmpfile}
 }
@@ -45,12 +67,8 @@ collect_sonames() {
 hook() {
 	local _destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
 
-	if [ -n "$noshlibprovides" ]; then
-		return 0
-	fi
-
 	# native pkg
-	collect_sonames ${PKGDESTDIR}
+	collect_sonames ${PKGDESTDIR} yes
 	# 32bit pkg
 	collect_sonames ${_destdir32}
 }
