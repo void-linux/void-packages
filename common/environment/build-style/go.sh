@@ -39,6 +39,10 @@ export CGO_CXXFLAGS="$CXXFLAGS"
 export CGO_LDFLAGS="$LDFLAGS"
 export CGO_ENABLED="${CGO_ENABLED:-1}"
 export GO111MODULE=auto
+export GOTOOLCHAIN=local
+export GOPROXY="https://proxy.golang.org,direct"
+export GOSUMDB="sum.golang.org"
+
 case "$XBPS_TARGET_MACHINE" in
 	*-musl) export GOCACHE="${XBPS_HOSTDIR}/gocache-muslc" ;;
 	*)	export GOCACHE="${XBPS_HOSTDIR}/gocache-glibc" ;;
