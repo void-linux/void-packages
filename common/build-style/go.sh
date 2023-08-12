@@ -32,8 +32,13 @@ do_build() {
 	go_package=${go_package:-$go_import_path}
 	# Build using Go modules if there's a go.mod file
 	if [ "${go_mod_mode}" != "off" ] && [ -f go.mod ]; then
+
+		if [[ -n "${_go_mod_path}" ]]; then
+			pushd $(dirname ${_go_mod_path})
+		fi
+
 		# Check if go_import_path matches module
-		if [ "module $go_import_path" != "$(head -n1 go.mod)" ]; then
+		if [ "module $go_import_path" != "$(grep '^module' go.mod | head -n1)" ]; then
 			msg_error "\"\$go_import_path\" doesn't match the one defined in go.mod!\n"
 		fi
 
@@ -46,6 +51,9 @@ do_build() {
 			go_mod_mode=
 		fi
 		go install -p "$XBPS_MAKEJOBS" -mod="${go_mod_mode}" -modcacherw -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
+		if [[ -n "${_go_mod_path}" ]]; then
+			popd
+		fi
 	else
 		# Otherwise, build using GOPATH
 		go get -p "$XBPS_MAKEJOBS" -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
