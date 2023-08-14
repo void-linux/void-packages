@@ -441,8 +441,8 @@ the generated `binary packages` have been modified.
 - `version` A string with the package version. Must not contain dashes or underscore
 and at least one digit is required. Shell's variable substitution usage is not allowed.
 
-Neither `pkgname` or `version` should contain special characters which make it
-necessary to quote them, so they shouldn't be quoted in the template.
+`pkgname` and `version` are forbidden to contain special characters. Hence, they don't
+need to be quoted, and by convention, they shouldn't be.
 
 <a id="optional_vars"></a>
 #### Optional variables
