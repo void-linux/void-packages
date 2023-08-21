@@ -8,3 +8,4 @@ if [ "$CHROOT_READY" ]; then
 fi
 
 export CTEST_OUTPUT_ON_FAILURE=TRUE
+PATH="$PATH:/usr/libexec/xbps-src/bin"
