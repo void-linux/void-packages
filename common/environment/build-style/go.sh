@@ -39,7 +39,7 @@ export CGO_CXXFLAGS="$CXXFLAGS"
 export CGO_LDFLAGS="$LDFLAGS"
 export CGO_ENABLED="${CGO_ENABLED:-1}"
 export GO111MODULE=auto
-export GOTOOLCHAIN=local
+export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
 export GOPROXY="https://proxy.golang.org,direct"
 export GOSUMDB="sum.golang.org"
 
