@@ -289,6 +289,7 @@ get_endian() {
         ppc*le)   echo "le";;
         ppc*)     echo "be";;
         x86_64)   echo "le";;
+        riscv64)   echo "le";;
     esac
 }
 
@@ -316,6 +317,7 @@ get_wordsize() {
         ppc64*)   echo "64";;
         ppc*)     echo "32";;
         x86_64)   echo "64";;
+        riscv64)   echo "64";;
     esac
 }
 

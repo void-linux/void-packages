@@ -31,6 +31,7 @@ _EOF
 			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
 			ppcle*) _CMAKE_SYSTEM_PROCESSOR=ppcle ;;
 			ppc*) _CMAKE_SYSTEM_PROCESSOR=ppc ;;
+			riscv64*) _CMAKE_SYSTEM_PROCESSOR=riscv64 ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
 		cat > cross_${XBPS_CROSS_TRIPLET}.cmake <<_EOF
@@ -55,7 +56,6 @@ _EOF
 	cmake_args+=" -DCMAKE_BUILD_TYPE=None"
 	cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib${XBPS_TARGET_WORDSIZE}"
 	cmake_args+=" -DCMAKE_INSTALL_SYSCONFDIR=/etc"
-	cmake_args+=" -DFETCHCONTENT_FULLY_DISCONNECTED=ON"
 
 	if [ "$CROSS_BUILD" ]; then
 		cmake_args+=" -DQT_HOST_PATH=/usr"
