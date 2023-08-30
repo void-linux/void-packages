@@ -173,7 +173,7 @@ vsrccopy() {
 	if [ $# -lt 2 ]; then
 		msg_error "vsrccopy <file>... <target>"
 	fi
-	_tgt="${@:-1}"
+	_tgt="${@: -1}"
 	mkdir -p "$_tgt"
 	while [ $# -gt 1 ]; do
 		cp -a "${XBPS_SRCDISTDIR}/${pkgname}-${version}/$1" "$_tgt"
