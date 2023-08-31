@@ -70,7 +70,7 @@ hook() {
 
     exec 3<&0 # save stdin
     exec < $depsftmp
-    while read f; do
+    while read -r f; do
         lf=${f#${PKGDESTDIR}}
 	    if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
 		    msg_normal "Skipping dependency scan for ${lf}\n"
