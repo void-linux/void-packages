@@ -264,9 +264,10 @@ _void_cross_build_glibc() {
 
 	CC="${tgt}-gcc" CXX="${tgt}-g++" CPP="${tgt}-cpp" LD="${tgt}-ld" \
 	AR="${tgt}-ar" AS="${tgt}-as" NM="${tgt}-nm" \
+	OBJDUMP="${tgt}-objdump" OBJCOPY="${tgt}-objcopy" \
 	CFLAGS="-pipe ${cross_glibc_cflags}" \
 	CXXFLAGS="-pipe ${cross_glibc_cflags}" \
-	CPPFLAGS="${cross_glibc_cflags}" \
+	CPPFLAGS="" \
 	LDFLAGS="${cross_glibc_ldflags}" \
 	../glibc-${ver}/configure \
 		--prefix=/usr \
