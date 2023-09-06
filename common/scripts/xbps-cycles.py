@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 
 import os
-import sys
 import glob
+import hashlib
 import subprocess
 import multiprocessing
 
 from argparse import ArgumentParser
 
 import networkx as nx
+
+
+def hash_template(pkg, xbpsdir):
+	'''
+	Hashes a template with md5 for cache keying
+	'''
+	try:
+		with open(os.path.join(xbpsdir, 'srcpkgs', pkg, 'template'), "rb") as tmpl:
+			return hashlib.file_digest(tmpl, hashlib.md5).hexdigest()
+	except FileNotFoundError:
+		return '0'
 
 
 def enum_depends(pkg, xbpsdir, cachedir):
@@ -21,15 +32,21 @@ def enum_depends(pkg, xbpsdir, cachedir):
 		<xbpsdir>/xbps-src show-build-deps <pkg>
 
 	unless <cachedir>/deps-<pkg> file exist, in that case it is read.
+	To ensure the cache for a package is invalidated when its template changes,
+	the template is hashed and that hash is stored on the first line of the
+	package's cache file.
 
 	If the return code of this call nonzero, a message will be printed but
 	the package will treated as if it has no dependencies.
 	'''
 	if cachedir:
 		cachepath = os.path.join(cachedir, 'deps-' + pkg)
+		newhash = hash_template(pkg, xbpsdir)
 		try:
 			with open(cachepath) as f:
-				return pkg, [l.strip() for l in f]
+				oldhash = f.readline().strip()
+				if oldhash == newhash:
+					return pkg, [l.strip() for l in f]
 		except FileNotFoundError:
 			pass
 
@@ -44,6 +61,7 @@ def enum_depends(pkg, xbpsdir, cachedir):
 		deps = [d for d in deps.decode('utf-8').split('\n') if d]
 		if cachedir:
 			with open(cachepath, 'w') as f:
+				print(newhash, file=f)
 				for d in deps:
 					print(d, file=f)
 
