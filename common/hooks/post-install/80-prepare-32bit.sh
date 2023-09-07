@@ -74,72 +74,9 @@ hook() {
 	if [[ ${pkgname} == *-devel ]]; then
 		mkdir -p ${destdir32}
 	fi
+
 	if [ ! -d ${destdir32} ]; then
 		return
-	fi
-
-	# If the rdeps file exist (runtime deps), copy and then modify it for
-	# 32bit dependencies.
-	trap - ERR
-
-	: > ${destdir32}/rdeps
-
-	if [ -s "$PKGDESTDIR/rdeps" ]; then
-		if [ -n "$lib32depends" ]; then
-			_deps="${lib32depends}"
-		else
-			_deps="$(<${PKGDESTDIR}/rdeps)"
-		fi
-		for f in ${_deps}; do
-			unset found pkgn pkgv _shprovides
-
-			pkgn="$($XBPS_UHELPER_CMD getpkgdepname $f)"
-			if [ -z "${pkgn}" ]; then
-				pkgn="$($XBPS_UHELPER_CMD getpkgname $f)"
-				if [ -z "${pkgn}" ]; then
-					msg_error "$pkgver: invalid dependency $f\n"
-				fi
-				pkgv="-$($XBPS_UHELPER_CMD getpkgversion ${f})"
-			else
-				pkgv="$($XBPS_UHELPER_CMD getpkgdepversion ${f})"
-			fi
-			# If dependency is a development pkg switch it to 32bit.
-			if [[ $pkgn == *-devel ]]; then
-				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (development)"
-				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
-				continue
-			fi
-			# If dependency does not have "shlib-provides" do not
-			# change it to 32bit.
-			for x in ${subpackages}; do
-				if [ "$x" = "$pkgn" ]; then
-					found=1
-					break
-				fi
-			done
-			if [ -z "$found" ]; then
-				# Dependency is not a subpkg, check shlib-provides
-				# via binpkgs.
-				_shprovides="$($XBPS_QUERY_CMD -R --property=shlib-provides "$pkgn")"
-				if [ -n "${_shprovides}" ]; then
-					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (shlib-provides)"
-					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
-				else
-					echo "   RDEP: $f -> ${pkgn}${pkgv} (no shlib-provides)"
-					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
-				fi
-			else
-				if [ -s ${XBPS_DESTDIR}/${pkgn}-${version}/shlib-provides ]; then
-					# Dependency is a subpkg; check if it provides any shlib
-					# and convert to 32bit if true.
-					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (subpkg, shlib-provides)"
-					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
-				else
-					echo "   RDEP: $f -> ${pkgn}${pkgv} (subpkg, no shlib-provides)"
-					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
-				fi
-			fi
-		done
 	fi
 
 	# Also install additional files set via "lib32files".
@@ -149,6 +86,7 @@ hook() {
 		mkdir -p ${_targetdir/\/usr\/lib/\/usr\/lib32}
 		cp -a ${PKGDESTDIR}/${f} ${_targetdir/\/usr\/lib/\/usr\/lib32}
 	done
+
 	# Additional symlinks to the native libdir.
 	for f in ${lib32symlinks}; do
 		echo "$pkgver: symlinking $f to the native libdir..."
@@ -159,10 +97,4 @@ hook() {
 		fi
 		ln -sfr ${destdir32}/usr/lib32/$f ${destdir32}/usr/lib/$f
 	done
-	# If it's a development pkg add a dependency to the 64bit pkg.
-	if [[ $pkgn == *-devel ]]; then
-		echo "   RDEP: ${pkgver}"
-		printf "${pkgver} " >> ${destdir32}/rdeps
-	fi
-	printf "\n" >> ${destdir32}/rdeps
 }
