@@ -15,6 +15,7 @@ update_check() {
         fi
         if [ -n "$disabled" ]; then
             echo "update-check DISABLED for $original_pkgname: $disabled" 1>&2
+            return 0
         fi
     elif [ -z "$distfiles" ]; then
         if [ "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
