@@ -1,0 +1,246 @@
+https://github.com/void-linux/xbps/pull/565 but rebased on 0.59.1
+
+From d7a0fc190b00fbb083688993971f466df834ceaa Mon Sep 17 00:00:00 2001
+From: classabbyamp <void@placeviolette.net>
+Date: Tue, 8 Aug 2023 00:36:10 -0400
+Subject: [PATCH] lib/, bin/: fix signature type, now called *.sig2
+
+Since 8d5c48b, xbps has used a sha1 ASN1 prefix with a sha256 hash, and
+as of openssl v3, openssl cares about this. This works around that in a
+compatible way by moving to a second sig file, binpkg.sig2.
+
+For xbps-remove -O and xbps-rindex -r, also clean up obselete .sig files.
+---
+ bin/xbps-remove/clean-cache.c      | 10 +++++++++-
+ bin/xbps-rindex/remove-obsoletes.c | 13 +++++++++++--
+ bin/xbps-rindex/sign.c             |  9 ++-------
+ include/xbps.h.in                  |  4 ++--
+ lib/transaction_fetch.c            | 10 +++++-----
+ lib/util.c                         |  6 +++---
+ lib/verifysig.c                    |  4 ++--
+ 7 files changed, 34 insertions(+), 22 deletions(-)
+
+diff --git a/bin/xbps-remove/clean-cache.c b/bin/xbps-remove/clean-cache.c
+index 43ff6057..680a4d1e 100644
+--- a/bin/xbps-remove/clean-cache.c
++++ b/bin/xbps-remove/clean-cache.c
+@@ -43,7 +43,7 @@ cleaner_cb(struct xbps_handle *xhp, xbps_object_t obj,
+ {
+ 	xbps_dictionary_t repo_pkgd;
+ 	const char *binpkg, *rsha256;
+-	char *binpkgsig, *pkgver, *arch;
++	char *binpkgsig, *binpkgsig2, *pkgver, *arch;
+ 	bool drun = false;
+ 
+ 	/* Extract drun (dry-run) flag from arg*/
+@@ -78,6 +78,7 @@ cleaner_cb(struct xbps_handle *xhp, xbps_object_t obj,
+ 		}
+ 	}
+ 	binpkgsig = xbps_xasprintf("%s.sig", binpkg);
++	binpkgsig2 = xbps_xasprintf("%s.sig2", binpkg);
+ 	if (!drun && unlink(binpkg) == -1) {
+ 		fprintf(stderr, "Failed to remove `%s': %s\n",
+ 		    binpkg, strerror(errno));
+@@ -91,6 +92,13 @@ cleaner_cb(struct xbps_handle *xhp, xbps_object_t obj,
+ 		}
+ 	}
+ 	free(binpkgsig);
++	if (!drun && unlink(binpkgsig2) == -1) {
++		if (errno != ENOENT) {
++			fprintf(stderr, "Failed to remove `%s': %s\n",
++			    binpkgsig2, strerror(errno));
++		}
++	}
++	free(binpkgsig2);
+ 
+ 	return 0;
+ }
+diff --git a/bin/xbps-rindex/remove-obsoletes.c b/bin/xbps-rindex/remove-obsoletes.c
+index 80cf2fff..de776145 100644
+--- a/bin/xbps-rindex/remove-obsoletes.c
++++ b/bin/xbps-rindex/remove-obsoletes.c
+@@ -39,11 +39,12 @@
+ static int
+ remove_pkg(const char *repodir, const char *file)
+ {
+-	char *filepath, *sigpath;
++	char *filepath, *sigpath, *sig2path;
+ 	int rv = 0;
+ 
+ 	filepath = xbps_xasprintf("%s/%s", repodir, file);
+ 	sigpath = xbps_xasprintf("%s.sig", filepath);
++	sig2path = xbps_xasprintf("%s.sig2", filepath);
+ 	if (remove(filepath) == -1) {
+ 		if (errno != ENOENT) {
+ 			rv = errno;
+@@ -55,10 +56,18 @@ remove_pkg(const char *repodir, const char *file)
+ 		if (errno != ENOENT) {
+ 			rv = errno;
+ 			fprintf(stderr, "xbps-rindex: failed to remove "
+-			    "package signature `%s': %s\n", sigpath, strerror(rv));
++			    "legacy package signature `%s': %s\n", sigpath, strerror(rv));
++		}
++	}
++	if (remove(sig2path) == -1) {
++		if (errno != ENOENT) {
++			rv = errno;
++			xbps_error_printf("xbps-rindex: failed to remove "
++			    "package signature `%s': %s\n", sig2path, strerror(rv));
+ 		}
+ 	}
+ 	free(sigpath);
++	free(sig2path);
+ 	free(filepath);
+ 
+ 	return rv;
+diff --git a/bin/xbps-rindex/sign.c b/bin/xbps-rindex/sign.c
+index 666f7e24..94886f80 100644
+--- a/bin/xbps-rindex/sign.c
++++ b/bin/xbps-rindex/sign.c
+@@ -106,12 +106,7 @@ rsa_sign_file(RSA *rsa, const char *file,
+ 		return false;
+ 	}
+ 
+-	/*
+-	 * XXX: NID_sha1 is wrong, doesn't make it any weaker
+-	 * but the ASN1 is wrong, OpenSSL/LibreSSL doesn't care.
+-	 * Other implementations like golang fail because of this.
+-	 */
+-	if (!RSA_sign(NID_sha1, digest, XBPS_SHA256_DIGEST_SIZE,
++	if (!RSA_sign(NID_sha256, digest, XBPS_SHA256_DIGEST_SIZE,
+ 				*sigret, siglen, rsa)) {
+ 		free(*sigret);
+ 		return false;
+@@ -262,7 +257,7 @@ sign_pkg(struct xbps_handle *xhp, const char *binpkg, const char *privkey, bool
+ 	char *sigfile = NULL;
+ 	int rv = 0, sigfile_fd = -1;
+ 
+-	sigfile = xbps_xasprintf("%s.sig", binpkg);
++	sigfile = xbps_xasprintf("%s.sig2", binpkg);
+ 	/*
+ 	 * Skip pkg if file signature exists
+ 	 */
+diff --git a/include/xbps.h.in b/include/xbps.h.in
+index a8024a2b..07af916b 100644
+--- a/include/xbps.h.in
++++ b/include/xbps.h.in
+@@ -1958,8 +1958,8 @@ bool xbps_verify_signature(struct xbps_repo *repo, const char *sigfile,
+  * in \a repo.
+  *
+  * @param[in] repo Repository to use with the RSA public key associated.
+- * @param[in] fname The filename to verify, the signature file must have a .sig
+- * extension, i.e `<fname>.sig`.
++ * @param[in] fname The filename to verify, the signature file must have a .sig2
++ * extension, i.e `<fname>.sig2`.
+  *
+  * @return True if the signature is valid, false otherwise.
+  */
+diff --git a/lib/transaction_fetch.c b/lib/transaction_fetch.c
+index c3cc7ed0..456d500d 100644
+--- a/lib/transaction_fetch.c
++++ b/lib/transaction_fetch.c
+@@ -69,7 +69,7 @@ verify_binpkg(struct xbps_handle *xhp, xbps_dictionary_t pkgd)
+ 			xbps_set_cb_state(xhp, XBPS_STATE_VERIFY_FAIL, rv, pkgver,
+ 				"%s: removed pkg archive and its signature.", pkgver);
+ 			(void)remove(binfile);
+-			sigfile = xbps_xasprintf("%s.sig", binfile);
++			sigfile = xbps_xasprintf("%s.sig2", binfile);
+ 			(void)remove(sigfile);
+ 			free(sigfile);
+ 			goto out;
+@@ -108,8 +108,8 @@ download_binpkg(struct xbps_handle *xhp, xbps_dictionary_t repo_pkgd)
+ 	xbps_dictionary_get_cstring_nocopy(repo_pkgd, "pkgver", &pkgver);
+ 	xbps_dictionary_get_cstring_nocopy(repo_pkgd, "architecture", &arch);
+ 
+-	snprintf(buf, sizeof buf, "%s/%s.%s.xbps.sig", repoloc, pkgver, arch);
+-	sigsuffix = buf+(strlen(buf)-sizeof (".sig")+1);
++	snprintf(buf, sizeof buf, "%s/%s.%s.xbps.sig2", repoloc, pkgver, arch);
++	sigsuffix = buf+(strlen(buf)-sizeof (".sig2")+1);
+ 
+ 	xbps_set_cb_state(xhp, XBPS_STATE_DOWNLOAD, 0, pkgver,
+ 		"Downloading `%s' signature (from `%s')...", pkgver, repoloc);
+@@ -143,8 +143,8 @@ download_binpkg(struct xbps_handle *xhp, xbps_dictionary_t repo_pkgd)
+ 	xbps_set_cb_state(xhp, XBPS_STATE_VERIFY, 0, pkgver,
+ 		"%s: verifying RSA signature...", pkgver);
+ 
+-	snprintf(buf, sizeof buf, "%s/%s.%s.xbps.sig", xhp->cachedir, pkgver, arch);
+-	sigsuffix = buf+(strlen(buf)-sizeof (".sig")+1);
++	snprintf(buf, sizeof buf, "%s/%s.%s.xbps.sig2", xhp->cachedir, pkgver, arch);
++	sigsuffix = buf+(strlen(buf)-sizeof (".sig2")+1);
+ 
+ 	if ((repo = xbps_rpool_get_repo(repoloc)) == NULL) {
+ 		rv = errno;
+diff --git a/lib/util.c b/lib/util.c
+index 71afd43b..296c399d 100644
+--- a/lib/util.c
++++ b/lib/util.c
+@@ -403,15 +403,15 @@ xbps_remote_binpkg_exists(struct xbps_handle *xhp, xbps_dictionary_t pkgd)
+ 	    "architecture", &arch))
+ 		return NULL;
+ 
+-	snprintf(path, sizeof(path), "%s/%s.%s.xbps.sig", xhp->cachedir,
++	snprintf(path, sizeof(path), "%s/%s.%s.xbps.sig2", xhp->cachedir,
+ 	    pkgver, arch);
+ 
+ 	/* check if the signature file exists */
+ 	if (access(path, R_OK) != 0)
+ 		return false;
+ 
+-	/* strip the .sig suffix and check if binpkg file exists */
+-	path[strlen(path)-sizeof (".sig")+1] = '\0';
++	/* strip the .sig2 suffix and check if binpkg file exists */
++	path[strlen(path)-sizeof (".sig2")+1] = '\0';
+ 
+ 	return access(path, R_OK) == 0;
+ }
+diff --git a/lib/verifysig.c b/lib/verifysig.c
+index 56537989..9aa574c2 100644
+--- a/lib/verifysig.c
++++ b/lib/verifysig.c
+@@ -63,7 +63,7 @@ rsa_verify_hash(struct xbps_repo *repo, xbps_data_t pubkey,
+ 		return false;
+ 	}
+ 
+-	rv = RSA_verify(NID_sha1, sha256, SHA256_DIGEST_LENGTH, sig, siglen, rsa);
++	rv = RSA_verify(NID_sha256, sha256, SHA256_DIGEST_LENGTH, sig, siglen, rsa);
+ 	RSA_free(rsa);
+ 	BIO_free(bio);
+ 	ERR_free_strings();
+@@ -145,7 +145,7 @@ xbps_verify_file_signature(struct xbps_repo *repo, const char *fname)
+ 		return false;
+ 	}
+ 
+-	snprintf(sig, sizeof sig, "%s.sig", fname);
++	snprintf(sig, sizeof sig, "%s.sig2", fname);
+ 	val = xbps_verify_signature(repo, sig, digest);
+ 
+ 	return val;
+-- 
+2.41.0
+---
+From 51e886baec3fd0edf1ed74e7c29badc3936f3696 Mon Sep 17 00:00:00 2001
+From: classabbyamp <void@placeviolette.net>
+Date: Tue, 15 Aug 2023 16:42:33 -0400
+Subject: [PATCH] lib/transaction_fetch.c: don't rely on digest being NULL
+
+caused issues when .xbps existed locally but .sig2 did not.
+---
+ lib/transaction_fetch.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/transaction_fetch.c b/lib/transaction_fetch.c
+index 4af461db..4cbe288e 100644
+--- a/lib/transaction_fetch.c
++++ b/lib/transaction_fetch.c
+@@ -159,7 +159,7 @@ download_binpkg(struct xbps_handle *xhp, xbps_dictionary_t repo_pkgd)
+ 	 * If digest is not set, binary package was not downloaded,
+ 	 * i.e. 304 not modified, verify by file instead.
+ 	 */
+-	if (*digest) {
++	if (fetchLastErrCode == FETCH_UNCHANGED) {
+ 		*sigsuffix = '\0';
+ 		if (!xbps_verify_file_signature(repo, buf)) {
+ 			rv = EPERM;
+-- 
+2.41.0
+

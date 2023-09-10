@@ -134,7 +134,7 @@ _void_cross_build_bootstrap_gcc() {
 		--disable-libmudflap \
 		--disable-libssp \
 		--disable-libitm \
-		--disable-libatomic \
+		--disable-libatomic --disable-autolink-libatomic \
 		--disable-gcov \
 		--disable-threads \
 		--disable-sjlj-exceptions \
@@ -376,6 +376,10 @@ _void_cross_build_gcc() {
 	local ver=$2
 
 	msg_normal "Building gcc for ${tgt}\n"
+
+	# GIANT HACK: create an empty libatomic.a so gcc cross-compile
+	# below works.
+	ar r ${wrksrc}/build_root/usr/${tgt}/usr/lib/libatomic.a
 
 	mkdir -p ${wrksrc}/gcc_build
 	cd ${wrksrc}/gcc_build
@@ -640,9 +644,6 @@ do_install() {
 	ln -sf libgnarl-${gcc_major}.so ${DESTDIR}/${sysroot}/usr/lib/libgnarl.so
 	ln -sf libgnat-${gcc_major}.so ${DESTDIR}/${sysroot}/usr/lib/libgnat.so
 	rm -vf ${DESTDIR}/${adalib}/libgna{rl,t}.so
-
-	# Remove unnecessary libatomic which is only built for gccgo
-	rm -rf ${DESTDIR}/${sysroot}/usr/lib/libatomic.*
 
 	# If libquadmath was forced (needed for gfortran on some platforms)
 	# then remove it because it conflicts with libquadmath package

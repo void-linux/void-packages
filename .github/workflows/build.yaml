@@ -20,18 +20,39 @@ jobs:
     name: Lint templates
     runs-on: ubuntu-latest
 
-    env:
-      PATH: '/usr/libexec/chroot-git:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
-      XLINT: '1'
-      LICENSE_LIST: common/travis/license.lst
+    container:
+      image: 'ghcr.io/void-linux/void-buildroot-musl:20230904R2'
+      env:
+        PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
+        LICENSE_LIST: common/travis/license.lst
 
     steps:
+      - name: Prepare container
+        run: |
+          # switch to repo-ci mirror
+          mkdir -p /etc/xbps.d && cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
+          sed -i 's|repo-default|repo-ci|g' /etc/xbps.d/*-repository-*.conf
+          # Sync and upgrade once, assume error comes from xbps update
+          xbps-install -Syu || xbps-install -yu xbps
+          # Upgrade again (in case there was a xbps update)
+          xbps-install -yu
+          # install tools needed for lints
+          xbps-install -y grep curl git
       - name: Clone and checkout
         uses: classabbyamp/treeless-checkout-action@v1
+      - name: Create hostrepo and prepare masterdir
+        run: |
+         ln -s "$(pwd)" /hostrepo &&
+         common/travis/set_mirror.sh &&
+         common/travis/prepare.sh &&
+         common/travis/fetch-xtools.sh
       - run: common/travis/changed_templates.sh
-      - run: common/travis/fetch-xbps.sh
-      - run: common/travis/fetch-xtools.sh
-      - run: common/travis/xlint.sh
+      - name: Run lints
+        run: |
+          rv=0
+          common/travis/xlint.sh || rv=1
+          common/travis/verify-update-check.sh || rv=1
+          exit $rv
 
   # Build changed packages.
   build:
@@ -40,11 +61,12 @@ jobs:
     if: "!contains(github.event.pull_request.title, '[ci skip]') && !contains(github.event.pull_request.body, '[ci skip]')"
 
     container:
-      image: 'ghcr.io/void-linux/xbps-src-masterdir:20230708RC01-${{ matrix.config.bootstrap }}'
+      image: ghcr.io/void-linux/void-buildroot-${{ matrix.config.libc }}:20230904R2
+      options: --platform ${{ matrix.config.platform }}
       env:
         PATH: '/usr/libexec/chroot-git:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
         ARCH: '${{ matrix.config.arch }}'
-        BOOTSTRAP: '${{ matrix.config.bootstrap }}'
+        BOOTSTRAP: '${{ matrix.config.host }}'
         TEST: '${{ matrix.config.test }}'
         HOSTREPO: /hostrepo
 
@@ -52,13 +74,13 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - { arch: x86_64, bootstrap: x86_64, test: 1 }
-          - { arch: i686, bootstrap: i686, test: 1 }
-          - { arch: aarch64, bootstrap: x86_64, test: 0 }
-          - { arch: armv7l, bootstrap: x86_64, test: 0 }
-          - { arch: x86_64-musl, bootstrap: x86_64-musl, test: 1 }
-          - { arch: armv6l-musl, bootstrap: x86_64-musl, test: 0 }
-          - { arch: aarch64-musl, bootstrap: x86_64-musl, test: 0 }
+          - { arch: x86_64,       host: x86_64,      libc: glibc, platform: linux/amd64, test: 1 }
+          - { arch: i686,         host: i686,        libc: glibc, platform: linux/386,   test: 1 }
+          - { arch: aarch64,      host: x86_64,      libc: glibc, platform: linux/amd64, test: 0 }
+          - { arch: armv7l,       host: x86_64,      libc: glibc, platform: linux/amd64, test: 0 }
+          - { arch: x86_64-musl,  host: x86_64-musl, libc: musl,  platform: linux/amd64, test: 1 }
+          - { arch: armv6l-musl,  host: x86_64-musl, libc: musl,  platform: linux/amd64, test: 0 }
+          - { arch: aarch64-musl, host: x86_64-musl, libc: musl,  platform: linux/amd64, test: 0 }
 
     steps:
       - name: Prepare container

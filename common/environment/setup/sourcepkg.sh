@@ -5,6 +5,12 @@
 for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 	# Those variables in chroot.sh will be kept
 	case "$var" in
+	BASH_FUNC_*'%%')
+		# bash exported functions
+		var="${var%??}"
+		var="${var#BASH_FUNC_}"
+		unset -f "$var"
+		;;
 	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH)
 		# xbps-src specific
 		;;

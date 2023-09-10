@@ -441,8 +441,8 @@ the generated `binary packages` have been modified.
 - `version` A string with the package version. Must not contain dashes or underscore
 and at least one digit is required. Shell's variable substitution usage is not allowed.
 
-Neither `pkgname` or `version` should contain special characters which make it
-necessary to quote them, so they shouldn't be quoted in the template.
+`pkgname` and `version` are forbidden to contain special characters. Hence, they don't
+need to be quoted, and by convention, they shouldn't be.
 
 <a id="optional_vars"></a>
 #### Optional variables
@@ -905,6 +905,10 @@ in url. Defaults to `(|v|$pkgname)[-_.]*`.
 part that follows numeric part of version directory
 in url. Defaults to `(|\.x)`.
 
+- `disabled` can be set to disable update checking for the package,
+in cases where checking for updates is impossible or does not make sense.
+This should be set to a string describing why it is disabled.
+
 <a id="patches"></a>
 ### Handling patches
 
@@ -1204,6 +1208,11 @@ package accordingly. Additionally, the following functions are available:
   Outputs `-D<property>=true` if the option is set, or
   `-D<property>=false` otherwise.
 
+- *vopt_feature()* `vopt_feature <option> <property>`
+
+  Same as `vopt_bool`, but uses `-D<property=enabled` and
+	`-D<property>=disabled` respectively. 
+
 The following example shows how to change a source package that uses GNU
 configure to enable a new build option to support PNG images:
 
@@ -1314,6 +1323,8 @@ Ideally those files should not exceed 80 chars per line.
 
 subpackages can also have their own `INSTALL.msg` and `REMOVE.msg` files, simply create them
 as `srcpkgs/<pkgname>/<subpkg>.INSTALL.msg` or `srcpkgs/<pkgname>/<subpkg>.REMOVE.msg` respectively.
+
+This should only be used for critical messages, like warning users of breaking changes.
 
 <a id="runtime_account_creation"></a>
 ### Creating system accounts/groups at runtime

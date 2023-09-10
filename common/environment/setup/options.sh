@@ -36,3 +36,11 @@ vopt_bool() {
     fi
     vopt_if "$1" "-D${prop}=true" "-D${prop}=false"
 }
+
+vopt_feature() {
+    local opt="$1" prop="${2:-$1}"
+    if [ "$#" -gt "2" ]; then
+        msg_error "vopt_feature $opt: $(($# - 2)) excess parameter(s)\n"
+    fi
+    vopt_if "$1" "-D${prop}=enabled" "-D${prop}=disabled"
+}
