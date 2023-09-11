@@ -65,11 +65,11 @@ remove_pkg_autodeps() {
 
     remove_pkg_cross_deps
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
-    prevs=$(stat -c %s $tmplogf)
+    prevs=$(stat_size $tmplogf)
     echo yes | $XBPS_REMOVE_CMD -Ryod 2>> $errlogf 1>> $tmplogf
     rval=$?
     while [ $rval -eq 0 ]; do
-        local curs=$(stat -c %s $tmplogf)
+        local curs=$(stat_size $tmplogf)
         if [ $curs -eq $prevs ]; then
             break
         fi
