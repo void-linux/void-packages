@@ -16,7 +16,7 @@ remove_pkg_cross_deps() {
     $XBPS_REMOVE_XCMD -Ryo > $tmplogf 2>&1
     rval=$?
     while [ $rval -eq 0 ]; do
-        local curs=$(stat -c %s $tmplogf)
+        local curs=$(stat_size $tmplogf)
         if [ $curs -eq $prevs ]; then
             break
         fi
