@@ -18,7 +18,7 @@ elif [ -z "${SOURCE_DATE_EPOCH}" ]; then
 		export SOURCE_DATE_EPOCH="$(stat -c %Y ${XBPS_SRCPKGDIR}/${basepkg}/template)"
 	else
 		export SOURCE_DATE_EPOCH=$($XBPS_GIT_CMD -C ${XBPS_DISTDIR} cat-file commit HEAD |
-			sed -n '/^committer /{s/.*> \([0-9][0-9]*\) [-+][0-9].*/\1/p;q}')
+			sed -n '/^committer /{s/.*> \([0-9][0-9]*\) [-+][0-9].*/\1/p;q;}')
 	fi
 fi
 
