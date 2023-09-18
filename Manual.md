@@ -1079,6 +1079,11 @@ additional paths to be searched when linking target binaries to be introspected.
 `qemu-<target_arch>-static` when running the target binary. You can for example specify
 `GIR_EXTRA_OPTIONS="-strace"` to see a trace of what happens when running that binary.
 
+- `meson` creates a cross file, `${XBPS_WRAPPERDIR}/meson/xbps_meson.cross`, which configures
+meson for cross builds. This is particularly useful for building packages that wrap meson
+invocations (e.g., `python3-pep517` packages that use a meson backend) and is added by default
+for packages that use the `meson` build style.
+
 - `qemu` sets additional variables for the `cmake` and `meson` build styles to allow
 executing cross-compiled binaries inside qemu.
 It sets `CMAKE_CROSSCOMPILING_EMULATOR` for cmake and `exe_wrapper` for meson
