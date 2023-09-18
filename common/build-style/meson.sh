@@ -1,94 +1,11 @@
 #
 # This helper is for templates using meson.
 #
-do_patch() {
-	: ${meson_crossfile:=xbps_meson.cross}
-
-	if [ "$CROSS_BUILD" ]; then
-		_MESON_TARGET_ENDIAN=little
-		# drop the -musl suffix to the target cpu, meson doesn't recognize it
-		_MESON_TARGET_CPU=${XBPS_TARGET_MACHINE/-musl/}
-		case "$XBPS_TARGET_MACHINE" in
-			mips|mips-musl|mipshf-musl)
-				_MESON_TARGET_ENDIAN=big
-				_MESON_CPU_FAMILY=mips
-				;;
-			armv*)
-				_MESON_CPU_FAMILY=arm
-				;;
-			i686*)
-				_MESON_CPU_FAMILY=x86
-				;;
-			ppc64le*)
-				_MESON_CPU_FAMILY=ppc64
-				;;
-			ppc64*)
-				_MESON_TARGET_ENDIAN=big
-				_MESON_CPU_FAMILY=ppc64
-				;;
-			ppcle*)
-				_MESON_CPU_FAMILY=ppc
-				;;
-			ppc*)
-				_MESON_TARGET_ENDIAN=big
-				_MESON_CPU_FAMILY=ppc
-				;;
-			*)
-				# if we reached here that means that the cpu and cpu_family
-				# are the same like 'x86_64' and 'aarch64'
-				_MESON_CPU_FAMILY=${_MESON_TARGET_CPU}
-				;;
-		esac
-
-		# Record cross-compiling information in cross file.
-		# CFLAGS and LDFLAGS must be set as c_args and c_link_args.
-		cat > ${meson_crossfile} <<EOF
-[binaries]
-c = '${CC}'
-cpp = '${CXX}'
-ar = '${XBPS_CROSS_TRIPLET}-gcc-ar'
-nm = '${NM}'
-ld = '${LD}'
-strip = '${STRIP}'
-readelf = '${READELF}'
-objcopy = '${OBJCOPY}'
-pkgconfig = '${PKG_CONFIG}'
-rust = ['rustc', '--target', '${RUST_TARGET}' ,'--sysroot', '${XBPS_CROSS_BASE}/usr']
-g-ir-scanner = '${XBPS_CROSS_BASE}/usr/bin/g-ir-scanner'
-g-ir-compiler = '${XBPS_CROSS_BASE}/usr/bin/g-ir-compiler'
-g-ir-generate = '${XBPS_CROSS_BASE}/usr/bin/g-ir-generate'
-llvm-config = '/usr/bin/llvm-config'
-cups-config = '${XBPS_CROSS_BASE}/usr/bin/cups-config'
-
-[properties]
-needs_exe_wrapper = true
-
-[built-in options]
-c_args = ['$(echo ${CFLAGS} | sed -r "s/\s+/','/g")']
-c_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
-
-cpp_args = ['$(echo ${CXXFLAGS} | sed -r "s/\s+/','/g")']
-cpp_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
-
-[host_machine]
-system = 'linux'
-cpu_family = '${_MESON_CPU_FAMILY}'
-cpu = '${_MESON_TARGET_CPU}'
-endian = '${_MESON_TARGET_ENDIAN}'
-EOF
-		if [[ $build_helper = *"qemu"* ]]; then
-			sed -e "/\[binaries\]/ a exe_wrapper = '/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static'" \
-				-i ${meson_crossfile}
-		fi
-
-		unset _MESON_CPU_FAMILY _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
-	fi
-}
 
 do_configure() {
 	: ${meson_cmd:=meson}
 	: ${meson_builddir:=build}
-	: ${meson_crossfile:=xbps_meson.cross}
+	: ${meson_crossfile:="${XBPS_WRAPPERDIR}/meson/xbps_meson.cross"}
 
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
