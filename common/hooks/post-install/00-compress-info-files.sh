@@ -15,8 +15,7 @@ hook() {
 		rm -f ${PKGDESTDIR}/usr/share/info/dir
 	fi
 
-	find ${PKGDESTDIR}/usr/share/info -type f -follow | while read f
-	do
+	find ${PKGDESTDIR}/usr/share/info -type f -follow | while read -r f; do
 		j=$(echo "$f"|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		[ "$j" = "/usr/share/info/dir" ] && continue

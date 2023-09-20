@@ -905,6 +905,10 @@ in url. Defaults to `(|v|$pkgname)[-_.]*`.
 part that follows numeric part of version directory
 in url. Defaults to `(|\.x)`.
 
+- `disabled` can be set to disable update checking for the package,
+in cases where checking for updates is impossible or does not make sense.
+This should be set to a string describing why it is disabled.
+
 <a id="patches"></a>
 ### Handling patches
 
@@ -1319,6 +1323,8 @@ Ideally those files should not exceed 80 chars per line.
 
 subpackages can also have their own `INSTALL.msg` and `REMOVE.msg` files, simply create them
 as `srcpkgs/<pkgname>/<subpkg>.INSTALL.msg` or `srcpkgs/<pkgname>/<subpkg>.REMOVE.msg` respectively.
+
+This should only be used for critical messages, like warning users of breaking changes.
 
 <a id="runtime_account_creation"></a>
 ### Creating system accounts/groups at runtime

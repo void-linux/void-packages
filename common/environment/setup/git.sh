@@ -15,10 +15,10 @@ elif [ -z "${SOURCE_DATE_EPOCH}" ]; then
 	fi
 	# check if the template is under version control:
 	if [ -n "$basepkg" -a -z "$($XBPS_GIT_CMD -C ${XBPS_SRCPKGDIR}/${basepkg} ls-files template)" ]; then
-		export SOURCE_DATE_EPOCH="$(stat -c %Y ${XBPS_SRCPKGDIR}/${basepkg}/template)"
+		export SOURCE_DATE_EPOCH="$(stat_mtime ${XBPS_SRCPKGDIR}/${basepkg}/template)"
 	else
 		export SOURCE_DATE_EPOCH=$($XBPS_GIT_CMD -C ${XBPS_DISTDIR} cat-file commit HEAD |
-			sed -n '/^committer /{s/.*> \([0-9][0-9]*\) [-+][0-9].*/\1/p;q}')
+			sed -n '/^committer /{s/.*> \([0-9][0-9]*\) [-+][0-9].*/\1/p;q;}')
 	fi
 fi
 

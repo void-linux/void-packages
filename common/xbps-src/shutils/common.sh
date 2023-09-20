@@ -1,5 +1,41 @@
 # vim: set ts=4 sw=4 et:
 
+# A portable abstraction for stat(1)
+#
+# The stat(1) command has different syntaxes between GNU flavor
+# and BSD flavor; implementations generally follow one or the other
+#
+if ! stat -c "%s" / > /dev/null 2>&1; then
+    # BSD stat
+
+    stat_size() {
+        stat -f %z "$1"
+    }
+
+    stat_inode() {
+        stat -f %i "$1"
+    }
+
+    stat_mtime() {
+        stat -f %m "$1"
+    }
+else
+    # GNU stat
+
+    stat_size() {
+        stat -c %s "$1"
+    }
+
+    stat_inode() {
+        stat -c %i "$1"
+    }
+
+    stat_mtime() {
+        stat -c %Y "$1"
+    }
+fi
+
+
 run_func() {
     local func="$1" desc="$2" funcname="$3" restoretrap= logpipe= logfile= teepid=
 
@@ -289,6 +325,7 @@ get_endian() {
         ppc*le)   echo "le";;
         ppc*)     echo "be";;
         x86_64)   echo "le";;
+        riscv64)   echo "le";;
     esac
 }
 
@@ -316,6 +353,7 @@ get_wordsize() {
         ppc64*)   echo "64";;
         ppc*)     echo "32";;
         x86_64)   echo "64";;
+        riscv64)   echo "64";;
     esac
 }
 

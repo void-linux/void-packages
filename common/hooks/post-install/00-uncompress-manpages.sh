@@ -9,8 +9,7 @@ hook() {
 	fi
 
 	# rewrite symlinks
-	find $mandir -type l -regex '.*\.\(gz\|bz2\)' | while read f
-	do
+	find $mandir -type l -regex '.*\.\(gz\|bz2\)' | while read -r f; do
 		lnkat=$(readlink "$f")
 		ln -s ${lnkat%.*} ${f%.*}
 		rm $f
