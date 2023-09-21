@@ -1083,6 +1083,11 @@ meson for cross builds. This is particularly useful for building packages that w
 invocations (e.g., `python3-pep517` packages that use a meson backend) and is added by default
 for packages that use the `meson` build style.
 
+- `numpy` configures the environment for cross-compilation of python packages that provide
+compiled extensions linking to NumPy C libraries. If the `meson` build helper is also
+configured, a secondary cross file, `${XBPS_WRAPPERDIR}/meson/xbps_numpy.cross`, will be
+written to inform meson where common NumPy components may be found.
+
 - `python3` configures the cross-build environment to use Python libraries, header files, and
 interpreter configurations in the target root. The `python3` helper is added by default for
 packages that use the `python3-module` or `python3-pep517` build styles.
