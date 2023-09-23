@@ -1,66 +1,68 @@
 # Template file for 'clamav'
 pkgname=clamav
-version=0.103.8
-revision=4
-build_style=gnu-configure
-# XXX: system llvm is too new (< 3.7 required)
-# Shipped llvm does not build with gcc>=6
-configure_args="--sbindir=/usr/bin --libdir=/usr/lib
- --with-openssl=${XBPS_CROSS_BASE}/usr --with-pcre=${XBPS_CROSS_BASE}/usr
- --with-zlib=${XBPS_CROSS_BASE}/usr --with-libbz2-prefix=${XBPS_CROSS_BASE}/usr
- --with-system-libmspack=${XBPS_CROSS_BASE}/usr --with-libcurl=${XBPS_CROSS_BASE}/usr
- --enable-ipv6 --with-user=_clamav --with-group=_clamav"
-conf_files="/etc/clamd.conf /etc/freshclam.conf"
-hostmakedepends="flex pkg-config zip"
-makedepends="json-c-devel libcurl-devel libmspack-devel libxml2-devel
- ncurses-devel pcre-devel tcl-devel"
+version=1.2.0
+revision=1
+
+_configdir=/etc/clamav
+_databasedir=/var/lib/clamav
+
+build_style=cmake
+cmake_builddir=build
+# Setting ENABLE_JSON_SHARED=OFF is preferred, as libclamav.so may crash if you
+# use a different JSON library.
+configure_args="
+ -D CMAKE_BUILD_TYPE=Release
+ -D CMAKE_INSTALL_PREFIX=/usr
+ -D APP_CONFIG_DIRECTORY=${_configdir}
+ -D DATABASE_DIRECTORY=${_databasedir}
+ -D CLAMAV_USER=_clamav
+ -D CLAMAV_GROUP=_clamav
+ -D ENABLE_JSON_SHARED=OFF"
+hostmakedepends="rust cargo python3"
+makedepends="bzip2-devel check-devel libcurl-devel json-c-devel libmilter-devel
+ libxml2-devel ncurses-devel openssl-devel pcre2-devel zlib-devel"
 short_desc="Clam Anti-Virus scanner"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="GPL-2.0-only"
 homepage="https://www.clamav.net/"
+changelog="https://raw.githubusercontent.com/Cisco-Talos/clamav/main/NEWS.md"
 distfiles="https://www.clamav.net/downloads/production/clamav-${version}.tar.gz"
-checksum=6f49da6ee927936de13d359e559d3944248e3a257d40b80b6c99ebe6fe8c8c3f
-_clamav_homedir="/var/lib/_${pkgname}"
-_clamav_descr="ClamAV user"
+checksum=97a192dffe141480b56cabf1063d79a9fc55cd59203241fa41bfc7a98a548020
 system_accounts="_clamav"
-make_check=ci-skip
+_clamav_homedir=${_databasedir}
+conf_files="
+ ${_configdir}/clamav-milter.conf
+ ${_configdir}/clamd.conf
+ ${_configdir}/freshclam.conf"
+_sv_files="clamd clamonacc freshclam"
 
-CPPFLAGS="-Wno-unused-local-typedefs"
 if [ "$CROSS_BUILD" ]; then
-	configure_args+=" --disable-mempool"
+	build_helper="qemu"
+	makedepends+=" rust-std"
+	configure_args+="
+	 -D RUST_COMPILER_TARGET:STRING=${XBPS_CROSS_RUST_TARGET}
+	 -D RUSTFLAGS=${XBPS_CROSS_RUSTFLAGS}"
 fi
+
 if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 	makedepends+=" musl-fts-devel"
-	LDFLAGS="-lfts"
+	configure_args+=" -D CMAKE_EXE_LINKER_FLAGS=-lfts"
 fi
 
-do_configure() {
-	# Disable detection of sys/cdefs.h (it's obsolete)
-	sed -i configure -e 's; sys/cdefs\.h$;;'
-	sed -i configure -e 's;3\.7;3.9;'
-	# Enable IPv6 for cross builds
-	if [ "$CROSS_BUILD" ]; then
-		configure_args+=" have_cv_ipv6=yes"
-	fi
-	# Need to set PCRE_HOME to make --with-pcre=/usr work
-	PCRE_HOME=/usr ./configure ${configure_args}
-}
 post_install() {
-	# Enable and patch clamd configuration
-	mv -v ${PKGDESTDIR}/etc/clamd.conf.sample ${PKGDESTDIR}/etc/clamd.conf
-	vsconf etc/clamd.conf.sample
-	sed -i ${PKGDESTDIR}/etc/clamd.conf \
-		-e "s;^Example$;# Example;" \
-		-e "s;#DatabaseDirectory.*;DatabaseDirectory /var/lib/_${pkgname};"
+	vmkdir ${_configdir}
+	for sv in ${_sv_files}; do vsv "${sv}"; done
+	for path in ${conf_files}; do
+		name=${path#"${_configdir}"/}
 
-	# Enable and patch freshclam configuration
-	mv -v ${PKGDESTDIR}/etc/freshclam.conf.sample ${PKGDESTDIR}/etc/freshclam.conf
-	vsconf etc/freshclam.conf.sample
-	sed -i ${PKGDESTDIR}/etc/freshclam.conf \
-		-e "s;^Example$;# Example;" \
-		-e "s;#DatabaseDirectory.*;DatabaseDirectory /var/lib/_${pkgname};"
-	vdoc "${FILESDIR}/README.voidlinux"
+		mv -v "${PKGDESTDIR}"/"${path}".sample "${PKGDESTDIR}"/"${path}"
+		vsconf "${PKGDESTDIR}"/"${path}" "${name}".sample
+		sed -i "${PKGDESTDIR}"/"${path}" -e "s;^Example$;# Example;"
+	done
+	vdoc "${FILESDIR}"/README.voidlinux
+
 }
+
 clamav-devel_package() {
 	depends="${sourcepkg}>=${version}_${revision}"
 	short_desc+=" - development files"
