@@ -1,0 +1,286 @@
+From d92c0bc6b221b3a6fdb80cadf13276897b771677 Mon Sep 17 00:00:00 2001
+From: Thomas A Caswell <tcaswell@gmail.com>
+Date: Fri, 4 Nov 2022 11:11:58 -0400
+Subject: [PATCH 01/13] Fix #323: Support Python 3.12
+
+---
+ src/greenlet/greenlet_cpython_compat.hpp |  6 ++++++
+ src/greenlet/greenlet_greenlet.hpp       | 12 +++++++++++-
+ 2 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/src/greenlet/greenlet_cpython_compat.hpp b/src/greenlet/greenlet_cpython_compat.hpp
+index 3fd13ac..6210586 100644
+--- a/src/greenlet/greenlet_cpython_compat.hpp
++++ b/src/greenlet/greenlet_cpython_compat.hpp
+@@ -48,6 +48,12 @@ We have to save and restore this as well.
+ #    define GREENLET_USE_CFRAME 0
+ #endif
+ 
++#if PY_VERSION_HEX >= 0x30C0000
++#    define GREENLET_PY312 1
++#else
++#    define GREENLET_PY312 0
++#endif
++
+ #if PY_VERSION_HEX >= 0x30B00A4
+ /*
+ Greenlet won't compile on anything older than Python 3.11 alpha 4 (see
+diff --git a/src/greenlet/greenlet_greenlet.hpp b/src/greenlet/greenlet_greenlet.hpp
+index cc02c5c..472902e 100644
+--- a/src/greenlet/greenlet_greenlet.hpp
++++ b/src/greenlet/greenlet_greenlet.hpp
+@@ -831,7 +831,11 @@ void PythonState::operator<<(const PyThreadState *const tstate) G_NOEXCEPT
+     this->use_tracing = tstate->cframe->use_tracing;
+ #endif
+ #if GREENLET_PY311
++    #if GREENLET_PY312
++    this->recursion_depth = tstate->py_recursion_limit - tstate->py_recursion_remaining;
++    #else
+     this->recursion_depth = tstate->recursion_limit - tstate->recursion_remaining;
++    #endif
+     this->current_frame = tstate->cframe->current_frame;
+     this->datastack_chunk = tstate->datastack_chunk;
+     this->datastack_top = tstate->datastack_top;
+@@ -867,7 +871,11 @@ void PythonState::operator>>(PyThreadState *const tstate) G_NOEXCEPT
+     tstate->cframe->use_tracing = this->use_tracing;
+ #endif
+ #if GREENLET_PY311
++    #if GREENLET_PY312
++    tstate->py_recursion_remaining = tstate->py_recursion_limit - this->recursion_depth;
++    #else
+     tstate->recursion_remaining = tstate->recursion_limit - this->recursion_depth;
++    #endif
+     tstate->cframe->current_frame = this->current_frame;
+     tstate->datastack_chunk = this->datastack_chunk;
+     tstate->datastack_top = this->datastack_top;
+@@ -895,7 +903,9 @@ void PythonState::will_switch_from(PyThreadState *const origin_tstate) G_NOEXCEP
+ void PythonState::set_initial_state(const PyThreadState* const tstate) G_NOEXCEPT
+ {
+     this->_top_frame = nullptr;
+-#if GREENLET_PY311
++#if GREENLET_PY312
++    this->recursion_depth = tstate->py_recursion_limit - tstate->py_recursion_remaining;
++#elif GREENLET_PY311
+     this->recursion_depth = tstate->recursion_limit - tstate->recursion_remaining;
+ #else
+     this->recursion_depth = tstate->recursion_depth;
+
+From 0013135c3d241ecbd35894e1721eaf71ce58421f Mon Sep 17 00:00:00 2001
+From: Michael Droettboom <mdboom@gmail.com>
+Date: Thu, 27 Apr 2023 09:52:14 -0400
+Subject: [PATCH 06/13] Updates for PEP669
+
+---
+ src/greenlet/greenlet.cpp          |  4 ++++
+ src/greenlet/greenlet_greenlet.hpp | 15 +++++++++------
+ 2 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/src/greenlet/greenlet.cpp b/src/greenlet/greenlet.cpp
+index 7f3e804..d01ed96 100644
+--- a/src/greenlet/greenlet.cpp
++++ b/src/greenlet/greenlet.cpp
+@@ -3095,7 +3095,11 @@ static PyObject*
+ mod_get_tstate_trash_delete_nesting(PyObject* UNUSED(module))
+ {
+     PyThreadState* tstate = PyThreadState_GET();
++#if GREENLET_PY312
++    return PyLong_FromLong(tstate->trash.delete_nesting);
++#else
+     return PyLong_FromLong(tstate->trash_delete_nesting);
++#endif
+ }
+ 
+ static PyMethodDef GreenMethods[] = {
+diff --git a/src/greenlet/greenlet_greenlet.hpp b/src/greenlet/greenlet_greenlet.hpp
+index 472902e..7146214 100644
+--- a/src/greenlet/greenlet_greenlet.hpp
++++ b/src/greenlet/greenlet_greenlet.hpp
+@@ -828,7 +828,9 @@ void PythonState::operator<<(const PyThreadState *const tstate) G_NOEXCEPT
+       the switch, use `will_switch_from`.
+     */
+     this->cframe = tstate->cframe;
++    #if !GREENLET_PY312
+     this->use_tracing = tstate->cframe->use_tracing;
++    #endif
+ #endif
+ #if GREENLET_PY311
+     #if GREENLET_PY312
+@@ -843,13 +845,12 @@ void PythonState::operator<<(const PyThreadState *const tstate) G_NOEXCEPT
+     PyFrameObject *frame = PyThreadState_GetFrame((PyThreadState *)tstate);
+     Py_XDECREF(frame);  // PyThreadState_GetFrame gives us a new reference.
+     this->_top_frame.steal(frame);
++    this->trash_delete_nesting = tstate->trash.delete_nesting;
+ #else
+     this->recursion_depth = tstate->recursion_depth;
+     this->_top_frame.steal(tstate->frame);
+-#endif
+-
+-    // All versions of Python.
+     this->trash_delete_nesting = tstate->trash_delete_nesting;
++#endif
+ }
+ 
+ void PythonState::operator>>(PyThreadState *const tstate) G_NOEXCEPT
+@@ -868,7 +869,9 @@ void PythonState::operator>>(PyThreadState *const tstate) G_NOEXCEPT
+       root_cframe here. See note above about why we can't
+       just copy this from ``origin->cframe->use_tracing``.
+     */
++    #if !GREENLET_PY312
+     tstate->cframe->use_tracing = this->use_tracing;
++    #endif
+ #endif
+ #if GREENLET_PY311
+     #if GREENLET_PY312
+@@ -881,17 +884,17 @@ void PythonState::operator>>(PyThreadState *const tstate) G_NOEXCEPT
+     tstate->datastack_top = this->datastack_top;
+     tstate->datastack_limit = this->datastack_limit;
+     this->_top_frame.relinquish_ownership();
++    tstate->trash.delete_nesting = this->trash_delete_nesting;
+ #else
+     tstate->frame = this->_top_frame.relinquish_ownership();
+     tstate->recursion_depth = this->recursion_depth;
++    tstate->trash.delete_nesting = this->trash_delete_nesting;
+ #endif
+-    // All versions of Python.
+-    tstate->trash_delete_nesting = this->trash_delete_nesting;
+ }
+ 
+ void PythonState::will_switch_from(PyThreadState *const origin_tstate) G_NOEXCEPT
+ {
+-#if GREENLET_USE_CFRAME
++#if GREENLET_USE_CFRAME && !GREENLET_PY312
+     // The weird thing is, we don't actually save this for an
+     // effect on the current greenlet, it's saved for an
+     // effect on the target greenlet. That is, we want
+
+From 86b096e43234ed1549d76a950cd449ccc51a304a Mon Sep 17 00:00:00 2001
+From: Michael Droettboom <mdboom@gmail.com>
+Date: Thu, 27 Apr 2023 09:54:50 -0400
+Subject: [PATCH 07/13] Fix Python 3.11
+
+---
+ src/greenlet/greenlet_greenlet.hpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/greenlet/greenlet_greenlet.hpp b/src/greenlet/greenlet_greenlet.hpp
+index 7146214..41fda8e 100644
+--- a/src/greenlet/greenlet_greenlet.hpp
++++ b/src/greenlet/greenlet_greenlet.hpp
+@@ -845,7 +845,11 @@ void PythonState::operator<<(const PyThreadState *const tstate) G_NOEXCEPT
+     PyFrameObject *frame = PyThreadState_GetFrame((PyThreadState *)tstate);
+     Py_XDECREF(frame);  // PyThreadState_GetFrame gives us a new reference.
+     this->_top_frame.steal(frame);
++    #if GREENLET_PY312
+     this->trash_delete_nesting = tstate->trash.delete_nesting;
++    #else
++    this->trash_delete_nesting = tstate->trash_delete_nesting;
++    #endif
+ #else
+     this->recursion_depth = tstate->recursion_depth;
+     this->_top_frame.steal(tstate->frame);
+@@ -884,7 +888,11 @@ void PythonState::operator>>(PyThreadState *const tstate) G_NOEXCEPT
+     tstate->datastack_top = this->datastack_top;
+     tstate->datastack_limit = this->datastack_limit;
+     this->_top_frame.relinquish_ownership();
++    #if GREENLET_PY312
+     tstate->trash.delete_nesting = this->trash_delete_nesting;
++    #else
++    tstate->trash_delete_nesting = this->trash_delete_nesting;
++    #endif
+ #else
+     tstate->frame = this->_top_frame.relinquish_ownership();
+     tstate->recursion_depth = this->recursion_depth;
+
+From 22a84344079a6e6b59e91ede92c9d800bc0f2041 Mon Sep 17 00:00:00 2001
+From: Michael Droettboom <mdboom@gmail.com>
+Date: Tue, 2 May 2023 10:48:37 -0400
+Subject: [PATCH 11/13] Fix recursion depth updating
+
+---
+ src/greenlet/greenlet_greenlet.hpp | 19 ++++++++++++++++---
+ 1 file changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/src/greenlet/greenlet_greenlet.hpp b/src/greenlet/greenlet_greenlet.hpp
+index ffb23a7..10244e0 100644
+--- a/src/greenlet/greenlet_greenlet.hpp
++++ b/src/greenlet/greenlet_greenlet.hpp
+@@ -143,7 +143,12 @@ namespace greenlet
+         _PyCFrame* cframe;
+         int use_tracing;
+ #endif
++#if GREENLET_PY312
++        int py_recursion_depth;
++        int c_recursion_depth;
++#else
+         int recursion_depth;
++#endif
+         int trash_delete_nesting;
+ #if GREENLET_PY311
+         _PyInterpreterFrame* current_frame;
+@@ -748,7 +753,12 @@ PythonState::PythonState()
+     ,cframe(nullptr)
+     ,use_tracing(0)
+ #endif
++#if GREENLET_PY312
++    ,py_recursion_depth(0)
++    ,c_recursion_depth(0)
++#else
+     ,recursion_depth(0)
++#endif
+     ,trash_delete_nesting(0)
+ #if GREENLET_PY311
+     ,current_frame(nullptr)
+@@ -834,7 +844,8 @@ void PythonState::operator<<(const PyThreadState *const tstate) G_NOEXCEPT
+ #endif
+ #if GREENLET_PY311
+     #if GREENLET_PY312
+-    this->recursion_depth = tstate->py_recursion_limit - tstate->py_recursion_remaining;
++    this->py_recursion_depth = tstate->py_recursion_limit - tstate->py_recursion_remaining;
++    this->c_recursion_depth = C_RECURSION_LIMIT - tstate->c_recursion_remaining;
+     #else
+     this->recursion_depth = tstate->recursion_limit - tstate->recursion_remaining;
+     #endif
+@@ -879,7 +890,8 @@ void PythonState::operator>>(PyThreadState *const tstate) G_NOEXCEPT
+ #endif
+ #if GREENLET_PY311
+     #if GREENLET_PY312
+-    tstate->py_recursion_remaining = tstate->py_recursion_limit - this->recursion_depth;
++    tstate->py_recursion_remaining = tstate->py_recursion_limit - this->py_recursion_depth;
++    tstate->c_recursion_remaining = C_RECURSION_LIMIT - this->c_recursion_depth;
+     #else
+     tstate->recursion_remaining = tstate->recursion_limit - this->recursion_depth;
+     #endif
+@@ -915,7 +927,8 @@ void PythonState::set_initial_state(const PyThreadState* const tstate) G_NOEXCEP
+ {
+     this->_top_frame = nullptr;
+ #if GREENLET_PY312
+-    this->recursion_depth = tstate->py_recursion_limit - tstate->py_recursion_remaining;
++    this->py_recursion_depth = tstate->py_recursion_limit - tstate->py_recursion_remaining;
++    this->c_recursion_depth = tstate->py_recursion_limit - tstate->py_recursion_remaining;
+ #elif GREENLET_PY311
+     this->recursion_depth = tstate->recursion_limit - tstate->recursion_remaining;
+ #else
+
+From 3262da94a8c564bc4c12570a6f060e8af8fd19df Mon Sep 17 00:00:00 2001
+From: Michael Droettboom <mdboom@gmail.com>
+Date: Tue, 30 May 2023 12:14:22 -0400
+Subject: [PATCH 12/13] Insert blank line
+
+---
+ src/greenlet/greenlet.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/greenlet/greenlet.cpp b/src/greenlet/greenlet.cpp
+index d01ed96..fd12a59 100644
+--- a/src/greenlet/greenlet.cpp
++++ b/src/greenlet/greenlet.cpp
+@@ -3095,6 +3095,7 @@ static PyObject*
+ mod_get_tstate_trash_delete_nesting(PyObject* UNUSED(module))
+ {
+     PyThreadState* tstate = PyThreadState_GET();
++
+ #if GREENLET_PY312
+     return PyLong_FromLong(tstate->trash.delete_nesting);
+ #else
+
+ 2.0.2 (2023-01-28)
