@@ -14,14 +14,17 @@ $PROGNAME: [options] <target> [arguments]
 
 Targets: (only one may be specified)
 
-binary-bootstrap [arch]
+binary-bootstrap
     Install bootstrap packages from host repositories into <masterdir>.
-    If the optional 'arch' argument is set, it will install bootstrap packages
-    from this architecture, and its required xbps utilities. The <masterdir>
-    will be initialized for chroot operations.
+    If the optional '-A <arch>' flag is set, it will install bootstrap packages
+    from this architecture, and its required xbps utilities. The <masterdir> will
+    be initialized for chroot operations.
 
 bootstrap
     Build and install from source the bootstrap packages into <masterdir>.
+    If the optional '-A <arch>' flag is set, it will build and install bootstrap
+    packages from this architecture, and its required xbps utilities. The <masterdir>
+    will be initialized for chroot operations.
 
 bootstrap-update
     Updates bootstrap packages with latest versions available from registered
@@ -151,6 +154,13 @@ Options:
 
 -1  If dependencies of target package are missing, fail instead of building them.
 
+-A <host>
+    Use this host machine. Automatically creates masterdir-<host> if it doesn't
+    already exist. Some host machines may require qemu-user-static and
+    binfmt-support if not natively supported by the processor. Supported hosts:
+
+$(print_cross_targets)
+
 -a  <target>
     Cross compile packages for this target machine. Supported targets:
 
@@ -194,7 +204,7 @@ $(print_cross_targets)
 -m  <masterdir>
     Absolute path to a directory to be used as masterdir.
     The masterdir is the main directory to build/store/compile packages.
-    If unset defaults to void-packages/masterdir.
+    If unset defaults to void-packages/masterdir-<host>.
 
 -N  Disable use of remote repositories to resolve dependencies.
 
@@ -290,19 +300,8 @@ check_native_arch() {
         else
             export XBPS_ARCH=$(xbps-uhelper arch)
         fi
-    elif [ "$XBPS_TARGET" = 'binary-bootstrap' ] && [ "$XBPS_TARGET_PKG" ]; then
-        # ^ special case for binary-bootstrap for e.g:
-        # x86_64 -> x86_64-musl
-        # x86_64 -> i686
-        export XBPS_ARCH=$XBPS_TARGET_PKG
     else
-        LDD=$(ldd --version 2>&1|head -1)
-        if [[ $LDD == *musl* ]]; then
-            export XBPS_ARCH=${XBPS_MACHINE%-musl}-musl
-        else
-            # XBPS_ARCH == $(uname -m)
-            export XBPS_ARCH=$(uname -m)
-        fi
+        export XBPS_ARCH="$XBPS_MACHINE"
     fi
 }
 
@@ -372,7 +371,7 @@ readonly XBPS_SRC_VERSION="113"
 export XBPS_MACHINE=$(xbps-uhelper -C /dev/null arch)
 
 XBPS_OPTIONS=
-XBPS_OPTSTRING="1a:bc:CEfgGhH:iIj:Lm:No:p:qsQKr:tV"
+XBPS_OPTSTRING="1A:a:bc:CEfgGhH:iIj:Lm:No:p:qsQKr:tV"
 
 # Preprocess arguments in order to allow options before and after XBPS_TARGET.
 eval set -- $(getopt "$XBPS_OPTSTRING" "$@");
@@ -383,6 +382,7 @@ eval set -- $(getopt "$XBPS_OPTSTRING" "$@");
 while getopts "$XBPS_OPTSTRING" opt; do
     case $opt in
         1) XBPS_ARG_BUILD_ONLY_ONE_PKG=yes; XBPS_OPTIONS+=" -1";;
+        A) XBPS_ARG_MACHINE="$OPTARG"; XBPS_OPTIONS+=" -A $OPTARG";;
         a) XBPS_ARG_CROSS_BUILD="$OPTARG"; XBPS_OPTIONS+=" -a $OPTARG";;
         b) XBPS_ARG_IGNORE_BROKENNESS=yes; XBPS_OPTIONS+=" -b";;
         c) XBPS_ARG_CONFIG="$OPTARG"; XBPS_OPTIONS+=" -c $OPTARG";;
@@ -493,6 +493,7 @@ fi
 [ -n "$XBPS_ARG_PRINT_VARIABLES" ] && XBPS_PRINT_VARIABLES="$XBPS_ARG_PRINT_VARIABLES"
 [ -n "$XBPS_ARG_ALT_REPOSITORY" ] && XBPS_ALT_REPOSITORY="$XBPS_ARG_ALT_REPOSITORY"
 [ -n "$XBPS_ARG_STRICT" ] && XBPS_STRICT="$XBPS_ARG_STRICT"
+[ -n "$XBPS_ARG_MACHINE" ] && XBPS_MACHINE="$XBPS_ARG_MACHINE"
 [ -n "$XBPS_ARG_CROSS_BUILD" ] && XBPS_CROSS_BUILD="$XBPS_ARG_CROSS_BUILD"
 [ -n "$XBPS_ARG_CHECK_PKGS" ] && XBPS_CHECK_PKGS="$XBPS_ARG_CHECK_PKGS"
 [ -n "$XBPS_ARG_MAKEJOBS" ] && XBPS_MAKEJOBS="$XBPS_ARG_MAKEJOBS"
@@ -527,9 +528,18 @@ if [ -z "$IN_CHROOT" -a "$UID" -eq 0 -a -z "$XBPS_ALLOW_CHROOT_BREAKOUT" ]; then
     exit 1
 fi
 
-# if XBPS_MASTERDIR unset, defaults to $XBPS_DISTDIR/masterdir.
-: ${XBPS_MASTERDIR:=$XBPS_DISTDIR/masterdir}
-[ ! -d $XBPS_MASTERDIR ] &&  mkdir -p $XBPS_MASTERDIR
+# if XBPS_MASTERDIR unset, defaults to $XBPS_DISTDIR/masterdir-<host machine>
+# unless in a container for simplicity of container/CI usage
+if [ "$XBPS_CHROOT_CMD" = ethereal ]; then
+    : "${XBPS_MASTERDIR:=$XBPS_DISTDIR/masterdir}"
+else
+    : "${XBPS_MASTERDIR:=$XBPS_DISTDIR/masterdir-$XBPS_MACHINE}"
+    # but use $XBPS_DISTDIR/masterdir if it exists and the new style doesn't
+    if [ ! -d "${XBPS_MASTERDIR}" ] && [ -d "${XBPS_DISTDIR}/masterdir" ]; then
+        XBPS_MASTERDIR="${XBPS_DISTDIR}/masterdir"
+    fi
+fi
+[ ! -d "$XBPS_MASTERDIR" ] && mkdir -p "$XBPS_MASTERDIR"
 
 # if XBPS_HOSTDIR unset, defaults to $XBPS_DISTDIR/hostdir.
 : ${XBPS_HOSTDIR:=$XBPS_DISTDIR/hostdir}
@@ -617,10 +627,10 @@ if [ -z "$XBPS_REINIT" -a -s $XBPS_MASTERDIR/.xbps_chroot_init ]; then
         linux32 xbps-reconfigure -r ${XBPS_MASTERDIR} -a &>/dev/null
         # reexec itself via linux32
         export XBPS_REINIT=1
-        exec linux32 $0 ${XBPS_OPTIONS} $@
+        exec linux32 $0 ${XBPS_OPTIONS} "$@"
     fi
 fi
-if [ "$XBPS_ARCH" ]; then
+if [ -n "$XBPS_ARCH" ]; then
     export XBPS_MACHINE=$XBPS_ARCH
 fi
 # At this point if XBPS_TARGET_MACHINE isn't defined we assume
@@ -743,11 +753,19 @@ reconfigure_base_chroot
 #
 case "$XBPS_TARGET" in
     binary-bootstrap)
-        install_base_chroot ${XBPS_TARGET_PKG:=$XBPS_MACHINE}
+        if [ -n "$XBPS_TARGET_PKG" ]; then
+            msg_error "xbps-src: binary-bootstrap <arch> is no longer supported, use '-A <arch>' instead\n"
+            exit 1
+        fi
+        install_base_chroot "$XBPS_MACHINE"
         ;;
     bootstrap)
         if [ -n "$XBPS_CHECK_PKGS" ]; then
             msg_error "xbps-src: disable tests for bootstrap\n"
+            exit 1
+        fi
+        if [ -n "$XBPS_TARGET_PKG" ]; then
+            msg_error "xbps-src: bootstrap <arch> is no longer supported, use '-A <arch>' instead\n"
             exit 1
         fi
         # base-chroot building on host
@@ -761,7 +779,7 @@ case "$XBPS_TARGET" in
                 base-chroot base-chroot $XBPS_TARGET || exit 1
         ) || exit 1
         [ -d $XBPS_MASTERDIR ] && rm -rf $XBPS_MASTERDIR
-        install_base_chroot ${XBPS_TARGET_PKG:=$XBPS_MACHINE}
+        install_base_chroot "$XBPS_MACHINE"
         ;;
     bootstrap-update)
         if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
