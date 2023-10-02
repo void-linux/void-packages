@@ -859,12 +859,14 @@ update multiple packages in a second branch without polluting his local reposito
 The second way to define a repository is by setting the `repository` variable in
 a template. This way the maintainer can define repositories for a specific
 package or a group of packages. This is currently used to distinguish between
-closed source packages, which are put in the `nonfree` repository and other
-packages which are at the root-repository.
+certain classes of packages.
 
 The following repository names are valid:
 
-* `nonfree`: Repository for closed source packages.
+* `bootstrap`: Repository for xbps-src-specific packages.
+* `debug`: Repository for packages containing debug symbols. In almost all cases,
+  these packages are generated automatically.
+* `nonfree`: Repository for packages that are closed source or have nonfree licenses.
 
 <a id="updates"></a>
 ### Checking for new upstream releases
