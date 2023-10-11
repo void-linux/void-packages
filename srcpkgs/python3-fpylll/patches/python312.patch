@@ -1,0 +1,213 @@
+From 4ed789aac4eeb1c109cbeb4822fac0b5ff76bd37 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 2 Oct 2023 08:59:00 -0300
+Subject: [PATCH] Support python 3.12
+
+---
+ src/fpylll/gmp/pycore_long.h   | 98 ++++++++++++++++++++++++++++++++++
+ src/fpylll/gmp/pycore_long.pxd |  9 ++++
+ src/fpylll/gmp/pylong.pxd      | 17 +-----
+ src/fpylll/gmp/pylong.pyx      | 22 ++++----
+ 4 files changed, 119 insertions(+), 27 deletions(-)
+ create mode 100644 src/fpylll/gmp/pycore_long.h
+ create mode 100644 src/fpylll/gmp/pycore_long.pxd
+
+diff --git a/src/fpylll/gmp/pycore_long.h b/src/fpylll/gmp/pycore_long.h
+new file mode 100644
+index 00000000..ff1a73d0
+--- /dev/null
++++ b/src/fpylll/gmp/pycore_long.h
+@@ -0,0 +1,98 @@
++#include "Python.h"
++#include <stdbool.h>
++
++#if PY_VERSION_HEX >= 0x030C00A5
++#define ob_digit(o)  (((PyLongObject*)o)->long_value.ob_digit)
++#else
++#define ob_digit(o)  (((PyLongObject*)o)->ob_digit)
++#endif
++
++#if PY_VERSION_HEX >= 0x030C00A7
++// taken from cpython:Include/internal/pycore_long.h @ 3.12
++
++/* Long value tag bits:
++ * 0-1: Sign bits value = (1-sign), ie. negative=2, positive=0, zero=1.
++ * 2: Reserved for immortality bit
++ * 3+ Unsigned digit count
++ */
++#define SIGN_MASK 3
++#define SIGN_ZERO 1
++#define SIGN_NEGATIVE 2
++#define NON_SIZE_BITS 3
++
++static inline bool
++_PyLong_IsZero(const PyLongObject *op)
++{
++    return (op->long_value.lv_tag & SIGN_MASK) == SIGN_ZERO;
++}
++
++static inline bool
++_PyLong_IsNegative(const PyLongObject *op)
++{
++    return (op->long_value.lv_tag & SIGN_MASK) == SIGN_NEGATIVE;
++}
++
++static inline bool
++_PyLong_IsPositive(const PyLongObject *op)
++{
++    return (op->long_value.lv_tag & SIGN_MASK) == 0;
++}
++
++static inline Py_ssize_t
++_PyLong_DigitCount(const PyLongObject *op)
++{
++    assert(PyLong_Check(op));
++    return op->long_value.lv_tag >> NON_SIZE_BITS;
++}
++
++#define TAG_FROM_SIGN_AND_SIZE(sign, size) ((1 - (sign)) | ((size) << NON_SIZE_BITS))
++
++static inline void
++_PyLong_SetSignAndDigitCount(PyLongObject *op, int sign, Py_ssize_t size)
++{
++    assert(size >= 0);
++    assert(-1 <= sign && sign <= 1);
++    assert(sign != 0 || size == 0);
++    op->long_value.lv_tag = TAG_FROM_SIGN_AND_SIZE(sign, (size_t)size);
++}
++
++#else
++// fallback for < 3.12
++
++static inline bool
++_PyLong_IsZero(const PyLongObject *op)
++{
++    return Py_SIZE(op) == 0;
++}
++
++static inline bool
++_PyLong_IsNegative(const PyLongObject *op)
++{
++    return Py_SIZE(op) < 0;
++}
++
++static inline bool
++_PyLong_IsPositive(const PyLongObject *op)
++{
++    return Py_SIZE(op) > 0;
++}
++
++static inline Py_ssize_t
++_PyLong_DigitCount(const PyLongObject *op)
++{
++    Py_ssize_t size = Py_SIZE(op);
++    return size < 0 ? -size : size;
++}
++
++static inline void
++_PyLong_SetSignAndDigitCount(PyLongObject *op, int sign, Py_ssize_t size)
++{
++#if (PY_MAJOR_VERSION == 3) && (PY_MINOR_VERSION < 9)
++// The function Py_SET_SIZE is defined starting with python 3.9.
++    Py_SIZE(o) = size;
++#else
++    Py_SET_SIZE(op, sign < 0 ? -size : size);
++#endif
++}
++
++#endif
+diff --git a/src/fpylll/gmp/pycore_long.pxd b/src/fpylll/gmp/pycore_long.pxd
+new file mode 100644
+index 00000000..41de637f
+--- /dev/null
++++ b/src/fpylll/gmp/pycore_long.pxd
+@@ -0,0 +1,9 @@
++from cpython.longintrepr cimport py_long, digit
++
++cdef extern from "pycore_long.h":
++    digit* ob_digit(py_long o)
++    bint _PyLong_IsZero(py_long o)
++    bint _PyLong_IsNegative(py_long o)
++    bint _PyLong_IsPositive(py_long o)
++    Py_ssize_t _PyLong_DigitCount(py_long o)
++    void _PyLong_SetSignAndDigitCount(py_long o, int sign, Py_ssize_t size)
+diff --git a/src/fpylll/gmp/pylong.pxd b/src/fpylll/gmp/pylong.pxd
+index 4ec3f47c..c64bcb6a 100644
+--- a/src/fpylll/gmp/pylong.pxd
++++ b/src/fpylll/gmp/pylong.pxd
+@@ -3,23 +3,10 @@
+ Various functions to deal with conversion mpz <-> Python int/long
+ """
+ 
+-cdef extern from "Python.h":
+-    cdef _PyLong_New(Py_ssize_t s)
+-    cdef long PyLong_SHIFT
+-    ctypedef unsigned int digit
+-    ctypedef struct PyLongObject:
+-        digit* ob_digit
+-
+-    ctypedef struct PyObject:
+-        pass
+-
+-    ctypedef struct PyVarObject:
+-        PyObject ob_base
+-        Py_ssize_t ob_size
+-
++from cpython.longintrepr cimport py_long
+ from fpylll.gmp.types cimport *
+ 
+ cdef mpz_get_pylong(mpz_srcptr z)
+ cdef mpz_get_pyintlong(mpz_srcptr z)
+-cdef int mpz_set_pylong(mpz_ptr z, L) except -1
++cdef int mpz_set_pylong(mpz_ptr z, py_long L) except -1
+ cdef Py_hash_t mpz_pythonhash(mpz_srcptr z)
+diff --git a/src/fpylll/gmp/pylong.pyx b/src/fpylll/gmp/pylong.pyx
+index 4b47146f..885d4efe 100644
+--- a/src/fpylll/gmp/pylong.pyx
++++ b/src/fpylll/gmp/pylong.pyx
+@@ -28,6 +28,9 @@ AUTHORS:
+ 
+ from cpython.int cimport PyInt_FromLong
+ from cpython.long cimport PyLong_CheckExact, PyLong_FromLong
++from cpython.longintrepr cimport _PyLong_New, digit, PyLong_SHIFT
++from .pycore_long cimport (ob_digit, _PyLong_IsZero, _PyLong_IsNegative,
++        _PyLong_IsPositive, _PyLong_DigitCount, _PyLong_SetSignAndDigitCount)
+ from .mpz cimport *
+ 
+ # Unused bits in every PyLong digit
+@@ -40,11 +43,9 @@ cdef mpz_get_pylong_large(mpz_srcptr z):
+     """
+     cdef size_t nbits = mpz_sizeinbase(z, 2)
+     cdef size_t pylong_size = (nbits + PyLong_SHIFT - 1) // PyLong_SHIFT
+-    L = _PyLong_New(pylong_size)
+-    mpz_export((<PyLongObject*>L).ob_digit, NULL,
+-            -1, sizeof(digit), 0, PyLong_nails, z)
+-    if mpz_sgn(z) < 0:
+-        (<PyVarObject*>L).ob_size = -(<PyVarObject*>L).ob_size
++    cdef py_long L = _PyLong_New(pylong_size)
++    mpz_export(ob_digit(L), NULL, -1, sizeof(digit), 0, PyLong_nails, z)
++    _PyLong_SetSignAndDigitCount(L, mpz_sgn(z), pylong_size)
+     return L
+ 
+ 
+@@ -67,16 +68,13 @@ cdef mpz_get_pyintlong(mpz_srcptr z):
+     return mpz_get_pylong_large(z)
+ 
+ 
+-cdef int mpz_set_pylong(mpz_ptr z, L) except -1:
++cdef int mpz_set_pylong(mpz_ptr z, py_long L) except -1:
+     """
+     Convert a Python ``long`` `L` to an ``mpz``.
+     """
+-    cdef Py_ssize_t pylong_size = (<PyVarObject*>L).ob_size
+-    if pylong_size < 0:
+-        pylong_size = -pylong_size
+-    mpz_import(z, pylong_size, -1, sizeof(digit), 0, PyLong_nails,
+-            (<PyLongObject*>L).ob_digit)
+-    if (<PyVarObject*>L).ob_size < 0:
++    cdef Py_ssize_t pylong_size = _PyLong_DigitCount(L)
++    mpz_import(z, pylong_size, -1, sizeof(digit), 0, PyLong_nails, ob_digit(L))
++    if _PyLong_IsNegative(L):
+         mpz_neg(z, z)
+ 
+ 

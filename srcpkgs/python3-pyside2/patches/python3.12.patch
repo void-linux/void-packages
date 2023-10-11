@@ -1,0 +1,152 @@
+This is a combination of three patches:
+
+1. In generate_pyi.py, avoid writing to immutable typing.TypeVar.__repr__.
+2. Backport PySide6 fix https://codereview.qt-project.org/c/pyside/pyside-setup/+/506424
+3. Backport PySide6 fix https://codereview.qt-project.org/c/pyside/pyside-setup/+/506930
+
+diff -ur python3-pyside2-5.15.5.orig/sources/pyside2/libpyside/pysideproperty.cpp python3-pyside2-5.15.5/sources/pyside2/libpyside/pysideproperty.cpp
+--- python3-pyside2-5.15.5.orig/sources/pyside2/libpyside/pysideproperty.cpp	2023-09-27 21:52:01.389249419 -0400
++++ python3-pyside2-5.15.5/sources/pyside2/libpyside/pysideproperty.cpp	2023-09-27 21:57:06.265042322 -0400
+@@ -46,6 +46,7 @@
+ 
+ #include <shiboken.h>
+ #include <signature.h>
++#include <basewrapper.h>
+ 
+ using namespace Shiboken;
+ 
+@@ -444,7 +445,13 @@
+ static PyObject *getFromType(PyTypeObject *type, PyObject *name)
+ {
+     PyObject *attr = nullptr;
+-    attr = PyDict_GetItem(type->tp_dict, name);
++
++    {
++        Shiboken::Type::TypeDict tpDict(type);
++        Q_ASSERT(tpDict);
++        attr = PyDict_GetItem(tpDict, name);
++    }
++
+     if (!attr) {
+         PyObject *bases = type->tp_bases;
+         int size = PyTuple_GET_SIZE(bases);
+diff -ur python3-pyside2-5.15.5.orig/sources/pyside2/libpyside/pysidesignal.cpp python3-pyside2-5.15.5/sources/pyside2/libpyside/pysidesignal.cpp
+--- python3-pyside2-5.15.5.orig/sources/pyside2/libpyside/pysidesignal.cpp	2023-09-27 21:52:01.387249407 -0400
++++ python3-pyside2-5.15.5/sources/pyside2/libpyside/pysidesignal.cpp	2023-09-27 21:58:42.799610013 -0400
+@@ -49,6 +49,7 @@
+ #include <QtCore/QMetaMethod>
+ #include <QtCore/QMetaObject>
+ #include <signature.h>
++#include <basewrapper.h>
+ 
+ #include <algorithm>
+ #include <utility>
+@@ -670,7 +671,10 @@
+     PyObject *value;
+     PyObject *key;
+ 
+-    while (PyDict_Next(objType->tp_dict, &pos, &key, &value)) {
++    Shiboken::Type::TypeDict tpDict(objType);
++    Q_ASSERT(tpDict);
++
++    while (PyDict_Next(tpDict, &pos, &key, &value)) {
+         if (PyObject_TypeCheck(value, PySideSignalTypeF())) {
+             Shiboken::AutoDecRef signalInstance(reinterpret_cast<PyObject *>(PyObject_New(PySideSignalInstance, PySideSignalInstanceTypeF())));
+             instanceInitialize(signalInstance.cast<PySideSignalInstance *>(), key, reinterpret_cast<PySideSignal *>(value), source, 0);
+diff -ur python3-pyside2-5.15.5.orig/sources/shiboken2/libshiboken/basewrapper.cpp python3-pyside2-5.15.5/sources/shiboken2/libshiboken/basewrapper.cpp
+--- python3-pyside2-5.15.5.orig/sources/shiboken2/libshiboken/basewrapper.cpp	2023-09-27 21:52:01.414249566 -0400
++++ python3-pyside2-5.15.5/sources/shiboken2/libshiboken/basewrapper.cpp	2023-09-27 21:55:00.575303169 -0400
+@@ -1969,3 +1969,23 @@
+ } // namespace Object
+ 
+ } // namespace Shiboken
++
++namespace Shiboken::Type
++{
++
++TypeDict::TypeDict(PyTypeObject *t) noexcept :
++    m_pyObj(t->tp_dict)
++{
++    if (m_pyObj == nullptr) {
++        m_pyObj = PyObject_GenericGetDict(reinterpret_cast<PyObject *>(t), nullptr);
++        m_owned = true;
++    }
++}
++
++TypeDict::~TypeDict()
++{
++    if (m_owned)
++        Py_DECREF(m_pyObj);
++}
++
++} // namespace Shiboken::Type
+diff -ur python3-pyside2-5.15.5.orig/sources/shiboken2/libshiboken/basewrapper.h python3-pyside2-5.15.5/sources/shiboken2/libshiboken/basewrapper.h
+--- python3-pyside2-5.15.5.orig/sources/shiboken2/libshiboken/basewrapper.h	2023-09-27 21:52:01.416249578 -0400
++++ python3-pyside2-5.15.5/sources/shiboken2/libshiboken/basewrapper.h	2023-09-27 21:54:17.907052245 -0400
+@@ -486,4 +486,33 @@
+ 
+ } // namespace Shiboken
+ 
++namespace Shiboken::Type
++{
++
++/// TypeDict holds the tp_dict of a type. As of Python 3.12, tp_dict is nullptr,
++/// so, PyObject_GenericGetDict() needs to be used and the reference managed.
++/// FIXME: Replace by AutoDecRef when Python 3.12 is the minimum supported.
++class LIBSHIBOKEN_API TypeDict
++{
++public:
++    TypeDict(const TypeDict &) = delete;
++    TypeDict(TypeDict &&) = delete;
++    TypeDict &operator=(const TypeDict &) = delete;
++    TypeDict &operator=(TypeDict &&) = delete;
++
++    explicit TypeDict(PyTypeObject *t) noexcept;
++    ~TypeDict();
++
++    inline PyObject *object() { return m_pyObj; }
++    inline operator PyObject *() { return m_pyObj; }
++    inline operator bool() const { return m_pyObj != nullptr; }
++    inline PyObject *operator->() { return m_pyObj; }
++
++private:
++    PyObject *m_pyObj;
++    bool m_owned = false;
++};
++
++} // namespace Shiboken::Type
++
+ #endif // BASEWRAPPER_H
+diff -ur python3-pyside2-5.15.5.orig/sources/shiboken2/libshiboken/signature/signature_helper.cpp python3-pyside2-5.15.5/sources/shiboken2/libshiboken/signature/signature_helper.cpp
+--- python3-pyside2-5.15.5.orig/sources/shiboken2/libshiboken/signature/signature_helper.cpp	2023-09-27 21:52:01.417249584 -0400
++++ python3-pyside2-5.15.5/sources/shiboken2/libshiboken/signature/signature_helper.cpp	2023-09-27 22:00:12.347136628 -0400
+@@ -50,6 +50,7 @@
+ #include "sbkstring.h"
+ #include "sbkstaticstrings.h"
+ #include "sbkstaticstrings_p.h"
++#include "basewrapper.h"
+ 
+ #include "signature_p.h"
+ 
+@@ -105,7 +106,8 @@
+      */
+     assert(PyType_Check(type));
+     PyType_Ready(type);
+-    PyObject *dict = type->tp_dict;
++    Shiboken::Type::TypeDict dict(type);
++    assert(dict);
+     for (; gsp->name != nullptr; gsp++) {
+         PyObject *have_descr = PyDict_GetItemString(dict, gsp->name);
+         if (have_descr != nullptr) {
+--- python3-pyside2-5.15.5.orig/sources/pyside2/PySide2/support/generate_pyi.py.orig	2023-09-27 22:20:58.761497093 -0400
++++ python3-pyside2-5.15.5/sources/pyside2/PySide2/support/generate_pyi.py	2023-09-27 22:21:27.701667008 -0400
+@@ -113,9 +113,6 @@
+                     prefix = '~'
+                 return prefix + self.__name__
+         """
+-        def _typevar__repr__(self):
+-            return "typing." + self.__name__
+-        typing.TypeVar.__repr__ = _typevar__repr__
+ 
+         # Adding a pattern to substitute "Union[T, NoneType]" by "Optional[T]"
+         # I tried hard to replace typing.Optional by a simple override, but

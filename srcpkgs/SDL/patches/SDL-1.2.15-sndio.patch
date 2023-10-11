@@ -1,0 +1,375 @@
+--- a/configure        2012-01-19 07:30:12.000000000 +0100
++++ b/configure  2018-11-27 22:58:07.344753821 +0100
+@@ -1514,6 +1514,7 @@
+   --disable-esdtest       Do not try to compile and run a test ESD program
+   --enable-esd-shared     dynamically load ESD audio support [default=yes]
+   --enable-pulseaudio     use PulseAudio [default=yes]
++  --enable-sndio          use SNDIO [default=yes]
+   --enable-pulseaudio-shared
+                           dynamically load PulseAudio support [default=yes]
+   --enable-arts           support the Analog Real Time Synthesizer
+@@ -21000,6 +21001,23 @@
+     fi
+ }
+
++CheckSndio()
++{
++# Check whether --enable-sndio was given.
++if test "${enable_sndio+set}" = set; then
++  enableval=$enable_sndio;
++else
++  enable_sndio=yes
++fi
++
++if test "x${enable_sndio}" = "xyes"; then :
++  SOURCES="$SOURCES $srcdir/src/audio/sndio/SDL_sndioaudio.c"
++  EXTRA_CFLAGS="$EXTRA_CFLAGS -DSDL_AUDIO_DRIVER_SNDIO=1"
++  EXTRA_LDFLAGS="$EXTRA_LDFLAGS -lsndio"
++  have_audio=yes
++fi
++}
++
+ CheckPulseAudio()
+ {
+     # Check whether --enable-pulseaudio was given.
+@@ -29550,6 +29568,7 @@
+         CheckMME
+         CheckALSA
+         CheckARTSC
++        CheckSndio
+         CheckESD
+         CheckPulseAudio
+         CheckNAS
+--- a/include/SDL_config.h.in	2018-11-27 21:52:07.645177938 +0100
++++ b/include/SDL_config.h.in	2018-11-27 22:03:06.217107399 +0100
+@@ -184,6 +184,7 @@
+ #undef SDL_AUDIO_DRIVER_QNXNTO
+ #undef SDL_AUDIO_DRIVER_SNDMGR
+ #undef SDL_AUDIO_DRIVER_SUNAUDIO
++#undef SDL_AUDIO_DRIVER_SNDIO
+ #undef SDL_AUDIO_DRIVER_WAVEOUT
+ 
+ /* Enable various cdrom drivers */
+--- a/src/audio/SDL_audio.c	2018-11-27 21:52:07.646177937 +0100
++++ b/src/audio/SDL_audio.c	2018-11-27 22:04:37.977097571 +0100
+@@ -42,6 +42,9 @@
+ #if SDL_AUDIO_DRIVER_ALSA
+ 	&ALSA_bootstrap,
+ #endif
++#if SDL_AUDIO_DRIVER_SNDIO
++	&SNDIO_bootstrap,
++#endif
+ #if SDL_AUDIO_DRIVER_BSD
+ 	&BSD_AUDIO_bootstrap,
+ #endif
+--- a/src/audio/SDL_sysaudio.h	2018-11-27 21:52:07.647177937 +0100
++++ b/src/audio/SDL_sysaudio.h	2018-11-27 22:05:13.697093745 +0100
+@@ -105,6 +105,9 @@
+ #if SDL_AUDIO_DRIVER_BSD
+ extern AudioBootStrap BSD_AUDIO_bootstrap;
+ #endif
++#if SDL_AUDIO_DRIVER_SNDIO
++extern AudioBootStrap SNDIO_bootstrap;
++#endif
+ #if SDL_AUDIO_DRIVER_PULSE
+ extern AudioBootStrap PULSE_bootstrap;
+ #endif
+--- a/src/audio/sndio/SDL_sndioaudio.c	1970-01-01 01:00:00.000000000 +0100
++++ b/src/audio/sndio/SDL_sndioaudio.c	2013-12-19 10:24:18.000000000 +0100
+@@ -0,0 +1,243 @@
++/*
++ * Copyright (c) 2008 Jacob Meuser <jakemsr@sdf.lonestar.org>
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++#include "SDL_config.h"
++
++/* Allow access to a raw mixing buffer */
++
++#ifdef HAVE_SIGNAL_H
++#include <signal.h>
++#endif
++#include <unistd.h>
++
++#include "SDL_timer.h"
++#include "SDL_audio.h"
++#include "../SDL_audiomem.h"
++#include "../SDL_audio_c.h"
++#include "../SDL_audiodev_c.h"
++#include "SDL_sndioaudio.h"
++
++/* The tag name used by sndio audio */
++#define SNDIO_DRIVER_NAME         "sndio"
++
++/* Audio driver functions */
++static int SNDIO_OpenAudio(_THIS, SDL_AudioSpec *spec);
++static void SNDIO_WaitAudio(_THIS);
++static void SNDIO_PlayAudio(_THIS);
++static Uint8 *SNDIO_GetAudioBuf(_THIS);
++static void SNDIO_CloseAudio(_THIS);
++
++/* Audio driver bootstrap functions */
++
++static int Audio_Available(void)
++{
++	struct sio_hdl *this_hdl;
++	int available = 0;
++
++	if ( (this_hdl = sio_open(SIO_DEVANY, SIO_PLAY, 0)) != NULL ) {
++		sio_close(this_hdl);
++		available = 1;
++	}
++
++	return available;
++}
++
++static void Audio_DeleteDevice(SDL_AudioDevice *device)
++{
++	SDL_free(device->hidden);
++	SDL_free(device);
++}
++
++static SDL_AudioDevice *Audio_CreateDevice(int devindex)
++{
++	SDL_AudioDevice *this;
++
++	/* Initialize all variables that we clean on shutdown */
++	this = (SDL_AudioDevice *)SDL_malloc(sizeof(SDL_AudioDevice));
++	if ( this ) {
++		SDL_memset(this, 0, (sizeof *this));
++		this->hidden = (struct SDL_PrivateAudioData *)
++				SDL_malloc((sizeof *this->hidden));
++	}
++	if ( (this == NULL) || (this->hidden == NULL) ) {
++		SDL_OutOfMemory();
++		if ( this ) {
++			SDL_free(this);
++		}
++		return(0);
++	}
++	SDL_memset(this->hidden, 0, (sizeof *this->hidden));
++
++	/* Set the function pointers */
++	this->OpenAudio = SNDIO_OpenAudio;
++	this->WaitAudio = SNDIO_WaitAudio;
++	this->PlayAudio = SNDIO_PlayAudio;
++	this->GetAudioBuf = SNDIO_GetAudioBuf;
++	this->CloseAudio = SNDIO_CloseAudio;
++
++	this->free = Audio_DeleteDevice;
++
++	hdl = NULL;
++
++	return this;
++}
++
++AudioBootStrap SNDIO_bootstrap = {
++	SNDIO_DRIVER_NAME, "sndio",
++	Audio_Available, Audio_CreateDevice
++};
++
++
++
++/* This function waits until it is possible to write a full sound buffer */
++static void SNDIO_WaitAudio(_THIS)
++{
++	/* nothing, we're using the blocking api */
++}
++
++static void SNDIO_PlayAudio(_THIS)
++{
++	int written;
++
++	/* Write the audio data */
++	written = sio_write(hdl, mixbuf, mixlen);
++	
++	/* If we couldn't write, assume fatal error for now */
++	if ( written == 0 ) {
++		this->enabled = 0;
++	}
++#ifdef DEBUG_AUDIO
++	fprintf(stderr, "Wrote %d bytes of audio data\n", written);
++#endif
++}
++
++static Uint8 *SNDIO_GetAudioBuf(_THIS)
++{
++	return(mixbuf);
++}
++
++static void SNDIO_CloseAudio(_THIS)
++{
++	if ( mixbuf != NULL ) {
++		SDL_FreeAudioMem(mixbuf);
++		mixbuf = NULL;
++	}
++	if ( hdl != NULL ) {
++		sio_close(hdl);
++		hdl = NULL;
++	}
++}
++
++static int SNDIO_OpenAudio(_THIS, SDL_AudioSpec *spec)
++{
++	struct sio_par par;
++
++	mixbuf = NULL;
++
++	if ((hdl = sio_open(NULL, SIO_PLAY, 0)) == NULL) {
++		SDL_SetError("sio_open() failed");
++		return(-1);
++	}
++
++	sio_initpar(&par);
++
++	switch (spec->format) {
++	case AUDIO_S16LSB:
++		par.bits = 16;
++		par.sig = 1;
++		par.le = 1;
++		break;
++	case AUDIO_S16MSB:
++		par.bits = 16;
++		par.sig = 1;
++		par.le = 0;
++		break;
++	case AUDIO_S8:
++		par.bits = 8;
++		par.sig = 1;
++		break;
++	case AUDIO_U16LSB:
++		par.bits = 16;
++		par.sig = 0;
++		par.le = 1;
++		break;
++	case AUDIO_U16MSB:
++		par.bits = 16;
++		par.sig = 0;
++		par.le = 0;
++		break;
++	case AUDIO_U8:
++		par.bits = 8;
++		par.sig = 0;
++		break;
++	default:
++		SDL_SetError("SNDIO unknown format");
++		return(-1);
++	}
++
++	par.rate = spec->freq;
++	par.pchan = spec->channels;
++	par.round = spec->samples;
++	par.appbufsz = par.round * 2;
++
++	if (sio_setpar(hdl, &par) == 0) {
++		SDL_SetError("sio_setpar() failed");
++		return(-1);
++	}
++
++	if (sio_getpar(hdl, &par) == 0) {
++		SDL_SetError("sio_getpar() failed");
++		return(-1);
++	}
++
++	if (par.bits == 16) {
++		if (par.sig && par.le) {
++			spec->format = AUDIO_S16LSB;
++		} else if (par.sig && !par.le) {
++			spec->format = AUDIO_S16MSB;
++		} else if (!par.sig && par.le) {
++			spec->format = AUDIO_U16LSB;
++		} else 
++			spec->format = AUDIO_U16MSB;
++	} else if (par.bits == 8) {
++		spec->format = par.sig ? AUDIO_S8 : AUDIO_U8;
++	} else {
++		SDL_SetError("SNDIO couldn't configure a suitable format");
++		return(-1);
++	}
++
++	spec->freq = par.rate;
++	spec->channels = par.pchan;
++	spec->samples = par.round;
++
++	SDL_CalculateAudioSpec(spec);
++
++	/* Allocate mixing buffer */
++	mixlen = spec->size;
++	mixbuf = (Uint8 *)SDL_AllocAudioMem(mixlen);
++	if ( mixbuf == NULL ) {
++		return(-1);
++	}
++	SDL_memset(mixbuf, spec->silence, spec->size);
++
++	if ( sio_start(hdl) == 0 ) {
++		SDL_SetError("sio_start() failed");
++		return(-1);
++	}
++
++	/* We're ready to rock and roll. :-) */
++	return(0);
++}
+--- a/src/audio/sndio/SDL_sndioaudio.h	1970-01-01 01:00:00.000000000 +0100
++++ b/src/audio/sndio/SDL_sndioaudio.h	2013-12-15 02:57:55.000000000 +0100
+@@ -0,0 +1,50 @@
++/*
++ * Copyright (c) 2008 Jacob Meuser <jakemsr@sdf.lonestar.org>
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++#include "SDL_config.h"
++
++#ifndef _SDL_sndioaudio_h
++#define _SDL_sndioaudio_h
++
++#include <sndio.h>
++
++#include "../SDL_sysaudio.h"
++
++/* Hidden "this" pointer for the video functions */
++#define _THIS	SDL_AudioDevice *this
++
++struct SDL_PrivateAudioData {
++	/* The stream descriptor for the audio device */
++	struct sio_hdl *hdl;
++
++	/* The parent process id, to detect when application quits */
++	pid_t parent;
++
++	/* Raw mixing buffer */
++	Uint8 *mixbuf;
++	int    mixlen;
++
++};
++
++/* Old variable names */
++#define stream			(this->hidden->stream)
++#define parent			(this->hidden->parent)
++#define mixbuf			(this->hidden->mixbuf)
++#define mixlen			(this->hidden->mixlen)
++#define hdl			(this->hidden->hdl)
++
++#endif /* _SDL_sndioaudio_h */
++

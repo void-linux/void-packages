@@ -1,0 +1,333 @@
+--- a/make/ReleaseFile.gmk
++++ b/make/ReleaseFile.gmk
+@@ -53,6 +53,7 @@ define create-info-file
+   $(call info-file-item, "JAVA_VERSION_DATE", "$(VERSION_DATE)")
+   $(call info-file-item, "OS_NAME", "$(RELEASE_FILE_OS_NAME)")
+   $(call info-file-item, "OS_ARCH", "$(RELEASE_FILE_OS_ARCH)")
++  $(call info-file-item, "LIBC", "musl")
+ endef
+ 
+ # Param 1 - The file containing the MODULES list
+--- a/make/hotspot/lib/CompileJvm.gmk
++++ b/make/hotspot/lib/CompileJvm.gmk
+@@ -73,6 +73,7 @@ CFLAGS_VM_VERSION := \
+     -DHOTSPOT_BUILD_USER='"$(USERNAME)"' \
+     -DHOTSPOT_VM_DISTRO='"$(HOTSPOT_VM_DISTRO)"' \
+     -DCPU='"$(OPENJDK_TARGET_CPU_VM_VERSION)"' \
++    -DLIBC='"musl"' \
+     #
+ 
+ ################################################################################
+--- a/make/modules/java.base/lib/CoreLibraries.gmk
++++ b/make/modules/java.base/lib/CoreLibraries.gmk
+@@ -190,6 +190,7 @@ ifeq ($(call isTargetOs, windows), true)
+ endif
+ 
+ LIBJLI_CFLAGS += $(LIBZ_CFLAGS)
++LIBJLI_CFLAGS += -DLIBC=\"musl\"
+ 
+ ifneq ($(USE_EXTERNAL_LIBZ), true)
+   LIBJLI_EXTRA_FILES += \
+--- a/src/hotspot/os/linux/os_linux.cpp
++++ b/src/hotspot/os/linux/os_linux.cpp
+@@ -102,7 +102,6 @@
+ # include <string.h>
+ # include <syscall.h>
+ # include <sys/sysinfo.h>
+-# include <gnu/libc-version.h>
+ # include <sys/ipc.h>
+ # include <sys/shm.h>
+ # include <link.h>
+@@ -597,6 +596,12 @@ void os::Linux::hotspot_sigmask(Thread* thread) {
+ // detecting pthread library
+ 
+ void os::Linux::libpthread_init() {
++#if !defined(__GLIBC__) && !defined(__UCLIBC__)
++  // Hard code Alpine Linux supported musl compatible settings
++  // sgn: NPTL is correct, don't know about glibc 2.9, alpine's thing?
++  os::Linux::set_glibc_version("glibc 2.9");
++  os::Linux::set_libpthread_version("NPTL");
++#else
+   // Save glibc and pthread version strings.
+ #if !defined(_CS_GNU_LIBC_VERSION) || \
+     !defined(_CS_GNU_LIBPTHREAD_VERSION)
+@@ -614,6 +619,7 @@ void os::Linux::libpthread_init() {
+   str = (char *)malloc(n, mtInternal);
+   confstr(_CS_GNU_LIBPTHREAD_VERSION, str, n);
+   os::Linux::set_libpthread_version(str);
++#endif
+ }
+ 
+ /////////////////////////////////////////////////////////////////////////////
+@@ -3117,20 +3123,36 @@ void os::Linux::sched_getcpu_init() {
+ extern "C" JNIEXPORT void numa_warn(int number, char *where, ...) { }
+ extern "C" JNIEXPORT void numa_error(char *where) { }
+ 
++static void* dlvsym_if_available(void* handle, const char* name, const char* version) {
++  typedef void* (*dlvsym_func_type)(void* handle, const char* name, const char* version);
++  static dlvsym_func_type dlvsym_func;
++  static bool initialized = false;
++
++  if (!initialized) {
++    dlvsym_func = (dlvsym_func_type)dlsym(RTLD_NEXT, "dlvsym");
++    initialized = true;
++  }
++
++  if (dlvsym_func != NULL) {
++    void *f = dlvsym_func(handle, name, version);
++    if (f != NULL) {
++      return f;
++    }
++  }
++
++  return dlsym(handle, name);
++}
++
+ // Handle request to load libnuma symbol version 1.1 (API v1). If it fails
+ // load symbol from base version instead.
+ void* os::Linux::libnuma_dlsym(void* handle, const char *name) {
+-  void *f = dlvsym(handle, name, "libnuma_1.1");
+-  if (f == NULL) {
+-    f = dlsym(handle, name);
+-  }
+-  return f;
++  return dlvsym_if_available(handle, name, "libnuma_1.1");
+ }
+ 
+ // Handle request to load libnuma symbol version 1.2 (API v2) only.
+ // Return NULL if the symbol is not defined in this particular version.
+ void* os::Linux::libnuma_v2_dlsym(void* handle, const char* name) {
+-  return dlvsym(handle, name, "libnuma_1.2");
++  return dlvsym_if_available(handle, name, "libnuma_1.2");
+ }
+ 
+ bool os::Linux::libnuma_init() {
+--- a/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
++++ b/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
+@@ -75,9 +75,6 @@
+ # include <pwd.h>
+ # include <poll.h>
+ # include <ucontext.h>
+-#ifndef AMD64
+-# include <fpu_control.h>
+-#endif
+ 
+ #ifdef AMD64
+ #define REG_SP REG_RSP
+--- a/src/hotspot/share/gc/shared/genCollectedHeap.cpp
++++ b/src/hotspot/share/gc/shared/genCollectedHeap.cpp
+@@ -1116,7 +1116,7 @@ HeapWord* GenCollectedHeap::allocate_new_tlab(size_t min_size,
+ static ScratchBlock *removeSmallestScratch(ScratchBlock **prev_ptr) {
+   bool first = true;
+   size_t min_size = 0;   // "first" makes this conceptually infinite.
+-  ScratchBlock **smallest_ptr, *smallest;
++  ScratchBlock **smallest_ptr = NULL, *smallest;
+   ScratchBlock  *cur = *prev_ptr;
+   while (cur) {
+     assert(*prev_ptr == cur, "just checking");
+--- a/src/hotspot/share/runtime/abstract_vm_version.cpp
++++ b/src/hotspot/share/runtime/abstract_vm_version.cpp
+@@ -262,7 +262,7 @@ const char* Abstract_VM_Version::internal_vm_info_string() {
+   #endif
+ 
+   #define INTERNAL_VERSION_SUFFIX VM_RELEASE ")" \
+-         " for " OS "-" CPU FLOAT_ARCH_STR \
++         " for " OS "-" CPU FLOAT_ARCH_STR LIBC \
+          " JRE (" VERSION_STRING "), built on " HOTSPOT_BUILD_TIME \
+          " by " XSTR(HOTSPOT_BUILD_USER) " with " HOTSPOT_BUILD_COMPILER
+ 
+--- a/src/hotspot/share/utilities/globalDefinitions_gcc.hpp
++++ b/src/hotspot/share/utilities/globalDefinitions_gcc.hpp
+@@ -204,7 +204,7 @@ inline int g_isnan(double f) { return isnand(f); }
+ #elif defined(__APPLE__)
+ inline int g_isnan(double f) { return isnan(f); }
+ #elif defined(LINUX) || defined(_ALLBSD_SOURCE)
+-inline int g_isnan(float  f) { return isnanf(f); }
++inline int g_isnan(float  f) { return isnan(f); }
+ inline int g_isnan(double f) { return isnan(f); }
+ #else
+ #error "missing platform-specific definition here"
+--- a/src/java.base/linux/native/libnet/linux_close.c
++++ b/src/java.base/linux/native/libnet/linux_close.c
+@@ -60,7 +60,7 @@ typedef struct {
+ /*
+  * Signal to unblock thread
+  */
+-static int sigWakeup = (__SIGRTMAX - 2);
++static int sigWakeup;
+ 
+ /*
+  * fdTable holds one entry per file descriptor, up to a certain
+@@ -149,6 +149,7 @@ static void __attribute((constructor)) init() {
+     /*
+      * Setup the signal handler
+      */
++    sigWakeup = SIGRTMAX - 2;
+     sa.sa_handler = sig_wakeup;
+     sa.sa_flags   = 0;
+     sigemptyset(&sa.sa_mask);
+--- a/src/java.base/unix/native/libjava/childproc.c
++++ b/src/java.base/unix/native/libjava/childproc.c
+@@ -235,7 +235,13 @@ JDK_execvpe(int mode, const char *file,
+ {
+     if (envp == NULL || (char **) envp == environ) {
+         execvp(file, (char **) argv);
+-        return;
++        // ENOEXEC indicates that the file header was not recognized. The musl C
++        // library does not implement the fallback to /bin/sh for that case, so fall
++        // through to the code below which implements that fallback using
++        // execve_with_shell_fallback.
++        if (errno != ENOEXEC) {
++            return;
++        }
+     }
+ 
+     if (*file == '\0') {
+--- a/src/java.base/unix/native/libjava/jdk_util_md.h
++++ b/src/java.base/unix/native/libjava/jdk_util_md.h
+@@ -37,7 +37,7 @@
+ #define ISNAND(d) isnan(d)
+ #elif defined(__linux__) || defined(_ALLBSD_SOURCE)
+ #include <math.h>
+-#define ISNANF(f) isnanf(f)
++#define ISNANF(f) isnan(f)
+ #define ISNAND(d) isnan(d)
+ #elif defined(_AIX)
+ #include <math.h>
+--- a/src/java.base/unix/native/libjli/java_md.c
++++ b/src/java.base/unix/native/libjli/java_md.c
+@@ -230,6 +230,39 @@ RequiresSetenv(const char *jvmpath) {
+     char *dmllp = NULL;
+     char *p; /* a utility pointer */
+ 
++#ifdef __linux
++#ifndef LIBC
++#error "LIBC not set"
++#endif
++
++    if (strcmp(LIBC, "musl") == 0) {
++      /*
++       * The musl library loader requires LD_LIBRARY_PATH to be set in
++       * order to correctly resolve the dependency libjava.so has on libjvm.so.
++       *
++       * Specifically, it differs from glibc in the sense that even if
++       * libjvm.so has already been loaded it will not be considered a
++       * candidate for resolving the dependency unless the *full* path
++       * of the already loaded library matches the dependency being loaded.
++       *
++       * libjvm.so is being loaded by the launcher using a long path to
++       * dlopen, not just the basename of the library. Typically this
++       * is something like "../lib/server/libjvm.so". However, if/when
++       * libjvm.so later tries to dlopen libjava.so (which it does in
++       * order to get access to a few functions implemented in
++       * libjava.so) the musl loader will, as part of loading
++       * dependent libraries, try to load libjvm.so using only its
++       * basename "libjvm.so". Since this does not match the longer
++       * path path it was first loaded with, the already loaded
++       * library is not considered a candidate, and the loader will
++       * instead look for libjvm.so elsewhere. If it's not in
++       * LD_LIBRARY_PATH the dependency load will fail, and libjava.so
++       * will therefore fail as well.
++       */
++      return JNI_TRUE;
++    }
++#endif
++
+ #ifdef AIX
+     /* We always have to set the LIBPATH on AIX because ld doesn't support $ORIGIN. */
+     return JNI_TRUE;
+--- a/src/java.base/unix/native/libnio/ch/NativeThread.c
++++ b/src/java.base/unix/native/libnio/ch/NativeThread.c
+@@ -36,7 +36,7 @@
+ #ifdef __linux__
+   #include <pthread.h>
+   /* Also defined in net/linux_close.c */
+-  #define INTERRUPT_SIGNAL (__SIGRTMAX - 2)
++  #define INTERRUPT_SIGNAL (SIGRTMAX - 2)
+ #elif defined(_AIX)
+   #include <pthread.h>
+   /* Also defined in net/aix_close.c */
+--- a/src/jdk.jdwp.agent/share/native/libjdwp/util.h
++++ b/src/jdk.jdwp.agent/share/native/libjdwp/util.h
+@@ -35,15 +35,15 @@
+ #ifdef DEBUG
+     /* Just to make sure these interfaces are not used here. */
+     #undef free
+-    #define free(p) Do not use this interface.
++    #define free do_not_use_this_interface_free
+     #undef malloc
+-    #define malloc(p) Do not use this interface.
++    #define malloc do_not_use_this_interface_malloc
+     #undef calloc
+-    #define calloc(p) Do not use this interface.
++    #define calloc do_not_use_this_interface_calloc
+     #undef realloc
+-    #define realloc(p) Do not use this interface.
++    #define realloc do_not_use_this_interface_realloc
+     #undef strdup
+-    #define strdup(p) Do not use this interface.
++    #define strdup do_not_use_this_interface_strdup
+ #endif
+ 
+ #include "log_messages.h"
+--- a/test/hotspot/jtreg/runtime/StackGuardPages/exeinvoke.c
++++ b/test/hotspot/jtreg/runtime/StackGuardPages/exeinvoke.c
+@@ -33,6 +33,7 @@
+ 
+ #include <assert.h>
+ #include <jni.h>
++#include <jvm.h>
+ #include <alloca.h>
+ #include <signal.h>
+ #include <string.h>
+@@ -91,6 +92,20 @@ void set_signal_handler() {
+   }
+ }
+ 
++int get_java_stacksize () {
++  size_t stacksize;
++  pthread_attr_t attr;
++  JDK1_1InitArgs jdk_args;
++
++  jdk_args.version = JNI_VERSION_1_1;
++  JNI_GetDefaultJavaVMInitArgs(&jdk_args);
++  if (jdk_args.javaStackSize <= 0) {
++    fprintf(stderr, "Test ERROR. Can't get a valid value for the default stacksize.\n");
++    exit(7);
++  }
++  return jdk_args.javaStackSize;
++}
++
+ void *run_java_overflow (void *p) {
+   JNIEnv *env;
+   jclass class_id;
+@@ -258,13 +273,19 @@ int main (int argc, const char** argv) {
+     exit(7);
+   }
+ 
++  int stack_size = get_java_stacksize();
+   pthread_t thr;
++  pthread_attr_t thread_attr;
++
++  pthread_attr_init(&thread_attr);
++  pthread_attr_setstacksize(&thread_attr, stack_size);
+ 
+   if (argc > 1 && strcmp(argv[1], "test_java_overflow") == 0) {
+     printf("\nTesting JAVA_OVERFLOW\n");
+ 
+     printf("Testing stack guard page behaviour for other thread\n");
+-    pthread_create (&thr, NULL, run_java_overflow, NULL);
++
++    pthread_create (&thr, &thread_attr, run_java_overflow, NULL);
+     pthread_join (thr, NULL);
+ 
+     printf("Testing stack guard page behaviour for initial thread\n");
+@@ -277,7 +298,7 @@ int main (int argc, const char** argv) {
+     printf("\nTesting NATIVE_OVERFLOW\n");
+ 
+     printf("Testing stack guard page behaviour for other thread\n");
+-    pthread_create (&thr, NULL, run_native_overflow, NULL);
++    pthread_create (&thr, &thread_attr, run_native_overflow, NULL);
+     pthread_join (thr, NULL);
+ 
+     printf("Testing stack guard page behaviour for initial thread\n");

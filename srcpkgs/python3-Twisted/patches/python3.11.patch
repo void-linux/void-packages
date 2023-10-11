@@ -1,0 +1,258 @@
+From 4f6d7fb0749429b092fe7538a7d2b11fe58319a6 Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Wed, 2 Nov 2022 20:35:55 -0500
+Subject: [PATCH 02/12] fix twisted.persisted tests
+
+---
+ src/twisted/persisted/aot.py | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/twisted/persisted/aot.py b/src/twisted/persisted/aot.py
+index 0daeb3b4c85..204728058cd 100644
+--- a/src/twisted/persisted/aot.py
++++ b/src/twisted/persisted/aot.py
+@@ -399,8 +399,10 @@ def unjellyAO(self, ao):
+                 inst = klass.__new__(klass)
+                 if hasattr(klass, "__setstate__"):
+                     self.callAfter(inst.__setstate__, state)
+-                else:
++                elif isinstance(state, dict):
+                     inst.__dict__ = state
++                else:
++                    inst.__dict__ = state.__getstate__()
+                 return inst
+ 
+             elif c is Ref:
+
+From 525377178adfa987ed56be753aec0fce35d721dc Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Wed, 2 Nov 2022 21:35:58 -0500
+Subject: [PATCH 03/12] fix tests for twisted.spread
+
+---
+ src/twisted/spread/flavors.py | 2 ++
+ src/twisted/spread/jelly.py   | 3 ++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/twisted/spread/flavors.py b/src/twisted/spread/flavors.py
+index 77c974195aa..a4fcd2126b6 100644
+--- a/src/twisted/spread/flavors.py
++++ b/src/twisted/spread/flavors.py
+@@ -398,6 +398,8 @@ def setCopyableState(self, state):
+         object's dictionary (or a filtered approximation of it depending
+         on my peer's perspective).
+         """
++        if not state:
++            state = {}
+         state = {
+             x.decode("utf8") if isinstance(x, bytes) else x: y for x, y in state.items()
+         }
+diff --git a/src/twisted/spread/jelly.py b/src/twisted/spread/jelly.py
+index 7e1b4d254bd..46cda178448 100644
+--- a/src/twisted/spread/jelly.py
++++ b/src/twisted/spread/jelly.py
+@@ -154,7 +154,8 @@ def _newInstance(cls, state):
+     instance = _createBlank(cls)
+ 
+     def defaultSetter(state):
+-        instance.__dict__ = state
++        if isinstance(state, dict):
++            instance.__dict__ = state or {}
+ 
+     setter = getattr(instance, "__setstate__", defaultSetter)
+     setter(state)
+
+From afcc224a02f72e5d12fa35d223bd753e8086b135 Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Thu, 3 Nov 2022 21:12:31 -0500
+Subject: [PATCH 04/12] fix test for twisted.web
+
+---
+ src/twisted/web/test/test_flatten.py | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/twisted/web/test/test_flatten.py b/src/twisted/web/test/test_flatten.py
+index e10eb06c22f..ad8c58576c3 100644
+--- a/src/twisted/web/test/test_flatten.py
++++ b/src/twisted/web/test/test_flatten.py
+@@ -706,9 +706,10 @@ def render(self, request: Optional[IRequest]) -> Flattenable:
+                     Exception while flattening:
+                       \\[<unrenderable>\\]
+                       <unrenderable>
+-                      .*
++                      <Deferred at .* current result: <twisted.python.failure.Failure builtins.RuntimeError: example>>
+                       File ".*", line \\d*, in _flattenTree
+                         element = await element
++                                  .*
+                     RuntimeError: example
+                     """
+                 ),
+
+From 4b5ab38b09b326cec7967e04bd4cae8a84bb6784 Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Thu, 3 Nov 2022 22:05:54 -0500
+Subject: [PATCH 05/12] fix persisted tests in twisted.test
+
+---
+ src/twisted/test/test_persisted.py | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/twisted/test/test_persisted.py b/src/twisted/test/test_persisted.py
+index eedbbdac647..72354b33f38 100644
+--- a/src/twisted/test/test_persisted.py
++++ b/src/twisted/test/test_persisted.py
+@@ -378,6 +378,10 @@ class UnknownType:
+             def __dict__(self):
+                 raise AttributeError()
+ 
++            @property
++            def __getstate__(self):
++                raise AttributeError()
++
+         self.assertRaises(TypeError, aot.jellyToSource, UnknownType())
+ 
+     def test_basicIdentity(self):
+
+From f8f56d45113e5f2467a5e8375186e5db6309dfc6 Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Thu, 3 Nov 2022 23:09:15 -0500
+Subject: [PATCH 06/12] fix twisted.trial tests
+
+---
+ src/twisted/trial/test/test_pyunitcompat.py | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/twisted/trial/test/test_pyunitcompat.py b/src/twisted/trial/test/test_pyunitcompat.py
+index e8321c9cc6c..1ad4b5ebcf3 100644
+--- a/src/twisted/trial/test/test_pyunitcompat.py
++++ b/src/twisted/trial/test/test_pyunitcompat.py
+@@ -218,8 +218,10 @@ def test_tracebackFromCleanFailure(self):
+         pyresult = pyunit.TestResult()
+         result = PyUnitResultAdapter(pyresult)
+         result.addError(self, f)
++        tback = "".join(traceback.format_exception(*exc_info))
+         self.assertEqual(
+-            pyresult.errors[0][1], "".join(traceback.format_exception(*exc_info))
++            pyresult.errors[0][1].endswith("ZeroDivisionError: division by zero\n"),
++            tback.endswith("ZeroDivisionError: division by zero\n"),
+         )
+ 
+     def test_trialSkip(self):
+
+From d91675ac5ffe907fcdbb3d1cedb1240008d81fd1 Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Thu, 3 Nov 2022 23:15:55 -0500
+Subject: [PATCH 07/12] make test_flatten backwards-compatible
+
+---
+ src/twisted/web/test/test_flatten.py | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/src/twisted/web/test/test_flatten.py b/src/twisted/web/test/test_flatten.py
+index ad8c58576c3..1070f767563 100644
+--- a/src/twisted/web/test/test_flatten.py
++++ b/src/twisted/web/test/test_flatten.py
+@@ -708,9 +708,7 @@ def render(self, request: Optional[IRequest]) -> Flattenable:
+                       <unrenderable>
+                       <Deferred at .* current result: <twisted.python.failure.Failure builtins.RuntimeError: example>>
+                       File ".*", line \\d*, in _flattenTree
+-                        element = await element
+-                                  .*
+-                    RuntimeError: example
++                        element = await element.*
+                     """
+                 ),
+                 flags=re.MULTILINE,
+
+From 603c61978ff18920ce7a133d9a0e5761ad8fcc19 Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Thu, 3 Nov 2022 23:23:15 -0500
+Subject: [PATCH 08/12] add newsfragment
+
+---
+ src/twisted/newsfragments/10343.misc | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 100644 src/twisted/newsfragments/10343.misc
+
+diff --git a/src/twisted/newsfragments/10343.misc b/src/twisted/newsfragments/10343.misc
+new file mode 100644
+index 00000000000..3930e5bd729
+--- /dev/null
++++ b/src/twisted/newsfragments/10343.misc
+@@ -0,0 +1 @@
++Enable Python 3.11 for CI and fix the remaining broken tests.
+
+From 800f9e9372b993356e22104d8295a89d4ee5fac4 Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Fri, 4 Nov 2022 15:16:05 -0500
+Subject: [PATCH 09/12] PR feedback
+
+---
+ .github/workflows/test.yaml             | 13 -------------
+ src/twisted/newsfragments/10343.feature |  1 +
+ src/twisted/newsfragments/10343.misc    |  1 -
+ src/twisted/web/test/test_flatten.py    |  1 +
+ 4 files changed, 2 insertions(+), 14 deletions(-)
+ create mode 100644 src/twisted/newsfragments/10343.feature
+ delete mode 100644 src/twisted/newsfragments/10343.misc
+
+@@ -1 +0,0 @@
+-Enable Python 3.11 for CI and fix the remaining broken tests.
+diff --git a/src/twisted/web/test/test_flatten.py b/src/twisted/web/test/test_flatten.py
+index 1070f767563..ea6aa4a966a 100644
+--- a/src/twisted/web/test/test_flatten.py
++++ b/src/twisted/web/test/test_flatten.py
+@@ -714,6 +714,7 @@ def render(self, request: Optional[IRequest]) -> Flattenable:
+                 flags=re.MULTILINE,
+             ),
+         )
++        self.assertTrue('RuntimeError: example' in str(failure.value))
+         # The original exception is unmodified and will be logged separately if
+         # unhandled.
+         self.failureResultOf(failing, RuntimeError)
+
+From 6b069e1de60d00b658c04b8d330ab399c912a6d7 Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Fri, 4 Nov 2022 15:36:26 -0500
+Subject: [PATCH 10/12] run linter
+
+---
+ src/twisted/web/test/test_flatten.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/twisted/web/test/test_flatten.py b/src/twisted/web/test/test_flatten.py
+index ea6aa4a966a..8c0d14be8f4 100644
+--- a/src/twisted/web/test/test_flatten.py
++++ b/src/twisted/web/test/test_flatten.py
+@@ -714,7 +714,7 @@ def render(self, request: Optional[IRequest]) -> Flattenable:
+                 flags=re.MULTILINE,
+             ),
+         )
+-        self.assertTrue('RuntimeError: example' in str(failure.value))
++        self.assertTrue("RuntimeError: example" in str(failure.value))
+         # The original exception is unmodified and will be logged separately if
+         # unhandled.
+         self.failureResultOf(failing, RuntimeError)
+
+From fe8e9565e6dbcfea5258a69b098001ddd1479e4f Mon Sep 17 00:00:00 2001
+From: eevel <eevel@weezel3.weezelnet>
+Date: Fri, 4 Nov 2022 19:10:20 -0500
+Subject: [PATCH 11/12] use assertIn vs assertTrue
+
+---
+ src/twisted/web/test/test_flatten.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/twisted/web/test/test_flatten.py b/src/twisted/web/test/test_flatten.py
+index 8c0d14be8f4..ad431312edb 100644
+--- a/src/twisted/web/test/test_flatten.py
++++ b/src/twisted/web/test/test_flatten.py
+@@ -714,7 +714,7 @@ def render(self, request: Optional[IRequest]) -> Flattenable:
+                 flags=re.MULTILINE,
+             ),
+         )
+-        self.assertTrue("RuntimeError: example" in str(failure.value))
++        self.assertIn("RuntimeError: example", str(failure.value))
+         # The original exception is unmodified and will be logged separately if
+         # unhandled.
+         self.failureResultOf(failing, RuntimeError)
