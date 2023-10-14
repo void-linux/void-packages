@@ -1,0 +1,82 @@
+From 0ca9614e5b074d3dd01e95f47b3555f48e74f622 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Joan=20Bruguera=20Mic=C3=B3?= <joanbrugueram@gmail.com>
+Date: Wed, 17 May 2023 21:54:08 +0000
+Subject: [PATCH] Tentative fix for NVIDIA 470.182.03 driver for Linux 6.5-rc1
+
+---
+ common/inc/nv-mm.h | 45 +++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 43 insertions(+), 2 deletions(-)
+
+diff --git a/common/inc/nv-mm.h b/common/inc/nv-mm.h
+index 54f6f60..25333e8 100644
+--- a/common/inc/nv-mm.h
++++ b/common/inc/nv-mm.h
+@@ -23,6 +23,7 @@
+ #ifndef __NV_MM_H__
+ #define __NV_MM_H__
+ 
++#include <linux/version.h>
+ #include "conftest.h"
+ 
+ #if !defined(NV_VM_FAULT_T_IS_PRESENT)
+@@ -47,7 +48,27 @@ typedef int vm_fault_t;
+  *
+  */
+ 
+-#if defined(NV_GET_USER_PAGES_HAS_TASK_STRUCT)
++// Rel. commit. "mm/gup: remove unused vmas parameter from get_user_pages()" (Lorenzo Stoakes, 14 May 2023)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
++#include <linux/mm.h>
++
++static inline long NV_GET_USER_PAGES(unsigned long start,
++                                     unsigned long nr_pages,
++                                     int write,
++                                     int force,
++                                     struct page **pages,
++                                     struct vm_area_struct **vmas)
++{
++    unsigned int flags = 0;
++
++    if (write)
++        flags |= FOLL_WRITE;
++    if (force)
++        flags |= FOLL_FORCE;
++
++    return get_user_pages(start, nr_pages, flags, pages);
++}
++#elif defined(NV_GET_USER_PAGES_HAS_TASK_STRUCT)
+     #if defined(NV_GET_USER_PAGES_HAS_WRITE_AND_FORCE_ARGS)
+         #define NV_GET_USER_PAGES(start, nr_pages, write, force, pages, vmas) \
+             get_user_pages(current, current->mm, start, nr_pages, write, force, pages, vmas)
+@@ -130,7 +151,27 @@ typedef int vm_fault_t;
+  *
+  */
+ 
+-#if defined(NV_GET_USER_PAGES_REMOTE_PRESENT)
++// Rel. commit. "mm/gup: remove unused vmas parameter from get_user_pages_remote()" (Lorenzo Stoakes, 14 May 2023)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
++static inline long NV_GET_USER_PAGES_REMOTE(struct task_struct *tsk,
++                                            struct mm_struct *mm,
++                                            unsigned long start,
++                                            unsigned long nr_pages,
++                                            int write,
++                                            int force,
++                                            struct page **pages,
++                                            struct vm_area_struct **vmas)
++{
++    unsigned int flags = 0;
++
++    if (write)
++        flags |= FOLL_WRITE;
++    if (force)
++        flags |= FOLL_FORCE;
++
++    return get_user_pages_remote(mm, start, nr_pages, flags, pages, NULL);
++}
++#elif defined(NV_GET_USER_PAGES_REMOTE_PRESENT)
+     #if defined(NV_GET_USER_PAGES_REMOTE_HAS_WRITE_AND_FORCE_ARGS)
+         #define NV_GET_USER_PAGES_REMOTE    get_user_pages_remote
+     #else
+-- 
+2.41.0
+

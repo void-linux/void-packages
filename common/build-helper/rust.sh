@@ -33,6 +33,10 @@ fi
 # For cross-compiling rust -sys crates
 export PKG_CONFIG_ALLOW_CROSS=1
 
+# For cross-compiling pyo3 bindings
+export PYO3_CROSS_LIB_DIR="${XBPS_CROSS_BASE}/usr/lib"
+export PYO3_CROSS_INCLUDE_DIR="${XBPS_CROSS_BASE}/usr/include"
+
 # gettext-rs
 export GETTEXT_BIN_DIR=/usr/bin
 export GETTEXT_LIB_DIR="${XBPS_CROSS_BASE}/usr/lib/gettext"

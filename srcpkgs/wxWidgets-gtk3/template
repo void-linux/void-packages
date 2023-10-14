@@ -1,51 +1,62 @@
 # Template file for 'wxWidgets-gtk3'
 pkgname=wxWidgets-gtk3
-version=3.0.5.1
-revision=6
-build_style=gnu-configure
-configure_args="--with-gtk=3 --enable-unicode --with-opengl --with-sdl
- --with-libmspack --with-libnotify --enable-mediactrl"
+version=3.2.2.1
+revision=1
+build_style=cmake
+cmake_builddir="build-gtk3"
+configure_args="-DwxBUILD_TOOLKIT=gtk3 -DwxUSE_OPENGL=ON -DwxUSE_LIBMSPACK=ON
+ -DwxUSE_GTKPRINT=ON -DwxUSE_UNICODE=ON -DwxUSE_MEDIACTRL=ON
+ -DwxUSE_PRIVATE_FONTS=ON -DwxUSE_REGEX=sys -DwxUSE_ZLIB=sys -DwxUSE_EXPAT=sys
+ -DwxUSE_LIBJPEG=sys -DwxUSE_LIBPNG=sys -DwxUSE_LIBTIFF=sys -DwxUSE_LIBLZMA=sys
+ -DwxUSE_LIBNOTIFY=sys -DwxUSE_LIBSDL=sys"
 hostmakedepends="pkg-config"
 makedepends="SDL2-devel gst-plugins-base1-devel gstreamer1-devel gtk+3-devel
- libmspack-devel libnotify-devel tiff-devel webkit2gtk-devel glu-devel"
-short_desc="The wxWidgets GUI toolkit library compiled with gtk3 support"
+ libmspack-devel libnotify-devel tiff-devel webkit2gtk-devel glu-devel
+ gst-plugins-bad1-devel libsecret-devel pcre2-devel liblzma-devel gspell-devel
+ libcurl-devel zlib-devel expat-devel libpng-devel"
+short_desc="Cross-platform GUI library (built with GTK+ 3.0)"
 maintainer="Helmut Pozimski <helmut@pozimski.eu>"
 license="custom:wxWindows"
 homepage="https://www.wxwidgets.org"
 distfiles="https://github.com/wxWidgets/wxWidgets/releases/download/v${version}/wxWidgets-${version}.tar.bz2"
-checksum=440f6e73cf5afb2cbf9af10cec8da6cdd3d3998d527598a53db87099524ac807
+checksum=dffcb6be71296fff4b7f8840eb1b510178f57aa2eb236b20da41182009242c02
+
+CXXFLAGS="-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE"
+
+post_patch() {
+	if [ "${XBPS_TARGET_LIBC}" = "musl" ]; then
+		patch -Np1 < "${FILESDIR}/musl-locale-l.patch"
+	fi
+}
 
 post_install() {
-	local _config="gtk3-unicode-3.0"
-	# remove all occurrences of $XBPS_CROSS_TRIPLET in wx-config:
-	#   - mark this build as native build
-	if [ "$CROSS_BUILD" ]; then
-		rename "${XBPS_CROSS_TRIPLET}-" "" \
-			${DESTDIR}/usr/lib/wx/config/* \
-			${DESTDIR}/usr/lib/wx/include/*
-		rename -- "-${XBPS_CROSS_TRIPLET}" "" ${DESTDIR}/usr/lib/*
+	local _patch="${version#*.*.}"
+	local _majmin="${version%."${_patch}"}"
+	local _config="gtk3-unicode-${_majmin}"
 
-		sed -i -e "s/${XBPS_CROSS_TRIPLET}-//g" \
-			-e "s/-${XBPS_CROSS_TRIPLET}//g" \
-			-e "s,$XBPS_CROSS_BASE,,g" \
+	if [ "$CROSS_BUILD" ]; then
+		# Remove $XBPS_CROSS_TRIPLET from cmake helper...
+		sed -i -e "s@/usr/${XBPS_CROSS_TRIPLET}@@g" \
+			${DESTDIR}/usr/lib/cmake/wxWidgets/wxWidgetsTargets.cmake
+
+		# ...and the output of the wx-config utility
+		sed -i -e "s@/usr/${XBPS_CROSS_TRIPLET}@@g" \
 			${DESTDIR}/usr/lib/wx/config/${_config}
 	fi
+
+	# Remove generic wx-config, link to toolkit-specific version
 	rm -f ${DESTDIR}/usr/bin/wx-config
 	ln -sf ../lib/wx/config/${_config} ${DESTDIR}/usr/bin/wx-config-gtk3
-	#   - ignore --host option; breaks configure scripts when
-	#     cross compiling (isn’t necessary in our case anyway)
-	sed -i -e 's,^bindir=.*,bindir=${exec_prefix}/bin,' \
-		-e 's/is_cross().*/is_cross() { false; }/g' \
-		-e '/--\*=\*)/i --host=\*) continue;;' \
-		-e "s,/usr/lib,\${exec_prefix}/lib,g" \
-		$DESTDIR/usr/lib/wx/config/${_config}
+
+	# Make sure to install the autotools macro, CMake does not
+	vmkdir usr/share/aclocal
+	vinstall wxwin.m4 644 usr/share/aclocal
 }
 
 wxWidgets-common_package() {
 	short_desc+=" - common files"
 	pkg_install() {
 		vmove "usr/lib/libwx_baseu*.so.*"
-		vmove usr/share
 		vlicense docs/licendoc.txt
 		vlicense docs/licence.txt
 	}
@@ -58,6 +69,7 @@ wxWidgets-common-devel_package() {
 		vmove "usr/bin/wxrc*"
 		vmove "usr/lib/libwx_baseu*.so"
 		vmove usr/include
+		vmove usr/share/aclocal
 	}
 }
 
@@ -68,5 +80,18 @@ wxWidgets-gtk3-devel_package() {
 		vmove usr/bin
 		vmove "usr/lib/*.so"
 		vmove usr/lib/wx
+		vmove usr/lib/cmake
 	}
+}
+
+wxWidgets_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" (transitional dummy package)"
+	build_style=meta
+}
+
+wxWidgets-devel_package() {
+	depends="${sourcepkg}-devel>=${version}_${revision}"
+	short_desc+=" - development files (transitional dummy package)"
+	build_style=meta
 }

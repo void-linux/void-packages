@@ -34,4 +34,14 @@ if [ "$CROSS_BUILD" ]; then
 		ln -sf "${_gfortran}" "${XBPS_WRAPPERDIR}/gfortran"
 	fi
 	unset _gfortran
+
+	# Write a secondary meson cross file for numpy configuration
+	if [[ "${build_helper}" = *meson* ]]; then
+		mkdir -p "${XBPS_WRAPPERDIR}/meson"
+		cat > "${XBPS_WRAPPERDIR}/meson/xbps_numpy.cross" <<-EOF
+			[properties]
+			numpy-include-dir = '${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/core/include'
+			pythran-include-dir = '${XBPS_CROSS_BASE}/${py3_sitelib}/pythran'
+			EOF
+	fi
 fi
