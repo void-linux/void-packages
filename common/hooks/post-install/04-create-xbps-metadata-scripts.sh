@@ -278,8 +278,6 @@ _EOF
 
 	if [ "$pycompile_version" = 3 ]; then
 		pycompile_version=${py3_ver}
-	elif [ "$pycompile_version" = 2 ]; then
-		pycompile_version=${py2_ver}
 	fi
 
 	if [ -n "${pycompile_dirs}" -o -n "${pycompile_module}" ]; then
