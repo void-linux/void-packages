@@ -207,7 +207,7 @@ a package providing the executable named `<name>` and the module named
 language prefix can be dropped. Short names for languages are no valid substitute
 for the language prefix.
 
-Example: python-pam, perl-URI, python3-pyside2
+Example: perl-URI, python3-pyside2
 
 <a id="language_bindings"></a>
 #### Language Bindings
@@ -220,7 +220,7 @@ The naming convention to those packages is:
 <name>-<language>
 ```
 
-Example: gimp-python, irssi-perl
+Example: gimp-python3, irssi-perl
 
 <a id="programs"></a>
 #### Programs
@@ -592,9 +592,9 @@ build methods. By default set to `check`.
 
 - `make_install_target` The installation target. When `${build_style}` is set to `configure`,
 `gnu-configure` or `gnu-makefile`, this is the target passed to `${make_command}` in the install
-phase; when unset, it defaults to `install`. If `${build_style}` is `python-pep517`, this is the
+phase; when unset, it defaults to `install`. If `${build_style}` is `python3-pep517`, this is the
 path of the Python wheel produced by the build phase that will be installed; when unset, the
-`python-pep517` build style will look for a wheel matching the package name and version in the
+`python3-pep517` build style will look for a wheel matching the package name and version in the
 current directory with respect to the install.
 
 - `make_check_pre` The expression in front of `${make_cmd}`. This can be used for wrapper commands
@@ -1039,8 +1039,6 @@ Additional install arguments can be specified via `make_install_args`.
 
 - `waf3` For packages that use the Python3 `waf` build method with python3.
 
-- `waf` For packages that use the Python `waf` method with python2.
-
 - `slashpackage` For packages that use the /package hierarchy and package/compile to build,
 such as `daemontools` or any `djb` software.
 
@@ -1068,8 +1066,6 @@ system. Additional arguments may be passed to the `zig build` invocation using
 
 For packages that use the Python module build method (`setup.py` or
 [PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
-
-- `python2-module` to build Python 2.x modules
 
 - `python3-module` to build Python 3.x modules
 
@@ -1589,7 +1585,7 @@ be your guidance to decide whether or not to split off a `-doc` subpackage.
 <a id="pkgs_python"></a>
 #### Python packages
 
-Python packages should be built with the `python{,2,3}-module` build style, if possible.
+Python packages should be built with the `python3-module` build style, if possible.
 This sets some environment variables required to allow cross compilation. Support to allow
 building a python module for multiple versions from a single template is also possible.
 The `python3-pep517` build style provides means to build python packages that provide a build-system
@@ -1614,7 +1610,7 @@ The following variables may influence how the python packages are built and conf
 at post-install time:
 
 - `pycompile_module`: By default, files and directories installed into
-`usr/lib/pythonX.X/site-packages`, excluding `*-info` and `*.so`, are byte-compiled
+`usr/lib/pythonX.Y/site-packages`, excluding `*-info` and `*.so`, are byte-compiled
 at install time as python modules.  This variable expects subset of them that
 should be byte-compiled, if default is wrong.  Multiple python modules may be specified separated
 by blanks, Example: `pycompile_module="foo blah"`. If a python module installs a file into
@@ -1635,10 +1631,6 @@ Also, a set of useful variables are defined to use in the templates:
 
 | Variable    | Value                            |
 |-------------|----------------------------------|
-| py2_ver     | 2.X                              |
-| py2_lib     | usr/lib/python2.X                |
-| py2_sitelib | usr/lib/python2.X/site-packages  |
-| py2_inc     | usr/include/python2.X            |
 | py3_ver     | 3.X                              |
 | py3_lib     | usr/lib/python3.X                |
 | py3_sitelib | usr/lib/python3.X/site-packages  |
