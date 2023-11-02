@@ -13,7 +13,7 @@ show_pkg() {
     show_pkg_var no "Changelog" "$changelog"
     show_pkg_var no "build_style" "$build_style"
     show_pkg_var st "build_helper" "$build_helper"
-    show_pkg_var st "configure_args" "$configure_args"
+    show_pkg_var ar "configure_args" "${configure_args[@]}"
     show_pkg_var no "short_desc" "$short_desc"
     show_pkg_var st "subpackages" "$subpackages"
     set -f

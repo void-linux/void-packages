@@ -33,7 +33,7 @@ do_build() {
 		--libc xbps_zig_libc.txt \
 		-Dtarget="${zig_target}" -Dcpu="${zig_cpu}" \
 		-Drelease-safe --prefix /usr install \
-		${configure_args}
+		"${configure_args[@]}"
 }
 
 do_install() {

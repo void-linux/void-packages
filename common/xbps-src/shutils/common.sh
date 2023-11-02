@@ -609,7 +609,8 @@ setup_pkg() {
 
     set_build_options
 
-    ensure_array hostmakedepends makedepends checkdepends depends
+    ensure_array hostmakedepends makedepends checkdepends depends \
+        configure_args
 
     export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
