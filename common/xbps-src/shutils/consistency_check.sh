@@ -69,12 +69,12 @@ consistency_check() {
         XBPS_TARGET_PKG=${pkg##*/}
         (
             read_pkg
-            [ "$depends" ] && printf "%s $pkgname depends\n" $depends
+            [ "${#depends[@]}" -gt 0 ] && printf "%s $pkgname depends\n" "${depends[*]}"
             [ "$conflicts" ] && printf "%s $pkgname conflicts\n" $conflicts
             [ -L "$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG" ] && return
-            [ "$makedepends" ] && printf "%s $pkgname makedepends\n" $makedepends
-            [ "$hostmakedepends" ] && printf "%s $pkgname hostmakedepends\n" $hostmakedepends
-            [ "$checkdepends" ] && printf "%s $pkgname checkdepends\n" $checkdepends
+            [ "${#makedepends[@]}" -gt 0 ] && printf "%s $pkgname makedepends\n" "${makedepends[*]}"
+            [ "${#hostmakedepends[@]}" -gt 0 ] && printf "%s $pkgname hostmakedepends\n" "${hostmakedepends[*]}"
+            [ "${#checkdepends[@]}" -gt 0 ] && printf "%s $pkgname checkdepends\n" "${checkdepends[*]}"
         )
     done | grep -v "^virtual?" | sed "s/^[^ ]*?//" | consistency_check_existing | \
         consistency_convert_pkgname | consistency_check_smart

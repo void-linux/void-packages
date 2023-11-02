@@ -1,3 +1,3 @@
-depends+=" rakudo"
-checkdepends+=" perl"
-hostmakedepends+=" rakudo"
+depends+=(rakudo)
+checkdepends+=(perl)
+hostmakedepends+=(rakudo)

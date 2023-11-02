@@ -149,15 +149,15 @@ show_pkg_build_depends() {
 }
 
 show_pkg_build_deps() {
-    show_pkg_build_depends "${makedepends} $(setup_pkg_depends '' 1 1)" "${hostmakedepends}"
+    show_pkg_build_depends "${makedepends[*]} $(setup_pkg_depends '' 1 1)" "${hostmakedepends[*]}"
 }
 
 show_pkg_hostmakedepends() {
-    show_pkg_build_depends "" "${hostmakedepends}"
+    show_pkg_build_depends "" "${hostmakedepends[*]}"
 }
 
 show_pkg_makedepends() {
-    show_pkg_build_depends "${makedepends}" ""
+    show_pkg_build_depends "${makedepends[*]}" ""
 }
 
 show_pkg_build_options() {

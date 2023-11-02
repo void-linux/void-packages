@@ -1,3 +1,3 @@
-hostmakedepends+=" perl"
-makedepends+=" perl"
+hostmakedepends+=(perl)
+makedepends+=(perl)
 lib32disabled=yes

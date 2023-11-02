@@ -1,1 +1,1 @@
-hostmakedepends+=" scons"
+hostmakedepends+=(scons)

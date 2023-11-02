@@ -556,7 +556,7 @@ setup_pkg() {
         fi
     fi
 
-    for x in ${hostmakedepends} ${makedepends} ${checkdepends}; do
+    for x in "${hostmakedepends[@]}" "${makedepends[@]}" "${checkdepends[@]}"; do
         if [[ $x = *[\<\>]* || $x =~ -[^-_]*[0-9][^-_]*_[0-9_]+$ ]]; then
             msg_error "$pkgver: specifying version in build dependency '$x' is invalid, template version is used always\n"
         fi
@@ -608,6 +608,8 @@ setup_pkg() {
     fi
 
     set_build_options
+
+    ensure_array hostmakedepends makedepends checkdepends depends
 
     export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
