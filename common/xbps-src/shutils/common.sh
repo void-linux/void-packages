@@ -302,6 +302,31 @@ source_file() {
     fi
 }
 
+ensure_array() {
+    for name; do
+        # if the name is not "", is set, and is not an array
+        if [[ -n "$name" && -v "$name" && "${!name@a}" != *a* ]]; then
+            msg_error "template variable '$name' should be an array!\n"
+        fi
+    done
+}
+
+ensure_array_subpkg() {
+    local subpkg="$1"
+    shift 1
+    for name; do
+        # if the name is not "", is set, and is not an array
+        if [[ -n "$name" && -v "$name" && "${!name@a}" != *a* ]]; then
+            msg_error "template variable '$name' in subpkg '$subpkg' should be an array!\n"
+        fi
+    done
+}
+
+array_contains() {
+    local arr="$1" val="$2"
+    printf '%s\0' "${!arr[@]}" | grep -Fxqz "$val"
+}
+
 run_pkg_hooks() {
     local phase="$1" hookn f
 
