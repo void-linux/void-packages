@@ -340,6 +340,9 @@ Each time a binary package is created, a package signature must be created with 
 
 > It is not possible to sign a repository with multiple RSA keys.
 
+If packages in `hostdir/binpkgs` are signed, the key in `.plist` format (as imported by xbps) can be placed
+in `etc/repo-keys/` to prevent xbps-src from prompting to import that key.
+
 <a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages
 
