@@ -61,7 +61,6 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	cpp = '${CXX}'
 	ar = '${XBPS_CROSS_TRIPLET}-gcc-ar'
 	nm = '${NM}'
-	ld = '${LD}'
 	strip = '${STRIP}'
 	readelf = '${READELF}'
 	objcopy = '${OBJCOPY}'
