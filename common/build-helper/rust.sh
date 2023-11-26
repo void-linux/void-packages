@@ -64,6 +64,3 @@ export RUSTONIG_SYSTEM_LIBONIG=1
 
 # libsqlite3-sys
 export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
-
-# libgit2-sys
-export LIBGIT2_NO_VENDOR=1
