@@ -74,6 +74,7 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	
 	[properties]
 	needs_exe_wrapper = true
+	bindgen_clang_arguments = ['-target', '${XBPS_CROSS_TRIPLET}']
 	
 	[host_machine]
 	system = 'linux'
