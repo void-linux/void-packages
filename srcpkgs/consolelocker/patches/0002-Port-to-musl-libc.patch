@@ -1,0 +1,169 @@
+From 2647af44bb181006bc6335d2369bf7837bec099f Mon Sep 17 00:00:00 2001
+From: Nikita Ermakov <sh1r4s3@mail.si-head.nl>
+Date: Sun, 10 Dec 2023 20:52:24 -0600
+Subject: [PATCH 2/2] Port to musl libc
+
+---
+ consolelocker.c | 26 ++++++++++++++++++++++++--
+ pidfile.c       |  1 +
+ sockets.h       |  9 +++++++++
+ vlocka.c        | 15 +++++++++++++--
+ xmalloc.c       |  7 ++++++-
+ 5 files changed, 53 insertions(+), 5 deletions(-)
+
+diff --git a/consolelocker.c b/consolelocker.c
+index 53282cc..0c4bc64 100644
+--- a/consolelocker.c
++++ b/consolelocker.c
+@@ -42,8 +42,17 @@
+ #include <grp.h>
+ #include <fcntl.h>
+ #include <errno.h>
+-#include <error.h>
+-
++#ifdef __GLIBC__
++# include <error.h>
++#else // Consider musl
++# define program_invocation_short_name __progname
++extern char *__progname;
++// logging.h defined err() function thus let's not use err.h from musl and
++// define our error() function which will use verr() from musl.
++# include <stdarg.h>
++_Noreturn void verr(int status, const char *fmt, va_list ap);
++_Noreturn static void error(int status, int errnum __attribute__((unused)), const char *fmt, ...);
++#endif
+ #include "logging.h"
+ #include "pidfile.h"
+ #include "epoll.h"
+@@ -75,6 +84,15 @@ static struct option long_options[] = {
+ 	{ 0, 0, 0, 0 }
+ };
+ 
++#ifndef __GLIBC__
++_Noreturn static void error(int status, int errnum __attribute__((unused)), const char *fmt, ...) {
++	va_list ap;
++	va_start(ap, fmt);
++	verr(status, fmt, ap);
++	va_end(ap);
++}
++#endif
++
+ static void __attribute__((noreturn))
+ print_help(int ret)
+ {
+@@ -106,11 +124,13 @@ print_version(void)
+ 	exit(EXIT_SUCCESS);
+ }
+ 
++#ifdef __GLIBC__
+ static void
+ my_error_print_progname(void)
+ {
+ 	fprintf(stderr, "%s: ", program_invocation_short_name);
+ }
++#endif
+ 
+ static int
+ handle_signal(uint32_t signo)
+@@ -225,7 +245,9 @@ int main(int argc, char **argv)
+ 	int fd_signal = -1;
+ 	int fd_conn   = -1;
+ 
++#ifdef __GLIBC__
+ 	error_print_progname = my_error_print_progname;
++#endif
+ 
+ 	while ((i = getopt_long(argc, argv, "fhVg:p:l:", long_options, NULL)) != -1) {
+ 		switch (i) {
+diff --git a/pidfile.c b/pidfile.c
+index bf135e7..bc10606 100644
+--- a/pidfile.c
++++ b/pidfile.c
+@@ -31,6 +31,7 @@
+ #include <string.h>
+ #include <errno.h>
+ #include <signal.h>
++#include <fcntl.h>
+ 
+ #include "pidfile.h"
+ 
+diff --git a/sockets.h b/sockets.h
+index d39b7a1..b6ad873 100644
+--- a/sockets.h
++++ b/sockets.h
+@@ -17,6 +17,15 @@
+ #ifndef _SOCKETS_H_
+ #define _SOCKETS_H_
+ 
++#ifndef __GLIBC__
++# define TEMP_FAILURE_RETRY(expression) \
++  (__extension__							      \
++    ({ long int __result;						      \
++       do __result = (long int) (expression);				      \
++       while (__result == -1L && errno == EINTR);			      \
++       __result; }))
++#endif
++
+ int unix_listen(const char *, const char *);
+ int unix_connect(const char *, const char *);
+ 
+diff --git a/vlocka.c b/vlocka.c
+index ffadec7..5750a0d 100644
+--- a/vlocka.c
++++ b/vlocka.c
+@@ -28,13 +28,22 @@
+ #include <signal.h>
+ #include <pwd.h>
+ #include <errno.h>
+-#include <error.h>
+-
++#ifdef __GLIBC__
++# include <error.h>
++#else // Consider musl
++# define program_invocation_short_name __progname
++extern char *__progname;
++# include <err.h>
++# define error(status, errnum, ...) err(status, __VA_ARGS__)
++#endif
++
++#ifdef __GLIBC__
+ static void
+ my_error_print_progname(void)
+ {
+ 	fprintf(stderr, "%s: ", program_invocation_short_name);
+ }
++#endif
+ 
+ static inline void
+ clear(void)
+@@ -66,7 +75,9 @@ main(int argc, char ** argv)
+ 	int noclear = 0;
+ 	struct passwd *pw = NULL;
+ 
++#ifdef __GLIBC__
+ 	error_print_progname = my_error_print_progname;
++#endif
+ 
+ 	if (argc < 2)
+ 		error(EXIT_FAILURE, 0, "Usage: %s <uid>", program_invocation_short_name);
+diff --git a/xmalloc.c b/xmalloc.c
+index 4c57d18..e4874f3 100644
+--- a/xmalloc.c
++++ b/xmalloc.c
+@@ -21,7 +21,12 @@
+ #include <stdarg.h>
+ #include <stdio.h>
+ #include <errno.h>
+-#include <error.h>
++#ifdef __GLIBC__
++# include <error.h>
++#else
++# include <err.h>
++# define error(status, errnum, ...) err(status, __VA_ARGS__)
++#endif
+ #include <limits.h>
+ 
+ #include "xmalloc.h"
+-- 
+2.42.0
+
