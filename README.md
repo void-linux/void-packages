@@ -87,7 +87,7 @@ Once built, the package will be available in `hostdir/binpkgs` or an appropriate
 Alternatively, packages can be installed with the `xi` utility, from the `xtools` package. `xi` takes the repository of the current working directory into account.
 
 ```
-# xi <package_name>
+$ xi <package_name>
 ```
 
 <a name="chroot-methods"></a>
