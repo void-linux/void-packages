@@ -66,9 +66,23 @@ collect_sonames() {
 
 hook() {
 	local _destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
+	local _mainpkg=yes
+	local _pkg
+
+	case "$pkgname" in
+	*-32bit)
+		_pkgname=${pkgname%-32bit}
+		for _pkg in $sourcepkg $subpackages; do
+			if [ "$_pkg" = "$_pkgname" ]; then
+				_mainpkg=
+				break
+			fi
+		done
+		;;
+	esac
 
 	# native pkg
-	collect_sonames ${PKGDESTDIR} yes
+	collect_sonames ${PKGDESTDIR} $_mainpkg
 	# 32bit pkg
 	collect_sonames ${_destdir32}
 }

@@ -57,7 +57,7 @@ purge_distfiles() {
 	cur=0
 	percent=-1
 	for distfile in ${distfiles[@]}; do
-		inode=$(stat "$distfile" --printf "%i")
+		inode=$(stat_inode "$distfile")
 		if [ -z "${inodes[$inode]}" ]; then
 			inodes[$inode]="$distfile"
 		else
@@ -77,7 +77,7 @@ purge_distfiles() {
 		hash_distfile=${file##*/}
 		hash=${hash_distfile:0:$HASHLEN}
 		[ -n "${my_hashes[$hash]}" ] && continue
-		inode=$(stat "$file" --printf "%i")
+		inode=$(stat_inode "$file")
 		echo "Obsolete $hash (inode: $inode)"
 		( IFS="|"; for f in ${inodes[$inode]}; do rm -vf "$f"; rmdir "${f%/*}" 2>/dev/null; done )
 	done

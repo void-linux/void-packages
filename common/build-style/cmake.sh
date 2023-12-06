@@ -40,6 +40,7 @@ SET(CMAKE_SYSTEM_VERSION 1)
 
 SET(CMAKE_C_COMPILER   ${CC})
 SET(CMAKE_CXX_COMPILER ${CXX})
+SET(Rust_CARGO_TARGET ${XBPS_CROSS_RUST_TARGET})
 SET(CMAKE_CROSSCOMPILING TRUE)
 
 SET(CMAKE_SYSTEM_PROCESSOR ${_CMAKE_SYSTEM_PROCESSOR})
@@ -52,10 +53,10 @@ SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 _EOF
 		cmake_args+=" -DCMAKE_TOOLCHAIN_FILE=${wrksrc}/${build_wrksrc}/${cmake_builddir}/cross_${XBPS_CROSS_TRIPLET}.cmake"
 	fi
-	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr"
+	cmake_args+=" -DCMAKE_INSTALL_PREFIX:PATH=/usr"
 	cmake_args+=" -DCMAKE_BUILD_TYPE=None"
-	cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib${XBPS_TARGET_WORDSIZE}"
-	cmake_args+=" -DCMAKE_INSTALL_SYSCONFDIR=/etc"
+	cmake_args+=" -DCMAKE_INSTALL_LIBDIR:PATH=lib${XBPS_TARGET_WORDSIZE}"
+	cmake_args+=" -DCMAKE_INSTALL_SYSCONFDIR:PATH=/etc"
 
 	if [ "$CROSS_BUILD" ]; then
 		cmake_args+=" -DQT_HOST_PATH=/usr"
@@ -69,7 +70,7 @@ _EOF
 			>> cross_${XBPS_CROSS_TRIPLET}.cmake
 	fi
 
-	cmake_args+=" -DCMAKE_INSTALL_SBINDIR=bin"
+	cmake_args+=" -DCMAKE_INSTALL_SBINDIR:PATH=bin"
 
 	export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Ninja}"
 	# Remove -pipe: https://gitlab.kitware.com/cmake/cmake/issues/19590

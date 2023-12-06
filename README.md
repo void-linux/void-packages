@@ -87,7 +87,7 @@ Once built, the package will be available in `hostdir/binpkgs` or an appropriate
 Alternatively, packages can be installed with the `xi` utility, from the `xtools` package. `xi` takes the repository of the current working directory into account.
 
 ```
-# xi <package_name>
+$ xi <package_name>
 ```
 
 <a name="chroot-methods"></a>
@@ -340,6 +340,9 @@ Each time a binary package is created, a package signature must be created with 
 
 > It is not possible to sign a repository with multiple RSA keys.
 
+If packages in `hostdir/binpkgs` are signed, the key in `.plist` format (as imported by xbps) can be placed
+in `etc/repo-keys/` to prevent xbps-src from prompting to import that key.
+
 <a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages
 
@@ -359,7 +362,7 @@ the package from the desired repository.
 <a name="distcc"></a>
 ### Enabling distcc for distributed compilation
 
-Setup the slaves (machines that will compile the code):
+Setup the workers (machines that will compile the code):
 
     # xbps-install -Sy distcc
 
@@ -372,7 +375,7 @@ Enable and start the `distccd` service:
     # ln -s /etc/sv/distccd /var/service
 
 Install distcc on the host (machine that executes xbps-src) as well.
-Unless you want to use the host as slave from other machines, there is no need
+Unless you want to use the host as worker from other machines, there is no need
 to modify the configuration.
 
 On the host you can now enable distcc in the `void-packages/etc/conf` file:
@@ -383,8 +386,8 @@ On the host you can now enable distcc in the `void-packages/etc/conf` file:
 
 The example values assume a localhost CPU with 4 cores of which at most 2 are used for compiler jobs.
 The number of slots for preprocessor jobs is set to 24 in order to have enough preprocessed data for other CPUs to compile.
-The slave 192.168.2.101 has a CPU with 8 cores and the /9 for the number of jobs is a saturating choice.
-The slave 192.168.2.102 is set to run at most 2 compile jobs to keep its load low, even if its CPU has 4 cores.
+The worker 192.168.2.101 has a CPU with 8 cores and the /9 for the number of jobs is a saturating choice.
+The worker 192.168.2.102 is set to run at most 2 compile jobs to keep its load low, even if its CPU has 4 cores.
 The XBPS_MAKEJOBS setting is increased to 16 to account for the possible parallelism (2 + 9 + 2 + some slack).
 
 <a name="distfiles-mirrors"></a>
