@@ -1,0 +1,229 @@
+diff --git a/src/sage/interfaces/singular.py b/src/sage/interfaces/singular.py
+index 9c9b8ffb8b9..12a9aa582a6 100644
+--- a/src/sage/interfaces/singular.py
++++ b/src/sage/interfaces/singular.py
+@@ -1211,14 +1211,14 @@ def current_ring(self):
+             polynomial ring, over a field, global ordering
+             //   coefficients: ZZ/127
+             //   number of vars : 3
+-            //        block   1 : ordering rp
++            //        block   1 : ordering ip
+             //                  : names    x y z
+             //        block   2 : ordering C
+             sage: singular.current_ring()
+             polynomial ring, over a field, global ordering
+             //   coefficients: ZZ/127
+             //   number of vars : 3
+-            //        block   1 : ordering rp
++            //        block   1 : ordering ip
+             //                  : names    x y z
+             //        block   2 : ordering C
+         """
+@@ -2040,6 +2040,9 @@ def _sage_(self, R=None):
+         elif typ == 'intvec':
+             from sage.modules.free_module_element import vector
+             return vector([sage.rings.integer.Integer(str(e)) for e in self])
++        elif typ == 'bigintvec':
++            from sage.modules.free_module_element import vector
++            return vector([sage.rings.rational.Rational(str(e)) for e in self])
+         elif typ == 'intmat':
+             from sage.matrix.constructor import matrix
+             from sage.rings.integer_ring import ZZ
+diff --git a/src/sage/libs/singular/decl.pxd b/src/sage/libs/singular/decl.pxd
+index e36216d6395..855c95b00bd 100644
+--- a/src/sage/libs/singular/decl.pxd
++++ b/src/sage/libs/singular/decl.pxd
+@@ -243,7 +243,7 @@ cdef extern from "singular/Singular/libsingular.h":
+         ringorder_s
+         ringorder_lp
+         ringorder_dp
+-        ringorder_rp
++        ringorder_ip
+         ringorder_Dp
+         ringorder_wp
+         ringorder_Wp
+@@ -291,6 +291,10 @@ cdef extern from "singular/Singular/libsingular.h":
+         int row
+         int col
+ 
++    cdef cppclass bigintmat:
++        int (*length)()
++        number* (*get)(int i)
++
+     # omalloc bins
+ 
+     ctypedef struct omBin "omBin_s"
+@@ -921,6 +925,7 @@ cdef extern from "singular/Singular/libsingular.h":
+     cdef int MATRIX_CMD
+     cdef int LIST_CMD
+     cdef int INTVEC_CMD
++    cdef int BIGINTVEC_CMD
+     cdef int NONE
+     cdef int RESOLUTION_CMD
+     cdef int PACKAGE_CMD
+diff --git a/src/sage/libs/singular/function.pyx b/src/sage/libs/singular/function.pyx
+index ac4bde0c20b..8284cb921a3 100644
+--- a/src/sage/libs/singular/function.pyx
++++ b/src/sage/libs/singular/function.pyx
+@@ -98,7 +98,7 @@ from sage.rings.polynomial.multi_polynomial_sequence import PolynomialSequence_g
+ from sage.libs.singular.decl cimport *
+ from sage.libs.singular.option import opt_ctx
+ from sage.libs.singular.polynomial cimport singular_vector_maximal_component
+-from sage.libs.singular.singular cimport sa2si, si2sa, si2sa_intvec
++from sage.libs.singular.singular cimport sa2si, si2sa, si2sa_intvec, si2sa_bigintvec
+ from sage.libs.singular.singular import error_messages
+ 
+ from sage.interfaces.singular import get_docstring
+@@ -954,6 +954,8 @@ cdef class Converter(SageObject):
+             return si2sa(<number *>to_convert.data, self._singular_ring, self._sage_ring.base_ring())
+         elif rtyp == INTVEC_CMD:
+             return si2sa_intvec(<intvec *> to_convert.data)
++        elif rtyp == BIGINTVEC_CMD:
++            return si2sa_bigintvec(<bigintmat *> to_convert.data)
+         elif rtyp == STRING_CMD:
+             # TODO: Need to determine what kind of data can be returned by a
+             # STRING_CMD--is it just ASCII strings or can it be an arbitrary
+@@ -1231,7 +1233,7 @@ cdef class SingularFunction(SageObject):
+             Traceback (most recent call last):
+             ...
+             RuntimeError: error in Singular function call 'size':
+-            Wrong number of arguments (got 2 arguments, arity code is 302)
++            Wrong number of arguments (got 2 arguments, arity code is 303)
+             sage: size('foobar', ring=P)
+             6
+ 
+@@ -1634,17 +1636,17 @@ def singular_function(name):
+         Traceback (most recent call last):
+         ...
+         RuntimeError: error in Singular function call 'factorize':
+-        Wrong number of arguments (got 0 arguments, arity code is 305)
++        Wrong number of arguments (got 0 arguments, arity code is 306)
+         sage: factorize(f, 1, 2)
+         Traceback (most recent call last):
+         ...
+         RuntimeError: error in Singular function call 'factorize':
+-        Wrong number of arguments (got 3 arguments, arity code is 305)
++        Wrong number of arguments (got 3 arguments, arity code is 306)
+         sage: factorize(f, 1, 2, 3)
+         Traceback (most recent call last):
+         ...
+         RuntimeError: error in Singular function call 'factorize':
+-        Wrong number of arguments (got 4 arguments, arity code is 305)
++        Wrong number of arguments (got 4 arguments, arity code is 306)
+ 
+     The Singular function ``list`` can be called with any number of
+     arguments::
+diff --git a/src/sage/libs/singular/ring.pyx b/src/sage/libs/singular/ring.pyx
+index 494fd2c0caf..7b05d63e7c7 100644
+--- a/src/sage/libs/singular/ring.pyx
++++ b/src/sage/libs/singular/ring.pyx
+@@ -24,7 +24,7 @@ from sage.libs.gmp.mpz cimport mpz_init_set_ui
+ from sage.libs.singular.decl cimport ring, currRing
+ from sage.libs.singular.decl cimport rChangeCurrRing, rComplete, rDelete, idInit
+ from sage.libs.singular.decl cimport omAlloc0, omStrDup, omAlloc
+-from sage.libs.singular.decl cimport ringorder_dp, ringorder_Dp, ringorder_lp, ringorder_rp, ringorder_ds, ringorder_Ds, ringorder_ls, ringorder_M, ringorder_c, ringorder_C, ringorder_wp, ringorder_Wp, ringorder_ws, ringorder_Ws, ringorder_a, rRingOrder_t
++from sage.libs.singular.decl cimport ringorder_dp, ringorder_Dp, ringorder_lp, ringorder_ip, ringorder_ds, ringorder_Ds, ringorder_ls, ringorder_M, ringorder_c, ringorder_C, ringorder_wp, ringorder_Wp, ringorder_ws, ringorder_Ws, ringorder_a, rRingOrder_t
+ from sage.libs.singular.decl cimport prCopyR
+ from sage.libs.singular.decl cimport n_unknown, n_algExt, n_transExt, n_Z, n_Zn,  n_Znm, n_Z2m
+ from sage.libs.singular.decl cimport n_coeffType
+@@ -60,7 +60,7 @@ order_dict = {
+     "dp": ringorder_dp,
+     "Dp": ringorder_Dp,
+     "lp": ringorder_lp,
+-    "rp": ringorder_rp,
++    "ip": ringorder_ip,
+     "ds": ringorder_ds,
+     "Ds": ringorder_Ds,
+     "ls": ringorder_ls,
+diff --git a/src/sage/libs/singular/singular.pxd b/src/sage/libs/singular/singular.pxd
+index d943a1018a2..f398d27a1fa 100644
+--- a/src/sage/libs/singular/singular.pxd
++++ b/src/sage/libs/singular/singular.pxd
+@@ -1,4 +1,4 @@
+-from sage.libs.singular.decl cimport ring, poly, number, intvec
++from sage.libs.singular.decl cimport ring, poly, number, intvec, bigintmat
+ from sage.libs.singular.function cimport Resolution
+ 
+ from sage.rings.rational cimport Rational
+@@ -29,6 +29,7 @@ cdef object   si2sa_ZZmod(number *n, ring *_ring, object base) noexcept
+ cdef object   si2sa_NF(number *n, ring *_ring, object base) noexcept
+ 
+ cdef object si2sa_intvec(intvec *v) noexcept
++cdef object si2sa_bigintvec(bigintmat *v) noexcept
+ 
+ # dispatches to all the above.
+ cdef object si2sa(number *n, ring *_ring, object base) noexcept
+diff --git a/src/sage/libs/singular/singular.pyx b/src/sage/libs/singular/singular.pyx
+index cf0124e0a35..0e5c7774e80 100644
+--- a/src/sage/libs/singular/singular.pyx
++++ b/src/sage/libs/singular/singular.pyx
+@@ -1699,6 +1699,25 @@ cdef object si2sa_intvec(intvec *v) noexcept:
+         l.append(v.get(r))
+     return tuple(l)
+ 
++cdef object si2sa_bigintvec(bigintmat *v) noexcept:
++    r"""
++    create a sage tuple from a singular vector of big integers
++
++    INPUT:
++
++    - ``v`` -- a (pointer to) singular bigintmat
++
++    OUTPUT:
++
++    a sage tuple
++    """
++    cdef int r
++    cdef list l = list()
++    for r in range(v.length()):
++        n = v.get(r)
++        l.append(si2sa_QQ(n, &n, currRing))
++    return tuple(l)
++
+ # ==============
+ # Initialisation
+ # ==============
+diff --git a/src/sage/rings/polynomial/multi_polynomial_libsingular.pyx b/src/sage/rings/polynomial/multi_polynomial_libsingular.pyx
+index 70386eb0b50..b18c53de177 100644
+--- a/src/sage/rings/polynomial/multi_polynomial_libsingular.pyx
++++ b/src/sage/rings/polynomial/multi_polynomial_libsingular.pyx
+@@ -1285,7 +1285,7 @@ cdef class MPolynomialRing_libsingular(MPolynomialRing_base):
+             polynomial ring, over a field, global ordering
+             //   coefficients: ZZ/2[a]/(a^8+a^4+a^3+a^2+1)
+             //   number of vars : 10
+-            //        block   1 : ordering rp
++            //        block   1 : ordering ip
+             //                  : names    x0 x1 x2 x3 x4 x5 x6 x7 x8 x9
+             //        block   2 : ordering C
+ 
+@@ -1294,7 +1294,7 @@ cdef class MPolynomialRing_libsingular(MPolynomialRing_base):
+             polynomial ring, over a field, global ordering
+             //   coefficients: ZZ/127
+             //   number of vars : 2
+-            //        block   1 : ordering rp
++            //        block   1 : ordering ip
+             //                  : names    x0 x1
+             //        block   2 : ordering C
+ 
+@@ -1303,7 +1303,7 @@ cdef class MPolynomialRing_libsingular(MPolynomialRing_base):
+             polynomial ring, over a field, global ordering
+             //   coefficients: QQ
+             //   number of vars : 2
+-            //        block   1 : ordering rp
++            //        block   1 : ordering ip
+             //                  : names    x0 x1
+             //        block   2 : ordering C
+ 
+diff --git a/src/sage/rings/polynomial/term_order.py b/src/sage/rings/polynomial/term_order.py
+index 48e49ac89fa..65e68681485 100644
+--- a/src/sage/rings/polynomial/term_order.py
++++ b/src/sage/rings/polynomial/term_order.py
+@@ -388,7 +388,7 @@
+ 
+ singular_name_mapping = {
+     'lex'           : 'lp',
+-    'invlex'        : 'rp',
++    'invlex'        : 'ip',
+     'degrevlex'     : 'dp',
+     'deglex'        : 'Dp',
+     'neglex'        : 'ls',
