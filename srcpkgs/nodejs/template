@@ -1,34 +1,40 @@
 # Template file for 'nodejs'
 pkgname=nodejs
-version=18.16.0
-revision=3
-# Need these for host v8 for torque, see https://github.com/nodejs/node/pull/21079
-hostmakedepends="which pkg-config python3-setuptools zlib-devel
- $(vopt_if icu icu-devel) $(vopt_if ssl openssl-devel) $(vopt_if libuv libuv-devel)
- $(vopt_if nghttp2 nghttp2-devel) $(vopt_if cares c-ares-devel)"
-makedepends="zlib-devel $(vopt_if icu icu-devel)
+version=18.19.0
+revision=1
+hostmakedepends="which pkg-config python3-setuptools"
+_make_depends="zlib-devel $(vopt_if icu icu-devel)
  $(vopt_if ssl openssl-devel) $(vopt_if libuv libuv-devel)
- $(vopt_if nghttp2 nghttp2-devel) $(vopt_if cares c-ares-devel)"
+ $(vopt_if nghttp2 nghttp2-devel) $(vopt_if cares c-ares-devel)
+ $(vopt_if brotli brotli-devel)"
+makedepends="${_make_depends}"
 checkdepends="procps-ng iana-etc"
 short_desc="Evented I/O for V8 javascript"
-maintainer="Enno Boland <gottox@voidlinux.org>"
+maintainer="triallax <triallax@tutanota.com>"
 license="MIT"
 homepage="https://nodejs.org/"
-distfiles="https://nodejs.org/dist/v${version}/node-v${version}.tar.gz"
-checksum=6a4f5c5d76e5c50cef673099e56f19bc3266ae363f56ca0ab77dd2f3c5088c6d
+changelog="https://raw.githubusercontent.com/nodejs/node/main/doc/changelogs/CHANGELOG_V${version%%.*}.md"
+distfiles="https://nodejs.org/dist/v${version}/node-v${version}.tar.xz"
+checksum=f52b41af20596a9abd8ed75241837ec43945468221448bbf841361e2091819b6
 python_version=3
 
-build_options="ssl libuv icu nghttp2 cares"
+build_options="ssl libuv icu nghttp2 cares brotli"
 desc_option_ssl="Enable shared openssl"
 desc_option_libuv="Enable shared libuv"
 desc_option_icu="Enable shared icu"
 desc_option_nghttp2="Enable shared nghttp2"
 desc_option_cares="Enable shared c-ares"
-build_options_default="ssl libuv icu nghttp2 cares"
+desc_option_brotli="Enable shared brotli"
+build_options_default="ssl libuv icu nghttp2 cares brotli"
 
 replaces="iojs>=0"
 conflicts="nodejs-lts-10"
 provides="nodejs-runtime-0_1"
+
+if [ "$CROSS_BUILD" ]; then
+	# Need these for host v8 for torque, see https://github.com/nodejs/node/pull/21079
+	hostmakedepends+=" ${_make_depends}"
+fi
 
 # https://build.voidlinux.org/builders/i686_builder/builds/27325/steps/shell_3/logs/stdio
 if [ "$XBPS_WORDSIZE" = 32 ]; then
@@ -71,12 +77,13 @@ do_configure() {
 		# to execute it within the build system fails
 		_args+=" --cross-compiling"
 	fi
-	./configure --prefix=/usr --shared-zlib \
+	./configure --prefix=/usr --shared-zlib  --enable-lto \
 		$(vopt_if icu --with-intl=system-icu) \
 		$(vopt_if ssl --shared-openssl) \
 		$(vopt_if libuv --shared-libuv) \
 		$(vopt_if nghttp2 --shared-nghttp2) \
-		$(vopt_if cares --shared-cares) ${_args}
+		$(vopt_if cares --shared-cares) \
+		$(vopt_if brotli --shared-brotli) ${_args}
 }
 
 do_build() {
@@ -88,7 +95,16 @@ do_build() {
 }
 
 do_check() {
-	local CI_SKIP_TESTS="test-cluster-primary-error.js,test-cluster-primary-kill.js,test-child-process-uid-gid.js,test-process-euid-egid.js,test-process-uid-gid.js,test-socket-write-after-fin-error.js,test-dns-perf_hooks.js"
+	local CI_SKIP_TESTS="test-child-process-uid-gid.js,test-process-euid-egid.js,test-process-uid-gid.js,test-tls-session-cache.js,test-tls-getprotocol.js,test-tls-alert.js,test-tls-cli-min-version-1.1.js,test-tls-cli-max-version-1.1.js,test-tls-cli-min-version-1.2.js,test-tls-cli-max-version-1.2.js,test-tls-cli-min-version-1.3.js,test-tls-cli-max-version-1.3.js,test-tls-min-max-version.js,test-process-versions.js,test-strace-openat-openssl.js,test-crypto-dh.js,test-dgram-send-cb-quelches-error.js,test-https-agent-session-eviction.js"
+
+	# https://github.com/nodejs/node/issues/50741
+	CI_SKIP_TESTS+=",test-dns-resolveany.js,test-dns-resolveany-bad-ancount.js"
+
+	if [ "$XBPS_TARGET_MACHINE" = i686 ]; then
+		# https://github.com/nodejs/node/issues/45906
+		CI_SKIP_TESTS+=",test-fs-utimes-y2K38.js"
+	fi
+
 	make CI_SKIP_TESTS="$CI_SKIP_TESTS" LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1 test-only
 }
 

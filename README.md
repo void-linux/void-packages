@@ -87,7 +87,7 @@ Once built, the package will be available in `hostdir/binpkgs` or an appropriate
 Alternatively, packages can be installed with the `xi` utility, from the `xtools` package. `xi` takes the repository of the current working directory into account.
 
 ```
-# xi <package_name>
+$ xi <package_name>
 ```
 
 <a name="chroot-methods"></a>
@@ -339,6 +339,9 @@ Once the binary packages have been signed, check if the repository contains the 
 Each time a binary package is created, a package signature must be created with `--sign-pkg`.
 
 > It is not possible to sign a repository with multiple RSA keys.
+
+If packages in `hostdir/binpkgs` are signed, the key in `.plist` format (as imported by xbps) can be placed
+in `etc/repo-keys/` to prevent xbps-src from prompting to import that key.
 
 <a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages

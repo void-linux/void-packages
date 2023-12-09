@@ -61,7 +61,6 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	cpp = '${CXX}'
 	ar = '${XBPS_CROSS_TRIPLET}-gcc-ar'
 	nm = '${NM}'
-	ld = '${LD}'
 	strip = '${STRIP}'
 	readelf = '${READELF}'
 	objcopy = '${OBJCOPY}'
@@ -75,6 +74,7 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	
 	[properties]
 	needs_exe_wrapper = true
+	bindgen_clang_arguments = ['-target', '${XBPS_CROSS_TRIPLET}']
 	
 	[host_machine]
 	system = 'linux'

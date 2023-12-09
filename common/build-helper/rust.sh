@@ -30,6 +30,9 @@ else
 	unset CARGO_BUILD_TARGET
 fi
 
+# prevent cargo stripping debug symbols
+export CARGO_PROFILE_RELEASE_STRIP=false
+
 # For cross-compiling rust -sys crates
 export PKG_CONFIG_ALLOW_CROSS=1
 
@@ -61,3 +64,6 @@ export ZSTD_SYS_USE_PKG_CONFIG=1
 
 # onig-sys
 export RUSTONIG_SYSTEM_LIBONIG=1
+
+# libsqlite3-sys
+export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
