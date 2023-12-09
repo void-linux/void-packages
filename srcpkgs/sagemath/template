@@ -1,13 +1,12 @@
 # Template file for 'sagemath'
 pkgname=sagemath
-version=10.2
-revision=2
+version=10.3
+revision=1
 build_wrksrc=pkgs/sagemath-standard
-build_style=python3-module
-_bindir=/usr/lib/sagemath/$version/bin
-make_install_args="--install-scripts=$_bindir"
+build_style=python3-pep517
+make_build_args="--skip-dependency-check"
 hostmakedepends="m4 pkg-config python3-Cython python3-Jinja2
- python3-pkgconfig python3-setuptools"
+ python3-pkgconfig python3-setuptools python3-wheel"
 makedepends="boost-devel brial-devel cliquer-devel ecl eclib-devel
  ecm-devel fflas-ffpack flintlib-devel gap-devel gd-devel giac-devel glpk-devel
  gsl-devel iml-devel lcalc-devel libbraiding-devel libhomfly-devel libmpc-devel
@@ -24,7 +23,7 @@ depends="eclib-devel fflas-ffpack flintlib-devel gcc-fortran meson gd-devel
  python3-memory_allocator python3-networkx python3-pip python3-pkgconfig
  python3-pplpy python3-primecountpy python3-requests python3-scipy
  python3-sympy python3-traitlets sage-data-combinatorial_designs
- sage-data-conway_polynomials sage-data-elliptic_curves sage-data-graphs
+ python3-conway-polynomials sage-data-elliptic_curves sage-data-graphs
  sage-data-polytopes_db sympow tachyon threejs-sage"
 checkdepends="$depends pythran python3-Sphinx"
 short_desc="Open source mathematics software"
@@ -33,70 +32,42 @@ license="GPL-2.0-or-later"
 homepage="https://www.sagemath.org/"
 changelog="https://github.com/sagemath/sage/releases"
 distfiles="https://github.com/sagemath/sage/archive/refs/tags/$version.tar.gz"
-checksum=e7125f13495e1068edab73735aca7f9b2c655688096e9d109e628c023e76411f
+checksum=59feb92c05e74d6db7a75f398c45c24b5157b1ecd3d8ac198806e2e6add77d96
 nocross="due to ntl (eclib, singular), fflas-ffpack, givaro, linbox, sympow, maxima"
+
+# parallel build
+export SAGE_NUM_THREADS="$XBPS_MAKEJOBS"
 
 post_patch() {
 	# git tree needs bootstrapping
 	$wrksrc/bootstrap sagelib
-}
 
-pre_build() {
-	export PYTHONPATH=../sage-setup
-	export PYTHONDONTWRITEBYTECODE=yes
-	export SAGE_NUM_THREADS="$XBPS_MAKEJOBS"
-}
-
-post_build() {
-	_lib=$(cd build/lib* && pwd)
-	_scripts=$(cd build/scripts* && pwd)
-
-	# configuration files
-	cp ${FILESDIR}/sage_conf.py $_lib
-	cp ${FILESDIR}/sage-env-config $_scripts
-}
-
-pre_install() {
-	export PYTHONPATH=../sage-setup
-	export PYTHONDONTWRITEBYTECODE=yes
-	export SAGE_NUM_THREADS="$XBPS_MAKEJOBS"
+	# we need sage_setup here
+	ln -s ../../src/sage_setup .
 }
 
 post_install() {
-	# fix jupyter kernel spec
-	vsed -i -e 's|"/usr/bin/sage"|"'${_bindir}'/sage"|' \
-		${DESTDIR}/usr/share/jupyter/kernels/sagemath/kernel.json
+	# move scripts to /usr/libexec
+	vmkdir usr/libexec
+	mv -T ${DESTDIR}/usr/bin ${DESTDIR}/usr/libexec/sagemath
 
-	# replace broken symlinks by good copies (sagemath logo images)
-	for file in $(ls sage/ext_data/notebook-ipython); do
-		rm ${DESTDIR}/usr/share/jupyter/kernels/sagemath/$file
-		cp -a sage/ext_data/notebook-ipython/$file \
-			${DESTDIR}/usr/share/jupyter/kernels/sagemath
-	done
-
-	# we don't have docs here
-	rm ${DESTDIR}/usr/share/jupyter/kernels/sagemath/doc
-	# this symlink is shipped in threejs-sage pkg
-	rm ${DESTDIR}/usr/share/jupyter/nbextensions/threejs-sage
+	# copy configuration
+	cp ${FILESDIR}/sage-env-config ${DESTDIR}/usr/libexec/sagemath
 
 	# symlink main binary
 	vmkdir usr/bin
-	ln -s $_bindir/sage ${DESTDIR}/usr/bin/sage-${version}
-	ln -s sage-${version} ${DESTDIR}/usr/bin/sage
+	ln -s /usr/libexec/sagemath/sage ${DESTDIR}/usr/bin
 }
 
 do_check() {
-	_lib=$(cd build/lib* && pwd)
-	_scripts=$(cd build/scripts* && pwd)
+	local testdir="${wrksrc}/.xbps-testdir/$(date +%s)"
+	python3 -m installer -d "${testdir}" dist/*.whl
 
-	export PYTHONPATH=$_lib
-	export PYTHONDONTWRITEBYTECODE=yes
-
-	# get out of $build_wrksrc, otherwise python picks the wrong sage module
-	cd $(mktemp -dp build)
+	# this makes for nicer (shorter) relative paths in output
+	cd ${testdir}/${py3_sitelib}
 
 	if [ -f ${XBPS_DISTDIR}/sagemath-check ] ; then
-		_sed='s|#.*||;/^\s*$/d;s|^\([^ ]*/\)\?sage/|'$_lib'/sage/|g' \
+		_sed='s|#.*||;/^\s*$/d;s|^\s*\([^ ]*/\)\?sage/|sage/|g' \
 		_test_files=$(sed -e "$_sed" ${XBPS_DISTDIR}/sagemath-check)
 	fi
 	if [ -z "$_test_files" ]; then
@@ -105,13 +76,15 @@ do_check() {
 	cp ${FILESDIR}/timings2.json .
 	_test_args="--stats_path=timings2.json"
 	if [ "$XBPS_CHECK_PKGS" = full ]; then
-		_test_args+=" --long --warn-long 60.0"
+		_test_args+=" --long --warn-long 30.0"
 	else
-		_test_args+=" --warn-long 30.0"
+		_test_args+=" --warn-long 10.0"
 	fi
 	if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
 		# for CI use a predictable random seed
 		_test_args+=" --random-seed=0"
 	fi
-	$_scripts/sage -tp ${XBPS_MAKEJOBS} ${_test_args} ${_test_files}
+
+	PATH="${testdir}/usr/bin:${PATH}" PYTHONPATH="${testdir}/${py3_sitelib}" \
+		sage -tp ${XBPS_MAKEJOBS} ${_test_args} ${_test_files}
 }
