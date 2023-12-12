@@ -1,34 +1,56 @@
 # Template file for 'gerbil'
 pkgname=gerbil
-version=0.17
-revision=3
-build_style="gnu-configure"
-hostmakedepends="gambit rsync"
+version=0.18.1
+revision=1
+_gitrev="23c30a6062cd7e63f9d85300ce01585bb9035d2d"
+build_style="configure"
+configure_args="--prefix=/usr/lib/gerbil --enable-march="
+hostmakedepends="git tar"
 makedepends="openssl-devel sqlite-devel zlib-devel"
+depends="gcc openssl"
+checkdepends="$depends"
 short_desc="Opinionated dialect of Scheme designed for Systems Programming"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
 license="LGPL-2.1-or-later, Apache-2.0"
 homepage="https://cons.io/"
-distfiles="https://github.com/vyzo/gerbil/archive/v${version}.tar.gz"
-checksum=1e81265aba7e9022432649eb26b2e5c85a2bb631a315e4fa840b14cf336b2483
 nocross="yes"
 
-do_build() {
-	export GERBIL_GSC=gambit-gsc
-	( cd src && ./build.sh )
+do_fetch() {
+	# We fetch a Git repo here because the build system insists
+	# on using submodules.
+	rm -rf ${wrksrc}
+	git clone https://github.com/mighty-gerbils/gerbil ${wrksrc}
+	cd ${wrksrc}
+	git checkout ${_gitrev}
+
+	# don't let the test suite clash with netdata's port
+	vsed -i -e 's/:19999/:15296/' src/std/net/httpd-test.ss
 }
 
-do_install() {
-	vmkdir usr/bin
-	vmkdir usr/lib/gerbil
-	cp -a bin ${DESTDIR}/usr
-	cp -a lib ${DESTDIR}/usr/lib/gerbil
-	vinstall ${FILESDIR}/gerbil.sh 0644 etc/profile.d
-	vinstall etc/gerbil-mode.el 0644 usr/share/emacs/site-lisp
-	find ${DESTDIR} -name .keep -delete
+# Uses custom levels of optimization.
+pre_configure() {
+	export CFLAGS=${CFLAGS/-O2/}
+	export CXXFLAGS=${CXXFLAGS/-O2/}
+}
+pre_build() {
+	export CFLAGS=${CFLAGS/-O2/}
+	export CXXFLAGS=${CXXFLAGS/-O2/}
 }
 
 do_check() {
-	GERBIL_GSC=gambit-gsc GERBIL_HOME=$PWD PATH=$PWD/bin:$PATH \
-		./src/std/run-tests.ss
+	./build.sh env gxtest ./...
+}
+
+do_install() {
+	DESTDIR=$DESTDIR ./install.sh
+
+	mv $DESTDIR/usr/lib/gerbil/v*/share $DESTDIR/usr/share
+	vmkdir usr/bin
+	for b in $DESTDIR/usr/lib/gerbil/v*/bin/g[ex]*; do
+		ln -sfr $b $DESTDIR/usr/bin
+	done
+
+	./build.sh env gxtags -t emacs $DESTDIR/usr/lib/gerbil/v*/src
+	sed -i 's|/destdir/gerbil-[^/]*/|/|g' src/TAGS
+	cp -v src/TAGS $DESTDIR/usr/lib/gerbil/v*/src
 }
