@@ -1,0 +1,107 @@
+From 6ae729e1b45f92428168475c316f3b45a8e99d74 Mon Sep 17 00:00:00 2001
+From: Craig Bradney <mrb@scribus.info>
+Date: Mon, 4 Sep 2023 21:58:38 +0000
+Subject: [PATCH 12/13] Adapt CMake FindLIBPODOFO.cmake to use pkgconfig, and
+ allow custom find path. Still testing.
+
+git-svn-id: svn://scribus.net/trunk/Scribus@25625 11d20701-8431-0410-a711-e3c959e3b870
+(cherry picked from commit 628a630d7c45d942605ac227c530f9c889395832)
+---
+ cmake/modules/FindLIBPODOFO.cmake        | 48 +++++++++++++++++-------
+ scribus/plugins/import/ai/CMakeLists.txt | 13 +++----
+ 2 files changed, 41 insertions(+), 20 deletions(-)
+
+--- a/cmake/modules/FindLIBPODOFO.cmake
++++ b/cmake/modules/FindLIBPODOFO.cmake
+@@ -12,23 +12,45 @@ if(WIN32)
+ 	endif(NOT DEFINED LIBPODOFO_SHARED)
+ endif(WIN32)
+ 
+-find_path(LIBPODOFO_INCLUDE_DIR
+-	NAMES podofo/podofo.h
+-	PATHS
+-	"${LIBPODOFO_DIR}/include"
+-	"${LIBPODOFO_DIR}/src"
+-	"${LIBPODOFO_DIR}"
++set(LIBPODOFO_FIND_QUIETLY OFF)
++
++find_package(PkgConfig QUIET)
++if(DEFINED LIBPODOFO_DIR_CUSTOM)
++	set(ENV{PKG_CONFIG_PATH} "${LIBPODOFO_DIR_CUSTOM}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
++endif()
++pkg_search_module(libpodofo REQUIRED libpodofo podofo)
++
++if (DEFINED LIBPODOFO_DIR_CUSTOM)
++	find_path(LIBPODOFO_INCLUDE_DIR
++		NAMES podofo/podofo.h
++		PATHS
++		"${LIBPODOFO_DIR_CUSTOM}/include"
++		"${LIBPODOFO_DIR_CUSTOM}"
++		PATH_SUFFIXES podofo
++		NO_DEFAULT_PATH
+ 	)
+ 
+-set(LIBPODOFO_FIND_QUIETLY ON)
++	find_library(LIBPODOFO_LIBRARY
++		NAMES libpodofo podofo
++		PATHS
++		"${LIBPODOFO_DIR_CUSTOM}/lib"
++		"${LIBPODOFO_DIR_CUSTOM}"
++		NO_DEFAULT_PATH
++	)
++else()
++	find_path(LIBPODOFO_INCLUDE_DIR
++		NAMES podofo/podofo.h
++		PATHS
++		${libpodofo_INCLUDE_DIRS}
++	)
+ 
+-find_library(LIBPODOFO_LIBRARY
+-	NAMES libpodofo podofo
+-	PATHS
+-	"${LIBPODOFO_DIR}/lib"
+-	"${LIBPODOFO_DIR}/src"
+-	"${LIBPODOFO_DIR}"
++	find_library(LIBPODOFO_LIBRARY
++		NAMES libpodofo podofo
++		PATHS
++		${libpodofo_LIBRARY_DIRS}
+ 	)
++endif()
++
+ 
+ if(LIBPODOFO_INCLUDE_DIR AND LIBPODOFO_LIBRARY)
+ 	if(NOT LIBPODOFO_CONFIG_H)
+--- a/scribus/plugins/import/ai/CMakeLists.txt
++++ b/scribus/plugins/import/ai/CMakeLists.txt
+@@ -1,14 +1,15 @@
+ include_directories(
+ 	${CMAKE_SOURCE_DIR}
+ 	${CMAKE_SOURCE_DIR}/scribus
+-	${PODOFO_INCLUDES}
++	${LIBPODOFO_INCLUDE_DIR}
+ 	${SCRIBUS_AUTOGEN_INCLUDE_PATH}
+ )
+ 
+ if(HAVE_PODOFO)
+-	include_directories(
+-		${LIBPODOFO_INCLUDE_DIR}
+-	)
++	if(OPENSSL_FOUND)
++		include_directories(${OPENSSL_INCLUDE_DIR})
++	endif()
++	include_directories(BEFORE ${LIBPODOFO_INCLUDE_DIR})
+ endif()
+ 
+ set(IMPORTAI_PLUGIN_SOURCES
+@@ -32,9 +33,7 @@ else()
+ endif()
+ 
+ if(HAVE_PODOFO)
+-	target_link_libraries(${SCRIBUS_IMPORTAI_PLUGIN}
+-		${LIBPODOFO_LIBRARY}
+-	)
++	target_link_libraries(${SCRIBUS_IMPORTAI_PLUGIN} ${LIBPODOFO_LIBRARY})
+ endif()
+ 
+ if(WANT_PCH)

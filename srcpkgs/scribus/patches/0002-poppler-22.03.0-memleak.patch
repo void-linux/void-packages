@@ -1,0 +1,94 @@
+From 48263954a7dee0be815b00f417ae365ab26cdd85 Mon Sep 17 00:00:00 2001
+From: Jean Ghali <jghali@libertysurf.fr>
+Date: Thu, 3 Mar 2022 00:18:06 +0000
+Subject: [PATCH] #16764: Better patch, avoid a memory leak
+
+git-svn-id: svn://scribus.net/trunk/Scribus@24989 11d20701-8431-0410-a711-e3c959e3b870
+---
+ scribus/plugins/import/pdf/importpdf.cpp | 34 +++++++++---------------
+ scribus/util_os.cpp                      |  2 ++
+ 2 files changed, 15 insertions(+), 21 deletions(-)
+
+--- a/scribus/plugins/import/pdf/importpdf.cpp
++++ b/scribus/plugins/import/pdf/importpdf.cpp
+@@ -58,6 +58,7 @@ for which a new license (GPL+exception)
+ #include "util.h"
+ #include "util_formats.h"
+ #include "util_math.h"
++#include "util_os.h"
+ 
+ #include "ui/customfdialog.h"
+ #include "ui/missing.h"
+@@ -79,15 +80,12 @@ QImage PdfPlug::readThumbnail(const QStr
+ 	globalParams->setErrQuiet(gTrue);
+ 
+ 	QString pdfFile = QDir::toNativeSeparators(fName);
+-#if defined(Q_OS_WIN32)
+-	auto fname = new GooString(pdfFile.toUtf8().data());
+-#else
+-	auto fname = new GooString(QFile::encodeName(pdfFile).data());
+-#endif
+-
++	QByteArray encodedFileName = os_is_win() ? pdfFile.toUtf8() : QFile::encodeName(pdfFile);
+ #if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 3, 0)
+-	PDFDoc pdfDoc{ std::make_unique<GooString>(fname) };
++	auto fname = std::make_unique<GooString>(encodedFileName.data());
++	PDFDoc pdfDoc{ std::move(fname) };
+ #else
++	auto fname = new GooString(encodedFileName.data());
+ 	PDFDoc pdfDoc{fname, nullptr, nullptr, nullptr};
+ #endif
+ 	if (!pdfDoc.isOk() || pdfDoc.getErrorCode() == errEncrypted)
+@@ -331,17 +329,14 @@ bool PdfPlug::convert(const QString& fn)
+ 	globalParams.reset(new GlobalParams());
+ 	globalParams->setErrQuiet(gTrue);
+ 
+-#if defined(Q_OS_WIN32)
+-	auto fname = new GooString(fn.toUtf8().data());
+-#else
+-	auto fname = new GooString(QFile::encodeName(fn).data());
+-#endif
+-
+ 	QList<OptionalContentGroup*> ocgGroups;
++	QByteArray encodedFileName = os_is_win() ? fn.toUtf8() : QFile::encodeName(fn);
+ #if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 3, 0)
+-	auto pdfDoc = std::make_unique<PDFDoc>(std::make_unique<GooString>(fname));
++	auto fname = std::make_unique<GooString>(encodedFileName.data());
++	auto pdfDoc = std::make_unique<PDFDoc>(std::move(fname));
+ #else
+-	auto pdfDoc = std::unique_ptr<PDFDoc>(new PDFDoc(fname, nullptr, nullptr, nullptr));
++	auto fname = new GooString(encodedFileName.data());
++	auto pdfDoc = std::make_unique<PDFDoc>(fname, nullptr, nullptr, nullptr);
+ #endif
+ 	if (pdfDoc)
+ 	{
+@@ -356,15 +351,12 @@ bool PdfPlug::convert(const QString& fn)
+ 			QString text = QInputDialog::getText(mw, tr("Open PDF-File"), tr("Password"), QLineEdit::Normal, "", &ok);
+ 			if (ok && !text.isEmpty())
+ 			{
+-#if defined(Q_OS_WIN32)
+-				auto fname = new GooString(fn.toUtf8().data());
+-#else
+-				auto fname = new GooString(QFile::encodeName(fn).data());
+-#endif
+ #if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 3, 0)
++				auto fname = std::make_unique<GooString>(encodedFileName.data());
+ 				std::optional<GooString> userPW(std::in_place, text.toLocal8Bit().data());
+-				pdfDoc.reset(new PDFDoc(std::make_unique<GooString>(fname), userPW, userPW, nullptr));
++				pdfDoc.reset(new PDFDoc(std::move(fname), userPW, userPW, nullptr));
+ #else
++				auto fname = new GooString(encodedFileName.data());
+ 				auto userPW = new GooString(text.toLocal8Bit().data());
+ 				pdfDoc.reset(new PDFDoc(fname, userPW, userPW, nullptr));
+ #endif
+--- a/scribus/util_os.cpp
++++ b/scribus/util_os.cpp
+@@ -22,6 +22,8 @@ for which a new license (GPL+exception)
+ 
+ #include <QtGlobal>
+ 
++#include "util_os.h"
++
+ bool os_is_osx()
+ {
+ #ifdef Q_OS_MACOS
