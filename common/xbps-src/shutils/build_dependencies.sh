@@ -125,6 +125,17 @@ check_installed_pkg() {
 }
 
 #
+# Return 0 if we will skip the check step
+#
+skip_check_step() {
+    [ -z "$XBPS_CHECK_PKGS" ] ||
+        [ "$XBPS_CROSS_BUILD" ] ||
+        [ "$make_check" = ci-skip  -a "$XBPS_BUILD_ENVIRONMENT" = void-packages-ci ] ||
+        [ "$make_check" = extended -a "$XBPS_CHECK_PKGS" != full ] ||
+        [ "$make_check" = no ]
+}
+
+#
 # Build all dependencies required to build and run.
 #
 install_pkg_deps() {
@@ -137,7 +148,7 @@ install_pkg_deps() {
     local -a host_missing_deps missing_deps missing_rdeps
 
     [ -z "$pkgname" ] && return 2
-    [ -z "$XBPS_CHECK_PKGS" ] && unset checkdepends
+    skip_check_step && unset checkdepends
 
     if [[ $build_style ]] || [[ $build_helper ]]; then
         style=" with"
@@ -208,7 +219,7 @@ install_pkg_deps() {
     #
     # Host check dependencies.
     #
-    if [[ ${checkdepends} ]] && [[ $XBPS_CHECK_PKGS ]] && [ -z "$XBPS_CROSS_BUILD" ]; then
+    if [[ ${checkdepends} ]]; then
         templates=""
         # check validity
         for f in ${checkdepends}; do
