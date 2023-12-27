@@ -1,9 +1,9 @@
 # Template file for 'calibre'
 pkgname=calibre
-version=7.1.0
+version=7.3.0
 revision=1
 build_wrksrc=calibre
-build_style=python3-module
+build_helper=python3
 pycompile_dirs="/usr/lib/calibre/"
 hostmakedepends="pkg-config cmake python3-BeautifulSoup4 python3-Pillow
  python3-apsw python3-css-parser python3-dateutil sip qt6-base python3-py7zr
@@ -33,14 +33,14 @@ maintainer="skmpz <dem.procopiou@gmail.com>"
 license="GPL-3.0-only"
 homepage="https://calibre-ebook.com"
 changelog="https://raw.githubusercontent.com/kovidgoyal/calibre/master/Changelog.txt"
-_lover=7.6.0.3
+_lover=7.6.4.1
 distfiles="https://download.calibre-ebook.com/${version}/calibre-${version}.tar.xz
  https://download.documentfoundation.org/libreoffice/src/${_lover%.*}/libreoffice-dictionaries-${_lover}.tar.xz"
-checksum="70a515fad059e597579282dd24f75444a9d63f90798330944107a1550211824a
- b932cdd6bd2ee717f3a09766c88fe90100b0c2c0509313c3ee297f95c084ee2e"
+checksum="7c174b5d244930155f40e7eea8ea87ce01d2f1f5d8ab6c79275f35a4a661012a
+ 36c0526e4c12ab38dd1e1766cd878118dd5692578b80411b9b443e389e3712fa"
 python_version=3
 lib32disabled=yes
-nocross=yes
+nocross="python3 setup.py gui"
 
 post_extract() {
 	mv calibre-${version} calibre
@@ -55,25 +55,111 @@ do_configure() {
 		-e "/import config_dir/,/os.rmdir(config_dir)/d" \
 		-e "s/'ctc-posml'/'text' not in mt and 'pdf' not in mt and 'xhtml'/" \
 		-e "s/^Name=calibre/Name=Calibre/g"
-	cat >"${XBPS_WRAPPERDIR}/sip-qmake" <<-_EOF
-	#!/bin/sh
-	exec /usr/lib/qt6/bin/qmake \\
-		"\$@" \\
-		PREFIX=/usr \\
-		QT_INSTALL_PREFIX=/usr \\
-		LIB=/usr/lib \\
-		QMAKE_CC="$CC" QMAKE_CXX="$CXX" \\
-		QMAKE_LINK="$CXX" QMAKE_LINK_C="$CC" \\
-		QMAKE_CFLAGS+="$CFLAGS" \\
-		QMAKE_CXXFLAGS+="$CXXFLAGS" \\
-		QMAKE_LFLAGS+="$LDFLAGS" \\
-		CONFIG+=no_qt_rpath
-	_EOF
+	if [ "$CROSS_BUILD" ]; then
+		_mkspec="usr/lib/qt6/mkspecs"
+		_spec="$XBPS_WRAPPERDIR/sip-build/target-spec/linux-g++"
+		mkdir -p "$_spec"
+		cat >"$_spec/qmake.conf" <<-_EOF
+		MAKEFILE_GENERATOR      = UNIX
+		CONFIG                 += incremental no_qt_rpath
+		QMAKE_INCREMENTAL_STYLE = sublib
+
+		include(/$_mkspec/common/linux.conf)
+		include(/$_mkspec/common/gcc-base-unix.conf)
+		include(/$_mkspec/common/g++-unix.conf)
+
+		QMAKE_TARGET_CONFIG     = $XBPS_CROSS_BASE/$_mkspec/qconfig.pri
+		QMAKE_TARGET_MODULE     = $XBPS_CROSS_BASE/$_mkspec/qmodule.pri
+		QMAKEMODULES            = $XBPS_CROSS_BASE/$_mkspec/modules
+		QMAKE_CC                = $CC
+		QMAKE_CXX               = $CXX
+		QMAKE_LINK              = $CXX
+		QMAKE_LINK_C            = $CC
+		QMAKE_LINK_SHLIB        = $CXX
+
+		QMAKE_AR                = $XBPS_CROSS_TRIPLET-gcc-ar cqs
+		QMAKE_OBJCOPY           = $OBJCOPY
+		QMAKE_NM                = $NM -P
+		QMAKE_STRIP             = $STRIP
+
+		QMAKE_CFLAGS            = $CFLAGS -I$XBPS_CROSS_BASE/usr/include/python$py3_ver
+		QMAKE_CXXFLAGS          = $CXXFLAGS -I$XBPS_CROSS_BASE/usr/include/python$py3_ver
+		QMAKE_LFLAGS            = -L$XBPS_CROSS_BASE/usr/lib $LDFLAGS
+		load(qt_config)
+		_EOF
+
+		printf '#include "%s/%s/linux-g++/qplatformdefs.h"\n' \
+			"$XBPS_CROSS_BASE" "$_mkspec" >"$_spec/qplatformdefs.h"
+		cat >"$XBPS_WRAPPERDIR/sip-build/qt.conf" <<-_EOF
+		[Paths]
+		Sysroot=$XBPS_CROSS_BASE
+		Prefix=$XBPS_CROSS_BASE/usr
+		ArchData=$XBPS_CROSS_BASE/usr/lib/qt6
+		Data=$XBPS_CROSS_BASE/usr/share/qt6
+		Documentation=$XBPS_CROSS_BASE/usr/share/doc/qt6
+		Headers=$XBPS_CROSS_BASE/usr/include/qt6
+		Libraries=$XBPS_CROSS_BASE/usr/lib
+		LibraryExecutables=/usr/lib/qt6/libexec
+		Binaries=/usr/lib/qt6/bin
+		Tests=$XBPS_CROSS_BASE/usr/tests
+		Plugins=/usr/lib/qt6/plugins
+		Imports=$XBPS_CROSS_BASE/usr/lib/qt6/imports
+		Qml2Imports=$XBPS_CROSS_BASE/usr/lib/qt6/qml
+		Translations=$XBPS_CROSS_BASE/usr/share/qt6/translations
+		Settings=$XBPS_CROSS_BASE/etc/xdg
+		Examples=$XBPS_CROSS_BASE/usr/share/qt6/examples
+		HostPrefix=/usr
+		HostData=/usr/lib/qt6
+		HostBinaries=/usr/lib/qt6/bin
+		HostLibraries=/usr/lib
+		HostLibraryExecutables=/usr/lib/qt6/libexec
+		Spec=linux-g++
+		TargetSpec=$_spec
+		_EOF
+		# Call it sip-qmake to not override qmake build-helper
+		#
+		# XXX: Intentionally quote {C,CXX,LD}FLAGS here but not native.
+		# - Cross Build:
+		#   + base flags will be picked up from QMAKE_{C,CXX,LD}FLAGS
+		#   + hardening flags will be picked up from environment variables
+		# - Native Build:
+		#   + hardening flags will be picked up first (Makefile, qt.conf?)
+		#   + base flags will be picked up from QMAKE_{C,CXX,LD}FLAGS
+		# Maybe there're better workaround, I don't know.
+		cat >"$XBPS_WRAPPERDIR/sip-qmake" <<-_EOF
+		#!/bin/sh
+		exec /usr/lib/qt6/bin/qmake "\$@" \\
+		        -qtconf "$XBPS_WRAPPERDIR/sip-build/qt.conf" \\
+		        PKG_CONFIG_EXECUTABLE=${XBPS_WRAPPERDIR}/${PKG_CONFIG} \\
+		        QMAKE_CFLAGS+="\$CFLAGS" \\
+		        QMAKE_CXXFLAGS+="\$CXXFLAGS" \\
+		        QMAKE_LFLAGS+="\$LDFLAGS"
+		_EOF
+	else
+		cat >"${XBPS_WRAPPERDIR}/sip-qmake" <<-_EOF
+		#!/bin/sh
+		exec /usr/lib/qt6/bin/qmake \\
+			"\$@" \\
+			PREFIX=/usr \\
+			QT_INSTALL_PREFIX=/usr \\
+			LIB=/usr/lib \\
+			QMAKE_CC="$CC" QMAKE_CXX="$CXX" \\
+			QMAKE_LINK="$CXX" QMAKE_LINK_C="$CC" \\
+			QMAKE_CFLAGS+="$CFLAGS" \\
+			QMAKE_CXXFLAGS+="$CXXFLAGS" \\
+			QMAKE_LFLAGS+="$LDFLAGS" \\
+			CONFIG+=no_qt_rpath
+		_EOF
+	fi
 	chmod 755 ${XBPS_WRAPPERDIR}/sip-qmake
 }
 
 do_build() {
 	export QMAKE=${XBPS_WRAPPERDIR}/sip-qmake
+	if [ "$CROSS_BUILD" ]; then
+		export PODOFO_INC_DIR="$XBPS_CROSS_BASE/usr/include/podofo"
+		export CC="${XBPS_CROSS_TRIPLET}-gcc"
+	fi
 	python3 setup.py build
 	python3 setup.py gui
 	python3 setup.py kakasi
