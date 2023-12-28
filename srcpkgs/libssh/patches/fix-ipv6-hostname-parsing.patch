@@ -1,0 +1,133 @@
+From 4f997aee7c7d7ea346b3e8ba505da0b7601ff318 Mon Sep 17 00:00:00 2001
+From: Jakub Jelen <jjelen@redhat.com>
+Date: Fri, 22 Dec 2023 10:32:40 +0100
+Subject: Fix regression in IPv6 addresses in hostname parsing
+
+Signed-off-by: Jakub Jelen <jjelen@redhat.com>
+Reviewed-by: Andreas Schneider <asn@cryptomilk.org>
+---
+ include/libssh/config_parser.h | 11 ++++++++---
+ src/config.c                   |  4 ++--
+ src/config_parser.c            | 16 +++++++++++-----
+ src/options.c                  | 10 ++--------
+ 4 files changed, 23 insertions(+), 18 deletions(-)
+
+diff --git a/include/libssh/config_parser.h b/include/libssh/config_parser.h
+index a7dd42a2..ca353432 100644
+--- a/include/libssh/config_parser.h
++++ b/include/libssh/config_parser.h
+@@ -30,6 +30,8 @@
+ extern "C" {
+ #endif
+ 
++#include <stdbool.h>
++
+ char *ssh_config_get_cmd(char **str);
+ 
+ char *ssh_config_get_token(char **str);
+@@ -49,14 +51,17 @@ int ssh_config_get_yesno(char **str, int notfound);
+  *                       be stored or NULL if we do not care about the result.
+  * @param[out]  port     Pointer to the location, where the new port will
+  *                       be stored or NULL if we do not care about the result.
++ * @param[in]   ignore_port Set to true if the we should not attempt to parse
++ *                       port number.
+  *
+  * @returns     SSH_OK if the provided string is in format of SSH URI,
+  *              SSH_ERROR on failure
+  */
+ int ssh_config_parse_uri(const char *tok,
+-        char **username,
+-        char **hostname,
+-        char **port);
++                         char **username,
++                         char **hostname,
++                         char **port,
++                         bool ignore_port);
+ 
+ #ifdef __cplusplus
+ }
+diff --git a/src/config.c b/src/config.c
+index 5eedbce9..7135c3b1 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -464,7 +464,7 @@ ssh_config_parse_proxy_jump(ssh_session session, const char *s, bool do_parsing)
+         }
+         if (parse_entry) {
+             /* We actually care only about the first item */
+-            rv = ssh_config_parse_uri(cp, &username, &hostname, &port);
++            rv = ssh_config_parse_uri(cp, &username, &hostname, &port, false);
+             /* The rest of the list needs to be passed on */
+             if (endp != NULL) {
+                 next = strdup(endp + 1);
+@@ -475,7 +475,7 @@ ssh_config_parse_proxy_jump(ssh_session session, const char *s, bool do_parsing)
+             }
+         } else {
+             /* The rest is just sanity-checked to avoid failures later */
+-            rv = ssh_config_parse_uri(cp, NULL, NULL, NULL);
++            rv = ssh_config_parse_uri(cp, NULL, NULL, NULL, false);
+         }
+         if (rv != SSH_OK) {
+             goto out;
+diff --git a/src/config_parser.c b/src/config_parser.c
+index 9ffc8b8b..5f30cd3e 100644
+--- a/src/config_parser.c
++++ b/src/config_parser.c
+@@ -162,9 +162,10 @@ int ssh_config_get_yesno(char **str, int notfound)
+ }
+ 
+ int ssh_config_parse_uri(const char *tok,
+-        char **username,
+-        char **hostname,
+-        char **port)
++                         char **username,
++                         char **hostname,
++                         char **port,
++                         bool ignore_port)
+ {
+     char *endp = NULL;
+     long port_n;
+@@ -210,12 +211,17 @@ int ssh_config_parse_uri(const char *tok,
+         if (endp == NULL) {
+             goto error;
+         }
+-    } else {
+-        /* Hostnames or aliases expand to the last colon or to the end */
++    } else if (!ignore_port) {
++        /* Hostnames or aliases expand to the last colon (if port is requested)
++         * or to the end */
+         endp = strrchr(tok, ':');
+         if (endp == NULL) {
+             endp = strchr(tok, '\0');
+         }
++    } else {
++        /* If no port is requested, expand to the end of line
++         * (to accommodate the IPv6 addresses) */
++        endp = strchr(tok, '\0');
+     }
+     if (tok == endp) {
+         /* Zero-length hostnames are not valid */
+diff --git a/src/options.c b/src/options.c
+index 2e73be46..676c49e7 100644
+--- a/src/options.c
++++ b/src/options.c
+@@ -634,17 +634,11 @@ int ssh_options_set(ssh_session session, enum ssh_options_e type,
+                 ssh_set_error_invalid(session);
+                 return -1;
+             } else {
+-                char *username = NULL, *hostname = NULL, *port = NULL;
+-                rc = ssh_config_parse_uri(value, &username, &hostname, &port);
++                char *username = NULL, *hostname = NULL;
++                rc = ssh_config_parse_uri(value, &username, &hostname, NULL, true);
+                 if (rc != SSH_OK) {
+                     return -1;
+                 }
+-                if (port != NULL) {
+-                    SAFE_FREE(username);
+-                    SAFE_FREE(hostname);
+-                    SAFE_FREE(port);
+-                    return -1;
+-                }
+                 if (username != NULL) {
+                     SAFE_FREE(session->opts.username);
+                     session->opts.username = username;
+-- 
