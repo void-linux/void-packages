@@ -1,0 +1,124 @@
+From 6f6e453d7b0ad4ee6a6f6a1c96a9a6b27821410d Mon Sep 17 00:00:00 2001
+From: Jakub Jelen <jjelen@redhat.com>
+Date: Fri, 22 Dec 2023 09:52:18 +0100
+Subject: tests: Increase test coverage for IPv6 address parsing as hostnames
+
+This was an issue in cockpit:
+
+https://github.com/cockpit-project/cockpit/issues/19772
+
+Signed-off-by: Jakub Jelen <jjelen@redhat.com>
+Reviewed-by: Andreas Schneider <asn@cryptomilk.org>
+---
+ tests/unittests/torture_config.c  | 49 +++++++++++++++++++++++++++++++++++++++
+ tests/unittests/torture_options.c | 16 +++++++++++++
+ 2 files changed, 65 insertions(+)
+
+diff --git a/tests/unittests/torture_config.c b/tests/unittests/torture_config.c
+index bc6b08f9..751aa126 100644
+--- a/tests/unittests/torture_config.c
++++ b/tests/unittests/torture_config.c
+@@ -2332,6 +2332,53 @@ static void torture_config_make_absolute_no_sshdir(void **state)
+     torture_config_make_absolute_int(state, 1);
+ }
+ 
++static void torture_config_parse_uri(void **state)
++{
++    char *username = NULL;
++    char *hostname = NULL;
++    char *port = NULL;
++    int rc;
++
++    (void)state; /* unused */
++
++    rc = ssh_config_parse_uri("localhost", &username, &hostname, &port, false);
++    assert_return_code(rc, errno);
++    assert_null(username);
++    assert_string_equal(hostname, "localhost");
++    SAFE_FREE(hostname);
++    assert_null(port);
++
++    rc = ssh_config_parse_uri("1.2.3.4", &username, &hostname, &port, false);
++    assert_return_code(rc, errno);
++    assert_null(username);
++    assert_string_equal(hostname, "1.2.3.4");
++    SAFE_FREE(hostname);
++    assert_null(port);
++
++    rc = ssh_config_parse_uri("1.2.3.4:2222", &username, &hostname, &port, false);
++    assert_return_code(rc, errno);
++    assert_null(username);
++    assert_string_equal(hostname, "1.2.3.4");
++    SAFE_FREE(hostname);
++    assert_string_equal(port, "2222");
++    SAFE_FREE(port);
++
++    rc = ssh_config_parse_uri("[1:2:3::4]:2222", &username, &hostname, &port, false);
++    assert_return_code(rc, errno);
++    assert_null(username);
++    assert_string_equal(hostname, "1:2:3::4");
++    SAFE_FREE(hostname);
++    assert_string_equal(port, "2222");
++    SAFE_FREE(port);
++
++    /* do not want port */
++    rc = ssh_config_parse_uri("1:2:3::4", &username, &hostname, NULL, true);
++    assert_return_code(rc, errno);
++    assert_null(username);
++    assert_string_equal(hostname, "1:2:3::4");
++    SAFE_FREE(hostname);
++}
++
+ int torture_run_tests(void)
+ {
+     int rc;
+@@ -2424,6 +2471,8 @@ int torture_run_tests(void)
+                                         setup, teardown),
+         cmocka_unit_test_setup_teardown(torture_config_make_absolute_no_sshdir,
+                                         setup_no_sshdir, teardown),
++        cmocka_unit_test_setup_teardown(torture_config_parse_uri,
++                                        setup, teardown),
+     };
+ 
+ 
+diff --git a/tests/unittests/torture_options.c b/tests/unittests/torture_options.c
+index 5ba3bdc6..b07712d8 100644
+--- a/tests/unittests/torture_options.c
++++ b/tests/unittests/torture_options.c
+@@ -57,6 +57,20 @@ static void torture_options_set_host(void **state) {
+     assert_non_null(session->opts.host);
+     assert_string_equal(session->opts.host, "localhost");
+ 
++    /* IPv4 address */
++    rc = ssh_options_set(session, SSH_OPTIONS_HOST, "127.1.1.1");
++    assert_true(rc == 0);
++    assert_non_null(session->opts.host);
++    assert_string_equal(session->opts.host, "127.1.1.1");
++    assert_null(session->opts.username);
++
++    /* IPv6 address */
++    rc = ssh_options_set(session, SSH_OPTIONS_HOST, "::1");
++    assert_true(rc == 0);
++    assert_non_null(session->opts.host);
++    assert_string_equal(session->opts.host, "::1");
++    assert_null(session->opts.username);
++
+     rc = ssh_options_set(session, SSH_OPTIONS_HOST, "guru@meditation");
+     assert_true(rc == 0);
+     assert_non_null(session->opts.host);
+@@ -64,12 +78,14 @@ static void torture_options_set_host(void **state) {
+     assert_non_null(session->opts.username);
+     assert_string_equal(session->opts.username, "guru");
+ 
++    /* more @ in uri is OK -- it should go to the username */
+     rc = ssh_options_set(session, SSH_OPTIONS_HOST, "at@login@hostname");
+     assert_true(rc == 0);
+     assert_non_null(session->opts.host);
+     assert_string_equal(session->opts.host, "hostname");
+     assert_non_null(session->opts.username);
+     assert_string_equal(session->opts.username, "at@login");
++
+ }
+ 
+ static void torture_options_set_ciphers(void **state) {
+-- 
