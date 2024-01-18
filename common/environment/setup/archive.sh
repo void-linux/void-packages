@@ -76,16 +76,16 @@ vextract() {
 			if [ "$dst" ]; then cd "$dst"; fi
 			case ${sfx} in
 			gz)
-				gunzip -f $archive
+				gunzip -f ${archive##*/}
 				;;
 			bz2)
-				bunzip2 -f $archive
+				bunzip2 -f ${archive##*/}
 				;;
 			xz)
-				unxz -f $archive
+				unxz -f ${archive##*/}
 				;;
 			zst)
-				unzstd $archive
+				unzstd ${archive##*/}
 				;;
 			esac
 		)
