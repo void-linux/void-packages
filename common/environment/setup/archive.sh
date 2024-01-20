@@ -71,7 +71,7 @@ vextract() {
 			-f $archive
 		;;
 	gz|bz2|xz|zst)
-		cp -f $archive "$dst"
+		cp -f $archive "${dst:-.}"
 		(
 			if [ "$dst" ]; then cd "$dst"; fi
 			case ${sfx} in
