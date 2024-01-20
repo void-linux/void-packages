@@ -1,0 +1,154 @@
+# Template file for 'mozjs115'
+pkgname=mozjs115
+version=115.7.0
+revision=1
+build_helper=rust
+hostmakedepends="cargo clang lld llvm m4 perl pkg-config python3.11 rust"
+makedepends="icu-devel nspr-devel readline-devel rust-std zlib-devel"
+short_desc="SpiderMonkey JavaScript interpreter and library (115.x)"
+maintainer="chrysos349 <chrysostom349@gmail.com>"
+license="MPL-2.0"
+homepage="https://spidermonkey.dev"
+distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz"
+checksum=13edffcd3ce9ff485eafe84ad256794a8ca3ca91fe06e5ed4df8e008c157a429
+
+do_build() {
+	ln -sf "/usr/bin/python3.11" "${XBPS_WRAPPERDIR}/python3"
+
+	export CC=clang
+	export CXX=clang++
+
+	if [ "$CROSS_BUILD" ]; then
+		mkdir -p wrapper
+
+		local gcc_version=$(gcc -dumpversion)
+		local clang_version=$(clang -dumpversion)
+
+		cat <<-! >"wrapper/${XBPS_TARGET_MACHINE}-clang"
+		#!/bin/sh
+		exec clang \
+			--target="${XBPS_CROSS_TRIPLET}" \
+			--gcc-toolchain=/usr \
+			--sysroot="${XBPS_CROSS_BASE}" \
+			-isystem "${XBPS_CROSS_BASE}/usr/include" \
+			-isystem "/usr/lib/clang/${clang_version}/include" \
+			"\$@"
+		!
+
+		cat <<-! >"wrapper/${XBPS_TARGET_MACHINE}-clang++"
+		#!/bin/sh
+		exec clang++ \
+			--target="${XBPS_CROSS_TRIPLET}" \
+			--gcc-toolchain=/usr \
+			--sysroot="${XBPS_CROSS_BASE}" \
+			-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}" \
+			-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}" \
+			-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward" \
+			-isystem "${XBPS_CROSS_BASE}/usr/include" \
+			-isystem "/usr/lib/clang/${clang_version}/include" \
+			"\$@"
+		!
+
+		chmod +x wrapper/*
+
+		export PATH="${wrksrc}/wrapper:$PATH"
+		export CC=${XBPS_TARGET_MACHINE}-clang
+		export CXX=${XBPS_TARGET_MACHINE}-clang++
+	fi
+
+	export AR=llvm-ar
+	export NM=llvm-nm
+	export HOST_CC=clang
+	export HOST_CXX=clang++
+	export AS="${CC}"
+	export CFLAGS="-O2"
+	export CXXFLAGS="-O2"
+	export HOST_CFLAGS=""
+	export HOST_CXXFLAGS=""
+	export LDFLAGS="-Wl,-z,stack-size=1048576"
+
+	cat <<-! >.mozconfig
+	ac_add_options --enable-application=js
+	ac_add_options --prefix=/usr
+	ac_add_options --host=${XBPS_TRIPLET}
+	ac_add_options --target=${XBPS_CROSS_TRIPLET:-${XBPS_TRIPLET}}
+	ac_add_options --disable-bootstrap
+	ac_add_options --disable-debug
+	ac_add_options --disable-debug-symbols
+	ac_add_options --disable-jemalloc
+	ac_add_options --disable-strip
+	ac_add_options --enable-hardening
+	ac_add_options --enable-linker=lld
+	ac_add_options --enable-optimize="$CFLAGS"
+	ac_add_options --enable-release
+	mk_add_options MOZ_OBJDIR='${PWD}'/obj
+
+	ac_add_options --with-system-icu
+	ac_add_options --with-system-nspr
+	ac_add_options --with-system-zlib
+
+	ac_add_options --enable-readline
+	ac_add_options --enable-shared-js
+	ac_add_options --disable-tests
+	ac_add_options --with-intl-api
+	!
+
+	# disable simd for armhf/v7
+	case "$XBPS_TARGET_MACHINE" in
+		arm*) echo 'ac_add_options --disable-rust-simd' >> .mozconfig ;;
+		*) echo 'ac_add_options --enable-rust-simd' >> .mozconfig ;;
+	esac
+
+	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
+	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
+	export MOZ_MAKE_FLAGS="${makejobs}"
+	export MOZ_NOSPAM=1
+	./mach build
+}
+
+do_install() {
+	cd obj
+	make DESTDIR=${DESTDIR} install
+
+	# remove unneeded files
+	rm ${DESTDIR}/usr/lib/*.ajs
+	rm ${DESTDIR}/usr/bin/js115-config
+
+	# rename library, create symlinks
+	mv "${DESTDIR}"/usr/lib/libmozjs-115.so \
+	   "${DESTDIR}"/usr/lib/libmozjs-115.so.0
+	ln -rs "${DESTDIR}"/usr/lib/libmozjs-115.so.0 \
+	       "${DESTDIR}"/usr/lib/libmozjs-115.so
+}
+
+do_check() {
+	cat <<-! > known_failures.txt
+	non262/Intl/available-locales-supported.js
+	non262/Intl/available-locales-resolved.js
+	non262/Intl/supportedValuesOf-timeZones-canonical.js
+	non262/Intl/Collator/big5han-gb2312han.js
+	non262/Intl/Collator/implicithan.js
+	non262/Intl/DateTimeFormat/fractional-second-digits-append-item.js
+	non262/Intl/DateTimeFormat/day-period-hour-cycle.js
+	non262/Intl/DateTimeFormat/timeZone_backzone.js
+	!
+
+	export JSTESTS_EXTRA_ARGS="--format=none --exclude-random \
+		--wpt=disabled --exclude-file='${PWD}'/known_failures.txt"
+	export JITTEST_EXTRA_ARGS="--format=none --timeout 600"
+	export JITTEST_TEST_ARGS="basic"
+
+	cd obj
+	make -C js/src check-jstests check-jit-test
+}
+
+mozjs115-devel_package() {
+	depends="nspr-devel ${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove "usr/lib/*.so"
+		vmove usr/bin
+		vmove usr/include
+		vmove usr/lib/pkgconfig
+	}
+}
