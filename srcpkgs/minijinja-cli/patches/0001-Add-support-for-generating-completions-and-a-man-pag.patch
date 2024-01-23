@@ -1,0 +1,294 @@
+From 2013e2f0753b41e0814e1655fb71beb74ce58803 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20Christian=20Gr=C3=BCnhage?=
+ <jan.christian@gruenhage.xyz>
+Date: Wed, 24 Jan 2024 15:12:25 +0100
+Subject: [PATCH] Add support for generating completions and a man page for
+ minijinja-cli
+
+---
+ Cargo.lock                | 49 +++++++++++++++++++++++++++++++++++++++
+ minijinja-cli/Cargo.toml  | 13 +++++++++++
+ minijinja-cli/build.rs    | 40 ++++++++++++++++++++++++++++++++
+ minijinja-cli/src/cli.rs  | 46 ++++++++++++++++++++++++++++++++++++
+ minijinja-cli/src/main.rs | 49 ++++-----------------------------------
+ 5 files changed, 152 insertions(+), 45 deletions(-)
+ create mode 100644 minijinja-cli/build.rs
+ create mode 100644 minijinja-cli/src/cli.rs
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 762778d..d8d7c4e 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -626,12 +626,51 @@ dependencies = [
+  "clap_lex",
+ ]
+ 
++[[package]]
++name = "clap_complete"
++version = "4.4.9"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "df631ae429f6613fcd3a7c1adbdb65f637271e561b03680adaa6573015dfb106"
++dependencies = [
++ "clap",
++]
++
++[[package]]
++name = "clap_complete_fig"
++version = "4.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "87e571d70e22ec91d34e1c5317c8308035a2280d925167646bf094fc5de1737c"
++dependencies = [
++ "clap",
++ "clap_complete",
++]
++
++[[package]]
++name = "clap_complete_nushell"
++version = "4.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "948bf70d7e1f179635d3ef819ce8baa2d3074d0d57816ac37387cd6f9eed0c31"
++dependencies = [
++ "clap",
++ "clap_complete",
++]
++
+ [[package]]
+ name = "clap_lex"
+ version = "0.6.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
+ 
++[[package]]
++name = "clap_mangen"
++version = "0.2.17"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4a7c2b01e5e779c19f46a94bbd398f33ae63b0f78c07108351fb4536845bb7fd"
++dependencies = [
++ "clap",
++ "roff",
++]
++
+ [[package]]
+ name = "clipboard-win"
+ version = "4.5.0"
+@@ -1887,6 +1926,10 @@ dependencies = [
+  "anyhow",
+  "ciborium",
+  "clap",
++ "clap_complete",
++ "clap_complete_fig",
++ "clap_complete_nushell",
++ "clap_mangen",
+  "dunce",
+  "minijinja",
+  "minijinja-contrib",
+@@ -2559,6 +2602,12 @@ dependencies = [
+  "minijinja",
+ ]
+ 
++[[package]]
++name = "roff"
++version = "0.2.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "b833d8d034ea094b1ea68aa6d5c740e0d04bad9d16568d08ba6f76823a114316"
++
+ [[package]]
+ name = "rustc-demangle"
+ version = "0.1.23"
+diff --git a/minijinja-cli/Cargo.toml b/minijinja-cli/Cargo.toml
+index 73580b3..870ec97 100644
+--- a/minijinja-cli/Cargo.toml
++++ b/minijinja-cli/Cargo.toml
+@@ -46,3 +46,16 @@ serde_json5 = { version = "0.1.0", optional = true }
+ serde_qs = { version = "0.12.0", optional = true }
+ serde_yaml = { version = "0.9.25", optional = true }
+ toml = { version = "0.7.6", optional = true }
++
++[build-dependencies]
++clap = { version = "4.3.21", default-features = false, features = [
++    "std",
++    "cargo",
++    "help",
++    "usage",
++    "error-context",
++] }
++clap_complete = "4"
++clap_complete_fig = "4"
++clap_complete_nushell = "4"
++clap_mangen = "0.2"
+diff --git a/minijinja-cli/build.rs b/minijinja-cli/build.rs
+new file mode 100644
+index 0000000..46dbe14
+--- /dev/null
++++ b/minijinja-cli/build.rs
+@@ -0,0 +1,40 @@
++use std::fs::create_dir_all;
++
++use clap::ValueEnum;
++use clap_complete::Shell;
++use clap_complete_fig::Fig;
++use clap_complete_nushell::Nushell;
++
++pub mod cli {
++    include!("src/cli.rs");
++}
++
++fn main() -> std::io::Result<()> {
++    println!("cargo:rerun-if-changed=build.rs");
++
++    let out_dir = match std::env::var_os("ASSET_OUT_DIR") {
++        Some(dir) => std::path::PathBuf::from(dir),
++        None => return Ok(()),
++    };
++
++    let mut cli = cli::make_command();
++
++    let man = clap_mangen::Man::new(cli.clone());
++    let mut man_buffer: Vec<u8> = Default::default();
++    man.render(&mut man_buffer)?;
++
++    let man_out_dir = out_dir.as_path().join("man");
++    create_dir_all(&man_out_dir)?;
++    std::fs::write(man_out_dir.join("minijinja-cli.1"), man_buffer)?;
++
++    let completions_out_dir = out_dir.as_path().join("completions");
++    create_dir_all(&completions_out_dir)?;
++
++    for shell in Shell::value_variants() {
++        clap_complete::generate_to(*shell, &mut cli, "minijinja-cli", &completions_out_dir)?;
++    }
++    clap_complete::generate_to(Nushell, &mut cli, "minijinja-cli", &completions_out_dir)?;
++    clap_complete::generate_to(Fig, &mut cli, "minijinja-cli", &completions_out_dir)?;
++
++    Ok(())
++}
+diff --git a/minijinja-cli/src/cli.rs b/minijinja-cli/src/cli.rs
+new file mode 100644
+index 0000000..b22fc38
+--- /dev/null
++++ b/minijinja-cli/src/cli.rs
+@@ -0,0 +1,46 @@
++use std::path::PathBuf;
++
++use clap::{arg, command, value_parser, ArgAction, Command};
++
++pub(super) fn make_command() -> Command {
++    command!()
++        .args([
++            arg!(-f --format <FORMAT> "the format of the input data")
++                .value_parser([
++                    "auto",
++                    "json",
++                    #[cfg(feature = "querystring")]
++                    "querystring",
++                    #[cfg(feature = "yaml")]
++                    "yaml",
++                    #[cfg(feature = "toml")]
++                    "toml",
++                    #[cfg(feature = "cbor")]
++                    "cbor",
++                ])
++                .default_value("auto"),
++            arg!(-a --autoescape <MODE> "reconfigures autoescape behavior")
++                .value_parser(["auto", "html", "json", "none"])
++                .default_value("auto"),
++            arg!(-D --define <EXPR> "defines an input variable (key=value)")
++                .action(ArgAction::Append),
++            arg!(--strict "disallow undefined variables in templates"),
++            arg!(--"no-include" "Disallow includes and extending"),
++            arg!(--"no-newline" "Do not output a newline"),
++            arg!(--env "Pass environment variables as ENV to the template"),
++            arg!(-E --expr <EXPR> "Evaluates an expression instead"),
++            arg!(--"expr-out" <MODE> "Sets the expression output mode")
++                .value_parser(["print", "json", "json-pretty", "status"])
++                .default_value("print")
++                .requires("expr"),
++            arg!(--fuel <AMOUNT> "configures the maximum fuel").value_parser(value_parser!(u64)),
++            arg!(--dump <KIND> "dump internals of a template").value_parser(["instructions", "ast", "tokens"]),
++            #[cfg(feature = "repl")]
++            arg!(--repl "starts the repl with the given data")
++                .conflicts_with_all(["expr", "template"]),
++            arg!(template: [TEMPLATE] "path to the input template").default_value("-"),
++            arg!(data: [DATA] "path to the data file").value_parser(value_parser!(PathBuf)),
++        ])
++        .about("minijinja-cli is a command line tool to render or evaluate jinja2 templates.")
++        .after_help("For more information see https://github.com/mitsuhiko/minijinja/tree/main/minijinja-cli/README.md")
++}
+diff --git a/minijinja-cli/src/main.rs b/minijinja-cli/src/main.rs
+index e4a8e81..109297a 100644
+--- a/minijinja-cli/src/main.rs
++++ b/minijinja-cli/src/main.rs
+@@ -5,7 +5,7 @@ use std::sync::Mutex;
+ use std::{fs, io};
+ 
+ use anyhow::{bail, Context, Error};
+-use clap::{arg, command, value_parser, ArgAction, ArgMatches, Command};
++use clap::ArgMatches;
+ use minijinja::machinery::{get_compiled_template, parse, tokenize, Instructions};
+ use minijinja::{
+     context, AutoEscape, Environment, Error as MError, ErrorKind, UndefinedBehavior, Value,
+@@ -14,6 +14,8 @@ use minijinja::{
+ #[cfg(feature = "repl")]
+ mod repl;
+ 
++mod cli;
++
+ const STDIN: &str = "-";
+ 
+ #[cfg(not(feature = "json5"))]
+@@ -179,51 +181,8 @@ fn create_env(
+     env
+ }
+ 
+-fn make_command() -> Command {
+-    command!()
+-        .args([
+-            arg!(-f --format <FORMAT> "the format of the input data")
+-                .value_parser([
+-                    "auto",
+-                    "json",
+-                    #[cfg(feature = "querystring")]
+-                    "querystring",
+-                    #[cfg(feature = "yaml")]
+-                    "yaml",
+-                    #[cfg(feature = "toml")]
+-                    "toml",
+-                    #[cfg(feature = "cbor")]
+-                    "cbor",
+-                ])
+-                .default_value("auto"),
+-            arg!(-a --autoescape <MODE> "reconfigures autoescape behavior")
+-                .value_parser(["auto", "html", "json", "none"])
+-                .default_value("auto"),
+-            arg!(-D --define <EXPR> "defines an input variable (key=value)")
+-                .action(ArgAction::Append),
+-            arg!(--strict "disallow undefined variables in templates"),
+-            arg!(--"no-include" "Disallow includes and extending"),
+-            arg!(--"no-newline" "Do not output a newline"),
+-            arg!(--env "Pass environment variables as ENV to the template"),
+-            arg!(-E --expr <EXPR> "Evaluates an expression instead"),
+-            arg!(--"expr-out" <MODE> "Sets the expression output mode")
+-                .value_parser(["print", "json", "json-pretty", "status"])
+-                .default_value("print")
+-                .requires("expr"),
+-            arg!(--fuel <AMOUNT> "configures the maximum fuel").value_parser(value_parser!(u64)),
+-            arg!(--dump <KIND> "dump internals of a template").value_parser(["instructions", "ast", "tokens"]),
+-            #[cfg(feature = "repl")]
+-            arg!(--repl "starts the repl with the given data")
+-                .conflicts_with_all(["expr", "template"]),
+-            arg!(template: [TEMPLATE] "path to the input template").default_value("-"),
+-            arg!(data: [DATA] "path to the data file").value_parser(value_parser!(PathBuf)),
+-        ])
+-        .about("minijinja-cli is a command line tool to render or evaluate jinja2 templates.")
+-        .after_help("For more information see https://github.com/mitsuhiko/minijinja/tree/main/minijinja-cli/README.md")
+-}
+-
+ fn execute() -> Result<i32, Error> {
+-    let matches = make_command().get_matches();
++    let matches = cli::make_command().get_matches();
+ 
+     let format = matches.get_one::<String>("format").unwrap();
+     let (base, stdin_used) = if let Some(data) = matches.get_one::<PathBuf>("data") {
+-- 
+2.43.0
+
