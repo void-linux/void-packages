@@ -1,0 +1,44 @@
+Author: Gianfranco Costamagna <locutusofborg@debian.org>
+Last-Update: 2023-01-19
+
+--- a/lldb/bindings/python/get-python-config.py
++++ b/lldb/bindings/python/get-python-config.py
+@@ -15,6 +15,7 @@ def relpath_nodots(path, base):
+     return rel
+ 
+ def main():
++    import sysconfig
+     parser = argparse.ArgumentParser(description="extract cmake variables from python")
+     parser.add_argument("variable_name")
+     args = parser.parse_args()
+@@ -31,7 +32,19 @@ def main():
+         # If not, you'll have to use lldb -P or lldb -print-script-interpreter-info
+         # to figure out where it is.
+         try:
+-            print(relpath_nodots(sysconfig.get_path("platlib"), sys.prefix))
++            if hasattr(sysconfig, 'get_default_scheme'):
++                scheme = sysconfig.get_default_scheme()
++            else:
++                scheme = sysconfig._get_default_scheme()
++            if scheme == 'posix_local':
++                # Debian's default scheme installs to /usr/local/ but we want to find headers in /usr/
++                scheme = 'posix_prefix'
++                path = sysconfig.get_path('purelib', scheme)
++            else:
++                from distutils import sysconfig
++                path = sysconfig.get_python_lib(0, 0)
++
++            print(relpath_nodots(path, sys.prefix))
+         except ValueError:
+             # Try to fall back to something reasonable if sysconfig's platlib
+             # is outside of sys.prefix
+--- a/lldb/source/Plugins/ScriptInterpreter/Python/ScriptInterpreterPython.cpp
++++ b/lldb/source/Plugins/ScriptInterpreter/Python/ScriptInterpreterPython.cpp
+@@ -240,6 +240,7 @@ void ScriptInterpreterPython::ComputePyt
+   // the real python interpreter uses.  (e.g. lib for most, lib64 on RHEL
+   // x86_64, or bin on Windows).
+   llvm::sys::path::remove_filename(path);
++  llvm::sys::path::append(path, "/llvm-" + std::to_string(LLVM_VERSION_MAJOR));
+   llvm::sys::path::append(path, LLDB_PYTHON_RELATIVE_LIBDIR);
+ 
+ #if defined(_WIN32)
