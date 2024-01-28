@@ -20,7 +20,7 @@ for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 		;;
 	FREEDESKTOP_SITE | KDE_SITE | VIDEOLAN_SITE | UBUNTU_SITE)
 		;;
-	_ | PWD | SHLVL | USER | PATH | SHELL | HOME | LC_COLLATE | LANG | TERM | PS1)
+	_ | PWD | SHLVL | USER | PATH | SHELL | HOME | LC_COLLATE | LANG | TERM | PS1 | IFS)
 		# known variables for shell
 		;;
 	DISTCC_HOSTS | DISTCC_DIR)
