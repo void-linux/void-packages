@@ -643,7 +643,7 @@ do_install() {
 
 	# Remove libgomp library because it conflicts with libgomp and
 	# libgomp-devel packages
-	rm -f ${DESTDIR}/usr/lib/libgomp*
+	rm -f ${DESTDIR}/${sysroot}/usr/lib/libgomp*
 
 	# Remove libdep linker plugin because it conflicts with system binutils
 	rm -f ${DESTDIR}/usr/lib/bfd-plugins/libdep*
