@@ -1,0 +1,62 @@
+linux-6.1.76, 6.6.15, and 6.7.3 have modified the non-ARCH-specific
+pfn_valid() to use __rcu_read_lock/unlock[1] that is marked GPL and
+cannot be used here[2][3][4] unless use the open source variant.
+
+As a workaround, reuse the old implementation until NVIDIA makes
+a fixed release (due to no longer be using pfn_valid[5], likely
+with its own implementation similarly to this patch).
+
+Safe to use with kernel >=5.15 or so but older ones had a different
+pfn_valid implementation. However 5.15 and older branches are
+"currently" not affected, so simply limit to >=6.1.76.
+
+[1] https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/include/linux/mmzone.h?h=v6.7.3&id=3a01daace71b521563c38bbbf874e14c3e58adb7
+[2] https://bugs.gentoo.org/923456
+[3] https://forums.developer.nvidia.com/t/280908
+[4] https://github.com/NVIDIA/open-gpu-kernel-modules/issues/594
+[5] https://github.com/NVIDIA/open-gpu-kernel-modules/issues/594#issuecomment-1916197641
+--- a/kernel/common/inc/nv-linux.h
++++ b/kernel/common/inc/nv-linux.h
+@@ -1990,2 +1990,23 @@
+ 
++#if defined(CONFIG_HAVE_ARCH_PFN_VALID) || LINUX_VERSION_CODE < KERNEL_VERSION(6,1,76)
++#  define nv_pfn_valid pfn_valid
++#else
++/* pre-6.1.76 kernel pfn_valid version without GPL rcu_read_lock/unlock() */
++static inline int nv_pfn_valid(unsigned long pfn)
++{
++        struct mem_section *ms;
++
++        if (PHYS_PFN(PFN_PHYS(pfn)) != pfn)
++                return 0;
++
++        if (pfn_to_section_nr(pfn) >= NR_MEM_SECTIONS)
++                return 0;
++
++        ms = __pfn_to_section(pfn);
++        if (!valid_section(ms))
++                return 0;
++
++        return early_section(ms) || pfn_section_valid(ms, pfn);
++}
++#endif
+ #endif  /* _NV_LINUX_H_ */
+--- a/kernel/nvidia/nv-mmap.c
++++ b/kernel/nvidia/nv-mmap.c
+@@ -576,3 +576,3 @@
+             if (!IS_REG_OFFSET(nv, access_start, access_len) &&
+-                (pfn_valid(PFN_DOWN(mmap_start))))
++                (nv_pfn_valid(PFN_DOWN(mmap_start))))
+             {
+--- a/kernel/nvidia/os-mlock.c
++++ b/kernel/nvidia/os-mlock.c
+@@ -102,3 +102,3 @@
+         if ((nv_follow_pfn(vma, (start + (i * PAGE_SIZE)), &pfn) < 0) ||
+-            (!pfn_valid(pfn)))
++            (!nv_pfn_valid(pfn)))
+         {
+@@ -176,3 +176,3 @@
+ 
+-    if (pfn_valid(pfn))
++    if (nv_pfn_valid(pfn))
+     {
