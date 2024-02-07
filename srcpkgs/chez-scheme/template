@@ -1,78 +1,52 @@
 # Template file for 'chez-scheme'
 pkgname=chez-scheme
-version=9.6.4
+version=10.0.0
 revision=1
-build_style=gnu-configure
-hostmakedepends="git libX11-devel liblz4-devel libuuid-devel ncurses-devel zlib-devel"
+build_style=gnu-makefile
+make_build_target="kernel"
+hostmakedepends="libX11-devel liblz4-devel ncurses-devel zlib-devel"
 makedepends="${hostmakedepends}"
 short_desc="Compiler and run-time system for R6RS Scheme"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
 license="Apache-2.0"
 homepage="https://scheme.com/"
 distfiles="https://github.com/cisco/ChezScheme/releases/download/v${version}/csv${version}.tar.gz"
-checksum=f5827682fa259c47975ffe078785fb561e4a5c54f764331ef66c32132843685d
+checksum=d37199012b5ed1985c4069d6a87ff18e5e1f5a2df27e402991faf45dc4f2232c
 alternatives="
  scheme:scheme:/usr/bin/chez-scheme
  scheme:scheme.1:/usr/share/man/man1/chez-scheme.1
 "
 
-archs="i686* x86_64* armv6l* armv7l*"
-case "$XBPS_MACHINE" in
-	i686*) _host=ti3le;;
-	x86_64*) _host=ta6le;;
-	arm*) _host=arm32le;;  # no threading makefile
-	*) broken="unsupported host platform";;
-esac
 case "$XBPS_TARGET_MACHINE" in
 	i686*) _target=ti3le;;
 	x86_64*) _target=ta6le;;
-	arm*) _target=arm32le;;
-	*) broken="unsupported target platform";;
+	arm*) _target=tarm32le;;
+	aarch64*) _target=tarm64le;;
+	riscv64*) _target=trv64le;;
+	*) _target=pb;;  # portable bytecode
 esac
 
+pre_configure() {
+	# Since version 10, Chez only ships portable boot files, so
+	# first bootstrap with --pb, then build the boot files for the
+	# target.  The kernel is (cross-)compiled in do_build.
+	[ $_target = pb ] && return
+	./configure --pb CC="$BUILD_CC" CFLAGS="$BUILD_CFLAGS" LD="$BUILD_LD" \
+		AR=ar ZLIB=-lz LZ4=-llz4
+	make ${makejobs} bootquick XM=${_target}
+}
+
 do_configure() {
-	# Configure such that scheme uses the zlib and lz4 system shared libs.
-	# ZLIB and LZ4 is used when building the scheme kernel and use the full path.
-	# LDFLAGS is extended in 'do_build' so that the rest of the scheme system links them.
-	./configure --installprefix=/usr --installman=/usr/share/man \
-		--nogzip-man-pages --temproot=$DESTDIR --machine=$_host \
-		--installschemename=chez-scheme \
-		ZLIB=-L/usr/lib/libz.so LZ4=-L/usr/lib/liblz4.so
+	case $_target in
+		pb) target=--pb;;
+		*) target=--machine=$_target;;
+	esac
+	./configure $target --installprefix=/usr --installman=/usr/share/man \
+		--nogzip-man-pages --temproot=$DESTDIR \
+		--installschemename=chez-scheme ZLIB=-lz LZ4=-llz4
 }
 
 post_install() {
-	# make link relative
+	# replace duplicate file by symlink
 	ln -sf scheme.boot ${DESTDIR}/usr/lib/csv*/*/scheme-script.boot
 }
-
-if [ "$CROSS_BUILD" ]; then
-
-do_build() {
-	# Build host/bootstrap scheme compiler.
-	make ${makejobs} CC="$BUILD_CC" CFLAGS="$BUILD_CFLAGS" \
-		LD="$BUILD_LD" LDFLAGS="-lz -llz4 $BUILD_LDFLAGS"
-	./workarea $_target
-	# Use Mf-config created from 'do_configure'.
-	# This is required. The build fails to include the scheme kernel when this is missing.
-	cd $_target/c
-	ln -sf ../../$_host/c/Mf-config .
-	cd ..
-	# Cross compile to target.
-	make ${makejobs} -C s -f Mf-cross m=$_host xm=$_target base=../../$_host
-	make ${makejobs} -C c CC=$CC LD=$LD CFLAGS="$CFLAGS" LDFLAGS="-lz -llz4 $LDFLAGS"
-}
-do_install() {
-	cd $_target
-	make -f ../$_host/Mf-install DESTDIR=${DESTDIR} m=$_target
-}
-
-else
-
-do_build() {
-	make ${makejobs} CC=$CC LD=$LD CFLAGS="$CFLAGS" LDFLAGS="-lz -llz4 $LDFLAGS"
-}
-do_install() {
-	make DESTDIR=${DESTDIR} install
-}
-
-fi
