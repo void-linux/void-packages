@@ -8,19 +8,18 @@ update_check() {
     local urlpfx urlsfx
     local -A fetchedurls
 
+    # XBPS_UPDATE_CHECK_VERBOSE is the old way to show verbose messages
+    [ "$XBPS_UPDATE_CHECK_VERBOSE" ] && XBPS_VERBOSE="$XBPS_UPDATE_CHECK_VERBOSE"
+
     if [ -r $update_override ]; then
         . $update_override
-        if [ "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-            echo "using $XBPS_TARGET_PKG/update overrides" 1>&2
-        fi
+        msg_verbose "using $XBPS_TARGET_PKG/update overrides\n"
         if [ -n "$disabled" ]; then
-            echo "update-check DISABLED for $original_pkgname: $disabled" 1>&2
+            msg_verbose "update-check DISABLED for $original_pkgname: $disabled\n"
             return 0
         fi
     elif [ -z "$distfiles" ]; then
-        if [ "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-            echo "NO DISTFILES found for $original_pkgname" 1>&2
-        fi
+        msg_verbose "NO DISTFILES found for $original_pkgname\n"
         return 0
     fi
 
@@ -94,9 +93,7 @@ update_check() {
         esac
         if [ "$rx" ]; then
             # substitute url if needed
-            if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-                echo "(folder) fetching $urlpfx and scanning with $rx" 1>&2
-            fi
+            msg_verbose "(folder) fetching $urlpfx and scanning with $rx\n"
             skipdirs=
             curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$urlpfx" |
                 grep -Po -i "$rx" |
@@ -195,15 +192,11 @@ update_check() {
         rx=${rx:-'(?<!-)\b\Q'"$pkgname"'\E[-_]?((src|source)[-_])?v?\K([^-/_\s]*?\d[^-/_\s]*?)(?=(?:[-_.](?:src|source|orig))?\.(?:[jt]ar|shar|t[bglx]z|tbz2|zip))\b'}
 
         if [ "${fetchedurls[$url]}" ]; then
-            if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-                echo "already fetched $url" 1>&2
-            fi
+            msg_verbose "already fetched $url\n"
             continue
         fi
 
-        if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-            echo "fetching $url and scanning with $rx" 1>&2
-        fi
+        msg_verbose "fetching $url and scanning with $rx\n"
         curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
             grep -Po -i "$rx"
         fetchedurls[$url]=yes
@@ -214,9 +207,7 @@ update_check() {
         grep . || echo "NO VERSION found for $original_pkgname" 1>&2
     } |
     while IFS= read -r found_version; do
-        if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-            echo "found version $found_version"
-        fi
+        msg_verbose "found version $found_version\n"
         consider=true
         p="$ignore "
         while [ -n "$p" ]; do
@@ -225,9 +216,7 @@ update_check() {
             case "$found_version" in
             $i)
                 consider=false
-                if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-                    echo "ignored $found_version due to $i"
-                fi
+                msg_verbose "ignored $found_version due to $i\n"
             esac
         done
         if $consider; then
