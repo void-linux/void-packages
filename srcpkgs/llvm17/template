@@ -1,7 +1,7 @@
 # Template file for 'llvm17'
 pkgname=llvm17
 version=17.0.6
-revision=1
+revision=2
 build_wrksrc=llvm
 build_style=cmake
 _ext_suffix=".cpython-${py3_ver/./}-linux-${XBPS_TARGET_LIBC/glibc/gnu}.so"
@@ -24,9 +24,9 @@ configure_args="
  -DLLVM_BUILD_LLVM_DYLIB=YES
  -DLLVM_LINK_LLVM_DYLIB=YES
  -DCLANG_LINK_CLANG_DYLIB=YES
+ -DCLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang17
  -DLLVM_ENABLE_RTTI=YES
  -DLLVM_ENABLE_FFI=YES
- -DLLVM_ENABLE_RUNTIMES=all
  -DLLVM_BINUTILS_INCDIR=/usr/include
  -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=NO
  -DLLDB_PYTHON_RELATIVE_PATH=lib/python${py3_ver}/site-packages
@@ -36,7 +36,6 @@ hostmakedepends="perl python3 zlib-devel libffi-devel swig python3-Sphinx
  python3-recommonmark python3-sphinx-automodapi git python3-sphinx-markdown-tables python3-yaml pkg-config "
 makedepends="python3-devel zlib-devel elfutils-devel libffi-devel libedit-devel
  libxml2-devel binutils-devel "
-depends="libllvm17>=${version}_${revision}"
 short_desc="LLVM Compiler Infrastructure Project - Version 17"
 maintainer="Daniel Martinez <danielmartinez@cock.li>"
 license="Apache-2.0"
@@ -46,25 +45,25 @@ checksum=58a8818c60e6627064f312dbf46c02d9949956558340938b71cf731ad8bc0813
 lib32disabled=yes
 python_version=3
 
-build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt openmp"
+build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt"
 build_options_default="clang clang_tools_extra lld mlir libclc polly lldb"
 
 case "$XBPS_TARGET_MACHINE" in
-	x86_64*|aarch64*) build_options_default+=" flang bolt openmp ";;
+	x86_64*|aarch64*) build_options_default+=" flang bolt ";;
 esac
-
-if [ "$XBPS_CCACHE" ]; then
-	configure_args+=" -DLLVM_CCACHE_BUILD=YES "
-fi
 
 if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 	configure_args+=" -DLIBCXX_HAS_MUSL_LIBC=YES
 	 -DCOMPILER_RT_BUILD_GWP_ASAN=OFF"
 fi
 
+subpackages="libllvm17 llvm17-doc llvm17-devel"
+_enabled_projects=
+_enabled_runtimes=
+
 if [ "$build_option_clang" ]; then
 	_enabled_projects+="clang;"
-	subpackages+=" clang17 clang17-devel libclang17 libclang-cpp17 clang-analyzer17 "
+	subpackages+=" clang17 clang17-headers clang17-devel libclang17 libclang-cpp17 clang-analyzer17 "
 fi
 if [ "$build_option_clang_tools_extra" ]; then
 	_enabled_projects+="clang-tools-extra;"
@@ -96,15 +95,37 @@ if [ "$build_option_flang" ]; then
 	_enabled_projects+="flang;"
 	subpackages+=" flang17 flang17-devel "
 fi
-if [ "$build_option_openmp" ]; then
-	_enabled_projects+="openmp;"
-	subpackages+=" libomp libomp-devel "
+
+# enable if runtime subpackages link to this version of llvm
+if true; then
+	subpackages+=" llvm-libunwind llvm-libunwind-devel "
+	_enabled_runtimes+="${_enabled_runtimes:+;}libunwind"
+
+	subpackages+=" libcxx libcxx-devel libcxxabi libcxxabi-devel "
+	_enabled_runtimes+="${_enabled_runtimes:+;}libcxxabi;libcxx"
+
+	subpackages+=" compiler-rt "
+	_enabled_runtimes+="${_enabled_runtimes:+;}compiler-rt"
+
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*|aarch64*)
+			# openmp fails when built as runtime if cross-compiled
+			if [ "$CROSS_BUILD" ]; then
+				_enabled_projects+="openmp;"
+			else
+				_enabled_runtimes+="${_enabled_runtimes:+;}openmp"
+			fi
+			subpackages+=" libomp libomp-devel "
+			;;
+	esac
+
+	configure_args+=" -DLLVM_ENABLE_RUNTIMES=${_enabled_runtimes}"
 fi
-subpackages+=" llvm-libunwind llvm-libunwind-devel libcxx libcxx-devel libcxxabi libcxxabi-devel libllvm17 llvm17-doc llvm17-devel "
 
 configure_args+=" -DLLVM_ENABLE_PROJECTS=${_enabled_projects}"
 
 if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" llvm17-cross-tools"
 	# Seems to require a full host llvm/clang build
 	configure_args+=" -DLIBOMPTARGET_BUILD_CUDA_PLUGIN=OFF"
 	configure_args+=" -DLIBOMPTARGET_BUILD_AMDGPU_PLUGIN=OFF"
@@ -113,6 +134,7 @@ fi
 
 # For OCaml bindings and lldb lua scripting
 if [ -z "$CROSS_BUILD" ]; then
+	subpackages+=" llvm17-cross-tools"
 	# OCaml cross build is broken
 	hostmakedepends+=" ocaml ocaml-findlib "
 	# lldb cross build fails with lua
@@ -170,37 +192,16 @@ pre_configure() {
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
-		msg_normal "Building host tblgen\n"
-		mkdir -p build/HOST
-		cd build/HOST
-		CC="$BUILD_CC" CXX="$BUILD_CXX" CFLAGS="$BUILD_CFLAGS" \
-			CXXFLAGS="$BUILD_CXXFLAGS" LDFLAGS="$BUILD_LDFLAGS" \
-			cmake ../.. -DCMAKE_BUILD_TYPE=Release \
-			-DLLVM_ENABLE_PROJECTS=${_enabled_projects}
-
-		make ${makejobs} -C utils/TableGen
-		configure_args+=" -DLLVM_TABLEGEN=${wrksrc}/llvm/build/HOST/bin/llvm-tblgen"
-
-		make ${makejobs} -C tools/clang/utils/TableGen
-		configure_args+=" -DCLANG_TABLEGEN=${wrksrc}/llvm/build/HOST/bin/clang-tblgen"
-
-		make ${makejobs} -C tools/mlir/tools/mlir-pdll
-		configure_args+=" -DMLIR_TABLEGEN=${wrksrc}/llvm/build/HOST/bin/mlir-tblgen"
-		configure_args+=" -DMLIR_PDLL_TABLEGEN=${wrksrc}/llvm/build/HOST/bin/mlir-pdll"
-		configure_args+=" -DMLIR_LINALG_ODS_YAML_GEN=${wrksrc}/llvm/build/HOST/bin/mlir-linalg-ods-yaml-gen"
-
-		make ${makejobs} -C tools/clang/tools/extra/clang-tidy/misc/ConfusableTable
-		configure_args+=" -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=${wrksrc}/llvm/build/HOST/bin/clang-tidy-confusable-chars-gen"
-		make ${makejobs} -C tools/clang/tools/extra/pseudo/gen
-		configure_args+=" -DCLANG_PSEUDO_GEN=${wrksrc}/llvm/build/HOST/bin/clang-pseudo-gen"
-
-		make ${makejobs} -C tools/llvm-config
-		configure_args+=" -DLLVM_CONFIG_PATH=${wrksrc}/llvm/build/HOST/bin/llvm-config"
-
-		make ${makejobs} -C tools/lldb/utils/TableGen lldb-tblgen
-		configure_args+=" -DLLDB_TABLEGEN_EXE=${wrksrc}/llvm/build/HOST/bin/lldb-tblgen"
-
-		cd ../..
+		configure_args+=" -DLLVM_NATIVE_TOOL_DIR=/usr/bin"
+		configure_args+=" -DLLVM_TABLEGEN=/usr/bin/llvm-tblgen"
+		configure_args+=" -DCLANG_TABLEGEN=/usr/bin/clang-tblgen"
+		configure_args+=" -DMLIR_TABLEGEN=/usr/bin/mlir-tblgen"
+		configure_args+=" -DMLIR_PDLL_TABLEGEN=/usr/bin/mlir-pdll"
+		configure_args+=" -DMLIR_LINALG_ODS_YAML_GEN=/usr/bin/mlir-linalg-ods-yaml-gen"
+		configure_args+=" -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=/usr/bin/clang-tidy-confusable-chars-gen"
+		configure_args+=" -DCLANG_PSEUDO_GEN=/usr/bin/clang-pseudo-gen"
+		configure_args+=" -DLLVM_CONFIG_PATH=/usr/bin/llvm-config"
+		configure_args+=" -DLLDB_TABLEGEN_EXE=/usr/bin/lldb-tblgen"
 	fi
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -238,6 +239,14 @@ post_build() {
 		-DSPHINX_WARNINGS_AS_ERRORS=OFF
 
 	ninja ${makejobs} -C ${wrksrc}/${build_wrksrc}/runtimes-doc docs-libcxx-html docs-libunwind-html
+
+	if [ -z "$CROSS_BUILD" ]; then
+		# Binaries ONLY used during the process of building llvm, and aren't usually installed
+		vmkdir usr/bin
+		vcopy build/bin/lldb-tblgen usr/bin
+		vcopy build/bin/clang-tidy-confusable-chars-gen usr/bin
+		vcopy build/bin/clang-pseudo-gen usr/bin
+	fi
 }
 
 post_install() {
@@ -279,8 +288,7 @@ post_install() {
 
 clang17_package() {
 	lib32disabled=yes
-	depends="libstdc++-devel libgcc-devel  binutils ${XBPS_TARGET_LIBC}-devel
-	 libclang17-${version}_${revision} "
+	depends="libstdc++-devel libgcc-devel  binutils ${XBPS_TARGET_LIBC}-devel"
 	short_desc+=" - C language family frontend"
 	homepage="https://clang.llvm.org/"
 	pkg_install() {
@@ -313,16 +321,28 @@ clang17_package() {
 	}
 }
 
+clang17-headers_package() {
+	lib32disabled=yes
+	short_desc+=" - C language family frontend - Headers"
+	homepage="https://clang.llvm.org/"
+	pkg_install() {
+		vmove usr/lib/clang/17/include
+	}
+}
+
 clang17-devel_package() {
 	lib32disabled=yes
 	depends="libstdc++-devel libgcc-devel  binutils ${XBPS_TARGET_LIBC}-devel
-	 libclang17-${version}_${revision}"
+	 clang17>=${version}_${revision} clang-analyzer17>=${version}_${revision}
+	 llvm17>=${version}_${revision}"
+	if [ "$build_option_clang_tools_extra" ]; then
+		depends+=" clang-tools-extra17>=${version}_${revision}"
+	fi
 	short_desc+=" - C language family frontend - development Files"
 	homepage="https://clang.llvm.org/"
 	pkg_install() {
 		vmove usr/include/clang
 		vmove usr/include/clang-c
-		vmove usr/lib/clang
 		vmove usr/lib/libear
 		vmove usr/lib/cmake/clang
 		vmove "usr/lib/libclang*.a"
@@ -343,21 +363,23 @@ clang17-devel_package() {
 }
 
 libclang17_package() {
-	short_desc+=" - C frontend runtime library"
+	depends="clang17-headers>=${version}_${revision}"
+	short_desc+=" - C frontend library"
 	pkg_install() {
 		vmove "usr/lib/libclang.so.*"
 	}
 }
 
 libclang-cpp17_package() {
-	short_desc+=" - C frontend runtime library (C++ interface)"
+	depends="clang17-headers>=${version}_${revision}"
+	short_desc+=" - C frontend library (C++ interface)"
 	pkg_install() {
 		vmove "usr/lib/libclang-cpp.so.*"
 	}
 }
 
 clang-analyzer17_package() {
-	depends="clang17-${version}_${revision} python3 perl"
+	depends="clang17>=${version}_${revision} python3 perl"
 	short_desc+=" - A source code analysis framework"
 	homepage="https://clang-analyzer.llvm.org/"
 	pkg_install() {
@@ -380,7 +402,7 @@ clang-analyzer17_package() {
 
 clang-tools-extra17_package() {
 	lib32disabled=yes
-	depends="clang17-${version}_${revision} python3"
+	depends="clang17>=${version}_${revision} python3"
 	short_desc+=" - Extra Clang tools"
 	homepage="https://clang.llvm.org/extra/"
 	pkg_install() {
@@ -469,7 +491,7 @@ lld17-devel_package() {
 	lib32disabled=yes
 	short_desc+=" - linker - development files"
 	homepage="https://lld.llvm.org"
-	depends="lld17>=${version}_${revision}"
+	depends="lld17>=${version}_${revision} llvm17>=${version}_${revision}"
 	pkg_install() {
 		vmove usr/include/lld
 		vmove usr/lib/cmake/lld
@@ -491,6 +513,7 @@ mlir17-devel_package() {
 	lib32disabled=yes
 	short_desc+=" - multi-level IR compiler framework - development files"
 	homepage="https://mlir.llvm.org/"
+	depends="mlir17>=${version}_${revision} llvm17>=${version}_${revision}"
 	pkg_install() {
 		vmove usr/bin/mlir-cpu-runner
 		vmove usr/bin/mlir-linalg-ods-yaml-gen
@@ -527,7 +550,7 @@ flang17-devel_package() {
 	lib32disabled=yes
 	short_desc+=" - Fortran language frontend - development files"
 	homepage="https://flang.llvm.org/"
-	depends="flang17>=${version}_${revision}"
+	depends="flang17>=${version}_${revision} llvm17>=${version}_${revision}"
 	pkg_install() {
 		vmove usr/bin/bbc
 		vmove usr/bin/f18-parse-demo
@@ -551,14 +574,16 @@ libomp_package() {
 
 libomp-devel_package() {
 	short_desc+=" - Clang OpenMP support library - development files"
-	depends="libomp>=${version}_${revision}"
+	depends="libomp>=${version}_${revision} llvm17>=${version}_${revision}"
 	pkg_install() {
 		vmove usr/bin/llvm-omp-device-info
 		vmove usr/bin/llvm-omp-kernel-replay
 		vmove "usr/lib/libarcher*.so"
 		vmove "usr/lib/libomp*.so"
 		vmove usr/lib/cmake/openmp
-		vmove usr/share/man/man1/llvmopenmp.1
+		if [ -f "${DESTDIR}/usr/share/man/man1/llvmopenmp.1" ]; then
+			vmove usr/share/man/man1/llvmopenmp.1
+		fi
 		if [ -z "$CROSS_BUILD" ]; then
 			vmove "usr/lib/libomptarget*.bc"
 			vmove "usr/lib/libarcher*.a"
@@ -629,15 +654,29 @@ libcxx-devel_package() {
 	}
 }
 
+compiler-rt_package() {
+	short_desc+=" - runtime libraries"
+	homepage="https://compiler-rt.llvm.org/"
+	pkg_install() {
+		vmove usr/lib/clang/17/lib
+		if [ -d "${DESTDIR}/usr/lib/clang/17/bin" ]; then
+			vmove usr/lib/clang/17/bin
+		fi
+		if [ -d "${DESTDIR}/usr/lib/clang/17/share" ]; then
+			vmove usr/lib/clang/17/share
+		fi
+	}
+}
+
 libllvm17_package() {
-	short_desc+=" - runtime library"
+	short_desc+=" - library"
 	pkg_install() {
 		vmove "usr/lib/libLLVM-*.so*"
 	}
 }
 
 llvm17-doc_package() {
-	short_desc+=" - documentation "
+	short_desc+=" - documentation"
 	pkg_install() {
 		vmove usr/share/doc
 	}
@@ -647,13 +686,13 @@ llvm17-devel_package() {
 	short_desc+=" - development files"
 	depends="llvm17>=${version}_${revision}"
 	if [ "$build_option_openmp" ]; then
-		depends+=" libomp-devel>={$version}_${revision} "
+		depends+=" libomp-devel>=${version}_${revision} "
 	fi
 	if [ "$build_option_mlir" ]; then
-		depends+=" mlir17-devel>={$version}_${revision} "
+		depends+=" mlir17-devel>=${version}_${revision} "
 	fi
 	if [ "$build_option_clang" ]; then
-		depends+=" clang17-devel>={$version}_${revision} "
+		depends+=" clang17-devel>=${version}_${revision} "
 	fi
 	pkg_install() {
 		vmove usr/lib/libLLVM.so
@@ -663,6 +702,16 @@ llvm17-devel_package() {
 		vmove usr/include/llvm-c
 		vmove "usr/lib/libLLVM*.a"
 		vmove usr/lib/cmake/llvm
+	}
+}
 
+# These binaries are ONLY used when building llvm, they aren't normally installed
+llvm17-cross-tools_package() {
+	short_desc+=" - build tools for cross compiling LLVM"
+	depends="lldb17-devel>=${version}_${revision} llvm17-devel>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin/lldb-tblgen
+		vmove usr/bin/clang-tidy-confusable-chars-gen
+		vmove usr/bin/clang-pseudo-gen
 	}
 }
