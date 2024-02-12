@@ -8,13 +8,15 @@ unalias -a
 
 # disable wildcards helper
 _noglob_helper() {
-       set +f
-       "$@"
+	set +f
+	IFS= "$@"
 }
 
 # Apply _noglob to v* commands
 for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
-       alias ${cmd}="set -f; _noglob_helper _${cmd}"
+	# intentionally expanded when defined
+	# shellcheck disable=SC2139
+	alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
 
 _vsv() {
@@ -24,6 +26,8 @@ _vsv() {
 	local svdir="${PKGDESTDIR}/etc/sv/${service}"
 
 	if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+		# pkgver is defined in common/xbps-src/shutils/commmon.sh
+		# shellcheck disable=SC2154
 		msg_red "$pkgver: vsv: up to 2 arguments expected: <service> [<log facility>]\n"
 		return 1
 	fi
@@ -34,26 +38,26 @@ _vsv() {
 
 	vmkdir etc/sv
 	vcopy "${FILESDIR}/$service" etc/sv
-	if [ ! -L $svdir/run ]; then
-		grep -Fq 'exec 2>&1' $svdir/run || msg_warn "$pkgver: vsv: service '$service' does not contain 'exec 2>&1' to log stderr\n"
-		chmod 755 $svdir/run
+	if [ ! -L "$svdir/run" ]; then
+		grep -Fq 'exec 2>&1' "$svdir/run" || msg_warn "$pkgver: vsv: service '$service' does not contain 'exec 2>&1' to log stderr\n"
+		chmod 755 "$svdir/run"
 	fi
-	if [ -e $svdir/finish ] && [ ! -L $svdir/finish ]; then
-		chmod 755 $svdir/finish
+	if [ -e "$svdir/finish" ] && [ ! -L "$svdir/finish" ]; then
+		chmod 755 "$svdir/finish"
 	fi
-	ln ${LN_OPTS} /run/runit/supervise.${service} $svdir/supervise
-	if [ -d $svdir/log ] || [ -L $svdir/log ]; then
+	ln ${LN_OPTS} "/run/runit/supervise.${service}" "$svdir/supervise"
+	if [ -d "$svdir/log" ] || [ -L "$svdir/log" ]; then
 		msg_warn "$pkgver: vsv: overriding default log service\n"
 	else
-		mkdir $svdir/log
-		cat <<-EOF > $svdir/log/run
+		mkdir "$svdir/log"
+		cat <<-EOF > "$svdir/log/run"
 		#!/bin/sh
 		exec vlogger -t $service -p $facility
 		EOF
 	fi
-	ln ${LN_OPTS} /run/runit/supervise.${service}-log $svdir/log/supervise
-	if [ -e $svdir/log/run ] && [ ! -L $svdir/log/run ]; then
-		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
+	ln ${LN_OPTS} "/run/runit/supervise.${service}-log" "$svdir/log/supervise"
+	if [ -e "$svdir/log/run" ] && [ ! -L "$svdir/log/run" ]; then
+		chmod 755 "${PKGDESTDIR}/etc/sv/${service}/log/run"
 	fi
 }
 
@@ -120,6 +124,8 @@ _vdoc() {
 		return 1
 	fi
 
+	# pkgname is defined in the package
+	# shellcheck disable=SC2154
 	vinstall "$file" 644 "usr/share/doc/${pkgname}" "$targetfile"
 }
 
@@ -175,9 +181,9 @@ _vinstall() {
 	fi
 
 	if [ -z "$targetfile" ]; then
-		install -Dm${mode} "${file}" "${PKGDESTDIR}/${targetdir}/${file##*/}"
+		install -Dm"${mode}" "${file}" "${PKGDESTDIR}/${targetdir}/${file##*/}"
 	else
-		install -Dm${mode} "${file}" "${PKGDESTDIR}/${targetdir}/${targetfile##*/}"
+		install -Dm"${mode}" "${file}" "${PKGDESTDIR}/${targetdir}/${targetfile##*/}"
 	fi
 }
 
@@ -193,7 +199,9 @@ _vcopy() {
 		return 1
 	fi
 
-	cp -a $files ${PKGDESTDIR}/${targetdir}
+	# intentionally unquoted for globbing
+	# shellcheck disable=SC2086
+	cp -a $files "${PKGDESTDIR}/${targetdir}"
 }
 
 _vmove() {
@@ -219,13 +227,17 @@ _vmove() {
 	done
 
 	if [ -z "${_targetdir}" ]; then
-		[ ! -d ${PKGDESTDIR} ] && install -d ${PKGDESTDIR}
-		mv ${DESTDIR}/$files ${PKGDESTDIR}
+		[ ! -d "${PKGDESTDIR}" ] && install -d "${PKGDESTDIR}"
+		# intentionally unquoted for globbing
+		# shellcheck disable=SC2086
+		mv "${DESTDIR}"/$files "${PKGDESTDIR}"
 	else
-		if [ ! -d ${PKGDESTDIR}/${_targetdir} ]; then
-			install -d ${PKGDESTDIR}/${_targetdir}
+		if [ ! -d "${PKGDESTDIR}/${_targetdir}" ]; then
+			install -d "${PKGDESTDIR}/${_targetdir}"
 		fi
-		mv ${DESTDIR}/$files ${PKGDESTDIR}/${_targetdir}
+		# intentionally unquoted for globbing
+		# shellcheck disable=SC2086
+		mv "${DESTDIR}"/$files "${PKGDESTDIR}/${_targetdir}"
 	fi
 }
 
@@ -243,9 +255,9 @@ _vmkdir() {
 	fi
 
 	if [ -z "$mode" ]; then
-		install -d ${PKGDESTDIR}/${dir}
+		install -d "${PKGDESTDIR}/${dir}"
 	else
-		install -dm${mode} ${PKGDESTDIR}/${dir}
+		install -dm"${mode}" "${PKGDESTDIR}/${dir}"
 	fi
 }
 
