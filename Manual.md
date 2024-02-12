@@ -316,7 +316,7 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	`${FILESDIR}/$service`, containing `exec vlogger -t $service -p $facility`.
 	if a second argument is not specified, the `daemon` facility is used.
 	For more information about `vlogger` and available values for the facility,
-	see [vlogger(1)](https://man.voidlinux.org/vlogger.1).
+	see [vlogger(8)](https://man.voidlinux.org/vlogger.8).
 
 - *vsed()* `vsed -i <file> -e <regex>`
 
@@ -2182,7 +2182,7 @@ otherwise the `debug` packages won't have debugging symbols.
 <a id="contributing"></a>
 ### Contributing via git
 
-To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
+To get started, [fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 
