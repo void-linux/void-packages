@@ -147,7 +147,7 @@ update_check() {
                 url="https://bitbucket.org/$pkgurlname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar)';;
             *ftp.gnome.org*|*download.gnome.org*)
-                : ${pattern="\Q$pkgname\E-\K(0|[13]\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=.tar)"}
+                : ${pattern="(?<=LATEST-IS-)([0-2]|3\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=\")"}
                 url="https://download.gnome.org/sources/$pkgname/cache.json";;
             *archive.xfce.org*)
                 : ${pattern="\Q$pkgname\E-\K((([4-9]|([1-9][0-9]+))\.[0-9]*[02468]\.[0-9.]*[0-9])|([0-3]\.[0-9.]*))(?=.tar)"}
