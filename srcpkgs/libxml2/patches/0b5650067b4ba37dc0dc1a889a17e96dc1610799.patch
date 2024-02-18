@@ -1,0 +1,98 @@
+From 0b5650067b4ba37dc0dc1a889a17e96dc1610799 Mon Sep 17 00:00:00 2001
+From: Nick Wellnhofer <wellnhofer@aevum.de>
+Date: Mon, 26 Feb 2024 01:03:34 +0100
+Subject: [PATCH] html: Fix htmlCreatePushParserCtxt with encoding
+
+Regression from commit ec7be506.
+
+Fixes #696.
+---
+ HTMLparser.c |  5 ++++-
+ testparser.c | 34 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/HTMLparser.c b/HTMLparser.c
+index 097ed2369..ea6a4f265 100644
+--- a/HTMLparser.c
++++ b/HTMLparser.c
+@@ -5987,7 +5987,7 @@ htmlCreatePushParserCtxt(htmlSAXHandlerPtr sax, void *user_data,
+ 
+     xmlInitParser();
+ 
+-    buf = xmlAllocParserInputBuffer(enc);
++    buf = xmlAllocParserInputBuffer(XML_CHAR_ENCODING_NONE);
+     if (buf == NULL) return(NULL);
+ 
+     ctxt = htmlNewSAXParserCtxt(sax, user_data);
+@@ -6018,6 +6018,9 @@ htmlCreatePushParserCtxt(htmlSAXHandlerPtr sax, void *user_data,
+ 
+     inputPush(ctxt, inputStream);
+ 
++    if (enc != XML_CHAR_ENCODING_NONE)
++        xmlSwitchEncoding(ctxt, enc);
++
+     if ((size > 0) && (chunk != NULL) && (ctxt->input != NULL) &&
+         (ctxt->input->buf != NULL))  {
+ 	size_t pos = ctxt->input->cur - ctxt->input->base;
+diff --git a/testparser.c b/testparser.c
+index e67cea5b1..705e61387 100644
+--- a/testparser.c
++++ b/testparser.c
+@@ -5,6 +5,7 @@
+  */
+ 
+ #include <libxml/parser.h>
++#include <libxml/HTMLparser.h>
+ 
+ static int
+ testStandaloneWithEncoding(void) {
+@@ -86,6 +87,36 @@ testHugeEncodedChunk(void) {
+ }
+ #endif
+ 
++#if defined(LIBXML_HTML_ENABLED) && defined(LIBXML_PUSH_ENABLED)
++static int
++testHtmlPushWithEncoding(void) {
++    htmlParserCtxtPtr ctxt;
++    htmlDocPtr doc;
++    htmlNodePtr node;
++    int err = 0;
++
++    ctxt = htmlCreatePushParserCtxt(NULL, NULL, NULL, 0, NULL,
++                                    XML_CHAR_ENCODING_UTF8);
++    htmlParseChunk(ctxt, "-\xC3\xA4-", 4, 1);
++
++    doc = ctxt->myDoc;
++    if (!xmlStrEqual(doc->encoding, BAD_CAST "UTF-8")) {
++        fprintf(stderr, "testHtmlPushWithEncoding failed\n");
++        err = 1;
++    }
++
++    node = xmlDocGetRootElement(doc)->children->children->children;
++    if (!xmlStrEqual(node->content, BAD_CAST "-\xC3\xA4-")) {
++        fprintf(stderr, "testHtmlPushWithEncoding failed\n");
++        err = 1;
++    }
++
++    xmlFreeDoc(doc);
++    htmlFreeParserCtxt(ctxt);
++    return err;
++}
++#endif
++
+ int
+ main(void) {
+     int err = 0;
+@@ -95,6 +126,9 @@ main(void) {
+     err |= testHugePush();
+     err |= testHugeEncodedChunk();
+ #endif
++#if defined(LIBXML_HTML_ENABLED) && defined(LIBXML_PUSH_ENABLED)
++    err |= testHtmlPushWithEncoding();
++#endif
+ 
+     return err;
+ }
+-- 
+GitLab
+
