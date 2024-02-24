@@ -13,7 +13,6 @@
 
 
 ------ Void settings ------
-daemonize = false;
 pidfile = "/run/prosody/prosody.pid"
 
 ---------- Server-wide settings ----------
