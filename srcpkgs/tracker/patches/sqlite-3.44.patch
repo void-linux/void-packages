@@ -1,0 +1,566 @@
+From 79366c42289403f4c439ee16612c32dcdbbf9a16 Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Thu, 7 Dec 2023 09:33:44 +0100
+Subject: [PATCH 1/5] libtracker-sparql: Decouple FTS initialization from
+ ontologies
+
+Since we just need the FTS properties for fts:offsets being called
+at runtime, we can pass the TrackerDataManager (that we know early
+in startup) and let it figure out the FTS properties from there
+when it's actually needed.
+
+This is just the refactor to make that possible, there's no
+functional changes in this commit.
+---
+ .../core/tracker-data-manager.c               | 13 +++--
+ .../core/tracker-db-interface-sqlite.c        | 29 ++++++-----
+ .../core/tracker-db-interface-sqlite.h        |  5 +-
+ .../core/tracker-fts-tokenizer.c              | 48 +++++++++++++++++--
+ .../core/tracker-fts-tokenizer.h              |  4 +-
+ src/libtracker-sparql/core/tracker-fts.c      | 40 ----------------
+ src/libtracker-sparql/core/tracker-fts.h      |  5 --
+ 7 files changed, 75 insertions(+), 69 deletions(-)
+
+diff --git a/src/libtracker-sparql/core/tracker-data-manager.c b/src/libtracker-sparql/core/tracker-data-manager.c
+index ef3497a834..f0797d642d 100644
+--- a/src/libtracker-sparql/core/tracker-data-manager.c
++++ b/src/libtracker-sparql/core/tracker-data-manager.c
+@@ -3863,11 +3863,14 @@ tracker_data_manager_init_fts (TrackerDataManager  *manager,
+                                gboolean             create,
+                                GError             **error)
+ {
+-	return tracker_db_interface_sqlite_fts_init (iface,
+-	                                             database,
+-	                                             manager->ontologies,
+-	                                             create,
+-	                                             error);
++	if (!tracker_db_interface_sqlite_fts_init (iface, manager->flags, error))
++		return FALSE;
++	if (!create)
++		return TRUE;
++	return tracker_db_interface_sqlite_fts_create_table (iface,
++	                                                     database,
++	                                                     manager->ontologies,
++	                                                     error);
+ }
+ 
+ static gboolean
+diff --git a/src/libtracker-sparql/core/tracker-db-interface-sqlite.c b/src/libtracker-sparql/core/tracker-db-interface-sqlite.c
+index c9cdfaf29f..038197ec37 100644
+--- a/src/libtracker-sparql/core/tracker-db-interface-sqlite.c
++++ b/src/libtracker-sparql/core/tracker-db-interface-sqlite.c
+@@ -37,6 +37,7 @@
+ #include <libtracker-sparql/tracker-private.h>
+ 
+ #include "tracker-fts.h"
++#include "tracker-fts-tokenizer.h"
+ #include "tracker-collation.h"
+ #include "tracker-db-interface-sqlite.h"
+ #include "tracker-db-manager.h"
+@@ -2029,20 +2030,26 @@ close_database (TrackerDBInterface *db_interface)
+ }
+ 
+ gboolean
+-tracker_db_interface_sqlite_fts_init (TrackerDBInterface  *db_interface,
+-                                      const gchar         *database,
+-                                      TrackerOntologies   *ontologies,
+-                                      gboolean             create,
+-                                      GError             **error)
++tracker_db_interface_sqlite_fts_init (TrackerDBInterface     *db_interface,
++                                      TrackerDBManagerFlags   fts_flags,
++                                      GError                **error)
+ {
+-	GError *inner_error = NULL;
++	return tracker_tokenizer_initialize (db_interface->db,
++	                                     db_interface,
++	                                     fts_flags,
++	                                     db_interface->user_data,
++	                                     error);
++}
+ 
+-	if (!tracker_fts_init_db (db_interface->db, db_interface,
+-	                          db_interface->flags, ontologies, error))
+-		return FALSE;
++gboolean
++tracker_db_interface_sqlite_fts_create_table (TrackerDBInterface  *db_interface,
++                                              const gchar         *database,
++                                              TrackerOntologies   *ontologies,
++                                              GError             **error)
++{
++	GError *inner_error = NULL;
+ 
+-	if (create &&
+-	    !tracker_fts_create_table (db_interface->db, database, "fts5",
++	if (!tracker_fts_create_table (db_interface->db, database, "fts5",
+ 	                               ontologies,
+ 	                               &inner_error)) {
+ 		g_propagate_prefixed_error (error,
+diff --git a/src/libtracker-sparql/core/tracker-db-interface-sqlite.h b/src/libtracker-sparql/core/tracker-db-interface-sqlite.h
+index 64b0be2a78..cb779ea3c7 100644
+--- a/src/libtracker-sparql/core/tracker-db-interface-sqlite.h
++++ b/src/libtracker-sparql/core/tracker-db-interface-sqlite.h
+@@ -23,6 +23,7 @@
+ #include "config.h"
+ 
+ #include "tracker-db-interface.h"
++#include "tracker-db-manager.h"
+ 
+ G_BEGIN_DECLS
+ 
+@@ -46,9 +47,11 @@ TrackerDBInterface *tracker_db_interface_sqlite_new                    (const gc
+ gint64              tracker_db_interface_sqlite_get_last_insert_id     (TrackerDBInterface       *interface);
+ void                tracker_db_interface_sqlite_enable_shared_cache    (void);
+ gboolean            tracker_db_interface_sqlite_fts_init               (TrackerDBInterface       *interface,
++                                                                        TrackerDBManagerFlags     fts_flags,
++                                                                        GError                  **error);
++gboolean            tracker_db_interface_sqlite_fts_create_table       (TrackerDBInterface       *interface,
+                                                                         const gchar              *database,
+                                                                         TrackerOntologies        *ontologies,
+-                                                                        gboolean                  create,
+                                                                         GError                  **error);
+ void                tracker_db_interface_sqlite_reset_collator         (TrackerDBInterface       *interface);
+ gboolean            tracker_db_interface_sqlite_wal_checkpoint         (TrackerDBInterface       *interface,
+diff --git a/src/libtracker-sparql/core/tracker-fts-tokenizer.c b/src/libtracker-sparql/core/tracker-fts-tokenizer.c
+index 9cf71b99f0..2e6dd0591c 100644
+--- a/src/libtracker-sparql/core/tracker-fts-tokenizer.c
++++ b/src/libtracker-sparql/core/tracker-fts-tokenizer.c
+@@ -48,6 +48,7 @@ struct TrackerTokenizer {
+ 
+ struct TrackerTokenizerFunctionData {
+ 	TrackerDBInterface *interface;
++	TrackerDataManager *data_manager;
+ 	gchar **property_names;
+ };
+ 
+@@ -169,6 +170,37 @@ offsets_tokenizer_func (void       *data,
+ 	return SQLITE_OK;
+ }
+ 
++static gboolean
++ensure_fts_properties (TrackerTokenizerFunctionData *data)
++{
++	TrackerOntologies *ontologies;
++	TrackerProperty **properties;
++	GArray *property_names;
++	guint i, len;
++
++	if (data->property_names)
++		return data->property_names[0] != NULL;
++
++	ontologies = tracker_data_manager_get_ontologies (data->data_manager);
++
++	property_names = g_array_new (TRUE, FALSE, sizeof (gchar *));
++	properties = tracker_ontologies_get_properties (ontologies, &len);
++
++	for (i = 0; i < len; i++) {
++		gchar *column;
++
++		if (!tracker_property_get_fulltext_indexed (properties[i]))
++			continue;
++
++		column = g_strdup (tracker_property_get_name (properties[i]));
++		g_array_append_val (property_names, column);
++	}
++
++	data->property_names = (gchar **) g_array_free (property_names, FALSE);
++
++	return data->property_names[0] != NULL;
++}
++
+ static void
+ tracker_offsets_function (const Fts5ExtensionApi  *api,
+                           Fts5Context             *fts_ctx,
+@@ -189,6 +221,12 @@ tracker_offsets_function (const Fts5ExtensionApi  *api,
+ 	}
+ 
+ 	data = api->xUserData (fts_ctx);
++
++	if (!ensure_fts_properties (data)) {
++		sqlite3_result_null (ctx);
++		return;
++	}
++
+ 	rc = api->xInstCount (fts_ctx, &n_hits);
+ 
+ 	if (rc != SQLITE_OK) {
+@@ -296,14 +334,14 @@ error:
+ }
+ 
+ static TrackerTokenizerFunctionData *
+-tracker_tokenizer_function_data_new (TrackerDBInterface  *interface,
+-                                     const gchar        **property_names)
++tracker_tokenizer_function_data_new (TrackerDBInterface *interface,
++                                     TrackerDataManager *data_manager)
+ {
+ 	TrackerTokenizerFunctionData *data;
+ 
+ 	data = g_new0 (TrackerTokenizerFunctionData, 1);
+ 	data->interface = interface;
+-	data->property_names = g_strdupv ((gchar **) property_names);
++	data->data_manager = data_manager;
+ 
+ 	return data;
+ }
+@@ -319,7 +357,7 @@ gboolean
+ tracker_tokenizer_initialize (sqlite3                *db,
+                               TrackerDBInterface     *interface,
+                               TrackerDBManagerFlags   flags,
+-                              const gchar           **property_names,
++                              TrackerDataManager     *data_manager,
+                               GError                **error)
+ {
+ 	TrackerTokenizerData *data;
+@@ -338,7 +376,7 @@ tracker_tokenizer_initialize (sqlite3                *db,
+ 	                       tracker_tokenizer_data_free);
+ 
+ 	/* Offsets */
+-	func_data = tracker_tokenizer_function_data_new (interface, property_names);
++	func_data = tracker_tokenizer_function_data_new (interface, data_manager);
+ 	api->xCreateFunction (api, "tracker_offsets", func_data,
+ 	                      &tracker_offsets_function,
+ 	                      (GDestroyNotify) tracker_tokenizer_function_data_free);
+diff --git a/src/libtracker-sparql/core/tracker-fts-tokenizer.h b/src/libtracker-sparql/core/tracker-fts-tokenizer.h
+index 57bca46a56..76e0bbcbb9 100644
+--- a/src/libtracker-sparql/core/tracker-fts-tokenizer.h
++++ b/src/libtracker-sparql/core/tracker-fts-tokenizer.h
+@@ -22,7 +22,7 @@
+ #include <sqlite3.h>
+ #include <glib.h>
+ 
+-#include "tracker-db-manager.h"
++#include "tracker-data-manager.h"
+ 
+ #ifndef __TRACKER_FTS_TOKENIZER_H__
+ #define __TRACKER_FTS_TOKENIZER_H__
+@@ -30,7 +30,7 @@
+ gboolean tracker_tokenizer_initialize (sqlite3                *db,
+                                        TrackerDBInterface     *interface,
+                                        TrackerDBManagerFlags   flags,
+-                                       const gchar           **property_names,
++                                       TrackerDataManager     *data_manager,
+                                        GError                **error);
+ 
+ #endif /* __TRACKER_FTS_TOKENIZER_H__ */
+diff --git a/src/libtracker-sparql/core/tracker-fts.c b/src/libtracker-sparql/core/tracker-fts.c
+index 96ec9e9e76..f622855ee4 100644
+--- a/src/libtracker-sparql/core/tracker-fts.c
++++ b/src/libtracker-sparql/core/tracker-fts.c
+@@ -43,46 +43,6 @@ has_fts_properties (TrackerOntologies *ontologies)
+ 	return FALSE;
+ }
+ 
+-static gchar **
+-get_fts_properties (TrackerOntologies *ontologies)
+-{
+-	TrackerProperty **properties;
+-	GArray *property_names;
+-	guint i, len;
+-
+-	property_names = g_array_new (TRUE, FALSE, sizeof (gchar *));
+-	properties = tracker_ontologies_get_properties (ontologies, &len);
+-
+-	for (i = 0; i < len; i++) {
+-		gchar *column;
+-
+-		if (!tracker_property_get_fulltext_indexed (properties[i]))
+-			continue;
+-
+-		column = g_strdup (tracker_property_get_name (properties[i]));
+-		g_array_append_val (property_names, column);
+-	}
+-
+-	return (gchar **) g_array_free (property_names, FALSE);
+-}
+-
+-gboolean
+-tracker_fts_init_db (sqlite3                *db,
+-                     TrackerDBInterface     *interface,
+-                     TrackerDBManagerFlags   flags,
+-                     TrackerOntologies      *ontologies,
+-                     GError                **error)
+-{
+-	gchar **property_names;
+-	gboolean retval;
+-
+-	property_names = get_fts_properties (ontologies);
+-	retval = tracker_tokenizer_initialize (db, interface, flags, (const gchar **) property_names, error);
+-	g_strfreev (property_names);
+-
+-	return retval;
+-}
+-
+ gboolean
+ tracker_fts_create_table (sqlite3            *db,
+                           const gchar        *database,
+diff --git a/src/libtracker-sparql/core/tracker-fts.h b/src/libtracker-sparql/core/tracker-fts.h
+index 4370d3f667..cf3e1d9cbd 100644
+--- a/src/libtracker-sparql/core/tracker-fts.h
++++ b/src/libtracker-sparql/core/tracker-fts.h
+@@ -30,11 +30,6 @@
+ 
+ G_BEGIN_DECLS
+ 
+-gboolean    tracker_fts_init_db          (sqlite3                *db,
+-                                          TrackerDBInterface     *interface,
+-                                          TrackerDBManagerFlags   flags,
+-                                          TrackerOntologies      *ontologies,
+-                                          GError                **error);
+ gboolean    tracker_fts_create_table     (sqlite3            *db,
+                                           const gchar        *database,
+                                           gchar              *table_name,
+-- 
+GitLab
+
+
+From 9e53773a056f84e5042dec56db18cd409c96f41b Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Thu, 7 Dec 2023 10:16:16 +0100
+Subject: [PATCH 2/5] libtracker-sparql: Move FTS initialization to an earlier
+ stage
+
+With SQLite >= 3.44.x, the check_integrity pragma may involve existing
+virtual tables and their xIntegrity vmethod. This includes FTS5 tables,
+so we need to set up the FTS5 tokenizer at an earlier stage, so that
+possible integrity checks happening on startup have everything set up.
+
+Closes: https://gitlab.gnome.org/GNOME/tracker/-/issues/418
+---
+ src/libtracker-sparql/core/tracker-data-manager.c | 2 --
+ src/libtracker-sparql/core/tracker-db-manager.c   | 5 +++++
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/libtracker-sparql/core/tracker-data-manager.c b/src/libtracker-sparql/core/tracker-data-manager.c
+index f0797d642d..dff6b66542 100644
+--- a/src/libtracker-sparql/core/tracker-data-manager.c
++++ b/src/libtracker-sparql/core/tracker-data-manager.c
+@@ -3863,8 +3863,6 @@ tracker_data_manager_init_fts (TrackerDataManager  *manager,
+                                gboolean             create,
+                                GError             **error)
+ {
+-	if (!tracker_db_interface_sqlite_fts_init (iface, manager->flags, error))
+-		return FALSE;
+ 	if (!create)
+ 		return TRUE;
+ 	return tracker_db_interface_sqlite_fts_create_table (iface,
+diff --git a/src/libtracker-sparql/core/tracker-db-manager.c b/src/libtracker-sparql/core/tracker-db-manager.c
+index 6952af082b..8427ed71b7 100644
+--- a/src/libtracker-sparql/core/tracker-db-manager.c
++++ b/src/libtracker-sparql/core/tracker-db-manager.c
+@@ -783,6 +783,11 @@ tracker_db_manager_create_db_interface (TrackerDBManager  *db_manager,
+ 		return NULL;
+ 	}
+ 
++	if (!tracker_db_interface_sqlite_fts_init (connection,
++	                                           db_manager->flags,
++	                                           error))
++		return FALSE;
++
+ 	tracker_db_interface_set_max_stmt_cache_size (connection,
+ 	                                              TRACKER_DB_STATEMENT_CACHE_TYPE_SELECT,
+ 	                                              db_manager->s_cache_size);
+-- 
+GitLab
+
+
+From f9b246f40dc0f1b229cc87c0e1987fd77779ad7d Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Thu, 7 Dec 2023 10:21:18 +0100
+Subject: [PATCH 3/5] libtracker-sparql: Avoid regression in renaming FTS5
+ tables
+
+SQLite 3.44.x has a regression with the renaming of FTS5 tables
+within a transaction (https://sqlite.org/forum/forumpost?udc=1&name=4dbfcd293d).
+
+While this change has a workaround smell, we actually do not need the
+tables to be renamed, since we drop+create the FTS5 tables if ontology
+changes affect FTS fields. The original table is already ensured to be
+dropped when we "alter" the FTS table. Avoiding this rename will work
+for all SQLite versions.
+---
+ src/libtracker-sparql/core/tracker-fts.c | 19 ++++---------------
+ 1 file changed, 4 insertions(+), 15 deletions(-)
+
+diff --git a/src/libtracker-sparql/core/tracker-fts.c b/src/libtracker-sparql/core/tracker-fts.c
+index f622855ee4..1171dc11a8 100644
+--- a/src/libtracker-sparql/core/tracker-fts.c
++++ b/src/libtracker-sparql/core/tracker-fts.c
+@@ -191,21 +191,17 @@ tracker_fts_alter_table (sqlite3            *db,
+                          TrackerOntologies  *ontologies,
+                          GError            **error)
+ {
+-	gchar *query, *tmp_name;
++	gchar *query;
+ 	int rc;
+ 
+ 	if (!has_fts_properties (ontologies))
+ 		return TRUE;
+ 
+-	tmp_name = g_strdup_printf ("%s_TMP", table_name);
+-
+-	if (!tracker_fts_create_table (db, database, tmp_name, ontologies, error)) {
+-		g_free (tmp_name);
++	if (!tracker_fts_create_table (db, database, table_name, ontologies, error))
+ 		return FALSE;
+-	}
+ 
+ 	query = g_strdup_printf ("INSERT INTO \"%s\".%s (rowid) SELECT rowid FROM fts_view",
+-				 database, tmp_name);
++				 database, table_name);
+ 	rc = sqlite3_exec (db, query, NULL, NULL, NULL);
+ 	g_free (query);
+ 
+@@ -213,21 +209,14 @@ tracker_fts_alter_table (sqlite3            *db,
+ 		goto error;
+ 
+ 	query = g_strdup_printf ("INSERT INTO \"%s\".%s(%s) VALUES('rebuild')",
+-				 database, tmp_name, tmp_name);
++				 database, table_name, table_name);
+ 	rc = sqlite3_exec (db, query, NULL, NULL, NULL);
+ 	g_free (query);
+ 
+ 	if (rc != SQLITE_OK)
+ 		goto error;
+ 
+-	query = g_strdup_printf ("ALTER TABLE \"%s\".%s RENAME TO %s",
+-				 database, tmp_name, table_name);
+-	rc = sqlite3_exec (db, query, NULL, NULL, NULL);
+-	g_free (query);
+-
+ error:
+-	g_free (tmp_name);
+-
+ 	if (rc != SQLITE_OK) {
+ 		g_set_error (error,
+ 		             TRACKER_DB_INTERFACE_ERROR,
+-- 
+GitLab
+
+
+From aea3bd3b0483dc76e9cd20e7e8c207ff5112c722 Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Thu, 7 Dec 2023 10:33:52 +0100
+Subject: [PATCH 4/5] libtracker-sparql: Refactor FTS table creation calls
+
+Since we used to initialize FTS and create tables in one shot, the
+function involved had a "create" argument to specify whether tables
+had to be created, or they were there already.
+
+Since FTS initialization moved elsewhere, this argument in this function
+is just an early return. We can avoid the calls in the first place where
+that argument is FALSE (i.e. regular initialization paths on an already
+existing database).
+
+This is a refactor with no functional changes.
+---
+ .../core/tracker-data-manager.c               | 24 ++++---------------
+ 1 file changed, 4 insertions(+), 20 deletions(-)
+
+diff --git a/src/libtracker-sparql/core/tracker-data-manager.c b/src/libtracker-sparql/core/tracker-data-manager.c
+index dff6b66542..98426eb9b3 100644
+--- a/src/libtracker-sparql/core/tracker-data-manager.c
++++ b/src/libtracker-sparql/core/tracker-data-manager.c
+@@ -3860,11 +3860,8 @@ static gboolean
+ tracker_data_manager_init_fts (TrackerDataManager  *manager,
+                                TrackerDBInterface  *iface,
+                                const gchar         *database,
+-                               gboolean             create,
+                                GError             **error)
+ {
+-	if (!create)
+-		return TRUE;
+ 	return tracker_db_interface_sqlite_fts_create_table (iface,
+ 	                                                     database,
+ 	                                                     manager->ontologies,
+@@ -3959,18 +3956,11 @@ tracker_data_manager_initialize_iface (TrackerDataManager  *data_manager,
+ 			                                         iface, value, FALSE,
+ 			                                         error))
+ 				goto error;
+-
+-			if (!tracker_data_manager_init_fts (data_manager, iface,
+-			                                    value, FALSE, error))
+-				goto error;
+ 		}
+ 
+ 		g_hash_table_unref (graphs);
+ 	}
+ 
+-	if (!tracker_data_manager_init_fts (data_manager, iface, "main", FALSE, error))
+-		return FALSE;
+-
+ 	return TRUE;
+  error:
+ 	g_clear_pointer (&graphs, g_hash_table_unref);
+@@ -4367,7 +4357,7 @@ tracker_data_manager_initable_init (GInitable     *initable,
+ 			goto rollback_newly_created_db;
+ 		}
+ 
+-		if (!tracker_data_manager_init_fts (manager, iface, "main", TRUE, &internal_error)) {
++		if (!tracker_data_manager_init_fts (manager, iface, "main", &internal_error)) {
+ 			g_propagate_error (error, internal_error);
+ 			goto rollback_newly_created_db;
+ 		}
+@@ -4710,11 +4700,8 @@ tracker_data_manager_initable_init (GInitable     *initable,
+ 						if (ontology_error)
+ 							break;
+ 
+-						if (update_fts) {
++						if (update_fts)
+ 							tracker_data_manager_update_fts (manager, iface, value, &ontology_error);
+-						} else {
+-							tracker_data_manager_init_fts (manager, iface, value, FALSE, &ontology_error);
+-						}
+ 
+ 						if (ontology_error)
+ 							break;
+@@ -4724,11 +4711,8 @@ tracker_data_manager_initable_init (GInitable     *initable,
+ 				}
+ 
+ 				if (!ontology_error) {
+-					if (update_fts) {
++					if (update_fts)
+ 						tracker_data_manager_update_fts (manager, iface, "main", &ontology_error);
+-					} else {
+-						tracker_data_manager_init_fts (manager, iface, "main", FALSE, &ontology_error);
+-					}
+ 				}
+ 
+ 				if (!ontology_error) {
+@@ -5094,7 +5078,7 @@ tracker_data_manager_create_graph (TrackerDataManager  *manager,
+ 	                                     FALSE, error))
+ 		goto detach;
+ 
+-	if (!tracker_data_manager_init_fts (manager, iface, name, TRUE, error))
++	if (!tracker_data_manager_init_fts (manager, iface, name, error))
+ 		goto detach;
+ 
+ 	id = tracker_data_ensure_graph (manager->data_update, name, error);
+-- 
+GitLab
+
+
+From c34c49c2e7ec97aac4ab0bd8cc083c1b2ebbdd7d Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Fri, 8 Dec 2023 14:37:54 +0100
+Subject: [PATCH 5/5] libtracker-common: Trigger rebuild of FTS table
+
+Should there be any actual broken state in the FTS table after
+the failed integrity check, this will take care of it.
+---
+ src/libtracker-common/tracker-parser.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/libtracker-common/tracker-parser.h b/src/libtracker-common/tracker-parser.h
+index 9c40fab2d7..6a4537a48f 100644
+--- a/src/libtracker-common/tracker-parser.h
++++ b/src/libtracker-common/tracker-parser.h
+@@ -30,7 +30,7 @@
+  * at runtime, the former must be rebuilt for those to match perfectly
+  * to avoid returning meaningless results on FTS searches.
+  */
+-#define TRACKER_PARSER_VERSION 5
++#define TRACKER_PARSER_VERSION 6
+ 
+ G_BEGIN_DECLS
+ 
+-- 
+GitLab
