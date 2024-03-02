@@ -1,0 +1,78 @@
+--- a/meson.build
++++ b/meson.build
+@@ -9,7 +9,6 @@
+ conf.set_quoted('PACKAGE_VERSION', meson.project_version())
+ 
+ cc = meson.get_compiler('c')
+-ld = cc.get_linker_id()
+ objcopy = find_program('objcopy')
+ objcopy_version = run_command(objcopy, '--version').stdout().split('\n')[0].split(' ')[-1]
+ 
+--- a/efi/generate_binary.py
++++ b/efi/generate_binary.py
+@@ -29,9 +29,9 @@
+         "-j",
+         ".rodata",
+         "-j",
++        ".areloc",
++        "-j",
+         ".rel*",
+-        "--section-alignment",
+-        "512",
+         args.infile,
+         args.outfile,
+     ]
+--- a/efi/meson.build
++++ b/efi/meson.build
+@@ -72,6 +72,11 @@
+         coff_header_in_crt0 = false
+ endif
+ 
++# For NX compat, we must ensure we have .note.GNU-stack
++if run_command('grep', '-q', '.note.GNU-stack', join_paths(efi_crtdir, arch_crt), check: false).returncode() != 0
++    error('Cannot find NX section in @0@, update to gnu-efi 3.0.15+'.format(join_paths(efi_crtdir, arch_crt)))
++endif
++
+ # older objcopy for Aarch64 and ARM32 are not EFI capable.
+ # Use 'binary' instead, and add required symbols manually.
+ if host_cpu == 'arm' or (host_cpu == 'aarch64' and (objcopy_version.version_compare ('< 2.38') or coff_header_in_crt0))
+@@ -95,7 +100,6 @@
+ # is the system crt0 for arm and aarch64 new enough to know about SBAT?
+ if objcopy_manualsymbols
+   if get_option('efi_sbat_distro_id') != ''
+-    arch_crt_source = 'crt0-efi-@0@.S'.format(gnu_efi_path_arch)
+     cmd = run_command('grep', '-q', 'sbat', join_paths(efi_crtdir, arch_crt))
+     if cmd.returncode() != 0
+       warning('Cannot find SBAT section in @0@, using local copy'.format(join_paths(efi_crtdir, arch_crt)))
+@@ -163,6 +167,12 @@
+                '-L', efi_libdir,
+                join_paths(efi_crtdir, arch_crt)]
+ 
++if host_cpu == 'aarch64'
++# Don't use 64KiB pages
++  efi_ldflags += ['-z', 'common-page-size=4096']
++  efi_ldflags += ['-z', 'max-page-size=4096']
++endif
++
+ if objcopy_manualsymbols
+   # older objcopy for Aarch64 and ARM32 are not EFI capable.
+   # Use 'binary' instead, and add required symbols manually.
+@@ -223,11 +233,16 @@
+   fwupd_so_deps += [o_crt0]
+ endif
+ 
++efi_cc_ldflags = []
++foreach flag : efi_ldflags
++  efi_cc_ldflags += ['-Wl,' + flag]
++endforeach
++
+ so = custom_target('fwup.so',
+                    input : [o_file1, o_file2, o_file3, o_file4, o_file5],
+                    output : 'fwup.so',
+-                   command : [ld, '-o', '@OUTPUT@'] +
+-                             efi_ldflags + ['@INPUT@'] +
++                   command : [cc.cmd_array(), '-nostdlib', '-o', '@OUTPUT@'] +
++                             efi_cc_ldflags + ['@INPUT@'] +
+                              ['-lefi', '-lgnuefi', libgcc_file_name],
+                    depends: fwupd_so_deps)
+ 

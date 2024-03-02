@@ -1,0 +1,65 @@
+From f81c3d93cd6f61b20ae784297679283438def8df Mon Sep 17 00:00:00 2001
+From: Simon Ser <contact@emersion.fr>
+Date: Sat, 30 Dec 2023 20:06:33 +0100
+Subject: [PATCH] backend/drm: save current refresh rate
+
+wlr_output.refresh is populated by core wlr_output, and thus will
+be zero for a custom mode with an unset refresh rate.
+
+Save the refresh rate from the drmModeModeInfo in wlr_drm_connector
+instead.
+
+Closes: https://gitlab.freedesktop.org/wlroots/wlroots/-/issues/3791
+---
+ backend/drm/drm.c         | 7 ++++++-
+ include/backend/drm/drm.h | 2 ++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/backend/drm/drm.c b/backend/drm/drm.c
+index b630c9dd2..9c4f569cf 100644
+--- a/backend/drm/drm.c
++++ b/backend/drm/drm.c
+@@ -475,6 +475,10 @@ static bool drm_crtc_commit(struct wlr_drm_connector *conn,
+ 		}
+ 
+ 		drm_connector_set_pending_page_flip(conn, page_flip);
++
++		if (state->base->committed & WLR_OUTPUT_STATE_MODE) {
++			conn->refresh = calculate_refresh_rate(&state->mode);
++		}
+ 	} else {
+ 		// The set_cursor() hook is a bit special: it's not really synchronized
+ 		// to commit() or test(). Once set_cursor() returns true, the new
+@@ -1466,6 +1470,7 @@ static bool connect_drm_connector(struct wlr_drm_connector *wlr_conn,
+ 				wlr_conn->crtc->props.mode_id, &mode_id);
+ 
+ 			wlr_conn->crtc->mode_id = mode_id;
++			wlr_conn->refresh = calculate_refresh_rate(current_modeinfo);
+ 		}
+ 
+ 		wlr_log(WLR_INFO, "  %"PRId32"x%"PRId32" @ %.3f Hz %s",
+@@ -1765,7 +1770,7 @@ static void handle_page_flip(int fd, unsigned seq,
+ 		.presented = drm->session->active,
+ 		.when = &present_time,
+ 		.seq = seq,
+-		.refresh = mhz_to_nsec(conn->output.refresh),
++		.refresh = mhz_to_nsec(conn->refresh),
+ 		.flags = present_flags,
+ 	};
+ 	wlr_output_send_present(&conn->output, &present_event);
+diff --git a/include/backend/drm/drm.h b/include/backend/drm/drm.h
+index 88eacc6e9..39a247b1f 100644
+--- a/include/backend/drm/drm.h
++++ b/include/backend/drm/drm.h
+@@ -175,6 +175,8 @@ struct wlr_drm_connector {
+ 
+ 	// Last committed page-flip
+ 	struct wlr_drm_page_flip *pending_page_flip;
++
++	int32_t refresh;
+ };
+ 
+ struct wlr_drm_backend *get_drm_backend_from_backend(
+-- 
+GitLab
+

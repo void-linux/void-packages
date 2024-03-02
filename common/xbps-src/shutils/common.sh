@@ -188,6 +188,12 @@ msg_normal() {
     fi
 }
 
+msg_verbose() {
+    if [ -n "$XBPS_VERBOSE" ]; then
+        printf >&2 "$@"
+    fi
+}
+
 report_broken() {
     if [ "$show_problems" = "ignore-problems" ]; then
         return
