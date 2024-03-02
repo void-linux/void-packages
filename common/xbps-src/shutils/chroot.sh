@@ -14,7 +14,15 @@ install_base_chroot() {
         _bootstrap_arch="env XBPS_TARGET_ARCH=$XBPS_TARGET_PKG"
     fi
     (export XBPS_MACHINE=$XBPS_TARGET_PKG XBPS_ARCH=$XBPS_TARGET_PKG; chroot_sync_repodata)
-    ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot
+    # Fix cyclic between glibc and libxcrypt-compat
+    case "$XBPS_MACHINE" in
+        *-musl)
+            ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot
+            ;;
+        *)
+            ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot glibc libxcrypt-compat
+            ;;
+    esac
     if [ $? -ne 0 ]; then
         msg_error "xbps-src: failed to install base-chroot!\n"
     fi
@@ -309,6 +317,9 @@ chroot_sync_repodata() {
     # Copy xbps repository keys to the masterdir.
     mkdir -p $XBPS_MASTERDIR/var/db/xbps/keys
     cp -f $XBPS_COMMONDIR/repo-keys/*.plist $XBPS_MASTERDIR/var/db/xbps/keys
+    if [ -n "$(shopt -s nullglob; echo "$XBPS_DISTDIR"/etc/repo-keys/*.plist)" ]; then
+        cp -f "$XBPS_DISTDIR"/etc/repo-keys/*.plist "$XBPS_MASTERDIR"/var/db/xbps/keys
+    fi
 
     # Make sure to sync index for remote repositories.
     if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then

@@ -16,7 +16,8 @@ hook() {
 			# s,/usr/armv7l-linux-musleabihf/usr,/usr,g
 			# trailing /usr to avoid clashing with
 			# other $XBPS_CROSS_BASE and $XBPS_CROSS_TRIPLET.
-			sed -i -e "s,$XBPS_CROSS_BASE/usr,/usr,g" "$f"
+			sed -i --follow-symlinks \
+				-e "s,$XBPS_CROSS_BASE/usr,/usr,g" "$f"
 		fi
 	done
 }

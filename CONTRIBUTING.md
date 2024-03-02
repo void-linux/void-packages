@@ -20,6 +20,7 @@ while not meeting any of the following requirements, is a good candidate for the
 In particular, new themes are highly unlikely to be accepted.
 Simple shell scripts are unlikely to be accepted unless they provide considerable value to a broad user base.
 New fonts may be accepted if they provide value beyond aesthetics (e.g. they contain glyphs for a script missing in already packaged fonts).
+Packages related to cryptocurrencies (wallets, miners, nodes, etc) are not accepted.
 
 Browser forks, including those based on Chromium and Firefox, are generally not accepted.
 Such forks require heavy patching, maintenance and hours of build time.
@@ -80,6 +81,29 @@ Other changes to the template may be needed depending on what changes the upstre
 The checksum can be updated automatically with the `xgensum` helper from the [xtools](https://github.com/leahneukirchen/xtools) package:
 
     $ xgensum -i <pkgname>
+
+### Adopting a template
+
+If a template is orphaned (maintained by `orphan@voidlinux.org`) or the current `maintainer` has not contributed to
+Void in over a year, template maintainership can be adopted by someone else. To ensure a template gets the care it needs,
+template adopters should be familiar with the package and have an established history of contributions to Void.
+Those who have contributed several updates, especially for the template in question, are good candidates for template
+maintainership.
+
+It is best to adopt a template when making another change to it. When adopting the template, add your name or username
+and email to the `maintainer` field in the template, and mention the adoption in your commit message, for example:
+
+    libfoo: update to 1.2.3, adopt.
+
+### Orphaning a template
+
+If you no longer wish to maintain a template, you can remove yourself as maintainer by setting the `maintainer` field in
+the template to `Orphaned <orphan@voidlinux.org>`. The commit message should mention this, for example:
+
+    libfoo: orphan.
+
+It is not necessary to make other changes to the template when orphaning, and incrementing the revision (triggering a
+rebuild) is not necessary either.
 
 ### Committing your changes
 

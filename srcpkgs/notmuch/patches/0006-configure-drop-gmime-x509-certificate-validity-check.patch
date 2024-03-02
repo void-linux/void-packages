@@ -1,28 +1,11 @@
-From c6188909672b425fda3d0ecc0ec5163251064324 Mon Sep 17 00:00:00 2001
-From: =?UTF-8?q?=C4=90o=C3=A0n=20Tr=E1=BA=A7n=20C=C3=B4ng=20Danh?=
- <congdanhqx@gmail.com>
-Date: Mon, 27 Jul 2020 22:49:47 +0700
-Subject: [PATCH] configure: drop gmime x509 certificate validity check
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
-
 The problem has been fixed with gmime 3.2.7 already.
-
-Signed-off-by: Đoàn Trần Công Danh <congdanhqx@gmail.com>
----
- configure | 69 -------------------------------------------------------
- 1 file changed, 69 deletions(-)
-
-diff --git a/configure b/configure
-index 36f3f606..fd23aa67 100755
 --- a/configure
 +++ b/configure
-@@ -556,77 +556,8 @@ EOF
-     # should be fixed in GMime in 3.2.7, but some distros might patch
-     printf "Checking for GMime X.509 certificate validity... "
-
--    cat > _check_x509_validity.c <<EOF
+@@ -508,96 +508,13 @@ if pkg-config --exists "gmime-3.0 >= $GM
+ 
+ 	printf "OK.\n"
+ 
+-    cat > _check_gmime_cert.c <<EOF
 -#include <stdio.h>
 -#include <gmime/gmime.h>
 -
@@ -34,7 +17,6 @@ index 36f3f606..fd23aa67 100755
 -    GMimeSignature *sig = NULL;
 -    GMimeCertificate *cert = NULL;
 -    GMimeObject *output = NULL;
--    GMimeValidity validity = GMIME_VALIDITY_UNKNOWN;
 -    int len;
 -
 -    g_mime_init ();
@@ -55,16 +37,27 @@ index 36f3f606..fd23aa67 100755
 -    if (sig == NULL) return !! fprintf (stderr, "no GMimeSignature found at position 0\n");
 -    cert = g_mime_signature_get_certificate (sig);
 -    if (cert == NULL) return !! fprintf (stderr, "no GMimeCertificate found\n");
--    validity = g_mime_certificate_get_id_validity (cert);
+-#ifdef CHECK_VALIDITY
+-    GMimeValidity validity = g_mime_certificate_get_id_validity (cert);
 -    if (validity != GMIME_VALIDITY_FULL) return !! fprintf (stderr, "Got validity %d, expected %d\n", validity, GMIME_VALIDITY_FULL);
--
+-#endif
+-#ifdef CHECK_EMAIL
+-    const char *email = g_mime_certificate_get_email (cert);
+-    if (! email) return !! fprintf (stderr, "no email returned");
+-    if (email[0] == '<') return 2;
+-#endif
 -    return 0;
 -}
 -EOF
+-
+-    # see https://github.com/jstedfast/gmime/pull/90
+-    # should be fixed in GMime in 3.2.7, but some distros might patch
+     printf "Checking for GMime X.509 certificate validity... "
+ 
 -    if ! TEMP_GPG=$(mktemp -d "${TMPDIR:-/tmp}/notmuch.XXXXXX"); then
 -	printf 'No.\nCould not make tempdir for testing X.509 certificate validity support.\n'
 -	errors=$((errors + 1))
--    elif ${CC} ${CFLAGS} ${gmime_cflags} _check_x509_validity.c ${gmime_ldflags} -o _check_x509_validity \
+-    elif ${CC} -DCHECK_VALIDITY ${CFLAGS} ${gmime_cflags} _check_gmime_cert.c ${gmime_ldflags} -o _check_x509_validity \
 -	    && echo disable-crl-checks > "$TEMP_GPG/gpgsm.conf" \
 -	    && echo "4D:E0:FF:63:C0:E9:EC:01:29:11:C8:7A:EE:DA:3A:9A:7F:6E:C1:0D S" >> "$TEMP_GPG/trustlist.txt" \
 -	    && GNUPGHOME=${TEMP_GPG} gpgsm --batch --quiet --import < "$srcdir"/test/smime/ca.crt
@@ -86,6 +79,15 @@ index 36f3f606..fd23aa67 100755
 -		errors=$((errors + 1))
 -	    fi
 -	fi
+ 	printf "Checking whether GMime emits email addresses with angle brackets... "
+-	if ${CC} -DCHECK_EMAIL ${CFLAGS} ${gmime_cflags} _check_gmime_cert.c ${gmime_ldflags} -o _check_email &&
+-		GNUPGHOME=${TEMP_GPG} ./_check_email; then
+-	    gmime_emits_angle_brackets=0
+-	    printf "No.\n"
+-	else
+ 	    gmime_emits_angle_brackets=1
+ 	    printf "Yes.\n"
+-	fi
 -    else
 -	printf 'No.\nFailed to set up gpgsm for testing X.509 certificate validity support.\n'
 -	errors=$((errors + 1))
@@ -93,8 +95,6 @@ index 36f3f606..fd23aa67 100755
 -    if [ -n "$TEMP_GPG" -a -d "$TEMP_GPG" ]; then
 -	rm -rf "$TEMP_GPG"
 -    fi
-
+ 
      # see https://dev.gnupg.org/T3464
      # there are problems verifying signatures when decrypting with session keys with GPGME 1.13.0 and 1.13.1
---
-2.35.1

@@ -24,5 +24,6 @@ git diff-tree -r --no-renames --name-only --diff-filter=AM \
 	"$base" "$tip" \
 	-- 'srcpkgs/*/template' |
 	cut -d/ -f 2 |
+	xargs ./xbps-src sort-dependencies |
 	tee /tmp/templates |
 	sed "s/^/  /" >&2

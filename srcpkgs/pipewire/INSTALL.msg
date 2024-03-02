@@ -1,4 +1,2 @@
-The pipewire-media-session session manager has been abandoned upstream and will
-be removed from Void in a subsequent pipewire update. All users are encouraged
-to transition to wireplumber as soon as possible to avoid unexpected loss of
-functionality in the future.
+The pipewire-media-session session manager has been removed from Void.
+All users must transition to wireplumber to avoid loss of functionality.

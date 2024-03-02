@@ -24,7 +24,7 @@ if [ -z "$nopie" ]; then
 	fi
 else
 	CFLAGS="-fno-PIE ${CFLAGS}"
-	CXXFLAGS="-fno-PIE ${CFLAGS}"
+	CXXFLAGS="-fno-PIE ${CXXFLAGS}"
 	FFLAGS="-fno-PIE ${FFLAGS}"
 	LDFLAGS="-no-pie ${LDFLAGS}"
 fi

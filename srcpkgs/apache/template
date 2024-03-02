@@ -1,7 +1,7 @@
 # Template file for 'apache'
 pkgname=apache
-version=2.4.54
-revision=2
+version=2.4.56
+revision=4
 build_style=gnu-configure
 configure_args="--prefix= --sbindir=/usr/bin --enable-pie --enable-modules=all
  --enable-mods-shared=all --enable-authn-dbm --enable-authn-anon
@@ -33,8 +33,12 @@ maintainer="ologantr <mrphyber@protonmail.com>"
 license="Apache-2.0"
 homepage="https://httpd.apache.org/"
 changelog="https://www.apache.org/dist/httpd/CHANGES_2.4"
-distfiles="https://dlcdn.apache.org/httpd/httpd-${version}.tar.bz2"
-checksum=eb397feeefccaf254f8d45de3768d9d68e8e73851c49afd5b7176d1ecf80c340
+distfiles="https://archive.apache.org/dist/httpd/httpd-${version}.tar.bz2"
+checksum=d8d45f1398ba84edd05bb33ca7593ac2989b17cb9c7a0cafe5442d41afdb2d7c
+
+if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
+	makedepends+=" libxcrypt-devel"
+fi
 
 system_accounts="_apache"
 _apache_homedir="/srv/www/$pkgname"
@@ -55,12 +59,32 @@ fi
 
 pre_configure() {
 	# set default user
-	sed -e 's#User daemon#User _apache#' \
+	vsed -e 's#User daemon#User _apache#' \
 		-e 's#Group daemon#Group _apache#' \
 		-i docs/conf/httpd.conf.in
 
 	cat ${FILESDIR}/xbps.layout >> config.layout
 	if [ "$CROSS_BUILD" ]; then
+		# NOTE: Here, we prepare a modified version of
+		# libtool into $XBPS_WRAPPERDIR. This sets...
+		#
+		# `CC=${CC:=gcc}`
+		# `LD=${LD:=ld}`
+		#
+		# ...so the build doesn't attempt to use the
+		# host linker...
+		sed ${XBPS_CROSS_BASE}/usr/bin/libtool \
+			-e 's;^\(LD\)="\(.\+\)"$;\1="${\1:=\2}";g' \
+			-e 's;^\(CC\)="\(.\+\)"$;\1="${\1:=\2}";g' \
+			> ${XBPS_WRAPPERDIR}/libtool
+		chmod +x ${XBPS_WRAPPERDIR}/libtool
+
+		# Here, we're altering the configure script
+		# to use our modified libtool...
+		vsed -i configure \
+			-e "s;\(my_libtool=\).*$;\1\""${XBPS_WRAPPERDIR}"/libtool\";g" \
+			-e "s;\(SH_LIBTOOL=\)'\$(SHELL).*'$;\1'\$(LIBTOOL)';g"
+
 		# pcre{,2}-config detection doesn't work on cross
 		# since httpd-2.4.53, manually export PCRE_CONFIG
 		# to let configure know where it is
@@ -76,14 +100,12 @@ pre_configure() {
 post_configure() {
 	if [ "$CROSS_BUILD" ]; then
 		# Build gen_test_char using $BUILD_CC
-		sed -i server/Makefile \
+		vsed -i server/Makefile \
 			-e "s;\$(LINK) \$(EXTRA_LDFLAGS) \$(\(gen_test_char\).*;${BUILD_CC} -o \1 \1.c -I${XBPS_CROSS_BASE}/usr/include/apr-1;"
 		# More hacks to make cross compiling work
-		sed -i build/*.mk Makefile */Makefile \
+		vsed -i build/rules.mk support/Makefile \
 			-e "s;--mode=compile;& --tag=CC;" \
-			-e "s;--mode=link;& --tag=CC;" \
-			-e "s;-\(L|R\)/usr/lib;-\1${XBPS_CROSS_BASE}/usr/lib;" \
-			-e "s;^\(LIBTOOL =\) /usr/share/apr-1/build/libtool;\1 ${XBPS_CROSS_BASE}/usr/bin/libtool;"
+			-e "s;--mode=link;& --tag=CC;"
 	fi
 }
 
@@ -108,7 +130,7 @@ post_install() {
 	#  * httpd-userdir.conf
 	#  * httpd-default.conf
 	#
-	sed \
+	vsed \
 		-e 's|ServerRoot ""|ServerRoot "/srv/www/apache"|' \
 		-e 's|#\(LoadModule include_module /usr/libexec/httpd/mod_include.so\)|\1|' \
 		-e 's|\(LoadModule unique_id_module /usr/libexec/httpd/mod_unique_id.so\)|#\1|' \
@@ -122,10 +144,6 @@ post_install() {
 		-e 's|#\(Include /etc/apache/extra/httpd-userdir.conf\)|\1|' \
 		-e 's|#\(Include /etc/apache/extra/httpd-default.conf\)|\1|' \
 		-i "${DESTDIR}/etc/apache/httpd.conf"
-
-	# Remove references to hardening -specs.
-	sed -e "s|\(-specs=.*hardened-ld\)||g" -e "s|\(-specs=.*hardened-cc1\)||g" -i \
-		${DESTDIR}/usr/share/apache/webroot/build/config{.nice,_vars.mk}
 
 	# Remove unused stuff.
 	vmkdir usr/share/apache/webroot

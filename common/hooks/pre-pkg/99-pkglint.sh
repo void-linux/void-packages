@@ -171,7 +171,7 @@ hook() {
 			_pattern="^${_shlib}\.so\.[0-9]+(.*)[[:blank:]]+${_pkgname}-[^-]+_[0-9]+"
 		fi
 		grep -E "${_pattern}" $mapshlibs | { \
-			while read conflictFile conflictPkg ignore; do
+			while read -r conflictFile conflictPkg ignore; do
 				found=1
 				conflictRev=${conflictFile#*.so.}
 				if [ -n "$ignore" -a "$ignore" != "$XBPS_TARGET_MACHINE" ]; then

@@ -65,11 +65,11 @@ remove_pkg_autodeps() {
 
     remove_pkg_cross_deps
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
-    prevs=$(stat -c %s $tmplogf)
+    prevs=$(stat_size $tmplogf)
     echo yes | $XBPS_REMOVE_CMD -Ryod 2>> $errlogf 1>> $tmplogf
     rval=$?
     while [ $rval -eq 0 ]; do
-        local curs=$(stat -c %s $tmplogf)
+        local curs=$(stat_size $tmplogf)
         if [ $curs -eq $prevs ]; then
             break
         fi
@@ -105,7 +105,7 @@ remove_pkg_statedir() {
 remove_pkg() {
     local cross="$1" _destdir f
 
-    [ -z $pkgname ] && msg_error "unexistent package, aborting.\n"
+    [ -z $pkgname ] && msg_error "nonexistent package, aborting.\n"
 
     if [ -n "$cross" ]; then
         _destdir="$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET"
