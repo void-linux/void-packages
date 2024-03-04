@@ -11,7 +11,7 @@ for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 		var="${var#BASH_FUNC_}"
 		unset -f "$var"
 		;;
-	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH)
+	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH | NOCOLORS)
 		# xbps-src specific
 		;;
 	SOURCEFORGE_SITE | NONGNU_SITE | XORG_SITE | DEBIAN_SITE | GNOME_SITE)

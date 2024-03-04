@@ -67,3 +67,6 @@ export RUSTONIG_SYSTEM_LIBONIG=1
 
 # libsqlite3-sys
 export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
+
+# jemalloc-sys
+export JEMALLOC_SYS_WITH_LG_PAGE=16

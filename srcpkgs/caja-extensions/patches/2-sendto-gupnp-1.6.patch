@@ -1,0 +1,132 @@
+From 652e145d2c5e2a9658eed7a665fe5a295503940b Mon Sep 17 00:00:00 2001
+From: Xiaotian Wu <yetist@gmail.com>
+Date: Mon, 16 Oct 2023 10:42:27 +0800
+Subject: [PATCH] sendto: require gupnp-1.6
+
+---
+ configure.ac               |  6 ++---
+ sendto/plugins/upnp/upnp.c | 48 ++++++++++++++++++++++----------------
+ 2 files changed, 30 insertions(+), 24 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index a6c506c..5fedb4b 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -100,7 +100,7 @@ if test "x$enable_sendto" = "xyes"; then
+         GTHREAD_REQUIRED=2.6.0
+         DBUS_REQUIRED=1.0
+         DBUS_GLIB_REQUIRED=0.60
+-        GUPNP_REQUIRED=0.13
++        GUPNP_REQUIRED=1.6
+         PKG_CHECK_MODULES(SENDTO,
+                 glib-2.0    >= $GLIB_REQUIRED
+                 gthread-2.0 >= $GTHREAD_REQUIRED
+@@ -214,9 +214,7 @@ if test "x$enable_sendto" = "xyes"; then
+             fi
+             ;;
+             upnp)
+-                PKG_CHECK_MODULES(UPNP, gupnp-1.2 >= $GUPNP_REQUIRED,
+-                    enable_upnp=yes AC_DEFINE([HAS_GUPNP_VERSION_1_2], 1, ["Version is at least 1.2"]), enable_upnp=no)
+-                PKG_CHECK_MODULES(UPNP, gupnp-1.0 >= $GUPNP_REQUIRED,
++                PKG_CHECK_MODULES(UPNP, gupnp-1.6 >= $GUPNP_REQUIRED,
+                     enable_upnp=yes, enable_upnp=no)
+                 if test "${enable_upnp}" != "yes" ; then
+                     sendto_plugin_error_or_ignore "you need gupnp installed to build the upnp plugin"
+diff --git a/sendto/plugins/upnp/upnp.c b/sendto/plugins/upnp/upnp.c
+index 7b6775b..b770e37 100644
+--- a/sendto/plugins/upnp/upnp.c
++++ b/sendto/plugins/upnp/upnp.c
+@@ -87,25 +87,37 @@ check_required_actions (GUPnPServiceIntrospection *introspection)
+ }
+ 
+ static void
+-get_introspection_cb (GUPnPServiceInfo *service_info,
+-		      GUPnPServiceIntrospection *introspection, const GError *error,
+-		      gpointer user_data)
++get_introspection_cb (GObject *source_object,
++                      GAsyncResult *res,
++                      gpointer user_data)
+ {
+ 	GUPnPDeviceInfo *device_info;
+ 	gchar *name;
+ 	const gchar *udn, *interface;
+ 	GtkTreeIter iter;
+ 	GUPnPContext *context;
++    GError *error = NULL;
+ 
+ 	device_info = GUPNP_DEVICE_INFO (user_data);
+ 
+-	if (introspection != NULL) {
+-		/* If introspection is available, make sure required actions
+-		 * are implemented.
+-		 */
+-		if (!check_required_actions (introspection))
+-			goto error;
+-	}
++    GUPnPServiceIntrospection *introspection =
++      gupnp_service_info_introspect_finish (GUPNP_SERVICE_INFO (GUPNP_SERVICE_INFO (source_object)),
++                                            res,
++                                            &error);
++    if (error) {
++        g_warning ("Failed to create introspection for '%s': %s",
++                   gupnp_service_info_get_udn (GUPNP_SERVICE_INFO (source_object)),
++                   error->message);
++        g_clear_error (&error);
++        goto error;
++    }
++
++    /* If introspection is available, make sure required actions
++     * are implemented.
++     */
++    if (!check_required_actions (introspection)) {
++        goto error;
++    }
+ 
+ 	udn = gupnp_device_info_get_udn (device_info);
+ 	if (G_UNLIKELY (udn == NULL))
+@@ -129,10 +141,8 @@ get_introspection_cb (GUPnPServiceInfo *service_info,
+ 					   -1);
+ 
+ 	g_free (name);
+-
++    g_object_unref (introspection);
+ error:
+-	/* We don't need the proxy objects anymore */
+-	g_object_unref (service_info);
+ 	g_object_ref (device_info);
+ }
+ 
+@@ -148,9 +158,10 @@ device_proxy_available_cb (GUPnPControlPoint *cp,
+ 		return;
+ 	}
+ 
+-	gupnp_service_info_get_introspection_async (info,
+-						    get_introspection_cb,
+-						    g_object_ref (proxy));
++	gupnp_service_info_introspect_async (info,
++                                         NULL,
++                                         get_introspection_cb,
++                                         g_object_ref (proxy));
+ }
+ 
+ static void
+@@ -211,11 +222,7 @@ init (NstPlugin *plugin)
+ 		return FALSE;
+ 	g_free (upload_cmd);
+ 
+-#ifdef HAS_GUPNP_VERSION_1_2
+ 	context_manager = gupnp_context_manager_create (0);
+-#else
+-	context_manager = gupnp_context_manager_new (NULL, 0);
+-#endif
+ 	g_assert (context_manager != NULL);
+ 	g_signal_connect (context_manager, "context-available",
+ 			  G_CALLBACK (on_context_available), NULL);
+@@ -275,6 +282,7 @@ send_files (NstPlugin *plugin,
+ 	g_ptr_array_add (argv, "15"); /* discovery timeout (seconds) */
+ 	g_ptr_array_add (argv, "-e");
+ 	g_ptr_array_add (argv, interface);
++	g_ptr_array_add (argv, "-u");
+ 	g_ptr_array_add (argv, udn);
+ 	for (l = file_list ; l; l=l->next) {
+ 		gchar *file_path;

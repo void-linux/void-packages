@@ -1,0 +1,69 @@
+# Template file for 'incus'
+pkgname=incus
+version=0.5.1
+revision=1
+build_style=go
+go_import_path=github.com/lxc/incus
+go_build_tags="libsqlite3"
+go_package="${go_import_path}/cmd/incus
+ ${go_import_path}/cmd/incus-benchmark
+ ${go_import_path}/cmd/incus-user
+ ${go_import_path}/cmd/incusd
+ ${go_import_path}/cmd/lxc-to-incus
+ ${go_import_path}/cmd/fuidshift"
+hostmakedepends="pkg-config"
+makedepends="lxc-devel acl-devel cowsql-devel raft-devel
+ libcap-devel libuv-devel sqlite-devel eudev-libudev-devel"
+depends="lxc acl acl-progs rsync squashfs-tools xz dnsmasq iptables attr-progs"
+short_desc="Powerful system container and virtual machine manager"
+maintainer="dkwo <npiazza@disroot.org>"
+license="Apache-2.0"
+homepage="https://linuxcontainers.org/incus"
+distfiles="https://github.com/lxc/incus/archive/refs/tags/v${version}.tar.gz"
+checksum=ca757fa69272650fc2a3aab73d27b11cee48f3872115b664f234af74cc6684ec
+system_groups="_incus-admin _incus"
+make_dirs="
+ /var/lib/incus 0755 root root
+ /var/log/incus 0755 root root"
+
+export CGO_LDFLAGS_ALLOW="(-Wl,-wrap,pthread_create)|(-Wl,-z,now)"
+export GOFLAGS="-buildmode=pie"
+
+post_build() {
+	CGO_ENABLED=0 go install -p "${XBPS_MAKEJOBS}" -v -tags netgo -buildmode=default "${go_import_path}/cmd/incus-migrate"
+	CGO_ENABLED=0 go install -p "${XBPS_MAKEJOBS}" -v -tags agent,netgo -buildmode=default "${go_import_path}/cmd/incus-agent"
+	cd cmd/lxd-to-incus && go install -v ./
+}
+
+do_check() {
+	go test -v -tags libsqlite3 -skip TestConvertNetworkConfig ./...
+}
+
+post_install() {
+	vmkdir usr/libexec/incus
+	for f in ${DESTDIR}/usr/bin/{incusd,incus-user}; do
+		vinstall "${f}" 700 usr/libexec/incus && rm "${f}"
+	done
+	vsv incus
+	# avoid conflict with lxd, lxd-lts
+	mv ${DESTDIR}/usr/bin/{fuidshift,fuidshift-incus}
+}
+
+incus-client_package() {
+	short_desc+=" - client"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin/incus
+		vsv incus-user
+		vcompletion scripts/bash/incus bash
+	}
+}
+
+incus-tools_package() {
+	short_desc+=" - tools"
+	pkg_install() {
+		for _tool in fuidshift-incus lxc-to-incus lxd-to-incus incus-benchmark incus-migrate; do
+			vmove usr/bin/${_tool}
+		done
+	}
+}

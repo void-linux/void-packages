@@ -1,0 +1,1602 @@
+From bbaa1944d83a2c68e49927d5bcc462cd870beb2d Mon Sep 17 00:00:00 2001
+From: Jean Ghali <jghali@libertysurf.fr>
+Date: Tue, 15 Aug 2023 02:43:52 +0000
+Subject: [PATCH 09/13] #16948: Fix build with podofo 0.10.x
+
+git-svn-id: svn://scribus.net/trunk/Scribus@25601 11d20701-8431-0410-a711-e3c959e3b870
+(cherry picked from commit 33580ae8371e993b6e199e710950702c78d7dde1)
+---
+ scribus/documentchecker.cpp                   |  18 +-
+ .../imagedataloaders/scimgdataloader_pdf.cpp  |  12 +-
+ scribus/pdf_analyzer.cpp                      | 533 +++++++++++++++++-
+ scribus/pdflib_core.cpp                       | 480 +++++++++++++---
+ scribus/pdflib_core.h                         |   4 +-
+ scribus/plugins/import/ai/importai.cpp        |  41 +-
+ 6 files changed, 985 insertions(+), 103 deletions(-)
+
+--- a/scribus/documentchecker.cpp
++++ b/scribus/documentchecker.cpp
+@@ -109,7 +109,7 @@ bool DocumentChecker::checkDocument(Scri
+ void DocumentChecker::checkPages(ScribusDoc *currDoc, const CheckerPrefs& checkerSettings)
+ {
+ 	errorCodes pageError;
+-	for (int i=0; i < currDoc->DocPages.count(); ++i )
++	for (int i = 0; i < currDoc->DocPages.count(); ++i)
+ 	{
+ 		pageError.clear();
+ 		if (checkerSettings.checkAppliedMasterDifferentSide)
+@@ -127,11 +127,11 @@ void DocumentChecker::checkPages(Scribus
+ 			}
+ 			else
+ 			{
+-				if (pageLoc==LeftPage && masterPageLocation==1)
++				if (pageLoc == LeftPage && masterPageLocation == 1)
+ 					error = false;
+-				else if (pageLoc==RightPage && masterPageLocation==0)
++				else if (pageLoc == RightPage && masterPageLocation == 0)
+ 					error = false;
+-				else if (pageLoc==MiddlePage && masterPageLocation==2)
++				else if (pageLoc == MiddlePage && masterPageLocation == 2)
+ 					error = false;
+ 				else
+ 					error = true;
+@@ -596,7 +596,7 @@ void DocumentChecker::checkItems(Scribus
+ 								}
+ 								if (checkerSettings.checkNotCMYKOrSpot)
+ 								{
+-									for (int i=0; i<usedColorSpaces.size(); ++i)
++									for (int i = 0; i < usedColorSpaces.size(); ++i)
+ 									{
+ 										if (usedColorSpaces[i] == CS_DeviceRGB || usedColorSpaces[i] == CS_ICCBased || usedColorSpaces[i] == CS_CalGray
+ 											|| usedColorSpaces[i] == CS_CalRGB || usedColorSpaces[i] == CS_Lab)
+@@ -608,7 +608,7 @@ void DocumentChecker::checkItems(Scribus
+ 								}
+ 								if (checkerSettings.checkDeviceColorsAndOutputIntent && currDoc->HasCMS)
+ 								{
+-									for (int i=0; i<usedColorSpaces.size(); ++i)
++									for (int i = 0; i < usedColorSpaces.size(); ++i)
+ 									{
+ 										if (currPrintProfCS == ColorSpace_Cmyk && (usedColorSpaces[i] == CS_DeviceRGB || usedColorSpaces[i] == CS_DeviceGray))
+ 										{
+@@ -627,7 +627,7 @@ void DocumentChecker::checkItems(Scribus
+ 								itemError.insert(Transparency, 0);
+ 							if (checkerSettings.checkFontNotEmbedded || checkerSettings.checkFontIsOpenType)
+ 							{
+-								for (int i=0; i<usedFonts.size(); ++i)
++								for (int i = 0; i < usedFonts.size(); ++i)
+ 								{
+ 									PDFFont currentFont = usedFonts[i];
+ 									if (!currentFont.isEmbedded && checkerSettings.checkFontNotEmbedded)
+@@ -638,7 +638,7 @@ void DocumentChecker::checkItems(Scribus
+ 							}
+ 							if (checkerSettings.checkResolution)
+ 							{
+-								for (int i=0; i<imgs.size(); ++i)
++								for (int i = 0; i < imgs.size(); ++i)
+ 								{
+ 									if ((imgs[i].dpiX < checkerSettings.minResolution) || (imgs[i].dpiY < checkerSettings.minResolution))
+ 										itemError.insert(ImageDPITooLow, 0);
+@@ -655,7 +655,7 @@ void DocumentChecker::checkItems(Scribus
+ 				if ( currItem->frameOverflows() && (checkerSettings.checkOverflow) && (!((currItem->isAnnotation()) && ((currItem->annotation().Type() == Annotation::Combobox) || (currItem->annotation().Type() == Annotation::Listbox)))))
+ 					itemError.insert(TextOverflow, 0);
+ 
+-				if (checkerSettings.checkEmptyTextFrames && (currItem->itemText.length()==0 || currItem->frameUnderflows()))
++				if (checkerSettings.checkEmptyTextFrames && (currItem->itemText.length() == 0 || currItem->frameUnderflows()))
+ 				{
+ 					bool isEmptyAnnotation = (currItem->isAnnotation() && 
+ 					                         ((currItem->annotation().Type() == Annotation::Link) ||
+--- a/scribus/imagedataloaders/scimgdataloader_pdf.cpp
++++ b/scribus/imagedataloaders/scimgdataloader_pdf.cpp
+@@ -55,10 +55,16 @@ bool ScImgDataLoader_PDF::loadPicture(co
+ #ifdef HAVE_PODOFO
+ 	try
+ 	{
+-		PoDoFo::PdfError::EnableDebug( false );
+-		PoDoFo::PdfError::EnableLogging( false );
+-		PoDoFo::PdfMemDocument doc( fn.toLocal8Bit().data() );
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++		PoDoFo::PdfMemDocument doc;
++		doc.Load(fn.toLocal8Bit().data());
++		m_imageInfoRecord.numberOfPages = doc.GetPages().GetCount();
++#else
++		PoDoFo::PdfError::EnableDebug(false);
++		PoDoFo::PdfError::EnableLogging(false);
++		PoDoFo::PdfMemDocument doc(fn.toLocal8Bit().data());
+ 		m_imageInfoRecord.numberOfPages = doc.GetPageCount();
++#endif
+ 		if (page > m_imageInfoRecord.numberOfPages)
+ 		{
+ 			qDebug() << "Incorrect page number specified!";
+--- a/scribus/pdf_analyzer.cpp
++++ b/scribus/pdf_analyzer.cpp
+@@ -30,6 +30,10 @@ for which a new license (GPL+exception)
+ #ifdef HAVE_PODOFO
+ using namespace PoDoFo;
+ 
++#if (PODOFO_VERSION < PODOFO_MAKE_VERSION(0, 10, 0))
++#define IsRealStrict IsReal
++#endif
++
+ static QHash<QString, PDFContentStreamKeyword> kwNameMap;
+ 
+ // we gonna need a map from string values to the defined enum of pdf keywords
+@@ -77,10 +81,13 @@ PDFAnalyzer::PDFAnalyzer(QString & filen
+ 
+ 	m_pdfdoc = nullptr;
+ 
++#if (PODOFO_VERSION < PODOFO_MAKE_VERSION(0, 10, 0))
+ 	PdfError::EnableDebug( false );
++#endif
+ 	try
+ 	{
+-		m_pdfdoc = new PdfMemDocument(filename.toLocal8Bit().data());
++		m_pdfdoc = new PdfMemDocument();
++		m_pdfdoc->Load(filename.toLocal8Bit().data());
+ 	}
+ 	catch (PdfError & e)
+ 	{
+@@ -99,7 +106,12 @@ bool PDFAnalyzer::inspectPDF(int pageNum
+ {
+ 	if (!m_pdfdoc)
+ 		return false;
++
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++	PdfPage* page = &(m_pdfdoc->GetPages().GetPageAt(pageNum));
++#else
+ 	PdfPage* page = m_pdfdoc->GetPage(pageNum);
++#endif
+ 	return page ? inspectCanvas(page, usedColorSpaces, hasTransparency, usedFonts, imgs) : false;
+ }
+ 
+@@ -139,7 +151,13 @@ PDFColorSpace PDFAnalyzer::getCSType(Pdf
+ 					PdfObject* pBase = &base;
+ 					if (base.IsReference())
+ 					{
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++						PdfDocument* pdfdoc = cs->GetDocument();
++						PdfIndirectObjectList& pdf_iol = pdfdoc->GetObjects();
++						pBase = pdf_iol.GetObject(base.GetReference());
++#else
+ 						pBase = cs->GetOwner()->GetObject(base.GetReference());
++#endif
+ 					}
+ #if (PODOFO_VERSION < PODOFO_MAKE_VERSION(0, 9, 7))
+ 					pBase->SetOwner(cs->GetOwner());
+@@ -180,11 +198,21 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 		// get hold of a PdfObject pointer of this canvas
+ 		// needed for the finding resources code below to work
+ 		PdfPage* page = dynamic_cast<PdfPage*>(canvas);
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++		PdfObject* canvasObject = page ? &(page->GetObject()) : &(dynamic_cast<PdfXObject*>(canvas)->GetObject());
++
++#else
+ 		PdfObject* canvasObject = page ? (page->GetObject()) : ((dynamic_cast<PdfXObject*>(canvas))->GetObject());
++#endif
+ 		PdfDictionary* canvasDict = (canvasObject && canvasObject->IsDictionary()) ? &(canvasObject->GetDictionary()) : nullptr;
+ 
+ 		// find a resource with ColorSpace entry
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++		PdfResources* canvasRsrc = canvas->GetResources();
++		PdfObject* resources = &(canvasRsrc->GetObject());
++#else
+ 		PdfObject* resources = canvas->GetResources();
++#endif
+ 		for (PdfDictionary* par = canvasDict, *parentDict = nullptr; par && !resources; par = parentDict)
+ 		{
+ 			resources = par->FindKey("Resources");
+@@ -234,6 +262,468 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 
+ 	try
+ 	{
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++		// start parsing the content stream
++		PdfContentReaderArgs tokenizerArgs = { PdfContentReaderFlags::DontFollowXObjectForms };
++		PdfContentStreamReader tokenizer(*canvas, tokenizerArgs);
++		PdfContent pdfContent;
++		PdfVariant var;
++		bool readToken;
++
++		int tokenNumber = 0;
++		bool inlineImgDict = false;
++		QList<PdfVariant> args;
++		QStack<PDFGraphicState> gsStack;
++		PDFGraphicState currGS;
++		while ((readToken = tokenizer.TryReadNext(pdfContent)))
++		{
++			++tokenNumber;
++			if (pdfContent.Type == PdfContentType::Operator)
++			{
++				args.clear();
++				int stackSize = pdfContent.Stack.size();
++				for (size_t i = 0; i < stackSize; ++i)
++					args.append(pdfContent.Stack[stackSize - 1 - i]);
++				switch (pdfContent.Operator)
++				{
++				case PdfOperator::q:
++					gsStack.push(currGS);
++					break;
++				case PdfOperator::Q:
++					currGS = gsStack.pop();
++					break;
++				case PdfOperator::cm:
++				{
++					if (args.size() == 6)
++					{
++						double mt[6];
++						for (int i = 0; i < 6; ++i)
++						{
++							mt[i] = args[i].GetReal();
++						}
++						QTransform transMatrix(mt[0], mt[1], mt[2], mt[3], mt[4], mt[5]);
++						currGS.ctm = transMatrix * currGS.ctm;
++					}
++				}
++				break;
++				case PdfOperator::w:
++					currGS.lineWidth = args[0].GetReal();
++					break;
++				case PdfOperator::J:
++					currGS.lineCap = args[0].GetNumber();
++					break;
++				case PdfOperator::j:
++					currGS.lineJoin = args[0].GetNumber();
++					break;
++				case PdfOperator::M:
++					currGS.lineJoin = args[0].GetReal();
++					break;
++				case PdfOperator::d:
++				{
++					currGS.dashPattern.first.clear();
++					PdfArray dashArr = args[0].GetArray();
++					for (uint i = 0; i < dashArr.size(); ++i)
++						currGS.dashPattern.first.append(dashArr[i].GetNumber());
++					currGS.dashPattern.second = args[1].GetNumber();
++				}
++				break;
++				case PdfOperator::g:
++					if (!usedColorSpaces.contains(CS_DeviceGray))
++						usedColorSpaces.append(CS_DeviceGray);
++					currGS.fillCS = CS_DeviceGray;
++					currGS.fillColor.clear();
++					currGS.fillColor.append(args[0].GetReal());
++					break;
++				case PdfOperator::G:
++					if (!usedColorSpaces.contains(CS_DeviceGray))
++						usedColorSpaces.append(CS_DeviceGray);
++					currGS.strokeCS = CS_DeviceGray;
++					currGS.strokeColor.clear();
++					currGS.strokeColor.append(args[0].GetReal());
++					break;
++				case PdfOperator::rg:
++					if (!usedColorSpaces.contains(CS_DeviceRGB))
++						usedColorSpaces.append(CS_DeviceRGB);
++					currGS.fillCS = CS_DeviceRGB;
++					currGS.fillColor.clear();
++					for (int i = 0; i < args.size(); ++i)
++						currGS.fillColor.append(args[i].GetReal());
++					break;
++				case PdfOperator::RG:
++					if (!usedColorSpaces.contains(CS_DeviceRGB))
++						usedColorSpaces.append(CS_DeviceRGB);
++					currGS.strokeCS = CS_DeviceRGB;
++					currGS.strokeColor.clear();
++					for (int i = 0; i < args.size(); ++i)
++						currGS.strokeColor.append(args[i].GetReal());
++					break;
++				case PdfOperator::k:
++					if (!usedColorSpaces.contains(CS_DeviceCMYK))
++						usedColorSpaces.append(CS_DeviceCMYK);
++					currGS.fillCS = CS_DeviceCMYK;
++					currGS.fillColor.clear();
++					for (int i = 0; i < args.size(); ++i)
++						currGS.fillColor.append(args[i].GetReal());
++					break;
++				case PdfOperator::K:
++					if (!usedColorSpaces.contains(CS_DeviceCMYK))
++						usedColorSpaces.append(CS_DeviceCMYK);
++					currGS.strokeCS = CS_DeviceCMYK;
++					currGS.strokeColor.clear();
++					for (int i = 0; i < args.size(); ++i)
++						currGS.strokeColor.append(args[i].GetReal());
++					break;
++				case PdfOperator::cs:
++				{
++					if (args.size() == 1 && args[0].IsName())
++					{
++						if (args[0].GetName() == "DeviceGray")
++						{
++							currGS.fillCS = CS_DeviceGray;
++							currGS.fillColor.clear();
++							currGS.fillColor.append(0);
++							if (!usedColorSpaces.contains(CS_DeviceGray))
++								usedColorSpaces.append(CS_DeviceGray);
++						}
++						else if (args[0].GetName() == "DeviceRGB")
++						{
++							currGS.fillCS = CS_DeviceRGB;
++							currGS.fillColor.clear();
++							for (int i = 0; i < 3; ++i)
++								currGS.fillColor.append(0);
++							if (!usedColorSpaces.contains(CS_DeviceRGB))
++								usedColorSpaces.append(CS_DeviceRGB);
++						}
++						else if (args[0].GetName() == "DeviceCMYK")
++						{
++							currGS.fillCS = CS_DeviceCMYK;
++							currGS.fillColor.clear();
++							for (int i = 0; i < 3; ++i)
++								currGS.fillColor.append(0);
++							currGS.fillColor.append(1);
++							if (!usedColorSpaces.contains(CS_DeviceCMYK))
++								usedColorSpaces.append(CS_DeviceCMYK);
++						}
++						else if (args[0].GetName() == "Pattern")
++						{
++							currGS.fillCS = CS_Pattern;
++							if (!usedColorSpaces.contains(CS_Pattern))
++								usedColorSpaces.append(CS_Pattern);
++						}
++						else
++						{
++							if (processedNamedCS.contains(args[0].GetName()))
++							{
++								currGS.fillCS = processedNamedCS.value(args[0].GetName());
++							}
++							else
++							{
++								if (colorSpacesDict && colorSpacesDict->FindKey(args[0].GetName()))
++								{
++									PdfObject* csEntry = colorSpacesDict->FindKey(args[0].GetName());
++									PDFColorSpace retval = getCSType(csEntry);
++									if (retval != CS_Unknown && !usedColorSpaces.contains(retval))
++										usedColorSpaces.append(retval);
++									currGS.fillCS = retval;
++									processedNamedCS.insert(args[0].GetName(), retval);
++								}
++								else
++								{
++									qDebug() << "Supplied colorspace is undefined! File:" << m_filename;
++									return false;
++								}
++							}
++						}
++					}
++					else
++					{
++						qDebug() << "Wrong syntax in specifying color space! File:" << m_filename;
++						return false;
++					}
++				}
++				break;
++				case PdfOperator::CS:
++				{
++					if (args.size() == 1 && args[0].IsName())
++					{
++						if (args[0].GetName() == "DeviceGray")
++						{
++							currGS.strokeCS = CS_DeviceGray;
++							currGS.strokeColor.clear();
++							currGS.strokeColor.append(0);
++							if (!usedColorSpaces.contains(CS_DeviceGray))
++								usedColorSpaces.append(CS_DeviceGray);
++						}
++						else if (args[0].GetName() == "DeviceRGB")
++						{
++							currGS.fillCS = CS_DeviceRGB;
++							currGS.strokeColor.clear();
++							for (int i = 0; i < 3; ++i)
++								currGS.strokeColor.append(0);
++							if (!usedColorSpaces.contains(CS_DeviceRGB))
++								usedColorSpaces.append(CS_DeviceRGB);
++						}
++						else if (args[0].GetName() == "DeviceCMYK")
++						{
++							currGS.fillCS = CS_DeviceCMYK;
++							currGS.strokeColor.clear();
++							for (int i = 0; i < 3; ++i)
++								currGS.strokeColor.append(0);
++							currGS.strokeColor.append(1);
++							if (!usedColorSpaces.contains(CS_DeviceCMYK))
++								usedColorSpaces.append(CS_DeviceCMYK);
++						}
++						else if (args[0].GetName() == "Pattern")
++						{
++							currGS.fillCS = CS_Pattern;
++							if (!usedColorSpaces.contains(CS_Pattern))
++								usedColorSpaces.append(CS_Pattern);
++						}
++						else
++						{
++							if (processedNamedCS.contains(args[0].GetName()))
++							{
++								currGS.strokeCS = processedNamedCS.value(args[0].GetName());
++							}
++							else
++							{
++								if (colorSpacesDict && colorSpacesDict->FindKey(args[0].GetName()))
++								{
++									PdfObject* csEntry = colorSpacesDict->FindKey(args[0].GetName());
++									PDFColorSpace retval = getCSType(csEntry);
++									if (retval != CS_Unknown && !usedColorSpaces.contains(retval))
++										usedColorSpaces.append(retval);
++									currGS.strokeCS = retval;
++									processedNamedCS.insert(args[0].GetName(), retval);
++								}
++								else
++								{
++									qDebug() << "Supplied colorspace is undefined! File:" << m_filename;
++									return false;
++								}
++							}
++						}
++					}
++					else
++					{
++						qDebug() << "Wrong syntax in specifying color space! File:" << m_filename;
++						return false;
++					}
++				}
++				break;
++				case PdfOperator::sc:
++					currGS.fillColor.clear();
++					for (int i = 0; i < args.size(); ++i)
++						currGS.fillColor.append(args[i].GetReal());
++					break;
++				case PdfOperator::SC:
++					currGS.strokeColor.clear();
++					for (int i = 0; i < args.size(); ++i)
++						currGS.strokeColor.append(args[i].GetReal());
++					break;
++				case PdfOperator::scn:
++					currGS.fillColor.clear();
++					for (int i = 0; i < args.size(); ++i)
++					{
++						if (args[i].IsRealStrict() || args[i].IsNumber())
++							currGS.fillColor.append(args[i].GetReal());
++					}
++					break;
++				case PdfOperator::SCN:
++					currGS.strokeColor.clear();
++					for (int i = 0; i < args.size(); ++i)
++					{
++						if (args[i].IsRealStrict() || args[i].IsNumber())
++							currGS.strokeColor.append(args[i].GetReal());
++					}
++					break;
++				case PdfOperator::Do: // image or form XObject
++					// Handled in PdfContentType::DoXObject
++					break;
++				case PdfOperator::BI:
++					inlineImgDict = true;
++					break;
++				case PdfOperator::ID:
++					if (inlineImgDict)
++					{
++						PdfName colorspace("ColorSpace");
++						PdfName cs("CS");
++						if (args.contains(colorspace) || args.contains(cs))
++						{
++							int csIdx = args.contains(colorspace) ? args.indexOf(colorspace) : args.indexOf(cs);
++							if (args[csIdx + 1].IsName())
++							{
++								PdfName csName = args[csIdx + 1].GetName();
++								if ((csName == "G" || csName == "DeviceGray") && !usedColorSpaces.contains(CS_DeviceGray))
++									usedColorSpaces.append(CS_DeviceGray);
++								else if ((csName == "RGB" || csName == "DeviceRGB") && !usedColorSpaces.contains(CS_DeviceRGB))
++									usedColorSpaces.append(CS_DeviceRGB);
++								else if ((csName == "CMYK" || csName == "DeviceCMYK") && !usedColorSpaces.contains(CS_DeviceCMYK))
++									usedColorSpaces.append(CS_DeviceCMYK);
++								else if (!processedNamedCS.contains(csName))
++								{
++									if (colorSpacesDict && colorSpacesDict->FindKey(csName))
++									{
++										PdfObject* csEntry = colorSpacesDict->FindKey(csName);
++										if (csEntry)
++										{
++											PDFColorSpace retval = getCSType(csEntry);
++											if (retval != CS_Unknown && !usedColorSpaces.contains(retval))
++												usedColorSpaces.append(retval);
++											processedNamedCS.insert(csName, retval);
++										}
++									}
++									else
++									{
++										qDebug() << "Supplied colorspace for inline image is undefined!";
++										return false;
++									}
++								}
++							}
++						}
++						PdfName height("Height");
++						PdfName h("H");
++						PdfName width("Width");
++						PdfName w("W");
++						if ((args.contains(height) || args.contains(h)) && (args.contains(width) || args.contains(w)))
++						{
++							int heightIdx = args.contains(height) ? args.indexOf(height) : args.indexOf(h);
++							int widthIdx = args.contains(width) ? args.indexOf(width) : args.indexOf(w);
++							double height = args[heightIdx + 1].GetReal();
++							double width = args[widthIdx + 1].GetReal();
++							PDFImage img;
++							img.imgName = "Inline Image";
++							img.dpiX = qRound(width / (currGS.ctm.m11() / 72));
++							img.dpiY = qRound(height / (currGS.ctm.m22() / 72));
++							imgs.append(img);
++						}
++						inlineImgDict = false;
++					}
++					break;
++				case PdfOperator::gs:
++				{
++					if (!processedNamedGS.contains(args[0].GetName()))
++					{
++						if (args.size() == 1 && args[0].IsName() && extGStatesDict)
++						{
++							PdfObject* extGStateObj = extGStatesDict->FindKey(args[0].GetName());
++							if (extGStateObj)
++							{
++								inspectExtGStateObj(extGStateObj, usedColorSpaces, hasTransparency, usedFonts, currGS);
++							}
++							else
++							{
++								qDebug() << "Named graphic state used with gs operator is undefined in current ExtGState. File:" << m_filename;
++								return false;
++							}
++							processedNamedGS.append(args[0].GetName());
++						}
++						else
++						{
++							qDebug() << "Wrong syntax in applying extended graphic state (gs operator) or there's no ExtGState defined! File:" << m_filename;
++							return false;
++						}
++					}
++				}
++				break;
++				case PdfOperator::Tf:
++				{
++					if (processedNamedFont.contains(args[0].GetName()))
++					{
++						currGS.font.first = processedNamedFont.value(args[0].GetName());
++						currGS.font.second = args[1].GetReal();
++					}
++					else
++					{
++						if (args.size() == 2 && args[0].IsName() && fontsDict)
++						{
++							PdfObject* fontObj = fontsDict->FindKey(args[0].GetName());
++							if (fontObj)
++							{
++								PDFFont retval = getFontInfo(fontObj);
++								usedFonts.append(retval);
++								processedNamedFont.insert(args[0].GetName(), retval);
++								currGS.font.first = retval;
++								currGS.font.second = args[1].GetReal();
++							}
++							else
++							{
++								qDebug() << "The specified font cannot be found in current Resources! File:" << m_filename;
++								return false;
++							}
++						}
++						else
++						{
++							qDebug() << "Wrong syntax in use of Tf operator or there's no Font defined in current Resources dictionary! File:" << m_filename;
++							return false;
++						}
++					}
++				}
++				break;
++				case PdfOperator::Unknown:
++				default:
++					break;
++				}
++				args.clear();
++			}
++			if (pdfContent.Type == PdfContentType::DoXObject)
++			{
++				args.clear();
++				int stackSize = pdfContent.Stack.size();
++				for (size_t i = 0; i < stackSize; ++i)
++					args.append(pdfContent.Stack[stackSize - 1 - i]);
++				if (!processedNamedXObj.contains(args[0].GetName()))
++				{
++					if (args.size() == 1 && args[0].IsName() && xObjectsDict)
++					{
++						PdfObject* xObject = xObjectsDict->FindKey(args[0].GetName());
++						PdfDictionary* xObjectDict = (xObject && xObject->IsDictionary()) ? &(xObject->GetDictionary()) : nullptr;
++						PdfObject* subtypeObject = xObjectDict ? xObjectDict->FindKey("Subtype") : nullptr;
++						if (subtypeObject && subtypeObject->IsName())
++						{
++							if (subtypeObject->GetName() == "Image")
++							{
++								PdfObject* imgColorSpace = xObjectDict->FindKey("ColorSpace");
++								if (imgColorSpace)
++								{
++									PDFColorSpace retval = getCSType(imgColorSpace);
++									if (retval != CS_Unknown && !usedColorSpaces.contains(retval))
++										usedColorSpaces.append(retval);
++								}
++								PdfObject* sMaskObj = xObjectDict->FindKey("SMask");
++								if (sMaskObj)
++									hasTransparency = true;
++								PDFImage img;
++								img.imgName = args[0].GetName().GetEscapedName().c_str();
++								double width = xObjectDict->FindKey("Width")->GetReal();
++								double height = xObjectDict->FindKey("Height")->GetReal();
++								img.dpiX = qRound(width / (currGS.ctm.m11() / 72));
++								img.dpiY = qRound(height / (currGS.ctm.m22() / 72));
++								imgs.append(img);
++							}
++							else if (subtypeObject->GetName() == "Form")
++							{
++								std::unique_ptr<PdfXObjectForm> xObj;
++								PdfXObject::TryCreateFromObject(*xObject, xObj);
++								inspectCanvas(xObj.get(), usedColorSpaces, hasTransparency, usedFonts, imgs); // recursive call
++							}
++						}
++						else
++						{
++							qDebug() << "Supplied external object is undefined! File:" << m_filename;
++							return false;
++						}
++						processedNamedXObj.append(args[0].GetName());
++					}
++					else
++					{
++						qDebug() << "Wrong syntax for Do operator or there's no XObject defined! File:" << m_filename;
++						return false;
++					}
++				}
++			}
++		}
++#else
+ 		// start parsing the content stream
+ 		PdfContentsTokenizer tokenizer(canvas);
+ 		EPdfContentsType t;
+@@ -269,7 +759,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 					if (args.size() == 6)
+ 					{
+ 						double mt[6];
+-						for (int i=0; i<6; ++i)
++						for (int i = 0; i < 6; ++i)
+ 						{
+ 							mt[i] = args[i].GetReal();
+ 						}
+@@ -294,7 +784,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 					{
+ 					currGS.dashPattern.first.clear();
+ 					PdfArray dashArr = args[0].GetArray();
+-					for (uint i=0; i<dashArr.size(); ++i)
++					for (uint i = 0; i < dashArr.size(); ++i)
+ 						currGS.dashPattern.first.append(dashArr[i].GetNumber());
+ 					currGS.dashPattern.second = args[1].GetNumber();
+ 					}
+@@ -318,7 +808,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 						usedColorSpaces.append(CS_DeviceRGB);
+ 					currGS.fillCS = CS_DeviceRGB;
+ 					currGS.fillColor.clear();
+-					for (int i=0; i<args.size(); ++i)
++					for (int i = 0; i < args.size(); ++i)
+ 						currGS.fillColor.append(args[i].GetReal());
+ 					break;
+ 				case KW_RG:
+@@ -326,7 +816,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 						usedColorSpaces.append(CS_DeviceRGB);
+ 					currGS.strokeCS = CS_DeviceRGB;
+ 					currGS.strokeColor.clear();
+-					for (int i=0; i<args.size(); ++i)
++					for (int i = 0; i < args.size(); ++i)
+ 						currGS.strokeColor.append(args[i].GetReal());
+ 					break;
+ 				case KW_k:
+@@ -334,7 +824,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 						usedColorSpaces.append(CS_DeviceCMYK);
+ 					currGS.fillCS = CS_DeviceCMYK;
+ 					currGS.fillColor.clear();
+-					for (int i=0; i<args.size(); ++i)
++					for (int i = 0; i < args.size(); ++i)
+ 						currGS.fillColor.append(args[i].GetReal());
+ 					break;
+ 				case KW_K:
+@@ -342,7 +832,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 						usedColorSpaces.append(CS_DeviceCMYK);
+ 					currGS.strokeCS = CS_DeviceCMYK;
+ 					currGS.strokeColor.clear();
+-					for (int i=0; i<args.size(); ++i)
++					for (int i = 0; i < args.size(); ++i)
+ 						currGS.strokeColor.append(args[i].GetReal());
+ 					break;
+ 				case KW_cs:
+@@ -361,7 +851,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 						{
+ 							currGS.fillCS = CS_DeviceRGB;
+ 							currGS.fillColor.clear();
+-							for (int i=0; i<3; ++i)
++							for (int i = 0; i < 3; ++i)
+ 								currGS.fillColor.append(0);
+ 							if (!usedColorSpaces.contains(CS_DeviceRGB))
+ 								usedColorSpaces.append(CS_DeviceRGB);
+@@ -370,7 +860,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 						{
+ 							currGS.fillCS = CS_DeviceCMYK;
+ 							currGS.fillColor.clear();
+-							for (int i=0; i<3; ++i)
++							for (int i = 0; i < 3; ++i)
+ 								currGS.fillColor.append(0);
+ 							currGS.fillColor.append(1);
+ 							if (!usedColorSpaces.contains(CS_DeviceCMYK))
+@@ -430,7 +920,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 						{
+ 							currGS.fillCS = CS_DeviceRGB;
+ 							currGS.strokeColor.clear();
+-							for (int i=0; i<3; ++i)
++							for (int i = 0; i < 3; ++i)
+ 								currGS.strokeColor.append(0);
+ 							if (!usedColorSpaces.contains(CS_DeviceRGB))
+ 								usedColorSpaces.append(CS_DeviceRGB);
+@@ -439,7 +929,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 						{
+ 							currGS.fillCS = CS_DeviceCMYK;
+ 							currGS.strokeColor.clear();
+-							for (int i=0; i<3; ++i)
++							for (int i = 0; i < 3; ++i)
+ 								currGS.strokeColor.append(0);
+ 							currGS.strokeColor.append(1);
+ 							if (!usedColorSpaces.contains(CS_DeviceCMYK))
+@@ -485,17 +975,17 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 					break;
+ 				case KW_sc:
+ 					currGS.fillColor.clear();
+-					for (int i=0; i<args.size(); ++i)
++					for (int i = 0; i < args.size(); ++i)
+ 						currGS.fillColor.append(args[i].GetReal());
+ 					break;
+ 				case KW_SC:
+ 					currGS.strokeColor.clear();
+-					for (int i=0; i<args.size(); ++i)
++					for (int i = 0; i < args.size(); ++i)
+ 						currGS.strokeColor.append(args[i].GetReal());
+ 					break;
+ 				case KW_scn:
+ 					currGS.fillColor.clear();
+-					for (int i=0; i<args.size(); ++i)
++					for (int i = 0; i < args.size(); ++i)
+ 					{
+ 						if (args[i].IsReal() || args[i].IsNumber())
+ 							currGS.fillColor.append(args[i].GetReal());
+@@ -503,7 +993,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 					break;
+ 				case KW_SCN:
+ 					currGS.strokeColor.clear();
+-					for (int i=0; i<args.size(); ++i)
++					for (int i = 0; i < args.size(); ++i)
+ 					{
+ 						if (args[i].IsReal() || args[i].IsNumber())
+ 							currGS.strokeColor.append(args[i].GetReal());
+@@ -689,6 +1179,7 @@ bool PDFAnalyzer::inspectCanvas(PdfCanva
+ 				args.clear();
+ 			}
+ 		}
++#endif
+ 	}
+ 	catch (PdfError & e)
+ 	{
+@@ -714,14 +1205,14 @@ void PDFAnalyzer::inspectExtGStateObj(Pd
+ 	{
+ 		PdfArray arr = bmObj->GetArray();
+ 		currGS.blendModes.clear();
+-		for(uint i=0; i<arr.GetSize(); ++i)
++		for (uint i = 0; i < arr.GetSize(); ++i)
+ 			currGS.blendModes.append(arr[i].GetName().GetEscapedName().c_str());
+ 		if (arr[0].IsName() && !(arr[0].GetName() == "Normal" || arr[0].GetName() == "Compatible"))
+ 			hasTransparency = true;
+ 	}
+ 
+ 	PdfObject* caObj = extGStateDict ? extGStateDict->FindKey("ca") : nullptr;
+-	if (caObj && (caObj->IsReal() || caObj->IsNumber()))
++	if (caObj && (caObj->IsRealStrict() || caObj->IsNumber()))
+ 	{
+ 		currGS.fillAlphaConstant = caObj->GetReal();
+ 		if (caObj->GetReal() < 1)
+@@ -729,7 +1220,7 @@ void PDFAnalyzer::inspectExtGStateObj(Pd
+ 	}
+ 
+ 	PdfObject* cAObj = extGStateDict ? extGStateDict->FindKey("CA") : nullptr;
+-	if (cAObj && (cAObj->IsReal() || cAObj->IsNumber()))
++	if (cAObj && (cAObj->IsRealStrict() || cAObj->IsNumber()))
+ 	{
+ 		if (cAObj->GetReal() < 1)
+ 			hasTransparency = true;
+@@ -780,7 +1271,7 @@ void PDFAnalyzer::inspectExtGStateObj(Pd
+ 		PdfObject dObjA = dObj->GetArray()[0];
+ 		PdfArray dashArr = dObjA.GetArray();
+ 		currGS.dashPattern.first.clear();
+-		for (uint i=0; i<dashArr.GetSize(); ++i)
++		for (uint i = 0; i < dashArr.GetSize(); ++i)
+ 			currGS.dashPattern.first.append(dashArr[i].GetNumber());
+ 		PdfObject dObjB = dObj->GetArray()[1];
+ 		currGS.dashPattern.second = dObjB.GetNumber();
+@@ -816,7 +1307,11 @@ PDFFont PDFAnalyzer::getFontInfo(PdfObje
+ 		if (descendantFonts && descendantFonts->IsArray())
+ 		{
+ 			const PdfReference& refDescFont = descendantFonts->GetArray()[0].GetReference();
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++			PdfObject* descendantFont = descendantFonts->GetDocument()->GetObjects().GetObject(refDescFont);
++#else
+ 			PdfObject* descendantFont = descendantFonts->GetOwner()->GetObject(refDescFont);
++#endif
+ 			PdfDictionary* descendantFontDict = (descendantFont && descendantFont->IsDictionary()) ? &(descendantFont->GetDictionary()) : nullptr;
+ 			const PdfObject* subtypeDescFont = descendantFontDict->FindKey("Subtype");
+ 			fontDesc = &(descendantFontDict->MustGetKey("FontDescriptor"));
+--- a/scribus/pdflib_core.cpp
++++ b/scribus/pdflib_core.cpp
+@@ -9783,22 +9783,298 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 	QScopedPointer<PoDoFo::PdfMemDocument> doc;
+ 	try
+ 	{
++#if (PODOFO_VERSION < PODOFO_MAKE_VERSION(0, 10, 0))
+ 		PoDoFo::PdfError::EnableDebug(false);
+ 		PoDoFo::PdfError::EnableLogging(false);
+-		doc.reset(new PoDoFo::PdfMemDocument(fn.toLocal8Bit().data()));
++#endif
++		doc.reset(new PoDoFo::PdfMemDocument());
++		doc->Load(fn.toLocal8Bit().data());
+ 	}
+-	catch(PoDoFo::PdfError& e)
++	catch (PoDoFo::PdfError& e)
+ 	{
+ 		qDebug() << "PoDoFo error, falling back to raster!";
+ 		e.PrintErrorMsg();
+ 		return false;
+ 	}
+ 
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
+ 	try
+ 	{
+-		PoDoFo::PdfPage*   page      = doc->GetPage(qMin(qMax(1, c->pixm.imgInfo.actualPageNumber), c->pixm.imgInfo.numberOfPages) - 1);
+-		PoDoFo::PdfObject* pageObj   = page ? page->GetObject() : nullptr;
+-		PoDoFo::PdfObject* contents  = page ? page->GetContents() : nullptr;
++		PoDoFo::PdfPage& page = doc->GetPages().GetPageAt(qMin(qMax(1, c->pixm.imgInfo.actualPageNumber), c->pixm.imgInfo.numberOfPages) - 1);
++		PoDoFo::PdfObject& pageObj = page.GetObject();
++		PoDoFo::PdfObject* contents = page.GetContents() ? &(page.GetContents()->GetObject()) : nullptr;
++		PoDoFo::PdfObject* resources = page.GetResources() ? &(page.GetResources()->GetObject()) : nullptr;
++		PoDoFo::PdfDictionary* pageObjDict = pageObj.IsDictionary() ? &(pageObj.GetDictionary()) : nullptr;
++		for (PoDoFo::PdfDictionary* par = pageObjDict, *parentDict = nullptr; par && !resources; par = parentDict)
++		{
++			resources = par->FindKey("Resources");
++			PoDoFo::PdfObject* parentObj = par->FindKey("Parent");
++			parentDict = (parentObj && parentObj->IsDictionary()) ? &(parentObj->GetDictionary()) : nullptr;
++		}
++		if (contents && contents->GetDataType() == PoDoFo::PdfDataType::Dictionary)
++		{
++			PoDoFo::PdfDictionary& contentsDict = contents->GetDictionary();
++			PoDoFo::PdfObjectStream* stream = contents->GetStream();
++			QMap<PoDoFo::PdfReference, PdfId> importedObjects;
++			QList<PoDoFo::PdfReference> referencedObjects;
++			PoDoFo::PdfObject* nextObj { nullptr };
++			PdfId xObj = writer.newObject();
++			PdfId xResources = writer.newObject();
++			PdfId xParents = 0;
++			importedObjects[page.GetObject().GetIndirectReference()] = xObj;
++			writer.startObj(xObj);
++			PutDoc("<<\n/Type /XObject\n/Subtype /Form\n/FormType 1");
++			PoDoFo::Rect pageRect = page.GetArtBox(); // Because scimagedataloader_pdf use ArtBox
++			int rotation = page.GetRotationRaw();
++			double imgWidth = (rotation == 90 || rotation == 270) ? pageRect.Height : pageRect.Width;
++			double imgHeight = (rotation == 90 || rotation == 270) ? pageRect.Width : pageRect.Height;
++			QTransform pageM;
++			pageM.translate(pageRect.GetLeft(), pageRect.GetBottom());
++			pageM.rotate(rotation);
++			if (rotation == 90)
++				pageM.translate(0.0, -imgHeight);
++			else if (rotation == 180)
++				pageM.translate(-imgWidth, -imgHeight);
++			else if (rotation == 270)
++				pageM.translate(-imgWidth, 0.0);
++			pageM.scale(imgWidth, imgHeight);
++			pageM = pageM.inverted();
++			PutDoc("\n/BBox [" + Pdf::toPdf(pageRect.GetLeft()));
++			PutDoc(" " + Pdf::toPdf(pageRect.GetBottom()));
++			PutDoc(" " + Pdf::toPdf(pageRect.GetLeft() + pageRect.Width));
++			PutDoc(" " + Pdf::toPdf(pageRect.GetBottom() + pageRect.Height));
++			PutDoc("]");
++			PutDoc("\n/Matrix [" + Pdf::toPdf(pageM.m11()) + " "
++				+ Pdf::toPdf(pageM.m12()) + " "
++				+ Pdf::toPdf(pageM.m21()) + " "
++				+ Pdf::toPdf(pageM.m22()) + " "
++				+ Pdf::toPdf(pageM.dx()) + " "
++				+ Pdf::toPdf(pageM.dy()) + " ");
++			PutDoc("]");
++			PutDoc("\n/Resources " + Pdf::toPdf(xResources) + " 0 R");
++			PoDoFo::PdfDictionary* pageDict = pageObj.IsDictionary() ? &(pageObj.GetDictionary()) : nullptr;
++			nextObj = pageDict ? pageDict->FindKey("Group") : nullptr;
++			if (nextObj)
++			{
++				PutDoc("\n/Group "); // PDF 1.4
++				copyPoDoFoDirect(nextObj, referencedObjects, importedObjects);
++			}
++			/*
++			PoDoFo::PdfObject parents = pageDict->FindKey("StructParents");
++			if (parents)
++			{
++				xParents = writer.newObject();
++				PutDoc("\n/StructParents " + Pdf::toPdf(xParents)); // required if page uses structured content
++			}
++			*/
++
++			const char* mbuffer = nullptr;
++			long mlen = 0;
++			PoDoFo::charbuff strBuff = stream->GetCopy(true);
++			mlen = strBuff.size();
++			mbuffer = strBuff.c_str();
++			if (mbuffer[mlen - 1] == '\n')
++				--mlen;
++			PutDoc("\n/Length " + Pdf::toPdf(static_cast<qlonglong>(mlen)));
++			nextObj = contentsDict.FindKey("Filter");
++			if (nextObj)
++			{
++				PutDoc("\n/Filter ");
++				copyPoDoFoDirect(nextObj, referencedObjects, importedObjects);
++			}
++			nextObj = contentsDict.FindKey("DecodeParms");
++			if (nextObj)
++			{
++				PutDoc("\n/DecodeParms ");
++				copyPoDoFoDirect(nextObj, referencedObjects, importedObjects);
++			}
++			PutDoc("\n>>\nstream\n");
++			{
++				QByteArray buffer = QByteArray::fromRawData(mbuffer, mlen);
++				EncodeArrayToStream(buffer, xObj);
++			}  // disconnect QByteArray from raw data
++			PutDoc("\nendstream");
++			writer.endObj(xObj);
++			// write resources
++			if (resources)
++			{
++				copyPoDoFoObject(resources, xResources, importedObjects);
++			}
++			else
++			{
++				writer.startObj(xResources);
++				PutDoc("<< >>");
++				writer.endObj(xResources);
++			}
++			if (xParents)
++			{
++				// create structured parents
++			}
++			// write referenced objects
++			PoDoFo::PdfIndirectObjectList& allObjects = contents->GetDocument()->GetObjects();
++			for (int i = 0; i < referencedObjects.size(); ++i)
++			{
++				const PoDoFo::PdfReference& pdfRef = referencedObjects[i];
++				nextObj = allObjects.GetObject(pdfRef);
++				copyPoDoFoObject(nextObj, importedObjects[pdfRef], importedObjects);
++			}
++
++			pageData.ImgObjects[ResNam + "I" + Pdf::toPdf(ResCount)] = xObj;
++			imgInfo.ResNum = ResCount;
++			ResCount++;
++			// Avoid a divide-by-zero if width/height are less than 1 point:
++			imgInfo.Width = qMax(1, (int) imgWidth);
++			imgInfo.Height = qMax(1, (int) imgHeight);
++			imgInfo.xa = sx * imgWidth / imgInfo.Width;
++			imgInfo.ya = sy * imgHeight / imgInfo.Height;
++			// Width/Height are integers and may not exactly equal pageRect.GetWidth()/
++			// pageRect.GetHeight(). Adjust scale factor to compensate for the difference.
++			imgInfo.sxa = sx * imgWidth / imgInfo.Width;
++			imgInfo.sya = sy * imgHeight / imgInfo.Height;
++
++			return true;
++		}
++		if (contents && contents->GetDataType() == PoDoFo::PdfDataType::Array)//Page contents might be an array
++		{
++			QMap<PoDoFo::PdfReference, PdfId> importedObjects;
++			QList<PoDoFo::PdfReference> referencedObjects;
++			PoDoFo::PdfObject* nextObj;
++			PdfId xObj = writer.newObject();
++			PdfId xResources = writer.newObject();
++			PdfId xParents = 0;
++			importedObjects[page.GetObject().GetIndirectReference()] = xObj;
++			writer.startObj(xObj);
++			PutDoc("<<\n/Type /XObject\n/Subtype /Form\n/FormType 1");
++			PoDoFo::Rect pageRect = page.GetArtBox(); // Because scimagedataloader_pdf use ArtBox
++			int rotation = page.GetRotationRaw();
++			double imgWidth = (rotation == 90 || rotation == 270) ? pageRect.Height : pageRect.Width;
++			double imgHeight = (rotation == 90 || rotation == 270) ? pageRect.Width : pageRect.Height;
++			QTransform pageM;
++			pageM.translate(pageRect.GetLeft(), pageRect.GetBottom());
++			pageM.rotate(rotation);
++			if (rotation == 90)
++				pageM.translate(0.0, -imgHeight);
++			else if (rotation == 180)
++				pageM.translate(-imgWidth, -imgHeight);
++			else if (rotation == 270)
++				pageM.translate(-imgWidth, 0.0);
++			pageM.scale(imgWidth, imgHeight);
++			pageM = pageM.inverted();
++			PutDoc("\n/BBox [" + Pdf::toPdf(pageRect.GetLeft()));
++			PutDoc(" " + Pdf::toPdf(pageRect.GetBottom()));
++			PutDoc(" " + Pdf::toPdf(pageRect.GetLeft() + pageRect.Width));
++			PutDoc(" " + Pdf::toPdf(pageRect.GetBottom() + pageRect.Height));
++			PutDoc("]");
++			PutDoc("\n/Matrix [" + Pdf::toPdf(pageM.m11()) + " "
++				+ Pdf::toPdf(pageM.m12()) + " "
++				+ Pdf::toPdf(pageM.m21()) + " "
++				+ Pdf::toPdf(pageM.m22()) + " "
++				+ Pdf::toPdf(pageM.dx()) + " "
++				+ Pdf::toPdf(pageM.dy()) + " ");
++			PutDoc("]");
++			PutDoc("\n/Resources " + Pdf::toPdf(xResources) + " 0 R");
++			PoDoFo::PdfDictionary* pageDict = pageObj.IsDictionary() ? &(pageObj.GetDictionary()) : nullptr;
++			nextObj = pageDict ? pageDict->FindKey("Group") : nullptr;
++			if (nextObj)
++			{
++				PutDoc("\n/Group "); // PDF 1.4
++				copyPoDoFoDirect(nextObj, referencedObjects, importedObjects);
++			}
++
++			const char* mbuffer = nullptr;
++			long mlen = 0;
++			PoDoFo::charbuff strBuffer;
++			PoDoFo::StringStreamDevice strStreamDev(strBuffer);
++			PoDoFo::PdfArray carray(page.GetContents()->GetObject().GetArray());
++			for (unsigned int ci = 0; ci < carray.size(); ++ci)
++			{
++				if (carray[ci].HasStream())
++				{
++					carray[ci].GetStream()->CopyTo(strStreamDev, false);
++				}
++				else if (carray[ci].IsReference())
++				{
++					nextObj = doc->GetObjects().GetObject(carray[ci].GetReference());
++
++					while (nextObj != nullptr)
++					{
++						if (nextObj->IsReference())
++						{
++							nextObj = doc->GetObjects().GetObject(nextObj->GetReference());
++						}
++						else if (nextObj->HasStream())
++						{
++							nextObj->GetStream()->CopyTo(strStreamDev, false);
++							break;
++						}
++					}
++				}
++			}
++			// end of copy
++			mlen = strBuffer.size();
++			mbuffer = strBuffer.c_str();
++
++			PutDoc("\n/Length " + Pdf::toPdf(static_cast<qlonglong>(mlen)));
++			PutDoc("\n>>\nstream\n");
++			{
++				QByteArray buffer = QByteArray::fromRawData(mbuffer, mlen);
++				EncodeArrayToStream(buffer, xObj);
++			}  // disconnect QByteArray from raw data
++			PutDoc("\nendstream");
++			writer.endObj(xObj);
++			// write resources
++			if (resources)
++			{
++				copyPoDoFoObject(resources, xResources, importedObjects);
++			}
++			else
++			{
++				writer.startObj(xResources);
++				PutDoc("<< >>");
++				writer.endObj(xResources);
++			}
++			if (xParents)
++			{
++				// create structured parents
++			}
++			// write referenced objects
++			PoDoFo::PdfIndirectObjectList& allObjects = contents->GetDocument()->GetObjects();
++			for (int i = 0; i < referencedObjects.size(); ++i)
++			{
++				const PoDoFo::PdfReference& pdfRef = referencedObjects[i];
++				nextObj = allObjects.GetObject(pdfRef);
++				copyPoDoFoObject(nextObj, importedObjects[pdfRef], importedObjects);
++			}
++
++			pageData.ImgObjects[ResNam + "I" + Pdf::toPdf(ResCount)] = xObj;
++			imgInfo.ResNum = ResCount;
++			ResCount++;
++			// Avoid a divide-by-zero if width/height are less than 1 point:
++			imgInfo.Width = qMax(1, (int) imgWidth);
++			imgInfo.Height = qMax(1, (int) imgHeight);
++			imgInfo.xa = sx * imgWidth / imgInfo.Width;
++			imgInfo.ya = sy * imgHeight / imgInfo.Height;
++			// Width/Height are integers and may not exactly equal pageRect.GetWidth()/
++			// pageRect.GetHeight(). Adjust scale factor to compensate for the difference.
++			imgInfo.sxa = sx * imgWidth / imgInfo.Width;
++			imgInfo.sya = sy * imgHeight / imgInfo.Height;
++
++			return true;
++		}
++	}
++	catch (PoDoFo::PdfError& e)
++	{
++		fatalError = true;
++		qDebug() << "PoDoFo error!";
++		e.PrintErrorMsg();
++		return false;
++	}
++#else
++	try
++	{
++		PoDoFo::PdfPage* page = doc->GetPage(qMin(qMax(1, c->pixm.imgInfo.actualPageNumber), c->pixm.imgInfo.numberOfPages) - 1);
++		PoDoFo::PdfObject* pageObj = page ? page->GetObject() : nullptr;
++		PoDoFo::PdfObject* contents = page ? page->GetContents() : nullptr;
+ 		PoDoFo::PdfObject* resources = page ? page->GetResources() : nullptr;
+ 		PoDoFo::PdfDictionary* pageObjDict = (pageObj && pageObj->IsDictionary()) ? &(pageObj->GetDictionary()) : nullptr;
+ 		for (PoDoFo::PdfDictionary* par = pageObjDict, *parentDict = nullptr; par && !resources; par = parentDict)
+@@ -9807,13 +10083,13 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 			PoDoFo::PdfObject* parentObj = par->FindKey("Parent");
+ 			parentDict = (parentObj && parentObj->IsDictionary()) ? &(parentObj->GetDictionary()) : nullptr;
+ 		}
+-		if (contents && contents->GetDataType() ==  PoDoFo::ePdfDataType_Dictionary)
++		if (contents && contents->GetDataType() == PoDoFo::ePdfDataType_Dictionary)
+ 		{
+ 			PoDoFo::PdfDictionary& contentsDict = contents->GetDictionary();
+ 			PoDoFo::PdfStream* stream = contents->GetStream();
+ 			QMap<PoDoFo::PdfReference, PdfId> importedObjects;
+ 			QList<PoDoFo::PdfReference> referencedObjects;
+-			PoDoFo::PdfObject* nextObj { nullptr };
++			const PoDoFo::PdfObject* nextObj { nullptr };
+ 			PdfId xObj = writer.newObject();
+ 			PdfId xResources = writer.newObject();
+ 			PdfId xParents = 0;
+@@ -9822,7 +10098,7 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 			PutDoc("<<\n/Type /XObject\n/Subtype /Form\n/FormType 1");
+ 			PoDoFo::PdfRect pageRect = page->GetArtBox(); // Because scimagedataloader_pdf use ArtBox
+ 			int rotation = page->GetRotation();
+-			double imgWidth  = (rotation == 90 || rotation == 270) ? pageRect.GetHeight() : pageRect.GetWidth();
++			double imgWidth = (rotation == 90 || rotation == 270) ? pageRect.GetHeight() : pageRect.GetWidth();
+ 			double imgHeight = (rotation == 90 || rotation == 270) ? pageRect.GetWidth() : pageRect.GetHeight();
+ 			QTransform pageM;
+ 			pageM.translate(pageRect.GetLeft(), pageRect.GetBottom());
+@@ -9841,14 +10117,13 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 			PutDoc(" " + Pdf::toPdf(pageRect.GetBottom() + pageRect.GetHeight()));
+ 			PutDoc("]");
+ 			PutDoc("\n/Matrix [" + Pdf::toPdf(pageM.m11()) + " "
+-								 + Pdf::toPdf(pageM.m12()) + " "
+-								 + Pdf::toPdf(pageM.m21()) + " "
+-								 + Pdf::toPdf(pageM.m22()) + " "
+-								 + Pdf::toPdf(pageM.dx())  + " "
+-								 + Pdf::toPdf(pageM.dy())  + " ");
++				+ Pdf::toPdf(pageM.m12()) + " "
++				+ Pdf::toPdf(pageM.m21()) + " "
++				+ Pdf::toPdf(pageM.m22()) + " "
++				+ Pdf::toPdf(pageM.dx()) + " "
++				+ Pdf::toPdf(pageM.dy()) + " ");
+ 			PutDoc("]");
+ 			PutDoc("\n/Resources " + Pdf::toPdf(xResources) + " 0 R");
+-			PoDoFo::PdfObject* pageObj = page->GetObject();
+ 			PoDoFo::PdfDictionary* pageDict = pageObj->IsDictionary() ? &(pageObj->GetDictionary()) : nullptr;
+ 			nextObj = pageDict ? pageDict->FindKey("Group") : nullptr;
+ 			if (nextObj)
+@@ -9864,16 +10139,16 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 				PutDoc("\n/StructParents " + Pdf::toPdf(xParents)); // required if page uses structured content
+ 			}
+ 			*/
+-			char * mbuffer = nullptr;
+-			long mlen = 0;
+ 
+ 			// seems more complicated at first, but in fact it makes the code more stable wrt podofo changes
++			char* mbuffer = nullptr;
++			long mlen = 0;
+ 			PoDoFo::PdfMemoryOutputStream oStream(1);
+ 			stream->GetCopy(&oStream);
+ 			oStream.Close();
+ 			mlen = oStream.GetLength();
+ 			mbuffer = oStream.TakeBuffer();
+-			if (mbuffer[mlen-1] == '\n')
++			if (mbuffer[mlen - 1] == '\n')
+ 				--mlen;
+ 			PutDoc("\n/Length " + Pdf::toPdf(static_cast<qlonglong>(mlen)));
+ 			nextObj = contentsDict.FindKey("Filter");
+@@ -9893,7 +10168,7 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 				QByteArray buffer = QByteArray::fromRawData(mbuffer, mlen);
+ 				EncodeArrayToStream(buffer, xObj);
+ 			}  // disconnect QByteArray from raw data
+-			free (mbuffer);
++			free(mbuffer);
+ 			PutDoc("\nendstream");
+ 			writer.endObj(xObj);
+ 			// write resources
+@@ -9915,18 +10190,19 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 			PoDoFo::PdfVecObjects* allObjects = contents->GetOwner();
+ 			for (int i=0; i < referencedObjects.size(); ++i)
+ 			{
+-				nextObj = allObjects->GetObject(referencedObjects[i]);
+-				copyPoDoFoObject(nextObj, importedObjects[nextObj->Reference()], importedObjects);
++				const PoDoFo::PdfReference& pdfRef = referencedObjects[i];
++				nextObj = allObjects->GetObject(pdfRef);
++				copyPoDoFoObject(nextObj, importedObjects[pdfRef], importedObjects);
+ 			}
+ 
+ 			pageData.ImgObjects[ResNam + "I" + Pdf::toPdf(ResCount)] = xObj;
+ 			imgInfo.ResNum = ResCount;
+ 			ResCount++;
+ 			// Avoid a divide-by-zero if width/height are less than 1 point:
+-			imgInfo.Width  = qMax(1, (int) imgWidth);
++			imgInfo.Width = qMax(1, (int) imgWidth);
+ 			imgInfo.Height = qMax(1, (int) imgHeight);
+-			imgInfo.xa  = sx * imgWidth / imgInfo.Width;
+-			imgInfo.ya  = sy * imgHeight / imgInfo.Height;
++			imgInfo.xa = sx * imgWidth / imgInfo.Width;
++			imgInfo.ya = sy * imgHeight / imgInfo.Height;
+ 			// Width/Height are integers and may not exactly equal pageRect.GetWidth()/
+ 			// pageRect.GetHeight(). Adjust scale factor to compensate for the difference.
+ 			imgInfo.sxa = sx * imgWidth / imgInfo.Width;
+@@ -9934,7 +10210,7 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 
+ 			return true;
+ 		}
+-		if (contents && contents->GetDataType() ==  PoDoFo::ePdfDataType_Array)//Page contents might be an array
++		if (contents && contents->GetDataType() == PoDoFo::ePdfDataType_Array)//Page contents might be an array
+ 		{
+ 			QMap<PoDoFo::PdfReference, PdfId> importedObjects;
+ 			QList<PoDoFo::PdfReference> referencedObjects;
+@@ -9947,7 +10223,7 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 			PutDoc("<<\n/Type /XObject\n/Subtype /Form\n/FormType 1");
+ 			PoDoFo::PdfRect pageRect = page->GetArtBox(); // Because scimagedataloader_pdf use ArtBox
+ 			int rotation = page->GetRotation();
+-			double imgWidth  = (rotation == 90 || rotation == 270) ? pageRect.GetHeight() : pageRect.GetWidth();
++			double imgWidth = (rotation == 90 || rotation == 270) ? pageRect.GetHeight() : pageRect.GetWidth();
+ 			double imgHeight = (rotation == 90 || rotation == 270) ? pageRect.GetWidth() : pageRect.GetHeight();
+ 			QTransform pageM;
+ 			pageM.translate(pageRect.GetLeft(), pageRect.GetBottom());
+@@ -9966,14 +10242,13 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 			PutDoc(" " + Pdf::toPdf(pageRect.GetBottom() + pageRect.GetHeight()));
+ 			PutDoc("]");
+ 			PutDoc("\n/Matrix [" + Pdf::toPdf(pageM.m11()) + " "
+-								 + Pdf::toPdf(pageM.m12()) + " "
+-								 + Pdf::toPdf(pageM.m21()) + " "
+-								 + Pdf::toPdf(pageM.m22()) + " "
+-								 + Pdf::toPdf(pageM.dx())  + " "
+-								 + Pdf::toPdf(pageM.dy())  + " ");
++				+ Pdf::toPdf(pageM.m12()) + " "
++				+ Pdf::toPdf(pageM.m21()) + " "
++				+ Pdf::toPdf(pageM.m22()) + " "
++				+ Pdf::toPdf(pageM.dx()) + " "
++				+ Pdf::toPdf(pageM.dy()) + " ");
+ 			PutDoc("]");
+ 			PutDoc("\n/Resources " + Pdf::toPdf(xResources) + " 0 R");
+-			PoDoFo::PdfObject* pageObj = page->GetObject();
+ 			PoDoFo::PdfDictionary* pageDict = pageObj->IsDictionary() ? &(pageObj->GetDictionary()) : nullptr;
+ 			nextObj = pageDict ? pageDict->FindKey("Group") : nullptr;
+ 			if (nextObj)
+@@ -9982,11 +10257,10 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 				copyPoDoFoDirect(nextObj, referencedObjects, importedObjects);
+ 			}
+ 
+-			char * mbuffer = nullptr;
+-			long mlen = 0;
+ 			// copied from podofoimpose
+-			PoDoFo::PdfMemoryOutputStream outMemStream (1);
+-//			PoDoFo::PdfFilteredEncodeStream outMemStream (outMemStreamRaw, ePdfFilter_FlateDecode, false);
++			char* mbuffer = nullptr;
++			long mlen = 0;
++			PoDoFo::PdfMemoryOutputStream outMemStream(1);
+ 			PoDoFo::PdfArray carray(page->GetContents()->GetArray());
+ 			for (unsigned int ci = 0; ci < carray.size(); ++ci)
+ 			{
+@@ -10000,7 +10274,6 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 
+ 					while (nextObj != nullptr)
+ 					{
+-
+ 						if (nextObj->IsReference())
+ 						{
+ 							nextObj = doc->GetObjects().GetObject(nextObj->GetReference());
+@@ -10016,29 +10289,13 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 			// end of copy
+ 			mlen = outMemStream.GetLength();
+ 			mbuffer = outMemStream.TakeBuffer();
+-//			if (mbuffer[mlen-1] == '\n')
+-//				--mlen;
+ 			PutDoc("\n/Length " + Pdf::toPdf(static_cast<qlonglong>(mlen)));
+-/*
+-			nextObj = contentsDict.FindKey("Filter");
+-			if (nextObj)
+-			{
+-				PutDoc("\n/Filter ");
+-				copyPoDoFoDirect(nextObj, referencedObjects, importedObjects);
+-			}
+-			nextObj = contentsDict.FindKey("DecodeParms");
+-			if (nextObj)
+-			{
+-				PutDoc("\n/DecodeParms ");
+-				copyPoDoFoDirect(nextObj, referencedObjects, importedObjects);
+-			}
+-*/
+ 			PutDoc("\n>>\nstream\n");
+ 			{
+ 				QByteArray buffer = QByteArray::fromRawData(mbuffer, mlen);
+ 				EncodeArrayToStream(buffer, xObj);
+ 			}  // disconnect QByteArray from raw data
+-			free (mbuffer);
++			free(mbuffer);
+ 			PutDoc("\nendstream");
+ 			writer.endObj(xObj);
+ 			// write resources
+@@ -10058,20 +10315,21 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 			}
+ 			// write referenced objects
+ 			PoDoFo::PdfVecObjects* allObjects = contents->GetOwner();
+-			for (int i=0; i < referencedObjects.size(); ++i)
++			for (int i = 0; i < referencedObjects.size(); ++i)
+ 			{
+-				nextObj = allObjects->GetObject(referencedObjects[i]);
+-				copyPoDoFoObject(nextObj, importedObjects[nextObj->Reference()], importedObjects);
++				const PoDoFo::PdfReference& pdfRef = referencedObjects[i];
++				nextObj = allObjects->GetObject(pdfRef);
++				copyPoDoFoObject(nextObj, importedObjects[pdfRef], importedObjects);
+ 			}
+ 
+ 			pageData.ImgObjects[ResNam + "I" + Pdf::toPdf(ResCount)] = xObj;
+ 			imgInfo.ResNum = ResCount;
+ 			ResCount++;
+ 			// Avoid a divide-by-zero if width/height are less than 1 point:
+-			imgInfo.Width  = qMax(1, (int) imgWidth);
++			imgInfo.Width = qMax(1, (int) imgWidth);
+ 			imgInfo.Height = qMax(1, (int) imgHeight);
+-			imgInfo.xa  = sx * imgWidth / imgInfo.Width;
+-			imgInfo.ya  = sy * imgHeight / imgInfo.Height;
++			imgInfo.xa = sx * imgWidth / imgInfo.Width;
++			imgInfo.ya = sy * imgHeight / imgInfo.Height;
+ 			// Width/Height are integers and may not exactly equal pageRect.GetWidth()/
+ 			// pageRect.GetHeight(). Adjust scale factor to compensate for the difference.
+ 			imgInfo.sxa = sx * imgWidth / imgInfo.Width;
+@@ -10079,24 +10337,76 @@ bool PDFLibCore::PDF_EmbeddedPDF(PageIte
+ 
+ 			return true;
+ 		}
+-
+ 	}
+-	catch(PoDoFo::PdfError& e)
++	catch (PoDoFo::PdfError& e)
+ 	{
+ 		fatalError = true;
+ 		qDebug() << "PoDoFo error!";
+ 		e.PrintErrorMsg();
+ 		return false;
+ 	}
+-#endif
++#endif // PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0)
++
++#endif // HAVE_PODOFO
+ 	return false;
+ }
+ 
+ 
+ #if HAVE_PODOFO
+ 
+-void PDFLibCore::copyPoDoFoDirect(const PoDoFo::PdfVariant* obj, QList<PoDoFo::PdfReference>& referencedObjects, QMap<PoDoFo::PdfReference, PdfId>& importedObjects)
++void PDFLibCore::copyPoDoFoDirect(const PoDoFo::PdfObject* obj, QList<PoDoFo::PdfReference>& referencedObjects, QMap<PoDoFo::PdfReference, PdfId>& importedObjects)
+ {
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++	switch (obj->GetDataType())
++	{
++	case PoDoFo::PdfDataType::Reference:
++	{
++		const PoDoFo::PdfReference& reference(obj->GetReference());
++		PdfId objNr;
++		if (!importedObjects.contains(reference))
++		{
++			objNr = writer.newObject();
++			importedObjects[reference] = objNr;
++			referencedObjects.append(reference);
++		}
++		else
++		{
++			objNr = importedObjects[reference];
++		}
++		PutDoc(" " + Pdf::toPdf(objNr) + " 0 R");
++		break;
++	}
++	case PoDoFo::PdfDataType::Array:
++	{
++		const PoDoFo::PdfArray& array(obj->GetArray());
++		PutDoc("[");
++		for (uint i = 0; i < array.size(); ++i)
++			copyPoDoFoDirect(&(array[i]), referencedObjects, importedObjects);
++		PutDoc("]");
++		break;
++	}
++	case PoDoFo::PdfDataType::Dictionary:
++	{
++		const PoDoFo::PdfDictionary& dict(obj->GetDictionary());
++		PutDoc("<<");
++		for (auto k = dict.begin(); k != dict.end(); ++k)
++		{
++			std::string str("\n/" + k->first.GetEscapedName());
++			PutDoc(QByteArray::fromRawData(str.data(), str.size()));
++			copyPoDoFoDirect(&k->second, referencedObjects, importedObjects);
++		}
++		PutDoc(" >>");
++		break;
++	}
++	default:
++	{
++		std::string str;
++		obj->GetVariant().ToString(str);
++		str = " " + str;
++		PutDoc(QByteArray::fromRawData(str.data(), str.size()));
++	}
++	}
++#else
+ 	switch (obj->GetDataType())
+ 	{
+ 		case PoDoFo::ePdfDataType_Reference:
+@@ -10147,11 +10457,41 @@ void PDFLibCore::copyPoDoFoDirect(const
+ 			PutDoc(QByteArray::fromRawData(str.data(), str.size()));
+ 		}
+ 	}
+-
++#endif
+ }
+ 
+ void PDFLibCore::copyPoDoFoObject(const PoDoFo::PdfObject* obj, PdfId scObjID, QMap<PoDoFo::PdfReference, PdfId>& importedObjects)
+ {
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++	const PoDoFo::PdfIndirectObjectList& allObjects = obj->GetDocument()->GetObjects();
++	QList<PoDoFo::PdfReference> referencedObjects;
++	writer.startObj(scObjID);
++	copyPoDoFoDirect(obj, referencedObjects, importedObjects);
++	if (obj->HasStream())
++	{
++		const PoDoFo::PdfObjectStream* stream = obj->GetStream();
++		PoDoFo::charbuff strBuff = stream->GetCopy(true);
++		const char* mbuffer = strBuff.c_str();
++		size_t mlen = strBuff.size();
++		if (mbuffer[mlen - 1] == '\n')
++			--mlen;
++		PutDoc("\nstream\n");
++		{
++			QByteArray buffer = QByteArray::fromRawData(mbuffer, mlen);
++			EncodeArrayToStream(buffer, scObjID);
++		}
++		PutDoc("\nendstream");
++	}
++	PutDoc("");
++	writer.endObj(scObjID);
++	// recurse:
++	for (int i = 0; i < referencedObjects.size(); ++i)
++	{
++		const PoDoFo::PdfReference& pdfRef = referencedObjects[i];
++		const PoDoFo::PdfObject* nextObj = allObjects.GetObject(pdfRef);
++		copyPoDoFoObject(nextObj, importedObjects[pdfRef], importedObjects);
++	}
++#else
+ 	PoDoFo::PdfVecObjects* allObjects = obj->GetOwner();
+ 	QList<PoDoFo::PdfReference> referencedObjects;
+ 	writer.startObj(scObjID);
+@@ -10159,7 +10499,7 @@ void PDFLibCore::copyPoDoFoObject(const
+ 	if (obj->HasStream())
+ 	{
+ 		const PoDoFo::PdfStream* stream = obj->GetStream();
+-		char * mbuffer = nullptr;
++		char* mbuffer = nullptr;
+ 		long mlen = 0;
+ 
+ 		// seems more complicated at first, but in fact it makes the code more stable wrt podofo changes
+@@ -10168,14 +10508,14 @@ void PDFLibCore::copyPoDoFoObject(const
+ 		oStream.Close();
+ 		mlen = oStream.GetLength();
+ 		mbuffer = oStream.TakeBuffer();
+-		if (mbuffer[mlen-1] == '\n')
++		if (mbuffer[mlen - 1] == '\n')
+ 			--mlen;
+ 		PutDoc("\nstream\n");
+ 		{
+ 			QByteArray buffer = QByteArray::fromRawData(mbuffer, mlen);
+ 			EncodeArrayToStream(buffer, scObjID);
+ 		}  // disconnect QByteArray from raw data
+-		free (mbuffer);
++		free(mbuffer);
+ 		PutDoc("\nendstream");
+ 	}
+ 	PutDoc("");
+@@ -10183,9 +10523,11 @@ void PDFLibCore::copyPoDoFoObject(const
+ 	// recurse:
+ 	for (int i=0; i < referencedObjects.size(); ++i)
+ 	{
+-		PoDoFo::PdfObject* nextObj = allObjects->GetObject(referencedObjects[i]);
+-		copyPoDoFoObject(nextObj, importedObjects[nextObj->Reference()], importedObjects);
++		const PoDoFo::PdfReference& pdfRef = referencedObjects[i];
++		const PoDoFo::PdfObject* nextObj = allObjects->GetObject(pdfRef);
++		copyPoDoFoObject(nextObj, importedObjects[pdfRef], importedObjects);
+ 	}
++#endif
+ }
+ #endif
+ 
+--- a/scribus/pdflib_core.h
++++ b/scribus/pdflib_core.h
+@@ -225,8 +225,8 @@ private:
+ 	bool    PDF_Image(PageItem* c, const QString& fn, double sx, double sy, double x, double y, bool fromAN = false, const QString& Profil = "", bool Embedded = false, eRenderIntent Intent = Intent_Relative_Colorimetric, QByteArray* output = nullptr);
+ 	bool    PDF_EmbeddedPDF(PageItem* c, const QString& fn, double sx, double sy, double x, double y, ShIm& imgInfo, bool &fatalError);
+ #if HAVE_PODOFO
+-	void copyPoDoFoObject(const PoDoFo::PdfObject* obj, uint scObjID, QMap<PoDoFo::PdfReference, uint>& importedObjects);
+-	void copyPoDoFoDirect(const PoDoFo::PdfVariant* obj, QList<PoDoFo::PdfReference>& referencedObjects, QMap<PoDoFo::PdfReference, uint>& importedObjects);
++	void copyPoDoFoObject(const PoDoFo::PdfObject* obj, PdfId scObjID, QMap<PoDoFo::PdfReference, uint>& importedObjects);
++	void copyPoDoFoDirect(const PoDoFo::PdfObject* obj, QList<PoDoFo::PdfReference>& referencedObjects, QMap<PoDoFo::PdfReference, uint>& importedObjects);
+ #endif
+ 
+ 	quint32 encode32dVal(double val) const;
+--- a/scribus/plugins/import/ai/importai.cpp
++++ b/scribus/plugins/import/ai/importai.cpp
+@@ -581,13 +581,24 @@ bool AIPlug::extractFromPDF(const QStrin
+ 	}
+ 	try
+ 	{
++#if (PODOFO_VERSION < PODOFO_MAKE_VERSION(0, 10, 0))
+ 		PoDoFo::PdfError::EnableDebug( false );
+ 		PoDoFo::PdfError::EnableLogging( false );
+-		PoDoFo::PdfMemDocument doc( infile.toLocal8Bit().data() );
++#endif
++		PoDoFo::PdfMemDocument doc;
++		doc.Load(infile.toLocal8Bit().data());
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++		PoDoFo::PdfPage* curPage = &(doc.GetPages().GetPageAt(0));
++#else
+ 		PoDoFo::PdfPage *curPage = doc.GetPage(0);
++#endif
+ 		if (curPage != nullptr)
+ 		{
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++			PoDoFo::PdfObject* pageObj = &(curPage->GetObject());
++#else
+ 			PoDoFo::PdfObject* pageObj = curPage->GetObject();
++#endif
+ 			PoDoFo::PdfDictionary* pageDict = (pageObj && pageObj->IsDictionary()) ? &(pageObj->GetDictionary()) : nullptr;
+ 			PoDoFo::PdfObject *piece = pageDict ? pageDict->FindKey("PieceInfo") : nullptr;
+ 			if (piece != nullptr)
+@@ -618,6 +629,33 @@ bool AIPlug::extractFromPDF(const QStrin
+ 					}
+ 					if (data != nullptr)
+ 					{
++#if (PODOFO_VERSION >= PODOFO_MAKE_VERSION(0, 10, 0))
++						if (num == 2)
++						{
++							Key = name.arg(1);
++							data = privDict->FindKey(PoDoFo::PdfName(Key.toUtf8().data()));
++							PoDoFo::PdfObjectStream const* stream = data->GetStream();
++							PoDoFo::charbuff strBuffer = stream->GetCopy(false);
++							qint64 bLen = strBuffer.size();
++							const char* Buffer = strBuffer.c_str();
++							outf.write(Buffer, bLen);
++						}
++						else
++						{
++							for (int a = 2; a < num; a++)
++							{
++								Key = name.arg(a);
++								data = privDict->FindKey(PoDoFo::PdfName(Key.toUtf8().data()));
++								if (data == nullptr)
++									break;
++								PoDoFo::PdfObjectStream const* stream = data->GetStream();
++								PoDoFo::charbuff strBuffer = stream->GetCopy(false);
++								qint64 bLen = strBuffer.size();
++								const char* Buffer = strBuffer.c_str();
++								outf.write(Buffer, bLen);
++							}
++						}
++#else
+ 						if (num == 2)
+ 						{
+ 							Key = name.arg(1);
+@@ -649,6 +687,7 @@ bool AIPlug::extractFromPDF(const QStrin
+ 								free( Buffer );
+ 							}
+ 						}
++#endif
+ 					}
+ 					ret = true;
+ 				}
