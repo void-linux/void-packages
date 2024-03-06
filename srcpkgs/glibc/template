@@ -1,7 +1,7 @@
 # Template file for 'glibc'
 pkgname=glibc
 version=2.38
-revision=5
+revision=6
 bootstrap=yes
 short_desc="GNU C library"
 maintainer="Enno Boland <gottox@voidlinux.org>"
@@ -123,23 +123,38 @@ do_build() {
 	env LDFLAGS.so="-Wl,--hash-style=both" LDFLAGS-rtld="-Wl,--hash-style=both" \
 		make ${makejobs}
 }
+
 do_install() {
 	vlicense LICENSES
 	# Create DESTDIR/etc/ld.so.conf
 	mkdir -p ${DESTDIR}/etc
 	echo "include /etc/ld.so.conf.d/*.conf" > ${DESTDIR}/etc/ld.so.conf
 
-	cd build
-	make install_root=${DESTDIR} install
+	( cd build && make install_root=${DESTDIR} install )
+
+	# The C.UTF-8 locale should always be available
+	if [ -z "${CROSS_BUILD}" ]; then
+		make -C localedata DESTDIR="${DESTDIR}" \
+			objdir="../build" install-files-C.UTF-8/UTF-8
+	else
+		local endian=
+		case "$XBPS_TARGET_ENDIAN" in
+			be) endian="--big-endian" ;;
+			le) endian="--little-endian" ;;
+		esac
+
+		vmkdir usr/lib/locale
+		I18NPATH=./localedata localedef --prefix="${DESTDIR}" ${endian} \
+			-i C -f UTF-8 --no-archive "${DESTDIR}/usr/lib/locale/C.utf8"
+	fi
 
 	# create /etc/default/libc-locales
 	vinstall ${FILESDIR}/libc-locales 644 etc/default
-	cp ${wrksrc}/localedata/SUPPORTED ${wrksrc}/build
-	sed -i	-e "s|/| |g" \
+	sed -e "s|/| |g" \
 		-e 's|\\| |g' \
 		-e "s|SUPPORTED-LOCALES=||" \
-		-e "s|^|#|g" ${wrksrc}/build/SUPPORTED
-	cat ${wrksrc}/build/SUPPORTED >> ${DESTDIR}/etc/default/libc-locales
+		-e "s|^|#|g" localedata/SUPPORTED \
+			>> "${DESTDIR}/etc/default/libc-locales"
 
 	# ldd is a bash script, so make it run as such.
 	replace_interpreter bash ${DESTDIR}/usr/bin/ldd
@@ -162,7 +177,7 @@ do_install() {
 		armv?l) ln -sfr ${DESTDIR}/usr/lib/ld-linux-armhf.so.3 ${DESTDIR}/usr/lib/ld-linux.so.3;;
 	esac
 
-	vinstall ${wrksrc}/posix/gai.conf 644 etc
+	vinstall posix/gai.conf 644 etc
 	rm -rf ${DESTDIR}/var/db
 	# Remove tzselect and z{dump,ic}, provided by tzutils.
 	rm -f ${DESTDIR}/usr/bin/tzselect
@@ -185,6 +200,7 @@ glibc-devel_package() {
 		fi
 	}
 }
+
 glibc-locales_package() {
 	conf_files="/etc/default/libc-locales"
 	short_desc+=" - locale data files"
@@ -194,6 +210,7 @@ glibc-locales_package() {
 		vmove usr/share/locale
 	}
 }
+
 nscd_package() {
 	conf_files="/etc/nscd.conf"
 	short_desc+=" - Name Service Cache Daemon"
