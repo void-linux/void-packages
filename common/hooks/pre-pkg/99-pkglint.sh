@@ -79,8 +79,22 @@ hook() {
 
 	# Check for l10n files in usr/lib/locale
 	if [ -d ${PKGDESTDIR}/usr/lib/locale ]; then
-		msg_red "${pkgver}: /usr/lib/locale is forbidden, use /usr/share/locale!\n"
-		error=1
+		local locale_allow=0 ldir
+		local lroot="${PKGDESTDIR}/usr/lib/locale"
+
+		if [ "${pkgname}" = "glibc" ]; then
+			# glibc gets an exception for its included C.utf8 locale
+			locale_allow=1
+			for ldir in "${lroot}"/*; do
+				[ "${ldir}" = "${lroot}/C.utf8" ] && continue
+				locale_allow=0
+			done
+		fi
+
+		if [ "${locale_allow}" -ne 1 ]; then
+			msg_red "${pkgver}: /usr/lib/locale is forbidden, use /usr/share/locale!\n"
+			error=1
+		fi
 	fi
 
 	# Check for bash completions in etc/bash_completion.d
