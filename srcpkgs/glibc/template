@@ -1,14 +1,14 @@
 # Template file for 'glibc'
 pkgname=glibc
-version=2.38
-revision=6
+version=2.39
+revision=1
 bootstrap=yes
 short_desc="GNU C library"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="GPL-2.0-or-later, LGPL-2.1-or-later, BSD-3-Clause"
 homepage="http://www.gnu.org/software/libc"
 distfiles="${GNU_SITE}/libc/glibc-${version}.tar.xz"
-checksum=fb82998998b2b29965467bc1b69d152e9c307d2cf301c9eafb4555b770ef3fd2
+checksum=f77bd47cf8170c57365ae7bf86696c118adb3b120d3259c64c502d3dc1e2d926
 # Do not strip these files, objcopy errors out.
 nostrip_files="
 	XBS5_ILP32_OFFBIG
@@ -48,13 +48,12 @@ conf_files="
 	/etc/ld.so.conf"
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends="bison gettext perl python3 texinfo"
-	# XXX: remove this on the next update
-	# ensures partial upgrades don't break things like PAM
-	depends="libxcrypt-compat"
 fi
 makedepends="kernel-libc-headers"
 lib32files="/usr/lib/gconv/gconv-modules"
 lib32symlinks="ld-linux.so.2"
+# glibc 2.38 stops providing libcrypt.so.1
+conflicts="glibc-32bit<2.38_1"
 archs="~*-musl"
 if [ "$XBPS_TARGET_LIBC" = musl ]; then
 	broken="no point in building this for musl"
@@ -67,20 +66,17 @@ do_configure() {
 	local _libdir=/usr/lib${XBPS_TARGET_WORDSIZE}
 
 	echo "slibdir=${_libdir}" > configparms
+	echo "rtlddir=${_libdir}" >> configparms
 	echo "bindir=/usr/bin" >> configparms
 	echo "sbindir=/usr/bin" >> configparms
-	echo "rootsbindir=/usr/sbin" >> configparms
+	echo "rootsbindir=/usr/bin" >> configparms
 
 	case "$XBPS_TARGET_MACHINE" in
 		# Build with -mno-tls-direct-seg-refs to avoid performance
 		# problems with Xen on x86 32bit.
 		i686) export CFLAGS+=" -mno-tls-direct-seg-refs";;
-		# Force hard float ABI.
-		# To build for soft float: --with-float=soft --without-fp.
-		armv5*) configure_args+=" --with-march=armv5te --without-fp --with-float=soft";;
-		armv6l*) configure_args+=" --with-march=armv6 --with-fpu=vfp --with-float=hard";;
-		armv7l*) configure_args+=" --with-march=armv7-a --with-fpu=vfpv3 --with-float=hard";;
-		arm64*) configure_args+=" --with-march=armv8-a";;
+		# Force soft float ABI on armv5.
+		armv5*) configure_args+=" --without-fp";;
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
@@ -103,9 +99,7 @@ do_configure() {
 		--enable-stack-protector=strong \
 		--disable-profile --enable-kernel=3.2.0 \
 		--without-selinux --without-gd \
-		--disable-werror \
-		libc_cv_rootsbindir=/usr/bin \
-		libc_cv_rtlddir=${_libdir} libc_cv_slibdir=${_libdir}
+		--disable-werror --enable-option-checking
 }
 
 post_configure() {
@@ -133,7 +127,10 @@ do_install() {
 	( cd build && make install_root=${DESTDIR} install )
 
 	# The C.UTF-8 locale should always be available
-	if [ -z "${CROSS_BUILD}" ]; then
+	#
+	# Use the recently compiled localedef when compiling to/from the same
+	# architecture, and the host localedef binary otherwise.
+	if [ "${XBPS_MACHINE%-*}" = "${XBPS_TARGET_MACHINE%-*}" ]; then
 		make -C localedata DESTDIR="${DESTDIR}" \
 			objdir="../build" install-files-C.UTF-8/UTF-8
 	elif command -v localedef >/dev/null 2>&1; then
@@ -184,8 +181,6 @@ do_install() {
 	# Remove tzselect and z{dump,ic}, provided by tzutils.
 	rm -f ${DESTDIR}/usr/bin/tzselect
 	rm -f ${DESTDIR}/usr/bin/z{dump,ic}
-
-	mv ${DESTDIR}/usr/sbin/* ${DESTDIR}/usr/bin
 }
 
 glibc-devel_package() {
