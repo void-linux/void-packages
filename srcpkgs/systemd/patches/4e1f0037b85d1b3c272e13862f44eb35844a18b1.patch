@@ -1,0 +1,445 @@
+From 4e1f0037b85d1b3c272e13862f44eb35844a18b1 Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Fri, 24 Nov 2023 18:01:56 +0100
+Subject: [PATCH] units: add a tpm2.target synchronization point and small
+ generator that pulls in
+
+Distributions apparently only compile a subset of TPM2 drivers into the
+kernel. For those not compiled it but provided as kmod we need a
+synchronization point: we must wait before the first TPM2 interaction
+until the driver is available and accessible.
+
+This adds a tpm2.target unit as such a synchronization point. It's
+ordered after /dev/tpmrm0, and is pulled in by a generator whenever we
+detect that the kernel reported a TPM2 to exist but we have no device
+for it yet.
+
+This should solve the issue, but might create problems: if there are TPM
+devices supported by firmware that we don't have Linux drivers for we'll
+hang for a bit. Hence let's add a kernel cmdline switch to disable (or
+alternatively force) this logic.
+
+Fixes: #30164
+---
+ man/rules/meson.build                     |  1 +
+ man/systemd-tpm2-generator.xml            | 60 +++++++++++++++++
+ man/systemd.special.xml                   | 19 ++++++
+ rules.d/99-systemd.rules.in               |  3 +
+ src/basic/special.h                       |  1 +
+ src/tpm2-setup/meson.build                |  6 ++
+ src/tpm2-setup/tpm2-generator.c           | 80 +++++++++++++++++++++++
+ units/meson.build                         |  1 +
+ units/systemd-pcrextend.socket            |  1 +
+ units/systemd-pcrextend@.service.in       |  1 +
+ units/systemd-pcrfs-root.service.in       |  2 +-
+ units/systemd-pcrfs@.service.in           |  2 +-
+ units/systemd-pcrmachine.service.in       |  1 +
+ units/systemd-pcrphase-initrd.service.in  |  1 +
+ units/systemd-pcrphase-sysinit.service.in |  2 +-
+ units/systemd-pcrphase.service.in         |  2 +-
+ units/systemd-tpm2-setup-early.service.in |  1 +
+ units/systemd-tpm2-setup.service.in       |  1 +
+ units/tpm2.target                         | 16 +++++
+ 19 files changed, 197 insertions(+), 4 deletions(-)
+ create mode 100644 man/systemd-tpm2-generator.xml
+ create mode 100644 src/tpm2-setup/tpm2-generator.c
+ create mode 100644 units/tpm2.target
+
+diff --git a/man/rules/meson.build b/man/rules/meson.build
+index e99b77eb50051..c99f79eba8afc 100644
+--- a/man/rules/meson.build
++++ b/man/rules/meson.build
+@@ -1100,6 +1100,7 @@ manpages = [
+    'systemd-tmpfiles-setup-dev.service',
+    'systemd-tmpfiles-setup.service'],
+   ''],
++ ['systemd-tpm2-generator', '8', [], ''],
+  ['systemd-tpm2-setup.service',
+   '8',
+   ['systemd-tpm2-setup', 'systemd-tpm2-setup-early.service'],
+diff --git a/man/systemd-tpm2-generator.xml b/man/systemd-tpm2-generator.xml
+new file mode 100644
+index 0000000000000..51950eece9312
+--- /dev/null
++++ b/man/systemd-tpm2-generator.xml
+@@ -0,0 +1,60 @@
++<?xml version="1.0"?>
++<!--*-nxml-*-->
++<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN"
++  "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd" [
++<!ENTITY % entities SYSTEM "custom-entities.ent" >
++%entities;
++]>
++<!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
++<refentry id="systemd-tpm2-generator">
++
++  <refentryinfo>
++    <title>systemd-tpm2-generator</title>
++    <productname>systemd</productname>
++  </refentryinfo>
++
++  <refmeta>
++    <refentrytitle>systemd-tpm2-generator</refentrytitle>
++    <manvolnum>8</manvolnum>
++  </refmeta>
++
++  <refnamediv>
++    <refname>systemd-tpm2-generator</refname>
++    <refpurpose>Generator for inserting TPM2 synchronization point in the boot process</refpurpose>
++  </refnamediv>
++
++  <refsynopsisdiv>
++    <para><filename>/usr/lib/systemd/system-generators/systemd-tpm2-generator</filename></para>
++  </refsynopsisdiv>
++
++  <refsect1>
++    <title>Description</title>
++
++    <para><filename>systemd-tpm2-generator</filename> is a generator that adds a <varname>Wants=</varname>
++    dependency from <filename>sysinit.target</filename> to <filename>tpm2.target</filename> when it detects
++    that the firmware discovered a TPM2 device but the OS kernel so far did
++    not. <filename>tpm2.target</filename> is supposed to act as synchronization point for all services that
++    require TPM2 device access. See
++    <citerefentry><refentrytitle>systemd.special</refentrytitle><manvolnum>7</manvolnum></citerefentry> for
++    details.</para>
++
++    <para>The <option>systemd.tpm2_wait=</option> kernel command line option may be used to override
++    behaviour of the generator. It accepts a boolean value: if true then <filename>tpm2.target</filename>
++    will be added as synchronization point even if the firmware has not detected a TPM2 device. If false, the
++    target will not be inserted even if firmware reported a device but the OS kernel doesn't expose a device
++    for it yet. The latter might be useful in environments where a suitable TPM2 driver for the available
++    hardware is not available.</para>
++
++    <para><filename>systemd-tpm2-generator</filename> implements
++    <citerefentry><refentrytitle>systemd.generator</refentrytitle><manvolnum>7</manvolnum></citerefentry>.</para>
++  </refsect1>
++
++  <refsect1>
++    <title>See Also</title>
++    <para><simplelist type="inline">
++      <member><citerefentry><refentrytitle>systemd</refentrytitle><manvolnum>1</manvolnum></citerefentry></member>
++      <member><citerefentry><refentrytitle>systemd.special</refentrytitle><manvolnum>7</manvolnum></citerefentry></member>
++      <member><citerefentry><refentrytitle>kernel-command-line</refentrytitle><manvolnum>7</manvolnum></citerefentry></member>
++    </simplelist></para>
++  </refsect1>
++</refentry>
+diff --git a/man/systemd.special.xml b/man/systemd.special.xml
+index ff0f73f191890..988b7175ba8dd 100644
+--- a/man/systemd.special.xml
++++ b/man/systemd.special.xml
+@@ -92,6 +92,7 @@
+     <filename>time-set.target</filename>,
+     <filename>time-sync.target</filename>,
+     <filename>timers.target</filename>,
++    <filename>tpm2.target</filename>,
+     <filename>umount.target</filename>,
+     <filename>usb-gadget.target</filename>,
+     <!-- slices --><filename>-.slice</filename>,
+@@ -948,6 +949,24 @@
+             <xi:include href="version-info.xml" xpointer="v242"/>
+           </listitem>
+         </varlistentry>
++        <varlistentry>
++          <term><filename>tpm2.target</filename></term>
++          <listitem>
++            <para>This target is started automatically if a TPM2 device is discovered, either by the OS or by
++            the firmware. It acts as synchronization point for services that require TPM2 device access. The
++            target unit is enqueued by
++            <citerefentry><refentrytitle>systemd-tpm2-generator</refentrytitle><manvolnum>8</manvolnum></citerefentry>
++            if it detects that the firmware has discovered a TPM2 device but the OS kernel has not activated
++            a driver for it yet. It is also pulled in whenever
++            <citerefentry><refentrytitle>systemd-udevd.service</refentrytitle><manvolnum>8</manvolnum></citerefentry>
++            discovers a TPM2 device. The target unit is ordered after the <filename>/dev/tpmrm0</filename>
++            device node, so that it only becomes active once the TPM2 device is actually accessible. Early
++            boot programs that intend to access the TPM2 device should hence order themselves after this
++            target unit, but not pull it in.</para>
++
++            <xi:include href="version-info.xml" xpointer="v256"/>
++          </listitem>
++        </varlistentry>
+       </variablelist>
+     </refsect2>
+ 
+diff --git a/rules.d/99-systemd.rules.in b/rules.d/99-systemd.rules.in
+index 455a2368eb7af..33624f88a5ffe 100644
+--- a/rules.d/99-systemd.rules.in
++++ b/rules.d/99-systemd.rules.in
+@@ -85,4 +85,7 @@ SUBSYSTEM=="misc", KERNEL=="rfkill", TAG+="systemd", ENV{SYSTEMD_WANTS}+="system
+ SUBSYSTEM=="module", KERNEL=="fuse", TAG+="systemd", ENV{SYSTEMD_WANTS}+="sys-fs-fuse-connections.mount"
+ SUBSYSTEM=="module", KERNEL=="configfs", TAG+="systemd", ENV{SYSTEMD_WANTS}+="sys-kernel-config.mount"
+ 
++# Pull in tpm2.target whenever /dev/tpmrm* shows up
++SUBSYSTEM=="tpmrm", KERNEL=="tpmrm[0-9]*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="tpm2.target"
++
+ LABEL="systemd_end"
+diff --git a/src/basic/special.h b/src/basic/special.h
+index a625e75bedf7d..27d2c26e48e02 100644
+--- a/src/basic/special.h
++++ b/src/basic/special.h
+@@ -47,6 +47,7 @@
+ #define SPECIAL_TIME_SYNC_TARGET "time-sync.target"       /* LSB's $time */
+ #define SPECIAL_TIME_SET_TARGET "time-set.target"
+ #define SPECIAL_BASIC_TARGET "basic.target"
++#define SPECIAL_TPM2_TARGET "tpm2.target"
+ 
+ /* LSB compatibility */
+ #define SPECIAL_NETWORK_TARGET "network.target"           /* LSB's $network */
+diff --git a/src/tpm2-setup/meson.build b/src/tpm2-setup/meson.build
+index c85721c98ee07..77fad97b7fa17 100644
+--- a/src/tpm2-setup/meson.build
++++ b/src/tpm2-setup/meson.build
+@@ -13,4 +13,10 @@ executables += [
+                         libopenssl,
+                 ],
+         },
++
++        generator_template + {
++                'name' : 'systemd-tpm2-generator',
++                'sources' : files('tpm2-generator.c'),
++        },
++
+ ]
+diff --git a/src/tpm2-setup/tpm2-generator.c b/src/tpm2-setup/tpm2-generator.c
+new file mode 100644
+index 0000000000000..1ba8a7fc93bc8
+--- /dev/null
++++ b/src/tpm2-setup/tpm2-generator.c
+@@ -0,0 +1,80 @@
++/* SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "generator.h"
++#include "proc-cmdline.h"
++#include "special.h"
++#include "tpm2-util.h"
++#include "parse-util.h"
++
++/* A small generator that enqueues tpm2.target as synchronization point if the TPM2 device hasn't shown up
++ * yet, but the firmware reports it to exist. This is supposed to deal with systems where the TPM2 driver
++ * support is built as kmod and must be loaded before it's ready to be used. The tpm2.target is only enqueued
++ * if firmware says there is a TPM2 device, our userspace support for TPM2 is fully available but the TPM2
++ * device hasn't shown up in /dev/ yet. */
++
++static const char *arg_dest = NULL;
++static int arg_tpm2_wait = -1; /* tri-state: negative → don't know */
++
++static int parse_proc_cmdline_item(const char *key, const char *value, void *data) {
++        int r;
++
++        assert(key);
++
++        if (proc_cmdline_key_streq(key, "systemd.tpm2-wait")) {
++                r = value ? parse_boolean(value) : 1;
++                if (r < 0)
++                        log_warning_errno(r, "Failed to parse 'systemd.tpm2-wait' kernel command line argument, ignoring: %s", value);
++                else
++                        arg_tpm2_wait = r;
++        }
++
++        return 0;
++}
++
++static int generate_tpm_target_symlink(void) {
++        int r;
++
++        if (arg_tpm2_wait == 0) {
++                log_debug("Not generating tpm2.target synchronization point, as this was explicitly turned off via kernel command line.");
++                return 0;
++        }
++
++        if (arg_tpm2_wait < 0) {
++                Tpm2Support support = tpm2_support();
++
++                if (FLAGS_SET(support, TPM2_SUPPORT_DRIVER)) {
++                        log_debug("Not generating tpm2.target synchronization point, as TPM2 device is already present.");
++                        return 0;
++                }
++
++                if (!FLAGS_SET(support, TPM2_SUPPORT_FIRMWARE)) {
++                        log_debug("Not generating tpm2.target synchronization point, as firmware reports no TPM2 present.");
++                        return 0;
++                }
++
++                if (!FLAGS_SET(support, TPM2_SUPPORT_SYSTEM|TPM2_SUPPORT_SUBSYSTEM|TPM2_SUPPORT_LIBRARIES)) {
++                        log_debug("Not generating tpm2.target synchronization point, as userspace support for TPM2 is not complete.");
++                        return 0;
++                }
++        }
++
++        r = generator_add_symlink(arg_dest, SPECIAL_SYSINIT_TARGET, "wants", SYSTEM_DATA_UNIT_DIR "/" SPECIAL_TPM2_TARGET);
++        if (r < 0)
++                return log_error_errno(r, "Failed to hook in tpm2.target: %m");
++
++        return 0;
++}
++
++static int run(const char *dest, const char *dest_early, const char *dest_late) {
++        int r;
++
++        assert_se(arg_dest = dest);
++
++        r = proc_cmdline_parse(parse_proc_cmdline_item, NULL, PROC_CMDLINE_STRIP_RD_PREFIX);
++        if (r < 0)
++                log_warning_errno(r, "Failed to parse kernel command line, ignoring: %m");
++
++        return generate_tpm_target_symlink();
++}
++
++DEFINE_MAIN_GENERATOR_FUNCTION(run);
+diff --git a/units/meson.build b/units/meson.build
+index 9d3604951d56b..40cc3d10d35ff 100644
+--- a/units/meson.build
++++ b/units/meson.build
+@@ -700,6 +700,7 @@ units = [
+           'file' : 'tmp.mount',
+           'symlinks' : ['local-fs.target.wants/'],
+         },
++        { 'file' : 'tpm2.target' },
+         { 'file' : 'umount.target' },
+         { 'file' : 'usb-gadget.target' },
+         { 'file' : 'user-runtime-dir@.service.in' },
+diff --git a/units/systemd-pcrextend.socket b/units/systemd-pcrextend.socket
+index 6d7b8ff84c6c7..7d156c1448392 100644
+--- a/units/systemd-pcrextend.socket
++++ b/units/systemd-pcrextend.socket
+@@ -11,6 +11,7 @@
+ Description=TPM2 PCR Extension (Varlink)
+ Documentation=man:systemd-pcrextend(8)
+ DefaultDependencies=no
++After=tpm2.target
+ Before=sockets.target
+ ConditionSecurity=measured-uki
+ 
+diff --git a/units/systemd-pcrextend@.service.in b/units/systemd-pcrextend@.service.in
+index 2305b1cd4c1d8..6020a21c40c7d 100644
+--- a/units/systemd-pcrextend@.service.in
++++ b/units/systemd-pcrextend@.service.in
+@@ -11,6 +11,7 @@
+ Description=TPM2 PCR Extension (Varlink)
+ Documentation=man:systemd-pcrphase.service(8)
+ DefaultDependencies=no
++After=tpm2.target
+ Conflicts=shutdown.target initrd-switch-root.target
+ Before=shutdown.target initrd-switch-root.target
+ 
+diff --git a/units/systemd-pcrfs-root.service.in b/units/systemd-pcrfs-root.service.in
+index 11dc7471946b8..582e1d83e505e 100644
+--- a/units/systemd-pcrfs-root.service.in
++++ b/units/systemd-pcrfs-root.service.in
+@@ -12,7 +12,7 @@ Description=TPM2 PCR Root File System Measurement
+ Documentation=man:systemd-pcrfs-root.service(8)
+ DefaultDependencies=no
+ Conflicts=shutdown.target
+-After=systemd-pcrmachine.service
++After=tpm2.target systemd-pcrmachine.service
+ Before=shutdown.target
+ ConditionPathExists=!/etc/initrd-release
+ ConditionSecurity=measured-uki
+diff --git a/units/systemd-pcrfs@.service.in b/units/systemd-pcrfs@.service.in
+index fbaec4b999ea7..262a82fb04ce4 100644
+--- a/units/systemd-pcrfs@.service.in
++++ b/units/systemd-pcrfs@.service.in
+@@ -13,7 +13,7 @@ Documentation=man:systemd-pcrfs@.service(8)
+ DefaultDependencies=no
+ BindsTo=%i.mount
+ Conflicts=shutdown.target
+-After=%i.mount systemd-pcrfs-root.service
++After=%i.mount tpm2.target systemd-pcrfs-root.service
+ Before=shutdown.target
+ ConditionPathExists=!/etc/initrd-release
+ ConditionSecurity=measured-uki
+diff --git a/units/systemd-pcrmachine.service.in b/units/systemd-pcrmachine.service.in
+index fb7d3ce601fd5..cbd1005104f2f 100644
+--- a/units/systemd-pcrmachine.service.in
++++ b/units/systemd-pcrmachine.service.in
+@@ -12,6 +12,7 @@ Description=TPM2 PCR Machine ID Measurement
+ Documentation=man:systemd-pcrmachine.service(8)
+ DefaultDependencies=no
+ Conflicts=shutdown.target
++After=tpm2.target
+ Before=sysinit.target shutdown.target
+ ConditionPathExists=!/etc/initrd-release
+ ConditionSecurity=measured-uki
+diff --git a/units/systemd-pcrphase-initrd.service.in b/units/systemd-pcrphase-initrd.service.in
+index b337d602bad01..3b18b4f29d60c 100644
+--- a/units/systemd-pcrphase-initrd.service.in
++++ b/units/systemd-pcrphase-initrd.service.in
+@@ -12,6 +12,7 @@ Description=TPM2 PCR Barrier (initrd)
+ Documentation=man:systemd-pcrphase-initrd.service(8)
+ DefaultDependencies=no
+ Conflicts=shutdown.target initrd-switch-root.target
++After=tpm2.target
+ Before=sysinit.target cryptsetup-pre.target cryptsetup.target shutdown.target initrd-switch-root.target systemd-sysext.service
+ ConditionPathExists=/etc/initrd-release
+ ConditionSecurity=measured-uki
+diff --git a/units/systemd-pcrphase-sysinit.service.in b/units/systemd-pcrphase-sysinit.service.in
+index 08f73973bee81..d938e02401bb7 100644
+--- a/units/systemd-pcrphase-sysinit.service.in
++++ b/units/systemd-pcrphase-sysinit.service.in
+@@ -12,7 +12,7 @@ Description=TPM2 PCR Barrier (Initialization)
+ Documentation=man:systemd-pcrphase-sysinit.service(8)
+ DefaultDependencies=no
+ Conflicts=shutdown.target
+-After=sysinit.target
++After=sysinit.target tpm2.target
+ Before=basic.target shutdown.target
+ ConditionPathExists=!/etc/initrd-release
+ ConditionSecurity=measured-uki
+diff --git a/units/systemd-pcrphase.service.in b/units/systemd-pcrphase.service.in
+index c94ad756d4000..26b9e5c538911 100644
+--- a/units/systemd-pcrphase.service.in
++++ b/units/systemd-pcrphase.service.in
+@@ -10,7 +10,7 @@
+ [Unit]
+ Description=TPM2 PCR Barrier (User)
+ Documentation=man:systemd-pcrphase.service(8)
+-After=remote-fs.target remote-cryptsetup.target
++After=remote-fs.target remote-cryptsetup.target tpm2.target
+ Before=systemd-user-sessions.service
+ ConditionPathExists=!/etc/initrd-release
+ ConditionSecurity=measured-uki
+diff --git a/units/systemd-tpm2-setup-early.service.in b/units/systemd-tpm2-setup-early.service.in
+index c1597ea3f9fd6..628f8166782b8 100644
+--- a/units/systemd-tpm2-setup-early.service.in
++++ b/units/systemd-tpm2-setup-early.service.in
+@@ -15,6 +15,7 @@ Conflicts=shutdown.target
+ Before=sysinit.target shutdown.target
+ ConditionSecurity=measured-uki
+ ConditionPathExists=!/run/systemd/tpm2-srk-public-key.pem
++After=tpm2.target
+ 
+ [Service]
+ Type=oneshot
+diff --git a/units/systemd-tpm2-setup.service.in b/units/systemd-tpm2-setup.service.in
+index 6c99f3af0a6b2..4830afa24356c 100644
+--- a/units/systemd-tpm2-setup.service.in
++++ b/units/systemd-tpm2-setup.service.in
+@@ -17,6 +17,7 @@ Before=sysinit.target shutdown.target
+ RequiresMountsFor=/var/lib/systemd/tpm2-srk-public-key.pem
+ ConditionSecurity=measured-uki
+ ConditionPathExists=!/etc/initrd-release
++After=tpm2.target
+ 
+ [Service]
+ Type=oneshot
+diff --git a/units/tpm2.target b/units/tpm2.target
+new file mode 100644
+index 0000000000000..ba51d5740e6c4
+--- /dev/null
++++ b/units/tpm2.target
+@@ -0,0 +1,16 @@
++#  SPDX-License-Identifier: LGPL-2.1-or-later
++#
++#  This file is part of systemd.
++#
++#  systemd is free software; you can redistribute it and/or modify it
++#  under the terms of the GNU Lesser General Public License as published by
++#  the Free Software Foundation; either version 2.1 of the License, or
++#  (at your option) any later version.
++
++[Unit]
++Description=Trusted Platform Module
++Documentation=man:systemd.special(7)
++
++# Make this a synchronization point on the first TPM device found
++After=dev-tpmrm0.device
++Wants=dev-tpmrm0.device
