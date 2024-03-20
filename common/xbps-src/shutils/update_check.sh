@@ -8,6 +8,11 @@ update_check() {
     local urlpfx urlsfx
     local -A fetchedurls
 
+    local curlargs=(
+        -A "xbps-src-update-check/$XBPS_SRC_VERSION"
+        --max-time 10 --compressed -Lsk
+   )
+
     # XBPS_UPDATE_CHECK_VERBOSE is the old way to show verbose messages
     [ "$XBPS_UPDATE_CHECK_VERBOSE" ] && XBPS_VERBOSE="$XBPS_UPDATE_CHECK_VERBOSE"
 
@@ -95,7 +100,7 @@ update_check() {
             # substitute url if needed
             msg_verbose "(folder) fetching $urlpfx and scanning with $rx\n"
             skipdirs=
-            curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$urlpfx" |
+            curl "${curlargs[@]}" "$urlpfx" |
                 grep -Po -i "$rx" |
                 # sort -V places 1.1/ before 1/, but 1A/ before 1.1A/
                 sed -e 's:$:A:' -e 's:/A$:A/:' | sort -Vru | sed -e 's:A/$:/A:' -e 's:A$::' |
@@ -197,7 +202,7 @@ update_check() {
         fi
 
         msg_verbose "fetching $url and scanning with $rx\n"
-        curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
+        curl "${curlargs[@]}" -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' "$url" |
             grep -Po -i "$rx"
         fetchedurls[$url]=yes
     done |
