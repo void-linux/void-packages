@@ -8,7 +8,7 @@ do_configure() {
 	: ${meson_crossfile:="${XBPS_WRAPPERDIR}/meson/xbps_meson.cross"}
 
 	if [ "$CROSS_BUILD" ]; then
-		configure_args+=" --cross-file=${meson_crossfile}"
+		configure_args+=("--cross-file=${meson_crossfile}")
 	fi
 
 	# binutils ar needs a plugin when LTO is used on static libraries, so we
@@ -39,7 +39,7 @@ do_configure() {
 		--wrap-mode=nodownload \
 		-Db_lto=true -Db_ndebug=true \
 		-Db_staticpic=true \
-		${configure_args} . ${meson_builddir}
+		"${configure_args[@]}" . ${meson_builddir}
 }
 
 do_build() {

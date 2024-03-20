@@ -5,7 +5,7 @@
 do_configure() {
 	: ${configure_script:=./configure}
 
-	${configure_script} ${configure_args}
+	${configure_script} "${configure_args[@]}"
 }
 
 do_build() {

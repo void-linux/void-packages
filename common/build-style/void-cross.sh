@@ -142,7 +142,7 @@ _void_cross_build_bootstrap_gcc() {
 		--with-gnu-ld \
 		--with-gnu-as \
 		${extra_args} \
-		${configure_args} \
+		"${configure_args[@]}" \
 		${cross_gcc_bootstrap_configure_args}
 
 	make ${makejobs}
@@ -438,7 +438,7 @@ _void_cross_build_gcc() {
 		--with-gnu-as \
 		--with-linker-hash-style=gnu \
 		${extra_args} \
-		${configure_args} \
+		"${configure_args[@]}" \
 		${cross_gcc_configure_args}
 
 	make ${makejobs}

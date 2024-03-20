@@ -7,14 +7,14 @@
 
 # Even for cross compilation, numpy should be available on the host to ensure
 # that the host interpreter doesn't complain about missing deps
-if [[ $hostmakedepends != *"python3-numpy"* ]]; then
-	hostmakedepends+=" python3-numpy"
+if ! array_contains hostmakedepends "python3-numpy"; then
+	hostmakedepends+=(python3-numpy)
 fi
 
 [ -z "$CROSS_BUILD" ] && return 0
 
-if [[ $makedepends != *"python3-numpy"* ]]; then
-	makedepends+=" python3-numpy"
+if ! array_contains makedepends "python3-numpy"; then
+	makedepends+=(python3-numpy)
 fi
 
 # python3-setuptools finds numpy libs and headers on the host first;

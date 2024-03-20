@@ -1,2 +1,2 @@
 lib32disabled=yes
-makedepends+=" python"
+makedepends+=(python)

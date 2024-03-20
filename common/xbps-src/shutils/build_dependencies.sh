@@ -9,16 +9,17 @@ setup_pkg_depends() {
             ${pkg}_package
         fi
     elif [[ $with_subpkgs ]]; then
-        collected="${depends}"
+        collected=("${depends[@]}")
         for pkg in $subpackages; do
             [[ $pkg ]] || continue
             ${pkg}_package
-            collected+=" ${depends}"
+            ensure_array_subpkg "$pkg" depends
+            collected+=("${depends[@]}")
         done
-        depends="${collected}"
+        depends=("${collected[@]}")
     fi
 
-    for j in ${depends}; do
+    for j in "${depends[@]}"; do
         _rpkgname="${j%\?*}"
         _depname="${j#*\?}"
         if [[ ${_rpkgname} == virtual ]]; then
@@ -158,10 +159,10 @@ install_pkg_deps() {
     #
     # Host build dependencies.
     #
-    if [[ ${hostmakedepends} ]]; then
+    if [ "${#hostmakedepends[@]}" -gt 0 ]; then
         templates=""
         # check validity
-        for f in ${hostmakedepends}; do
+        for f in "${hostmakedepends[@]}"; do
             if [ -f $XBPS_SRCPKGDIR/$f/template ]; then
                 templates+=" $f"
                 continue
@@ -208,10 +209,10 @@ install_pkg_deps() {
     #
     # Host check dependencies.
     #
-    if [[ ${checkdepends} ]] && [[ $XBPS_CHECK_PKGS ]] && [ -z "$XBPS_CROSS_BUILD" ]; then
+    if [ "${#checkdepends[@]}" -gt 0 ] && [[ $XBPS_CHECK_PKGS ]] && [ -z "$XBPS_CROSS_BUILD" ]; then
         templates=""
         # check validity
-        for f in ${checkdepends}; do
+        for f in "${checkdepends[@]}"; do
             if [ -f $XBPS_SRCPKGDIR/$f/template ]; then
                 templates+=" $f"
                 continue
@@ -258,10 +259,10 @@ install_pkg_deps() {
     #
     # Target build dependencies.
     #
-    if [[ ${makedepends} ]]; then
+    if [ "${#makedepends[@]}" -gt 0 ]; then
         templates=""
         # check validity
-        for f in ${makedepends}; do
+        for f in "${makedepends[@]}"; do
             if [ -f $XBPS_SRCPKGDIR/$f/template ]; then
                 templates+=" $f"
                 continue

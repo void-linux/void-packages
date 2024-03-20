@@ -302,6 +302,31 @@ source_file() {
     fi
 }
 
+ensure_array() {
+    for name; do
+        # if the name is not "", is set, and is not an array
+        if [[ -n "$name" && -v "$name" && "${!name@a}" != *a* ]]; then
+            msg_error "template variable '$name' should be an array!\n"
+        fi
+    done
+}
+
+ensure_array_subpkg() {
+    local subpkg="$1"
+    shift 1
+    for name; do
+        # if the name is not "", is set, and is not an array
+        if [[ -n "$name" && -v "$name" && "${!name@a}" != *a* ]]; then
+            msg_error "template variable '$name' in subpkg '$subpkg' should be an array!\n"
+        fi
+    done
+}
+
+array_contains() {
+    local arr="$1" val="$2"
+    printf '%s\0' "${!arr[@]}" | grep -Fxqz "$val"
+}
+
 run_pkg_hooks() {
     local phase="$1" hookn f
 
@@ -531,7 +556,7 @@ setup_pkg() {
         fi
     fi
 
-    for x in ${hostmakedepends} ${makedepends} ${checkdepends}; do
+    for x in "${hostmakedepends[@]}" "${makedepends[@]}" "${checkdepends[@]}"; do
         if [[ $x = *[\<\>]* || $x =~ -[^-_]*[0-9][^-_]*_[0-9_]+$ ]]; then
             msg_error "$pkgver: specifying version in build dependency '$x' is invalid, template version is used always\n"
         fi
@@ -583,6 +608,9 @@ setup_pkg() {
     fi
 
     set_build_options
+
+    ensure_array hostmakedepends makedepends checkdepends depends \
+        configure_args
 
     export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"

@@ -1,5 +1,5 @@
-makedepends+=" R"
-depends+=" R"
+makedepends+=(R)
+depends+=(R)
 create_wrksrc=required
 build_wrksrc="${pkgname#R-cran-}"
 

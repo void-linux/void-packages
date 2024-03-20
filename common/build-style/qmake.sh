@@ -117,7 +117,7 @@ _EOF
 			QT_INSTALL_PREFIX=/usr \
 			LIB=/usr/lib \
 			QT_TARGET_ARCH=$_qt_arch \
-			${configure_args}
+			"${configure_args[@]}"
 	else
 		${qmake} ${qmake_args} \
 			PREFIX=/usr \
@@ -129,7 +129,7 @@ _EOF
 			QMAKE_CXXFLAGS="${CXXFLAGS}" \
 			QMAKE_LFLAGS="${LDFLAGS}" \
 			CONFIG+=no_qt_rpath \
-			${configure_args}
+			"${configure_args[@]}"
 	fi
 }
 

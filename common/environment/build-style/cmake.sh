@@ -1,9 +1,9 @@
 if [ "$CHROOT_READY" ]; then
 	if [ "$pkgname" != cmake-bootstrap ]; then
-		hostmakedepends+=" cmake-bootstrap"
+		hostmakedepends+=(cmake-bootstrap)
 	fi
 	if [ "${make_cmd:-ninja}" = ninja ]; then
-		hostmakedepends+=" ninja"
+		hostmakedepends+=(ninja)
 	fi
 fi
 

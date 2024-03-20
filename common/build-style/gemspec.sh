@@ -120,7 +120,7 @@ do_install() {
 		--no-document \
 		--verbose \
 		"${pkgname#ruby-}-${version}.gem" \
-		-- $configure_args
+		-- "${configure_args[@]}"
 
 	# Remove cache
 	rm -rf ${DESTDIR}/${_GEMDIR}/cache

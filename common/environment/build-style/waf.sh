@@ -1,1 +1,1 @@
-hostmakedepends+=" python"
+hostmakedepends+=(python)

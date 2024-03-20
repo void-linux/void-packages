@@ -5,7 +5,7 @@ do_configure() {
 	: ${configure_script:=waf}
 
 	PYTHON=/usr/bin/python2 python2 ${configure_script} configure \
-		--prefix=/usr --libdir=/usr/lib${XBPS_TARGET_WORDSIZE} ${configure_args}
+		--prefix=/usr --libdir=/usr/lib${XBPS_TARGET_WORDSIZE} "${configure_args[@]}"
 }
 
 do_build() {

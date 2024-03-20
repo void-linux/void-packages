@@ -1,1 +1,1 @@
-hostmakedepends+=" zig"
+hostmakedepends+=(zig)
