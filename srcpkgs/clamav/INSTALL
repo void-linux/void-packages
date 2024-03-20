@@ -1,20 +1,84 @@
 # INSTALL
+
+readonly old_configdir=/etc
+readonly configdir=/etc/clamav
+readonly old_config_files="
+    ${old_configdir}/clamd.conf
+    ${old_configdir}/freshclam.conf"
+readonly config_files="
+    ${configdir}/clamav-milter.conf
+    ${configdir}/clamd.conf
+    ${configdir}/freshclam.conf"
+readonly old_databasedir=/var/lib/_clamav
+readonly databasedir=/var/lib/clamav
+
+version="$(xbps-query clamav | grep pkgver)"
+version=${version#pkgver: clamav-}
+
+check_mv() {
+	[ -f "${1}" ] && mv "${1}" "${2}"
+}
+
+# The following functions are to used automatically to migrate the config files
+# from /etc (0.x versions) to /etc/clamav (1.x versions) safely.
+save_conflicting_config_files() {
+	[ ! -d ${configdir} ] && mkdir -p ${configdir}
+	for file in ${config_files}; do
+		check_mv "${file}" "${file}".custom
+	done
+	# Saves the previous version to use in the post action.
+	printf '%s' "${version}" > ${configdir}/.migrate
+}
+
+# This is done as moving the old config files into /etc/clamav in the preinstall
+# phase would end in xbps overwriting them with the new config files (not making
+# xxx.new-${VERSION}).
+# An alternative to this would be by renaming the new config files into the
+# xxx.new-${VERSION} format before moving the old config files into /etc/clamav
+# in the postinstall phase. However, it is usually not a good idea to emulate
+# program behavior as it may cause issues in the future (in this case if the
+# format changes).
+bootstrap_pkg() {
+	printf '%s\n' "${PKGNAME}-${VERSION}: bootstrapping ..."
+	xbps-remove -y clamav > /dev/null 2>&1
+	xbps-install -y clamav > /dev/null 2>&1
+}
+
+migrate_config_files() {
+	for file in ${old_config_files}; do
+		for match in "${file}"*; do
+			name=${match#"${old_configdir}"/}
+			check_mv "${match}" ${configdir}/"${name}"
+		done
+	done
+	bootstrap_pkg
+	rm ${configdir}/.migrate
+}
+
 case "$ACTION" in
-post)
-	# Only if not updating
-	if [ "$UPDATE" != "yes" ]; then
-		# Create the database directory
-		mkdir -p var/lib/_clamav
-		# The clamav user owns it
-		chown -R _clamav:_clamav var/lib/_clamav
-		# Let group members write to it
-		chmod g+w var/lib/_clamav
-	else
-		if [ -d "var/lib/clamav" ]; then
-			mv var/lib/clamav var/lib/_clamav
-			chown -R _clamav:_clamav var/lib/_clamav
-		fi
+pre)
+	if [ "$UPDATE" = "yes" ]; then
+		case "${version}" in
+		0.*) save_conflicting_config_files ;;
+		esac
 	fi
 	;;
-esac
+post)
+	if [ "$UPDATE" != "yes" ]; then
+		mkdir -p ${databasedir}
+	else
+		prev_version="$(cat ${configdir}/.migrate 2> /dev/null)"
 
+		case "${prev_version}" in
+		0.*)
+			# This should come first or else the old database
+			# directory will be moved to /var/lib/clamav/_clamav.
+			[ -d ${old_databasedir} ] && mv ${old_databasedir} ${databasedir}
+			migrate_config_files
+			;;
+		esac
+	fi
+	chown -R _clamav:_clamav ${databasedir}
+	chmod g+w ${databasedir}
+	;;
+esac
