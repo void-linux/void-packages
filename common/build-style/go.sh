@@ -29,7 +29,11 @@ do_build() {
 		fi
 	done
 
+	local buildmode
 	go_package=${go_package:-$go_import_path}
+	if [ -z "$nopie" ]; then
+		buildmode=-buildmode=pie
+	fi
 	# Build using Go modules if there's a go.mod file
 	if [ "${go_mod_mode}" != "off" ] && [ -f go.mod ]; then
 
@@ -50,13 +54,13 @@ do_build() {
 			# default behavior.
 			go_mod_mode=
 		fi
-		go install -p "$XBPS_MAKEJOBS" -mod="${go_mod_mode}" -modcacherw -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
+		go install -p "$XBPS_MAKEJOBS" -mod="${go_mod_mode}" $buildmode -modcacherw -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
 		if [[ -n "${_go_mod_path}" ]]; then
 			popd
 		fi
 	else
 		# Otherwise, build using GOPATH
-		go get -p "$XBPS_MAKEJOBS" -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
+		go get -p "$XBPS_MAKEJOBS" $buildmode -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
 	fi
 }
 
