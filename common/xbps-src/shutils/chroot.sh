@@ -14,15 +14,7 @@ install_base_chroot() {
         _bootstrap_arch="env XBPS_TARGET_ARCH=$XBPS_TARGET_PKG"
     fi
     (export XBPS_MACHINE=$XBPS_TARGET_PKG XBPS_ARCH=$XBPS_TARGET_PKG; chroot_sync_repodata)
-    # Fix cyclic between glibc and libxcrypt-compat
-    case "$XBPS_MACHINE" in
-        *-musl)
-            ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot
-            ;;
-        *)
-            ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot glibc libxcrypt-compat
-            ;;
-    esac
+    ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot
     if [ $? -ne 0 ]; then
         msg_error "xbps-src: failed to install base-chroot!\n"
     fi
