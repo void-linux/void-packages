@@ -1,0 +1,108 @@
+From 401ca6d482eab44da9d58b7eebf6dddc6cdf2912 Mon Sep 17 00:00:00 2001
+From: Simon McVittie <smcv@debian.org>
+Date: Sun, 12 May 2024 18:03:17 +0100
+Subject: [PATCH] giscanner: Be more thorough about applying -Wl,--no-as-needed
+ option
+
+Some Linux distributions routinely build all executables and libraries
+with -Wl,--as-needed, either by adding it to LDFLAGS or by making it the
+compiler or linker default.
+
+For installed executables and libraries this is a desirable way to
+drop unnecessary transitive dependencies, minimizing the number of
+rebuilds required if a lower-level library breaks ABI, but for our
+dump executable it's counterproductive and can prevent us from finding
+the SONAMEs of libraries that were passed as explicit -l arguments,
+especially if we use a ldd replacement that is not recursive
+(like the one in gobject-introspection#482).
+
+We already had a special case to add -Wl,--no-as-needed to the linker
+arguments, but only for "internal" libraries and only when not using
+libtool. Extend that to cover "external" libraries and libtool as well,
+and filter out any -Wl,--as-needed from LDFLAGS to avoid it from being
+defeated.
+
+Resolves: GNOME/gobject-introspection#505
+Signed-off-by: Simon McVittie <smcv@debian.org>
+---
+ giscanner/ccompiler.py | 28 ++++++++++++++++++++++------
+ giscanner/dumper.py    |  3 ++-
+ 2 files changed, 24 insertions(+), 7 deletions(-)
+
+diff --git a/giscanner/ccompiler.py b/giscanner/ccompiler.py
+index d0ed70a3c..1938a842c 100644
+--- a/giscanner/ccompiler.py
++++ b/giscanner/ccompiler.py
+@@ -35,6 +35,17 @@ from distutils.sysconfig import customize_compiler as orig_customize_compiler
+ from . import utils
+ 
+ 
++def no_as_needed(linker):
++    """\
++    Filter out -Wl,--as-needed from the shell-quoted arguments in linker.
++    """
++    return ' '.join(
++        [shlex.quote(arg)
++         for arg in shlex.split(linker)
++         if arg != '-Wl,--as-needed']
++    )
++
++
+ def customize_compiler(compiler):
+     """This is a version of distutils.sysconfig.customize_compiler, without
+     any macOS specific bits and which tries to avoid using any Python specific
+@@ -88,8 +99,8 @@ def customize_compiler(compiler):
+             compiler=cc_cmd,
+             compiler_so=cc_cmd,
+             compiler_cxx=cxx,
+-            linker_so=ldshared,
+-            linker_exe=cc,
++            linker_so=no_as_needed(ldshared),
++            linker_exe=no_as_needed(cc),
+             archiver=archiver)
+ 
+         compiler.shared_lib_extension = shlib_suffix
+@@ -230,10 +241,10 @@ class CCompiler(object):
+                 # https://bugzilla.gnome.org/show_bug.cgi?id=625195
+                 args.append('-Wl,-rpath,.')
+ 
+-                # Ensure libraries are always linked as we are going to use ldd to work
+-                # out their names later
+-                if sys.platform != 'darwin':
+-                    args.append('-Wl,--no-as-needed')
++            # Ensure libraries are always linked as we are going to use ldd to work
++            # out their names later
++            if sys.platform != 'darwin':
++                args.append('-Wl,--no-as-needed')
+ 
+         for library_path in libpaths:
+             # The dumper program needs to look for dynamic libraries
+@@ -279,6 +290,11 @@ class CCompiler(object):
+         # is installed on the system; this case is used for the scanning
+         # of GLib in gobject-introspection itself.
+ 
++        # Ensure libraries are always linked as we are going to use ldd to work
++        # out their names later
++        if os.name != 'nt' and sys.platform != 'darwin':
++            args.append('-Wl,--no-as-needed')
++
+         for library in libraries:
+             if os.path.isfile(library):
+                 # If we get a real filename, just use it as-is
+diff --git a/giscanner/dumper.py b/giscanner/dumper.py
+index 74a494b8b..e2e7eeed0 100644
+--- a/giscanner/dumper.py
++++ b/giscanner/dumper.py
+@@ -254,7 +254,8 @@ class DumpCompiler(object):
+ 
+         if not self._compiler.check_is_msvc():
+             for ldflag in shlex.split(os.environ.get('LDFLAGS', '')):
+-                args.append(ldflag)
++                if ldflag != '-Wl,--as-needed':
++                    args.append(ldflag)
+ 
+         dll_dirs = utils.dll_dirs()
+         dll_dirs.add_dll_dirs(self._packages)
+-- 
+GitLab
+
