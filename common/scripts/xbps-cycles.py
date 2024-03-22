@@ -101,12 +101,19 @@ if __name__ == '__main__':
 			help='Directory used to cache build dependencies (must exist)')
 	parser.add_argument('-d', '--directory',
 			default=None, help='Path to void-packages repo')
+	parser.add_argument('-Q', dest='check_pkgs', action='store_const',
+			const='yes', help='Use build dependencies for check -Q')
+	parser.add_argument('-K', dest='check_pkgs', action='store_const',
+			const='full', help='Use build dependencies for check -K')
 
 	args = parser.parse_args()
 
 	if not args.directory:
 		try: args.directory = os.environ['XBPS_DISTDIR']
 		except KeyError: args.directory = '.'
+
+	if args.check_pkgs:
+		os.environ['XBPS_CHECK_PKGS'] = args.check_pkgs
 
 	pool = multiprocessing.Pool(processes = args.jobs)
 
