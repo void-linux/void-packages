@@ -143,7 +143,7 @@ update_check() {
                     *) pkgurlname="$(printf %s "$url" | cut -d / -f 1-5)";;
                 esac
                 url="$pkgurlname/-/tags"
-                rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d.]+(?=\.tar\.gz")';;
+                rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d.]+(?=\.tar\.gz)';;
             *bitbucket.org*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://bitbucket.org/$pkgurlname/downloads"
