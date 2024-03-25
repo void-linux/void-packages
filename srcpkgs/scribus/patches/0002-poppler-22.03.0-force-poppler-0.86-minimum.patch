@@ -1,0 +1,526 @@
+From e013e8126d2100e8e56dea5b836ad43275429389 Mon Sep 17 00:00:00 2001
+From: Jean Ghali <jghali@libertysurf.fr>
+Date: Wed, 2 Mar 2022 22:48:29 +0000
+Subject: [PATCH] Enforce poppler version >= 0.86.0
+
+git-svn-id: svn://scribus.net/trunk/Scribus@24985 11d20701-8431-0410-a711-e3c959e3b870
+---
+ cmake/modules/Findpoppler.cmake          |   4 +-
+ scribus/plugins/import/pdf/importpdf.cpp |  65 ++-----------
+ scribus/plugins/import/pdf/slaoutput.cpp | 114 -----------------------
+ scribus/plugins/import/pdf/slaoutput.h   |   7 --
+ 4 files changed, 10 insertions(+), 180 deletions(-)
+
+--- a/cmake/modules/Findpoppler.cmake
++++ b/cmake/modules/Findpoppler.cmake
+@@ -1,8 +1,8 @@
+ #include(FindPkgConfig)
+ find_package(PkgConfig QUIET)
+-pkg_search_module(poppler libpoppler>=0.62.0 poppler>=0.62.0)
++pkg_search_module(poppler libpoppler>=0.86.0 poppler>=0.86.0)
+ if (poppler_FOUND)
+-	pkg_search_module(poppler_cpp REQUIRED libpoppler-cpp>=0.62.0 poppler-cpp>=0.62.0)
++	pkg_search_module(poppler_cpp REQUIRED libpoppler-cpp>=0.86.0 poppler-cpp>=0.86.0)
+ endif(poppler_FOUND)
+  
+ find_path(poppler_INCLUDE_DIR
+--- a/scribus/plugins/import/pdf/importpdf.cpp
++++ b/scribus/plugins/import/pdf/importpdf.cpp
+@@ -75,20 +75,15 @@ PdfPlug::PdfPlug(ScribusDoc* doc, int fl
+ 
+ QImage PdfPlug::readThumbnail(const QString& fName)
+ {
+-	QString pdfFile = QDir::toNativeSeparators(fName);
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 83, 0)
+ 	globalParams.reset(new GlobalParams());
+-#else
+-	std::unique_ptr<GlobalParams> globalParamsPtr(new GlobalParams());
+-	globalParams = globalParamsPtr.get();
+-#endif
++	globalParams->setErrQuiet(gTrue);
+ 
+-#if defined(Q_OS_WIN32) && POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 62, 0)
++	QString pdfFile = QDir::toNativeSeparators(fName);
++#if defined(Q_OS_WIN32)
+ 	auto fname = new GooString(pdfFile.toUtf8().data());
+ #else
+ 	auto fname = new GooString(QFile::encodeName(pdfFile).data());
+ #endif
+-	globalParams->setErrQuiet(gTrue);
+ 
+ #if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 3, 0)
+ 	PDFDoc pdfDoc{ std::make_unique<GooString>(fname) };
+@@ -333,19 +328,15 @@ bool PdfPlug::convert(const QString& fn)
+ 		qApp->processEvents();
+ 	}
+ 
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 83, 0)
+ 	globalParams.reset(new GlobalParams());
+-#else
+-	std::unique_ptr<GlobalParams> globalParamsPtr(new GlobalParams());
+-	globalParams = globalParamsPtr.get();
+-#endif
+-#if defined(Q_OS_WIN32) && POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 62, 0)
++	globalParams->setErrQuiet(gTrue);
++
++#if defined(Q_OS_WIN32)
+ 	auto fname = new GooString(fn.toUtf8().data());
+ #else
+ 	auto fname = new GooString(QFile::encodeName(fn).data());
+ #endif
+-	globalParams->setErrQuiet(gTrue);
+-//	globalParams->setPrintCommands(gTrue);
++
+ 	QList<OptionalContentGroup*> ocgGroups;
+ #if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 3, 0)
+ 	auto pdfDoc = std::make_unique<PDFDoc>(std::make_unique<GooString>(fname));
+@@ -365,7 +356,7 @@ bool PdfPlug::convert(const QString& fn)
+ 			QString text = QInputDialog::getText(mw, tr("Open PDF-File"), tr("Password"), QLineEdit::Normal, "", &ok);
+ 			if (ok && !text.isEmpty())
+ 			{
+-#if defined(Q_OS_WIN32) && POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 62, 0)
++#if defined(Q_OS_WIN32)
+ 				auto fname = new GooString(fn.toUtf8().data());
+ #else
+ 				auto fname = new GooString(QFile::encodeName(fn).data());
+@@ -383,9 +374,6 @@ bool PdfPlug::convert(const QString& fn)
+ 			{
+ 				if (m_progressDialog)
+ 					m_progressDialog->close();
+-#if POPPLER_ENCODED_VERSION < POPPLER_VERSION_ENCODE(0, 83, 0)
+-				delete globalParams;
+-#endif
+ 				return false;
+ 			}
+ 			if (m_progressDialog)
+@@ -495,7 +483,6 @@ bool PdfPlug::convert(const QString& fn)
+ 							}
+ 							else
+ 							{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 69, 0)
+ 								const auto& ocgs = ocg->getOCGs ();
+ 								for (const auto& ocg : ocgs)
+ 								{
+@@ -507,25 +494,11 @@ bool PdfPlug::convert(const QString& fn)
+ 										ocgNames.append(ocgName);
+ 									}
+ 								}
+-#else
+-								GooList *ocgs = ocg->getOCGs ();
+-								for (int i = 0; i < ocgs->getLength (); ++i)
+-								{
+-									OptionalContentGroup *oc = (OptionalContentGroup *)ocgs->get(i);
+-									QString ocgName = UnicodeParsedString(oc->getName());
+-									if (!ocgNames.contains(ocgName))
+-									{
+-										ocgGroups.prepend(oc);
+-										ocgNames.append(ocgName);
+-									}
+-								}
+-#endif
+ 							}
+ 						}
+ 					}
+ 					else
+ 					{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 69, 0)
+ 						const auto& ocgs = ocg->getOCGs ();
+ 						for (const auto& ocg : ocgs)
+ 						{
+@@ -537,19 +510,6 @@ bool PdfPlug::convert(const QString& fn)
+ 								ocgNames.append(ocgName);
+ 							}
+ 						}
+-#else
+-						GooList *ocgs = ocg->getOCGs ();
+-						for (int i = 0; i < ocgs->getLength (); ++i)
+-						{
+-							OptionalContentGroup *oc = (OptionalContentGroup *)ocgs->get(i);
+-							QString ocgName = UnicodeParsedString(oc->getName());
+-							if (!ocgNames.contains(ocgName))
+-							{
+-								ocgGroups.prepend(oc);
+-								ocgNames.append(ocgName);
+-							}
+-						}
+-#endif
+ 					}
+ 				}
+ 
+@@ -788,13 +748,8 @@ bool PdfPlug::convert(const QString& fn)
+ 							names = catDict.dictLookup("OpenAction");
+ 							if (names.isDict())
+ 							{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 								std::unique_ptr<LinkAction> linkActionUPtr = LinkAction::parseAction(&names, pdfDoc->getCatalog()->getBaseURI());
+ 								LinkAction *linkAction = linkActionUPtr.get();
+-#else
+-								LinkAction *linkAction = nullptr;
+-								linkAction = LinkAction::parseAction(&names, pdfDoc->getCatalog()->getBaseURI());
+-#endif
+ 								if (linkAction && (linkAction->getKind() == actionJavaScript))
+ 								{
+ 									LinkJavaScript *jsa = (LinkJavaScript*) linkAction;
+@@ -862,11 +817,7 @@ bool PdfPlug::convert(const QString& fn)
+ 		}
+ 		pdfDoc.reset();
+ 	}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 83, 0)
+ 	globalParams.reset();
+-#else
+-	globalParams = nullptr;
+-#endif
+ 
+ //	qDebug() << "converting finished";
+ //	qDebug() << "Imported" << m_elements.count() << "Elements";
+--- a/scribus/plugins/import/pdf/slaoutput.cpp
++++ b/scribus/plugins/import/pdf/slaoutput.cpp
+@@ -332,15 +332,9 @@ LinkAction* SlaOutputDev::SC_getAction(A
+ }
+ 
+ /* Replacement for the crippled Poppler function LinkAction* AnnotWidget::getAdditionalAction(AdditionalActionsType type) */
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ std::unique_ptr<LinkAction> SlaOutputDev::SC_getAdditionalAction(const char *key, AnnotWidget *ano)
+ {
+ 	std::unique_ptr<LinkAction> linkAction;
+-#else
+-LinkAction* SlaOutputDev::SC_getAdditionalAction(const char *key, AnnotWidget *ano)
+-{
+-	LinkAction *linkAction = nullptr;
+-#endif
+ 	Object obj;
+ 	Ref refa = ano->getRef();
+ 
+@@ -467,11 +461,7 @@ bool SlaOutputDev::handleLinkAnnot(Annot
+ 				if (dst->isPageRef())
+ 				{
+ 					Ref dstr = dst->getPageRef();
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 76, 0)
+ 					pagNum = pdfDoc->findPage(dstr);
+-#else
+-					pagNum = pdfDoc->findPage(dstr.num, dstr.gen);
+-#endif
+ 				}
+ 				else
+ 					pagNum = dst->getPageNum();
+@@ -485,11 +475,7 @@ bool SlaOutputDev::handleLinkAnnot(Annot
+ 			POPPLER_CONST GooString *ndst = gto->getNamedDest();
+ 			if (ndst)
+ 			{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 				std::unique_ptr<LinkDest> dstn = pdfDoc->findDest(ndst);
+-#else
+-				LinkDest *dstn = pdfDoc->findDest(ndst);
+-#endif
+ 				if (dstn)
+ 				{
+ 					if (dstn->getKind() == destXYZ)
+@@ -497,11 +483,7 @@ bool SlaOutputDev::handleLinkAnnot(Annot
+ 						if (dstn->isPageRef())
+ 						{
+ 							Ref dstr = dstn->getPageRef();
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 76, 0)
+ 							pagNum = pdfDoc->findPage(dstr);
+-#else
+-							pagNum = pdfDoc->findPage(dstr.num, dstr.gen);
+-#endif
+ 						}
+ 						else
+ 							pagNum = dstn->getPageNum();
+@@ -533,11 +515,7 @@ bool SlaOutputDev::handleLinkAnnot(Annot
+ 			POPPLER_CONST GooString *ndst = gto->getNamedDest();
+ 			if (ndst)
+ 			{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 				std::unique_ptr<LinkDest> dstn = pdfDoc->findDest(ndst);
+-#else
+-				LinkDest *dstn = pdfDoc->findDest(ndst);
+-#endif
+ 				if (dstn)
+ 				{
+ 					if (dstn->getKind() == destXYZ)
+@@ -985,11 +963,7 @@ void SlaOutputDev::handleActions(PageIte
+ 					if (dst->isPageRef())
+ 					{
+ 						Ref dstr = dst->getPageRef();
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 76, 0)
+ 						pagNum = pdfDoc->findPage(dstr);
+-#else
+-						pagNum = pdfDoc->findPage(dstr.num, dstr.gen);
+-#endif
+ 					}
+ 					else
+ 						pagNum = dst->getPageNum();
+@@ -1005,11 +979,7 @@ void SlaOutputDev::handleActions(PageIte
+ 				POPPLER_CONST GooString *ndst = gto->getNamedDest();
+ 				if (ndst)
+ 				{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 					std::unique_ptr<LinkDest> dstn = pdfDoc->findDest(ndst);
+-#else
+-					LinkDest *dstn = pdfDoc->findDest(ndst);
+-#endif
+ 					if (dstn)
+ 					{
+ 						if (dstn->getKind() == destXYZ)
+@@ -1017,11 +987,7 @@ void SlaOutputDev::handleActions(PageIte
+ 							if (dstn->isPageRef())
+ 							{
+ 								Ref dstr = dstn->getPageRef();
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 76, 0)
+ 								pagNum = pdfDoc->findPage(dstr);
+-#else
+-								pagNum = pdfDoc->findPage(dstr.num, dstr.gen);
+-#endif
+ 							}
+ 							else
+ 								pagNum = dstn->getPageNum();
+@@ -1061,11 +1027,7 @@ void SlaOutputDev::handleActions(PageIte
+ 				POPPLER_CONST GooString *ndst = gto->getNamedDest();
+ 				if (ndst)
+ 				{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 					std::unique_ptr<LinkDest> dstn = pdfDoc->findDest(ndst);
+-#else
+-					LinkDest *dstn = pdfDoc->findDest(ndst);
+-#endif
+ 					if (dstn)
+ 					{
+ 						if (dstn->getKind() == destXYZ)
+@@ -1139,143 +1101,91 @@ void SlaOutputDev::handleActions(PageIte
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setD_act(UnicodeParsedString(jsa->getScript()));
+ 				ite->annotation().setAAact(true);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ 	Aact = SC_getAdditionalAction("E", ano);
+ 	if (Aact)
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setE_act(UnicodeParsedString(jsa->getScript()));
+ 				ite->annotation().setAAact(true);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ 	Aact = SC_getAdditionalAction("X", ano);
+ 	if (Aact)
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setX_act(UnicodeParsedString(jsa->getScript()));
+ 				ite->annotation().setAAact(true);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ 	Aact = SC_getAdditionalAction("Fo", ano);
+ 	if (Aact)
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setFo_act(UnicodeParsedString(jsa->getScript()));
+ 				ite->annotation().setAAact(true);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ 	Aact = SC_getAdditionalAction("Bl", ano);
+ 	if (Aact)
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setBl_act(UnicodeParsedString(jsa->getScript()));
+ 				ite->annotation().setAAact(true);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ 	Aact = SC_getAdditionalAction("C", ano);
+ 	if (Aact)
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setC_act(UnicodeParsedString(jsa->getScript()));
+ 				ite->annotation().setAAact(true);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ 	Aact = SC_getAdditionalAction("F", ano);
+ 	if (Aact)
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setF_act(UnicodeParsedString(jsa->getScript()));
+@@ -1283,22 +1193,14 @@ void SlaOutputDev::handleActions(PageIte
+ 				ite->annotation().setFormat(5);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ 	Aact = SC_getAdditionalAction("K", ano);
+ 	if (Aact)
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setK_act(UnicodeParsedString(jsa->getScript()));
+@@ -1306,33 +1208,21 @@ void SlaOutputDev::handleActions(PageIte
+ 				ite->annotation().setFormat(5);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ 	Aact = SC_getAdditionalAction("V", ano);
+ 	if (Aact)
+ 	{
+ 		if (Aact->getKind() == actionJavaScript)
+ 		{
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 			LinkJavaScript *jsa = (LinkJavaScript*) Aact.get();
+-#else
+-			LinkJavaScript *jsa = (LinkJavaScript*) Aact;
+-#endif
+ 			if (jsa->isOk())
+ 			{
+ 				ite->annotation().setV_act(UnicodeParsedString(jsa->getScript()));
+ 				ite->annotation().setAAact(true);
+ 			}
+ 		}
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 		Aact.reset();
+-#else
+-		Aact = nullptr;
+-#endif
+ 	}
+ }
+ 
+@@ -1342,11 +1232,7 @@ void SlaOutputDev::startDoc(PDFDoc *doc,
+ 	catalog = catA;
+ 	pdfDoc = doc;
+ 	updateGUICounter = 0;
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 84, 0)
+ 	m_fontEngine = new SplashFontEngine(true, false, false, true);
+-#else
+-	m_fontEngine = new SplashFontEngine(globalParams->getEnableFreeType(), false, false, true);
+-#endif
+ }
+ 
+ void SlaOutputDev::startPage(int pageNum, GfxState *, XRef *)
+--- a/scribus/plugins/import/pdf/slaoutput.h
++++ b/scribus/plugins/import/pdf/slaoutput.h
+@@ -30,9 +30,6 @@ for which a new license (GPL+exception)
+ #include "selection.h"
+ #include "vgradient.h"
+ 
+-#if POPPLER_ENCODED_VERSION < POPPLER_VERSION_ENCODE(0, 73, 0)
+-#include <poppler/goo/gtypes.h>
+-#endif
+ #include <poppler/Object.h>
+ #include <poppler/OutputDev.h>
+ #include <poppler/Gfx.h>
+@@ -163,11 +160,7 @@ public:
+ 	virtual ~SlaOutputDev();
+ 
+ 	LinkAction* SC_getAction(AnnotWidget *ano);
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(0, 86, 0)
+ 	std::unique_ptr<LinkAction> SC_getAdditionalAction(const char *key, AnnotWidget *ano);
+-#else
+-	LinkAction* SC_getAdditionalAction(const char *key, AnnotWidget *ano);
+-#endif
+ 	static GBool annotations_callback(Annot *annota, void *user_data);
+ 	bool handleTextAnnot(Annot* annota, double xCoor, double yCoor, double width, double height);
+ 	bool handleLinkAnnot(Annot* annota, double xCoor, double yCoor, double width, double height);

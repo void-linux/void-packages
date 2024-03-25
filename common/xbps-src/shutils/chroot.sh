@@ -309,6 +309,9 @@ chroot_sync_repodata() {
     # Copy xbps repository keys to the masterdir.
     mkdir -p $XBPS_MASTERDIR/var/db/xbps/keys
     cp -f $XBPS_COMMONDIR/repo-keys/*.plist $XBPS_MASTERDIR/var/db/xbps/keys
+    if [ -n "$(shopt -s nullglob; echo "$XBPS_DISTDIR"/etc/repo-keys/*.plist)" ]; then
+        cp -f "$XBPS_DISTDIR"/etc/repo-keys/*.plist "$XBPS_MASTERDIR"/var/db/xbps/keys
+    fi
 
     # Make sure to sync index for remote repositories.
     if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then

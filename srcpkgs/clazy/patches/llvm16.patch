@@ -1,0 +1,83 @@
+From a05ac7eb6f6198c3f478bd7b5b4bfc062a8d63cc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ivan=20=C4=8Cuki=C4=87?= <ivan.cukic@kdab.com>
+Date: Tue, 7 Feb 2023 11:06:19 +0100
+Subject: [PATCH] Adapt to API changes in clang/llvm 16
+
+---
+ src/SourceCompatibilityHelpers.h        | 17 ++++++++++++-----
+ src/checkbase.h                         |  1 +
+ src/checks/level0/lambda-in-connect.cpp |  2 +-
+ 3 files changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/src/SourceCompatibilityHelpers.h b/src/SourceCompatibilityHelpers.h
+index c1a23a4b..5e2dc606 100644
+--- a/src/SourceCompatibilityHelpers.h
++++ b/src/SourceCompatibilityHelpers.h
+@@ -107,7 +107,11 @@ inline clang::tooling::Replacements& DiagnosticFix(clang::tooling::Diagnostic &d
+ 
+ inline auto getBuffer(const clang::SourceManager &sm, clang::FileID id, bool *invalid)
+ {
+-#if LLVM_VERSION_MAJOR >= 12
++#if LLVM_VERSION_MAJOR >= 16
++    auto buffer = sm.getBufferOrNone(id);
++    *invalid = !buffer.has_value();
++    return buffer;
++#elif LLVM_VERSION_MAJOR >= 12
+     auto buffer = sm.getBufferOrNone(id);
+     *invalid = !buffer.hasValue();
+     return buffer;
+@@ -116,11 +120,12 @@ inline auto getBuffer(const clang::SourceManager &sm, clang::FileID id, bool *in
+ #endif
+ }
+ 
+-#if LLVM_VERSION_MAJOR >= 12
+-
++#if LLVM_VERSION_MAJOR >= 16
++#define GET_LEXER(id, inputFile, sm, lo) \
++clang::Lexer(id, inputFile.value(), sm, lo)
++#elif LLVM_VERSION_MAJOR >= 12
+ #define GET_LEXER(id, inputFile, sm, lo) \
+ clang::Lexer(id, inputFile.getValue(), sm, lo)
+-
+ #else
+ #define GET_LEXER(id, inputFile, sm, lo) \
+ clang::Lexer(id, inputFile, sm, lo)
+@@ -144,7 +149,9 @@ inline bool contains_lower(clang::StringRef haystack, clang::StringRef needle)
+ #endif
+ }
+ 
+-#if LLVM_VERSION_MAJOR >= 15
++#if LLVM_VERSION_MAJOR >= 16
++using OptionalFileEntryRef = clang::CustomizableOptional<clang::FileEntryRef>;
++#elif LLVM_VERSION_MAJOR >= 15
+ using OptionalFileEntryRef = clang::Optional<clang::FileEntryRef>;
+ #else
+ using OptionalFileEntryRef = const clang::FileEntry*;
+diff --git a/src/checkbase.h b/src/checkbase.h
+index 02f6a6bf..6a8c634b 100644
+--- a/src/checkbase.h
++++ b/src/checkbase.h
+@@ -93,6 +93,7 @@ public:
+     void InclusionDirective(clang::SourceLocation HashLoc, const clang::Token &IncludeTok, clang::StringRef FileName, bool IsAngled,
+                             clang::CharSourceRange FilenameRange, clazy::OptionalFileEntryRef File, clang::StringRef SearchPath,
+                             clang::StringRef RelativePath, const clang::Module *Imported, clang::SrcMgr::CharacteristicKind FileType) override;
++
+ private:
+     CheckBase *const check;
+ };
+diff --git a/src/checks/level0/lambda-in-connect.cpp b/src/checks/level0/lambda-in-connect.cpp
+index b0da926f..1ba1126f 100644
+--- a/src/checks/level0/lambda-in-connect.cpp
++++ b/src/checks/level0/lambda-in-connect.cpp
+@@ -71,7 +71,7 @@ void LambdaInConnect::VisitStmt(clang::Stmt *stmt)
+ 
+     for (auto capture : captures) {
+         if (capture.getCaptureKind() == clang::LCK_ByRef) {
+-            VarDecl *declForCapture = capture.getCapturedVar();
++            auto *declForCapture = capture.getCapturedVar();
+             if (declForCapture && declForCapture != receiverDecl && clazy::isValueDeclInFunctionContext(declForCapture))
+                 emitWarning(capture.getLocation(), "captured local variable by reference might go out of scope before lambda is called");
+         }
+-- 
+GitLab
+

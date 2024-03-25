@@ -207,6 +207,8 @@ hook() {
 	generic_wrapper sdl-config
 	generic_wrapper sdl2-config
 	generic_wrapper gpgme-config
+	generic_wrapper gphoto2-config
+	generic_wrapper gphoto2-port-config
 	generic_wrapper imlib2-config
 	generic_wrapper libmikmod-config
 	generic_wrapper pcre-config
@@ -236,7 +238,7 @@ hook() {
 	generic_wrapper3 libetpan-config
 	generic_wrapper3 giblib-config
 	python_wrapper python-config 2.7
-	python_wrapper python3-config 3.11
+	python_wrapper python3-config 3.12
 	apr_apu_wrapper apr-1-config
 	apr_apu_wrapper apu-1-config
 }

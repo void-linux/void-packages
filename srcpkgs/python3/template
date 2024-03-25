@@ -3,15 +3,15 @@
 # THIS PACKAGE MUST BE SYNCHRONIZED WITH "srcpkgs/python3-tkinter".
 #
 pkgname=python3
-version=3.11.3
-revision=1
+version=3.12.2
+revision=2
 build_style="gnu-configure"
-configure_args="--enable-shared --enable-ipv6
+configure_args="--enable-shared --enable-ipv6 --enable-optimizations
  --enable-loadable-sqlite-extensions --with-computed-gotos
  --with-dbmliborder=gdbm:ndbm --with-system-expat --with-system-ffi
  --without-ensurepip ac_cv_working_tzset=yes"
 pycompile_dirs="usr/lib/python${version%.*}"
-hostmakedepends="pkgconf"
+hostmakedepends="pkgconf autoconf-archive automake"
 makedepends="libffi-devel readline-devel gdbm-devel openssl-devel
  expat-devel sqlite-devel bzip2-devel zlib-devel liblzma-devel"
 depends="ca-certificates"
@@ -22,10 +22,10 @@ license="Python-2.0"
 homepage="https://www.python.org"
 _bluez="bluez-5.64"
 distfiles="
- https://www.python.org/ftp/python/${version}/Python-${version}.tar.xz
+ https://www.python.org/ftp/python/${version%rc*}/Python-${version}.tar.xz
  ${KERNEL_SITE}/bluetooth/${_bluez}.tar.xz
 "
-checksum="8a5db99c961a7ecf27c75956189c9602c968751f11dbeae2b900dbff1c085b5e
+checksum="be28112dac813d2053545c14bf13a16401a21877f1a69eb6ea5d84c4a0f3d870
  ae437e65b6b3070c198bc5b0109fe9cdeb9eaa387380e2072f9de65fe8a1de34"
 skip_extraction="${_bluez}.tar.xz"
 
@@ -36,15 +36,19 @@ alternatives="
  python:python:/usr/bin/python${version%.*}
  python:python.1:/usr/share/man/man1/python${version%.*}.1"
 
+if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
+	makedepends+=" libxcrypt-devel"
+fi
+
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" python3"
-	configure_args+=" --with-build-python=python3.11"
+	configure_args+=" --with-build-python=python${py3_ver}"
+	configure_args+=" ac_cv_broken_sem_getvalue=no"
 fi
 
 post_extract() {
-	# Ensure that internal copies of expat and libffi are not used
-	rm -rf Modules/expat
-	rm -rf Modules/_ctypes/{darwin,libffi}*
+	# Ensure that the internal copy of expat is not used
+	rm -r Modules/expat
 
 	# Extract Bluetooth headers
 	local _srcdistdir="${XBPS_SRCDISTDIR}/${sourcepkg}-${version}"
@@ -55,9 +59,14 @@ post_extract() {
 }
 
 post_patch() {
-	if [ "$CROSS_BUILD" ]; then
-		patch -Np0 -i ${FILESDIR}/cross.patch
+	if [ -n "$CROSS_BUILD" ]; then
+		patch -Np1 -i ${FILESDIR}/cross.patch
 	fi
+}
+
+# https://github.com/python/cpython/issues/89640
+pre_configure() {
+	autoreconf -vfi
 }
 
 do_configure() {
@@ -89,11 +98,16 @@ do_check() {
 	opts+=" -i test_session*"
 	# overflow in datetime.time.mktime
 	opts+=" -i test_localtime_daylight_*_dst_true"
+	# https://github.com/python/cpython/issues/115133
+	opts+=" -i test_simple_xml"
 
 	if [ "${XBPS_TARGET_LIBC}" = "musl" ]; then
 		# musl doesn't work with locales
 		opts+=" -i test_locale* -i test_c_locale* -i test__locale"
 		opts+=" -i test_fpathconf"
+	else
+		# ctypes libm imports misbehave with glibc linker scripts
+		opts+=" -i test_issue18060_*"
 	fi
 
 	make ${makejobs} EXTRATESTOPTS="${opts}" quicktest
@@ -135,6 +149,9 @@ do_install() {
 		${DESTDIR}/usr/bin/python${version%.*}-config \
 		${DESTDIR}/usr/lib/python${version%.*}/_sysconfigdata_*_*.py \
 		${DESTDIR}/usr/lib/python${version%.*}/config-${version%.*}*/Makefile
+
+	# https://peps.python.org/pep-0668/
+	vinstall ${FILESDIR}/EXTERNALLY-MANAGED 644 usr/lib/python${version%.*}
 }
 
 python3-devel_package() {

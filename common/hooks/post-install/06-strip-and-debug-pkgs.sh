@@ -65,7 +65,7 @@ hook() {
 
 	STRIPCMD=/usr/bin/$STRIP
 
-	find ${PKGDESTDIR} -type f | while read f; do
+	find ${PKGDESTDIR} -type f | while read -r f; do
 		if [[ $f =~ ^${PKGDESTDIR}/usr/lib/debug/ ]]; then
 			continue
 		fi

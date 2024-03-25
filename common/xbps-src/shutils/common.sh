@@ -1,5 +1,41 @@
 # vim: set ts=4 sw=4 et:
 
+# A portable abstraction for stat(1)
+#
+# The stat(1) command has different syntaxes between GNU flavor
+# and BSD flavor; implementations generally follow one or the other
+#
+if ! stat -c "%s" / > /dev/null 2>&1; then
+    # BSD stat
+
+    stat_size() {
+        stat -f %z "$1"
+    }
+
+    stat_inode() {
+        stat -f %i "$1"
+    }
+
+    stat_mtime() {
+        stat -f %m "$1"
+    }
+else
+    # GNU stat
+
+    stat_size() {
+        stat -c %s "$1"
+    }
+
+    stat_inode() {
+        stat -c %i "$1"
+    }
+
+    stat_mtime() {
+        stat -c %Y "$1"
+    }
+fi
+
+
 run_func() {
     local func="$1" desc="$2" funcname="$3" restoretrap= logpipe= logfile= teepid=
 
@@ -140,10 +176,21 @@ msg_warn_nochroot() {
 
 msg_normal() {
     if [ -z "$XBPS_QUIET" ]; then
-        # normal messages in bold
-        [ -n "$NOCOLORS" ] || printf "\033[1m"
+        # normal messages in bright bold white
+        if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+            # Github CI considers '1m' to be just a font bold
+            [ -n "$NOCOLORS" ] || printf "\033[97m\033[1m"
+        else
+            [ -n "$NOCOLORS" ] || printf "\033[1m"
+        fi
         printf "=> $@"
         [ -n "$NOCOLORS" ] || printf "\033[m"
+    fi
+}
+
+msg_verbose() {
+    if [ -n "$XBPS_VERBOSE" ]; then
+        printf >&2 "$@"
     fi
 }
 
@@ -165,7 +212,12 @@ report_broken() {
 }
 
 msg_normal_append() {
-    [ -n "$NOCOLORS" ] || printf "\033[1m"
+    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+        # Github CI considers '1m' to be just a font bold
+        [ -n "$NOCOLORS" ] || printf "\033[97m\033[1m"
+    else
+        [ -n "$NOCOLORS" ] || printf "\033[1m"
+    fi
     printf "$@"
     [ -n "$NOCOLORS" ] || printf "\033[m"
 }
@@ -289,6 +341,7 @@ get_endian() {
         ppc*le)   echo "le";;
         ppc*)     echo "be";;
         x86_64)   echo "le";;
+        riscv64)   echo "le";;
     esac
 }
 
@@ -316,6 +369,7 @@ get_wordsize() {
         ppc64*)   echo "64";;
         ppc*)     echo "32";;
         x86_64)   echo "64";;
+        riscv64)   echo "64";;
     esac
 }
 
@@ -415,7 +469,7 @@ setup_pkg() {
     done
 
     if [ ! -f ${XBPS_SRCPKGDIR}/${basepkg}/template ]; then
-        msg_error "xbps-src: unexistent file: ${XBPS_SRCPKGDIR}/${basepkg}/template\n"
+        msg_error "xbps-src: nonexistent file: ${XBPS_SRCPKGDIR}/${basepkg}/template\n"
     fi
     if [ -n "$cross" ]; then
         export CROSS_BUILD="$cross"

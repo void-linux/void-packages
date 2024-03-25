@@ -1,0 +1,247 @@
+From 023c17659786fe381312f154cf06663f1cb3607c Mon Sep 17 00:00:00 2001
+From: Ben Wolsieffer <benwolsieffer@gmail.com>
+Date: Tue, 23 Aug 2022 21:34:55 -0400
+Subject: [PATCH] Fix external passwords with 4-way handshake offloading
+
+Passphrases/PSKs from external password databases were ignored if 4-way
+handshake offloading was supported by the driver. This patch splits the PSK
+loading functionality into a separate function and calls if to get the PSK for
+handshake offloading.
+
+I tested connecting to a WPA2-PSK network with both inline and external
+passphrases, using the iwlwifi and brcmfmac drivers.
+
+Signed-off-by: Ben Wolsieffer <benwolsieffer@gmail.com>
+---
+ wpa_supplicant/wpa_supplicant.c | 184 +++++++++++++++++---------------
+ 1 file changed, 95 insertions(+), 89 deletions(-)
+
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+index d37a994f9..bb063380f 100644
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -1337,6 +1337,88 @@ void wpas_set_mgmt_group_cipher(struct wpa_supplicant *wpa_s,
+ 			 wpas_get_ssid_pmf(wpa_s, ssid));
+ }
+ 
++static int wpa_supplicant_get_psk(struct wpa_supplicant *wpa_s,
++				  struct wpa_bss *bss, struct wpa_ssid *ssid,
++				  u8 *psk)
++{
++        if (ssid->psk_set) {
++		wpa_hexdump_key(MSG_MSGDUMP, "PSK (set in config)", ssid->psk,
++				PMK_LEN);
++		os_memcpy(psk, ssid->psk, PMK_LEN);
++		return 0;
++	}
++
++#ifndef CONFIG_NO_PBKDF2
++	if (bss && ssid->bssid_set && ssid->ssid_len == 0 && ssid->passphrase) {
++	        pbkdf2_sha1(ssid->passphrase, bss->ssid, bss->ssid_len, 4096,
++			    psk, PMK_LEN);
++	        wpa_hexdump_key(MSG_MSGDUMP, "PSK (from passphrase)", psk,
++				PMK_LEN);
++                return 0;
++	}
++#endif /* CONFIG_NO_PBKDF2 */
++
++#ifdef CONFIG_EXT_PASSWORD
++	if (ssid->ext_psk) {
++		struct wpabuf *pw = ext_password_get(wpa_s->ext_pw,
++						     ssid->ext_psk);
++		char pw_str[64 + 1];
++
++		if (pw == NULL) {
++			wpa_msg(wpa_s, MSG_INFO, "EXT PW: No PSK found from "
++				"external storage");
++			return -1;
++		}
++
++		if (wpabuf_len(pw) < 8 || wpabuf_len(pw) > 64) {
++			wpa_msg(wpa_s, MSG_INFO, "EXT PW: Unexpected PSK "
++				"length %d in external storage",
++				(int) wpabuf_len(pw));
++			ext_password_free(pw);
++			return -1;
++		}
++
++		os_memcpy(pw_str, wpabuf_head(pw), wpabuf_len(pw));
++		pw_str[wpabuf_len(pw)] = '\0';
++
++#ifndef CONFIG_NO_PBKDF2
++		if (wpabuf_len(pw) >= 8 && wpabuf_len(pw) < 64 && bss)
++		{
++			pbkdf2_sha1(pw_str, bss->ssid, bss->ssid_len, 4096, psk,
++				    PMK_LEN);
++			os_memset(pw_str, 0, sizeof(pw_str));
++			wpa_hexdump_key(MSG_MSGDUMP, "PSK (from external "
++					"passphrase)",
++					psk, PMK_LEN);
++		} else
++#endif /* CONFIG_NO_PBKDF2 */
++		if (wpabuf_len(pw) == 2 * PMK_LEN) {
++			if (hexstr2bin(pw_str, psk, PMK_LEN) < 0) {
++				wpa_msg(wpa_s, MSG_INFO, "EXT PW: Invalid PSK "
++					"hex string");
++				os_memset(pw_str, 0, sizeof(pw_str));
++				ext_password_free(pw);
++				return -1;
++			}
++			wpa_hexdump_key(MSG_MSGDUMP, "PSK (from external PSK)",
++					psk, PMK_LEN);
++		} else {
++			wpa_msg(wpa_s, MSG_INFO, "EXT PW: No suitable PSK "
++				"available");
++			os_memset(pw_str, 0, sizeof(pw_str));
++			ext_password_free(pw);
++			return -1;
++		}
++
++		os_memset(pw_str, 0, sizeof(pw_str));
++		ext_password_free(pw);
++
++		return 0;
++	}
++#endif /* CONFIG_EXT_PASSWORD */
++
++	return -1;
++}
+ 
+ /**
+  * wpa_supplicant_set_suites - Set authentication and encryption parameters
+@@ -1756,97 +1838,20 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
+ 					      WPA_KEY_MGMT_FT_PSK |
+ 					      WPA_KEY_MGMT_PSK_SHA256)) == 0;
+ 
+-		if (ssid->psk_set && !sae_only) {
+-			wpa_hexdump_key(MSG_MSGDUMP, "PSK (set in config)",
+-					ssid->psk, PMK_LEN);
+-			wpa_sm_set_pmk(wpa_s->wpa, ssid->psk, PMK_LEN, NULL,
+-				       NULL);
+-			psk_set = 1;
+-		}
+-
+-		if (wpa_key_mgmt_sae(ssid->key_mgmt) &&
+-		    (ssid->sae_password || ssid->passphrase))
+-			psk_set = 1;
+-
+-#ifndef CONFIG_NO_PBKDF2
+-		if (bss && ssid->bssid_set && ssid->ssid_len == 0 &&
+-		    ssid->passphrase && !sae_only) {
++		if (!sae_only) {
+ 			u8 psk[PMK_LEN];
+-		        pbkdf2_sha1(ssid->passphrase, bss->ssid, bss->ssid_len,
+-				    4096, psk, PMK_LEN);
+-		        wpa_hexdump_key(MSG_MSGDUMP, "PSK (from passphrase)",
+-					psk, PMK_LEN);
+-			wpa_sm_set_pmk(wpa_s->wpa, psk, PMK_LEN, NULL, NULL);
+-			psk_set = 1;
+-			os_memset(psk, 0, sizeof(psk));
+-		}
+-#endif /* CONFIG_NO_PBKDF2 */
+-#ifdef CONFIG_EXT_PASSWORD
+-		if (ssid->ext_psk && !sae_only) {
+-			struct wpabuf *pw = ext_password_get(wpa_s->ext_pw,
+-							     ssid->ext_psk);
+-			char pw_str[64 + 1];
+-			u8 psk[PMK_LEN];
+-
+-			if (pw == NULL) {
+-				wpa_msg(wpa_s, MSG_INFO, "EXT PW: No PSK "
+-					"found from external storage");
+-				return -1;
+-			}
+-
+-			if (wpabuf_len(pw) < 8 || wpabuf_len(pw) > 64) {
+-				wpa_msg(wpa_s, MSG_INFO, "EXT PW: Unexpected "
+-					"PSK length %d in external storage",
+-					(int) wpabuf_len(pw));
+-				ext_password_free(pw);
+-				return -1;
+-			}
+-
+-			os_memcpy(pw_str, wpabuf_head(pw), wpabuf_len(pw));
+-			pw_str[wpabuf_len(pw)] = '\0';
+-
+-#ifndef CONFIG_NO_PBKDF2
+-			if (wpabuf_len(pw) >= 8 && wpabuf_len(pw) < 64 && bss)
+-			{
+-				pbkdf2_sha1(pw_str, bss->ssid, bss->ssid_len,
+-					    4096, psk, PMK_LEN);
+-				os_memset(pw_str, 0, sizeof(pw_str));
+-				wpa_hexdump_key(MSG_MSGDUMP, "PSK (from "
+-						"external passphrase)",
+-						psk, PMK_LEN);
+-				wpa_sm_set_pmk(wpa_s->wpa, psk, PMK_LEN, NULL,
+-					       NULL);
+-				psk_set = 1;
+-				os_memset(psk, 0, sizeof(psk));
+-			} else
+-#endif /* CONFIG_NO_PBKDF2 */
+-			if (wpabuf_len(pw) == 2 * PMK_LEN) {
+-				if (hexstr2bin(pw_str, psk, PMK_LEN) < 0) {
+-					wpa_msg(wpa_s, MSG_INFO, "EXT PW: "
+-						"Invalid PSK hex string");
+-					os_memset(pw_str, 0, sizeof(pw_str));
+-					ext_password_free(pw);
+-					return -1;
+-				}
+-				wpa_hexdump_key(MSG_MSGDUMP,
+-						"PSK (from external PSK)",
+-						psk, PMK_LEN);
++			if (wpa_supplicant_get_psk(wpa_s, bss, ssid,
++						   psk) >= 0) {
+ 				wpa_sm_set_pmk(wpa_s->wpa, psk, PMK_LEN, NULL,
+ 					       NULL);
+ 				psk_set = 1;
+-				os_memset(psk, 0, sizeof(psk));
+-			} else {
+-				wpa_msg(wpa_s, MSG_INFO, "EXT PW: No suitable "
+-					"PSK available");
+-				os_memset(pw_str, 0, sizeof(pw_str));
+-				ext_password_free(pw);
+-				return -1;
+ 			}
+-
+-			os_memset(pw_str, 0, sizeof(pw_str));
+-			ext_password_free(pw);
++			os_memset(psk, 0, sizeof(psk));
+ 		}
+-#endif /* CONFIG_EXT_PASSWORD */
++
++		if (wpa_key_mgmt_sae(ssid->key_mgmt) &&
++		    (ssid->sae_password || ssid->passphrase))
++			psk_set = 1;
+ 
+ 		if (!psk_set) {
+ 			wpa_msg(wpa_s, MSG_INFO,
+@@ -3606,6 +3611,7 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
+ 	int use_crypt, ret, bssid_changed;
+ 	unsigned int cipher_pairwise, cipher_group, cipher_group_mgmt;
+ 	struct wpa_driver_associate_params params;
++	u8 psk[PMK_LEN];
+ #if defined(CONFIG_WEP) || defined(IEEE8021X_EAPOL)
+ 	int wep_keys_set = 0;
+ #endif /* CONFIG_WEP || IEEE8021X_EAPOL */
+@@ -3890,8 +3896,8 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
+ 	    (params.key_mgmt_suite == WPA_KEY_MGMT_PSK ||
+ 	     params.key_mgmt_suite == WPA_KEY_MGMT_FT_PSK)) {
+ 		params.passphrase = ssid->passphrase;
+-		if (ssid->psk_set)
+-			params.psk = ssid->psk;
++		if (wpa_supplicant_get_psk(wpa_s, bss, ssid, psk) >= 0)
++			params.psk = psk;
+ 	}
+ 
+ 	if ((wpa_s->drv_flags & WPA_DRIVER_FLAGS_4WAY_HANDSHAKE_8021X) &&
+@@ -3915,8 +3921,8 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
+ 		if ((params.key_mgmt_suite == WPA_KEY_MGMT_PSK ||
+ 		     params.key_mgmt_suite == WPA_KEY_MGMT_PSK_SHA256 ||
+ 		     params.key_mgmt_suite == WPA_KEY_MGMT_FT_PSK) &&
+-		    ssid->psk_set)
+-			params.psk = ssid->psk;
++		    wpa_supplicant_get_psk(wpa_s, bss, ssid, psk) >= 0)
++			params.psk = psk;
+ 	}
+ 
+ 	params.drop_unencrypted = use_crypt;

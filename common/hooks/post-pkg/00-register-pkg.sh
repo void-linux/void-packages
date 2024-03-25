@@ -4,7 +4,7 @@ registerpkg() {
 	local repo="$1" pkg="$2" arch="$3"
 
 	if [ ! -f ${repo}/${pkg} ]; then
-		msg_error "Unexistent binary package ${repo}/${pkg}!\n"
+		msg_error "Nonexistent binary package ${repo}/${pkg}!\n"
 	fi
 
 	printf "%s:%s:%s\n" "${arch}" "${repo}" "${pkg}" >> "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg"

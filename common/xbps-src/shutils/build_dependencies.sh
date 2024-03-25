@@ -138,7 +138,12 @@ install_pkg_deps() {
 
     [ -z "$pkgname" ] && return 2
     [ -z "$XBPS_CHECK_PKGS" ] && unset checkdepends
-    [[ $build_style ]] && style=" [$build_style]"
+
+    if [[ $build_style ]] || [[ $build_helper ]]; then
+        style=" with"
+    fi
+
+    [[ $build_style ]] && style+=" [$build_style]"
 
     for s in $build_helper; do
         style+=" [$s]"
@@ -405,22 +410,12 @@ install_pkg_deps() {
     done
 
     if [[ ${host_binpkg_deps} ]]; then
-        if [ -z "$XBPS_QUIET" ]; then
-            # normal messages in bold
-            [[ $NOCOLORS ]] || printf "\033[1m"
-            echo "=> $pkgver: installing host dependencies: ${host_binpkg_deps[@]} ..."
-            [[ $NOCOLORS ]] || printf "\033[m"
-        fi
+        msg_normal "$pkgver: installing host dependencies: ${host_binpkg_deps[*]} ...\n"
         install_pkg_from_repos "" host "${host_binpkg_deps[@]}"
     fi
 
     if [[ ${binpkg_deps} ]]; then
-        if [ -z "$XBPS_QUIET" ]; then
-            # normal messages in bold
-            [[ $NOCOLORS ]] || printf "\033[1m"
-            echo "=> $pkgver: installing target dependencies: ${binpkg_deps[@]} ..."
-            [[ $NOCOLORS ]] || printf "\033[m"
-        fi
+        msg_normal "$pkgver: installing target dependencies: ${binpkg_deps[*]} ...\n"
         install_pkg_from_repos "$cross" target "${binpkg_deps[@]}"
     fi
 

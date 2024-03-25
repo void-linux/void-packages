@@ -1,21 +1,26 @@
 # Template file for 'python3-numpy'
 pkgname=python3-numpy
-version=1.24.2
+version=1.26.4
 revision=1
-build_style=python3-module
-hostmakedepends="python3-setuptools python3-Cython gcc-fortran"
+build_style=python3-pep517
+build_helper="meson qemu"
+make_build_args="-Csetup-args=-Ddisable-svml=true
+ $(vopt_if openblas "" "-Csetup-args=-Dblas=blas -Csetup-args=-Dlapack=lapack")
+"
+hostmakedepends="python3-meson-python python3-pyproject-metadata
+ python3-setuptools pkg-config python3-Cython gcc-fortran"
 makedepends="python3-devel
  $(vopt_if openblas 'openblas-devel' 'lapack-devel cblas-devel')"
-depends="python3-setuptools"
+depends="python3"
+checkdepends="python3-pytest-xdist python3-hypothesis python3-pytz meson"
 short_desc="Fast and sophisticated array facility to Python3"
 maintainer="Andrew J. Hesford <ajh@sideband.org>"
 license="BSD-3-Clause"
 homepage="https://www.numpy.org/"
-distfiles="https://github.com/numpy/numpy/archive/v${version}.tar.gz"
-checksum=eefc0ac5c0d6346675b9e77cbf72fbb3b78b6003fc0b4fededc6b55c35dbff2d
+changelog="https://github.com/numpy/numpy/releases"
+distfiles="${PYPI_SITE}/n/numpy/numpy-${version}.tar.gz"
+checksum=2a02aba9ed12e4ac4eb3ea9421c420301a0c6460d9830d74a9df87efa4912010
 alternatives="numpy:f2py:/usr/bin/f2py3"
-# Tests do not function propery in a build directory
-make_check="no"
 
 build_options="openblas"
 
@@ -34,9 +39,6 @@ if [ "$build_option_openblas" ]; then
 	esac
 fi
 
-# SVML AVX-512 functions have very limited support; disble for now
-export NPY_DISABLE_SVML=1
-
 post_patch() {
 	case "${XBPS_TARGET_MACHINE}" in
 		armv5tel-musl)
@@ -50,26 +52,37 @@ post_patch() {
 	fi
 }
 
-pre_build() {
-	# Build numpy in parallel
-	make_build_args+=" ${makejobs}"
+do_check() {
+	local _skip
 
-	# Find the right linear algebra subroutines on the target arch
-	: > site.cfg
-	for _blaslib in $(vopt_if openblas openblas "lapack blas"); do
-		cat >> site.cfg <<-EOF
-		[$_blaslib]
-		libraries = ${_blaslib}
-		include_dirs = ${XBPS_CROSS_BASE}/usr/include
-		library_dirs = ${XBPS_CROSS_BASE}/usr/lib
-		runtime_library_dirs = ${XBPS_CROSS_BASE}/usr/lib
-		EOF
-	done
+	case $XBPS_TARGET_MACHINE in
+		# this triggers a known bug in musl libm, fixed in:
+		# https://git.musl-libc.org/cgit/musl/commit/?id=aa2d23e57c9c95f0ffeb80cb035e5a5be52d8ef0
+		*-musl) _skip+="or(test_against_cmath)" ;;
+	esac
+
+	if [ ${XBPS_TARGET_MACHINE%-musl} = "i686" ]; then
+		# see: https://github.com/numpy/numpy/issues/18388
+		_skip+="or(test_float_remainder_overflow)"
+		_skip+="or(test_identityless_reduction_huge_array)"
+		_skip+="or((TestKind)and(test_int))"
+		# these 3 fail in CI but not locally
+		_skip+="or(test_einsum_sums_int8)"
+		_skip+="or(test_einsum_sums_uint8)"
+		_skip+="or(test_einsum_sums_int16)"
+	fi
+
+	# The NumPy test helper wants to use setuptools to deploy a test
+	# installation, which installs a broken f2py. Test against the wheel.
+	local testdir="${wrksrc}/.xbps-testdir/$(date +%s)"
+	python3 -m installer --destdir "${testdir}" dist/numpy*.whl
+
+	PATH="${testdir}/usr/bin:${PATH}" PYTHONPATH="${testdir}/${py3_sitelib}" \
+		python3 runtests.py --no-build -- \
+			-n "${XBPS_MAKEJOBS}" ${_skip+-k "not(${_skip#or})"}
 }
 
 post_install() {
-	rm ${DESTDIR}/usr/bin/f2py
-
-	rm ${DESTDIR}/${py3_sitelib}/numpy/LICENSE.txt
+	mv ${DESTDIR}/usr/bin/f2py{,3}
 	vlicense LICENSE.txt LICENSE
 }

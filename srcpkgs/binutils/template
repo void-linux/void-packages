@@ -1,24 +1,28 @@
 # Template file for 'binutils'
 pkgname=binutils
-version=2.39
-revision=1
+version=2.41
+revision=3
 bootstrap=yes
 hostmakedepends="pkgconf"
-makedepends="zlib-devel"
+makedepends="zlib-devel libzstd-devel"
 short_desc="GNU binary utilities"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="GPL-3.0-or-later"
 homepage="http://www.gnu.org/software/binutils/"
-distfiles="${GNU_SITE}/$pkgname/$pkgname-$version.tar.xz"
-checksum=645c25f563b8adc0a81dbd6a41cffbf4d37083a382e02d5d3df4f65c09516d00
+distfiles="${GNU_SITE}/binutils/binutils-${version}.tar.xz"
+checksum=ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450
+
+build_options="all_targets"
+desc_option_all_targets="Enable all supported targets"
 
 subpackages="binutils-doc"
+
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends+=" flex perl texinfo"
 	makedepends+=" elfutils-devel"
 	checkdepends="bc"
-	depends="binutils-doc"
-	subpackages+=" binutils-devel"
+	depends="binutils-doc binutils-libs"
+	subpackages+=" libiberty-devel binutils-libs binutils-devel"
 fi
 
 _get_triplet() {
@@ -36,18 +40,20 @@ do_configure() {
 	local conf
 
 	if [ "$CHROOT_READY" ]; then
-		conf+=" --with-debuginfod --enable-shared"
+		conf+=" --with-debuginfod --enable-shared --enable-install-libiberty"
 	else
 		conf+=" --without-debuginfod --disable-shared --disable-install-libbfd"
 	fi
 	if [ "$CROSS_BUILD" ]; then
 		# we don't want --with-sysroot=${XBPS_CROSS_BASE} like gnu-configure
 		conf+=" --host=${XBPS_CROSS_TRIPLET} --with-build-sysroot=${XBPS_CROSS_BASE}"
+		# pkgconf adds sysroot includes to cflags and ldflags, which breaks binutils cross-compile with zstd
+		vsed -e '/PKG_CONFIG_SYSROOT_DIR/d' -i ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
 	fi
 
 	# gprofng currently only supports x86 and aarch64 glibc.
 	case "$XBPS_TARGET_MACHINE" in
-		x86_64|i386|aarch64) conf+=" --enable-gprofng" ;;
+		x86_64|i686|aarch64) conf+=" --enable-gprofng" ;;
 		*) conf+=" --disable-gprofng" ;;
 	esac
 
@@ -55,13 +61,19 @@ do_configure() {
 		ppc*)
 			conf+=" --enable-secureplt"
 			;;
-		x86_64*)
-			conf+=" --enable-targets=x86_64-pep"
-			;;
-		i686*)
-			conf+=" --enable-targets=x86_64-linux-gnu,x86_64-pep"
+		x86_64*|i686*)
+			extra_targets=x86_64-pep
 			;;
 	esac
+
+	# target archs supported by Void
+	# borked: riscv64 (gold doesn't support it)
+	void_targets="aarch64,armv5tel,armv6l,armv7l,i686,mips,mipsel,ppc,ppcle,ppc64,ppc64le,x86_64"
+	conf+=" --enable-targets=$(echo "$void_targets" | sed -E -e 's/(,|$)/-linux-gnu\1/g'),${extra_targets}"
+
+	if [ "$build_option_all_targets" ]; then
+		conf+=" --enable-targets=all"
+	fi
 
 	# enable multilib on x86_64 glibc
 	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
@@ -97,6 +109,7 @@ do_configure() {
 		--with-system-zlib \
 		--with-mmap \
 		--with-pic \
+		--with-zstd \
 		$conf
 }
 
@@ -128,10 +141,13 @@ do_install() {
 		# Remove these symlinks, they are not ABI stable.
 		# Programs should compile static to the .a file.
 		rm -f ${DESTDIR}/usr/lib/lib{bfd,opcodes}.so
-		echo "INPUT ( /usr/lib/libbfd.a -liberty -lz )" \
+		echo "INPUT ( /usr/lib${XBPS_TARGET_WORDSIZE}/libbfd.a -lsframe -liberty -lzstd -lz )" \
 			>${DESTDIR}/usr/lib/libbfd.so
-		echo "INPUT ( /usr/lib/libopcodes.a -lbfd )" \
+		echo "INPUT ( /usr/lib${XBPS_TARGET_WORDSIZE}/libopcodes.a -lbfd )" \
 			>${DESTDIR}/usr/lib/libopcodes.so
+
+		# Install PIC version of libiberty.a
+		vinstall build/libiberty/pic/libiberty.a 755 usr/lib
 	fi
 
 	# Remove useless manpages.
@@ -145,13 +161,20 @@ do_install() {
 }
 
 binutils-devel_package() {
-	depends="zlib-devel libiberty-devel"
+	depends="binutils-libs zlib-devel libzstd-devel libiberty-devel"
 	short_desc+=" - development files"
 	pkg_install() {
 		vmove usr/include
 		vmove "usr/lib/*.a"
-		vmove "usr/lib/libbfd.so"
-		vmove "usr/lib/libopcodes.so"
+		vmove "usr/lib/*.so"
+	}
+}
+
+binutils-libs_package() {
+	short_desc+=" - shared libraries"
+	pkg_install() {
+		vmove "usr/lib/lib*-${version}.so"
+		vmove "usr/lib/*.so.*"
 	}
 }
 
@@ -159,7 +182,15 @@ binutils-doc_package() {
 	short_desc+=" - info files"
 	pkg_install() {
 		vmove usr/share/info
-		# Remove info file that conflicts with autoconf.
-		rm -f ${PKGDESTDIR}/usr/share/info/standards.info
+	}
+}
+
+libiberty-devel_package() {
+	reverts="20220713_1 20210106_1"
+	short_desc="Library of utility functions used by GNU programs"
+	conflicts="binutils-devel<=2.35.1_3"
+	pkg_install() {
+		vmove usr/include/libiberty
+		vmove usr/lib/libiberty.a
 	}
 }

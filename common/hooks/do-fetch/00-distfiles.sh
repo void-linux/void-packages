@@ -253,7 +253,7 @@ hook() {
 				if [[ $cksum = $filesum ]]; then
 					dfgood=$((dfgood + 1))
 				else
-					inode=$(stat "$distfile" --printf "%i")
+					inode=$(stat_inode "$distfile")
 					msg_warn "$pkgver: wrong checksum found for ${curfile} - purging\n"
 					find ${XBPS_SRCDISTDIR} -inum ${inode} -delete -print
 				fi
