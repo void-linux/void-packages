@@ -70,3 +70,6 @@ export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
 
 # jemalloc-sys
 export JEMALLOC_SYS_WITH_LG_PAGE=16
+
+# libgit2-sys
+export LIBGIT2_NO_VENDOR=1
