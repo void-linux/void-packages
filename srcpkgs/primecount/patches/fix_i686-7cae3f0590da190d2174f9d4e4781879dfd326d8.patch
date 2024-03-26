@@ -1,0 +1,249 @@
+See: https://github.com/kimwalisch/primecount/issues/66
+
+From 7cae3f0590da190d2174f9d4e4781879dfd326d8 Mon Sep 17 00:00:00 2001
+From: Kim Walisch <kim.walisch@gmail.com>
+Date: Sun, 17 Mar 2024 17:54:38 +0100
+Subject: [PATCH] Fix infinite loop in Li(x) & RiemannR(x) on Linux i386 #66
+
+---
+ src/LogarithmicIntegral.cpp | 30 ++++++++++-------------
+ src/RiemannR.cpp            | 48 +++++++++++++++++++++++--------------
+ 2 files changed, 42 insertions(+), 36 deletions(-)
+
+diff --git a/src/LogarithmicIntegral.cpp b/src/LogarithmicIntegral.cpp
+index 148c99c3..8c525f08 100644
+--- a/src/LogarithmicIntegral.cpp
++++ b/src/LogarithmicIntegral.cpp
+@@ -53,7 +53,7 @@ T li(T x)
+   T logx = std::log(x);
+   int k = 0;
+ 
+-  for (int n = 1; true; n++)
++  for (int n = 1; n < 1000; n++)
+   {
+     p *= -logx;
+     factorial *= n;
+@@ -67,7 +67,7 @@ T li(T x)
+     sum += (p / q) * inner_sum;
+ 
+     // Not converging anymore
+-    if (std::abs(sum - old_sum) < std::numeric_limits<T>::epsilon())
++    if (std::abs(sum - old_sum) <= std::numeric_limits<T>::epsilon())
+       break;
+   }
+ 
+@@ -81,12 +81,9 @@ T li(T x)
+ template <typename T>
+ T Li(T x)
+ {
+-  const T li2 = (T) 1.045163780117492784844588889194613136L;
+-
+-  if (x <= li2)
+-    return 0;
+-  else
+-    return li(x) - li2;
++  T li2 = (T) 1.045163780117492784844588889194613136L;
++  T lix = li(x);
++  return std::max(T(0), lix - li2);
+ }
+ 
+ /// Calculate the inverse Eulerian logarithmic integral which
+@@ -110,9 +107,9 @@ T Li_inverse(T x)
+     return 0;
+ 
+   T t = x * std::log(x);
+-  T old_term = std::numeric_limits<T>::infinity();
++  T old_term = std::numeric_limits<T>::max();
+ 
+-  while (true)
++  for (int i = 0; i < 100; i++)
+   {
+     T term = (Li(t) - x) * std::log(t);
+ 
+@@ -148,7 +145,7 @@ __float128 li(__float128 x)
+   __float128 logx = logq(x);
+   int k = 0;
+ 
+-  for (int n = 1; true; n++)
++  for (int n = 1; n < 1000; n++)
+   {
+     p *= -logx;
+     factorial *= n;
+@@ -162,7 +159,7 @@ __float128 li(__float128 x)
+     sum += (p / q) * inner_sum;
+ 
+     // Not converging anymore
+-    if (fabsq(sum - old_sum) < FLT128_EPSILON)
++    if (fabsq(sum - old_sum) <= FLT128_EPSILON)
+       break;
+   }
+ 
+@@ -176,11 +173,8 @@ __float128 li(__float128 x)
+ __float128 Li(__float128 x)
+ {
+   __float128 li2 = 1.045163780117492784844588889194613136Q;
+-
+-  if (x <= li2)
+-    return 0;
+-  else
+-    return li(x) - li2;
++  __float128 lix = li(x);
++  return (lix < li2) ? 0 : lix - li2;
+ }
+ 
+ /// Calculate the inverse Eulerian logarithmic integral which
+@@ -205,7 +199,7 @@ __float128 Li_inverse(__float128 x)
+   __float128 t = x * logq(x);
+   __float128 old_term = FLT128_MAX;
+ 
+-  while (true)
++  for (int i = 0; i < 100; i++)
+   {
+     __float128 term = (Li(t) - x) * logq(t);
+ 
+diff --git a/src/RiemannR.cpp b/src/RiemannR.cpp
+index 4c17055f..a29e28a1 100644
+--- a/src/RiemannR.cpp
++++ b/src/RiemannR.cpp
+@@ -217,24 +217,27 @@ T RiemannR_prime(T x)
+   // RiemannR_prime(1) = NaN.
+   // Hence we return RiemannR_prime(1.0000000000000001).
+   // Required because: sum / log(1) = 0 / 0.
+-  if (std::abs(x - 1.0) < epsilon)
++  if (std::abs(x - 1.0) <= epsilon)
+     return (T) 0.60792710185402643042L;
+ 
+   T sum = 0;
+-  T old_sum = -1;
+   T term = 1;
+   T logx = std::log(x);
+ 
+-  for (unsigned k = 1; std::abs(old_sum - sum) >= epsilon; k++)
++  for (unsigned k = 1; k < 1000; k++)
+   {
+     term *= logx / k;
+-    old_sum = sum;
++    T old_sum = sum;
+ 
+     if (k + 1 < zeta.size())
+       sum += term / T(zeta[k + 1]);
+     else
+       // For k >= 127, approximate zeta(k + 1) by 1
+       sum += term;
++
++    // Not converging anymore
++    if (std::abs(old_sum - sum) <= epsilon)
++      break;
+   }
+ 
+   return sum / (x * logx);
+@@ -254,20 +257,23 @@ T RiemannR(T x)
+ 
+   T epsilon = std::numeric_limits<T>::epsilon();
+   T sum = 1;
+-  T old_sum = -1;
+   T term = 1;
+   T logx = std::log(x);
+ 
+-  for (unsigned k = 1; std::abs(old_sum - sum) >= epsilon; k++)
++  for (unsigned k = 1; k < 1000; k++)
+   {
+     term *= logx / k;
+-    old_sum = sum;
++    T old_sum = sum;
+ 
+     if (k + 1 < zeta.size())
+       sum += term / (T(zeta[k + 1]) * k);
+     else
+       // For k >= 127, approximate zeta(k + 1) by 1
+       sum += term / k;
++
++    // Not converging anymore
++    if (std::abs(old_sum - sum) <= epsilon)
++      break;
+   }
+ 
+   return sum;
+@@ -290,9 +296,9 @@ T RiemannR_inverse(T x)
+     return 0;
+ 
+   T t = (T) initialNthPrimeApprox((double) x);
+-  T old_term = std::numeric_limits<T>::infinity();
++  T old_term = std::numeric_limits<T>::max();
+ 
+-  while (true)
++  for (int i = 0; i < 100; i++)
+   {
+     T term = (RiemannR(t) - x) / RiemannR_prime(t);
+ 
+@@ -457,24 +463,27 @@ __float128 RiemannR_prime(__float128 x)
+   // RiemannR_prime(1) = NaN.
+   // Hence we return RiemannR_prime(1.0000000000000001).
+   // Required because: sum / log(1) = 0 / 0.
+-  if (fabsq(x - 1.0) < FLT128_EPSILON)
++  if (fabsq(x - 1.0) <= FLT128_EPSILON)
+     return 0.60792710185402643042Q;
+ 
+   __float128 sum = 0;
+-  __float128 old_sum = -1;
+   __float128 term = 1;
+   __float128 logx = logq(x);
+ 
+-  for (unsigned k = 1; fabsq(old_sum - sum) >= FLT128_EPSILON; k++)
++  for (unsigned k = 1; k < 1000; k++)
+   {
+     term *= logx / k;
+-    old_sum = sum;
++    __float128 old_sum = sum;
+ 
+     if (k + 1 < zeta_f128.size())
+       sum += term / zeta_f128[k + 1];
+     else
+       // For k >= 127, approximate zeta(k + 1) by 1
+       sum += term;
++
++    // Not converging anymore
++    if (std::abs(old_sum - sum) <= FLT128_EPSILON)
++      break;
+   }
+ 
+   return sum / (x * logx);
+@@ -492,20 +501,23 @@ __float128 RiemannR(__float128 x)
+     return 0;
+ 
+   __float128 sum = 1;
+-  __float128 old_sum = -1;
+   __float128 term = 1;
+   __float128 logx = logq(x);
+ 
+-  for (unsigned k = 1; fabsq(old_sum - sum) >= FLT128_EPSILON; k++)
++  for (unsigned k = 1; k < 1000; k++)
+   {
+     term *= logx / k;
+-    old_sum = sum;
++    __float128 old_sum = sum;
+ 
+     if (k + 1 < zeta_f128.size())
+       sum += term / (zeta_f128[k + 1] * k);
+     else
+       // For k >= 127, approximate zeta(k + 1) by 1
+       sum += term / k;
++
++    // Not converging anymore
++    if (std::abs(old_sum - sum) <= FLT128_EPSILON)
++      break;
+   }
+ 
+   return sum;
+@@ -527,9 +539,9 @@ __float128 RiemannR_inverse(__float128 x)
+     return 0;
+ 
+   __float128 t = (__float128) initialNthPrimeApprox((double) x);
+-  __float128 old_term = HUGE_VALQ;
++  __float128 old_term = FLT128_MAX;
+ 
+-  while (true)
++  for (int i = 0; i < 100; i++)
+   {
+     __float128 term = (RiemannR(t) - x) / RiemannR_prime(t);
+ 
