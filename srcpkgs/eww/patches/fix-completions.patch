@@ -1,0 +1,129 @@
+From 525fb069b7eb3213dcbbd1e12bb476b546f63b82 Mon Sep 17 00:00:00 2001
+From: Zacharie Dubrulle <dubrullezacharie@gmail.com>
+Date: Mon, 19 Feb 2024 22:02:57 +0100
+Subject: [PATCH 1/2] Handle `shell-completions` before anything else
+
+---
+ crates/eww/src/client.rs |  4 ----
+ crates/eww/src/main.rs   |  8 ++++++++
+ crates/eww/src/opts.rs   | 14 +++++++-------
+ 3 files changed, 15 insertions(+), 11 deletions(-)
+
+diff --git a/crates/eww/src/client.rs b/crates/eww/src/client.rs
+index c9f14ab2..616c3872 100644
+--- a/crates/eww/src/client.rs
++++ b/crates/eww/src/client.rs
+@@ -6,7 +6,6 @@ use crate::{
+     paths::EwwPaths,
+ };
+ use anyhow::{Context, Result};
+-use clap::CommandFactory as _;
+ use std::{
+     io::{Read, Write},
+     os::unix::net::UnixStream,
+@@ -21,9 +20,6 @@ pub fn handle_client_only_action(paths: &EwwPaths, action: ActionClientOnly) ->
+                 .spawn()?
+                 .wait()?;
+         }
+-        ActionClientOnly::ShellCompletions { shell } => {
+-            clap_complete::generate(shell, &mut opts::RawOpt::command(), "eww", &mut std::io::stdout());
+-        }
+     }
+     Ok(())
+ }
+diff --git a/crates/eww/src/main.rs b/crates/eww/src/main.rs
+index aac52a6f..848c055b 100644
+--- a/crates/eww/src/main.rs
++++ b/crates/eww/src/main.rs
+@@ -5,6 +5,7 @@ extern crate gtk;
+ extern crate gtk_layer_shell as gtk_layer_shell;
+ 
+ use anyhow::{Context, Result};
++use clap::CommandFactory as _;
+ use daemon_response::{DaemonResponse, DaemonResponseReceiver};
+ use display_backend::DisplayBackend;
+ use opts::ActionWithServer;
+@@ -44,6 +45,11 @@ fn main() {
+         pretty_env_logger::formatted_timed_builder().filter(Some("eww"), log_level_filter).init();
+     }
+ 
++    if let opts::Action::ShellCompletions { shell } = opts.action {
++        clap_complete::generate(shell, &mut opts::RawOpt::command(), "eww", &mut std::io::stdout());
++        return;
++    }
++
+     #[allow(unused)]
+     let use_wayland = opts.force_wayland || detect_wayland();
+     #[cfg(all(feature = "wayland", feature = "x11"))]
+@@ -87,6 +93,7 @@ fn run<B: DisplayBackend>(opts: opts::Opt, eww_binary_name: String, display_back
+         .context("Failed to initialize eww paths")?;
+ 
+     let should_restart = match &opts.action {
++        opts::Action::ShellCompletions { .. } => unreachable!(),
+         opts::Action::Daemon => opts.restart,
+         opts::Action::WithServer(action) => opts.restart && action.can_start_daemon(),
+         opts::Action::ClientOnly(_) => false,
+@@ -100,6 +107,7 @@ fn run<B: DisplayBackend>(opts: opts::Opt, eww_binary_name: String, display_back
+     }
+ 
+     let would_show_logs = match opts.action {
++        opts::Action::ShellCompletions { .. } => unreachable!(),
+         opts::Action::ClientOnly(action) => {
+             client::handle_client_only_action(&paths, action)?;
+             false
+diff --git a/crates/eww/src/opts.rs b/crates/eww/src/opts.rs
+index 2446d8c4..b635a28b 100644
+--- a/crates/eww/src/opts.rs
++++ b/crates/eww/src/opts.rs
+@@ -59,6 +59,13 @@ pub(super) struct RawOpt {
+ 
+ #[derive(Subcommand, Debug, Serialize, Deserialize, PartialEq)]
+ pub enum Action {
++    /// Generate a shell completion script
++    ShellCompletions {
++        #[arg(short, long)]
++        #[serde(with = "serde_shell")]
++        shell: clap_complete::shells::Shell,
++    },
++
+     /// Start the Eww daemon.
+     #[command(name = "daemon", alias = "d")]
+     Daemon,
+@@ -75,13 +82,6 @@ pub enum ActionClientOnly {
+     /// Print and watch the eww logs
+     #[command(name = "logs")]
+     Logs,
+-
+-    /// Generate a shell completion script
+-    ShellCompletions {
+-        #[arg(short, long)]
+-        #[serde(with = "serde_shell")]
+-        shell: clap_complete::shells::Shell,
+-    },
+ }
+ 
+ #[derive(Subcommand, Debug, Serialize, Deserialize, PartialEq)]
+
+From 0b22ea7ef053fa8afebf5f6e107f689f5516ac38 Mon Sep 17 00:00:00 2001
+From: Zacharie Dubrulle <dubrullezacharie@gmail.com>
+Date: Mon, 19 Feb 2024 22:05:36 +0100
+Subject: [PATCH 2/2] Update CHANGELOG.md
+
+---
+ CHANGELOG.md | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 09914410..f34c078a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,9 @@ All notable changes to eww will be listed here, starting at changes since versio
+ 
+ ## Unreleased
+ 
++### Fixes
++- The `shell-completions` subcommand is now run before anything is set up
++
+ ## [0.5.0] (17.02.2024)
+ 
+ ### BREAKING CHANGES
