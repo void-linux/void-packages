@@ -1,0 +1,73 @@
+From fb6f33082a42202c55dc3d5cbc984cc9b6b01629 Mon Sep 17 00:00:00 2001
+From: Emmanuele Bassi <ebassi@gnome.org>
+Date: Mon, 25 Dec 2023 00:06:53 +0000
+Subject: [PATCH] tests: Do not use PYTHONPATH to import giscanner
+
+The PYTHONPATH environment variable will prepend its contents to
+sys.path; since giscanner contains an ast sub-module, we are going to
+cause a collision with Python's own ast module. In some cases, Python
+3.12's distutils compatibility shim will try to import Python's ast,
+which will end up trying to import giscanner.ast instead.
+
+Instead of prepending the giscanner build directory, we can append it,
+and keep the current project layout.
+
+See: #429
+---
+ tests/scanner/meson.build   | 2 +-
+ tests/warn/meson.build      | 5 +----
+ tests/warn/warningtester.py | 9 +++++++++
+ 3 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/tests/scanner/meson.build b/tests/scanner/meson.build
+index e77c2de03..c92ce6474 100644
+--- a/tests/scanner/meson.build
++++ b/tests/scanner/meson.build
+@@ -1,7 +1,7 @@
+ scanner_test_env = environment()
+ scanner_test_env.prepend('PYTHONPATH', test_env_common_pypath)
+ if test_env_common_path.length() > 0
+-    scanner_test_env.prepend('PATH', test_env_common_path)
++  scanner_test_env.prepend('PATH', test_env_common_path)
+ endif
+ 
+ scanner_test_files = [
+diff --git a/tests/warn/meson.build b/tests/warn/meson.build
+index 9641787f7..c57268081 100644
+--- a/tests/warn/meson.build
++++ b/tests/warn/meson.build
+@@ -23,10 +23,7 @@ warn_tests = [
+ warn_test_env = environment()
+ warn_test_env.set('UNINSTALLED_INTROSPECTION_SRCDIR', source_root)
+ warn_test_env.set('TOP_BUILDDIR', build_root)
+-warn_test_env.set(
+-  'PYTHONPATH',
+-  build_root,
+-  join_paths(build_root, 'giscanner'))
++warn_test_env.set('GISCANNER_DIR', build_root, build_root / 'giscanner')
+ 
+ # FIXME: Glib as a subproject (used on Windows mostly).
+ if glib_dep.type_name() == 'pkgconfig'
+diff --git a/tests/warn/warningtester.py b/tests/warn/warningtester.py
+index acb271f23..cce2827b1 100644
+--- a/tests/warn/warningtester.py
++++ b/tests/warn/warningtester.py
+@@ -11,6 +11,15 @@ sys.path.insert(0, path)
+ builtins.__dict__['DATADIR'] = path
+ builtins.__dict__['GIR_DIR'] = path
+ 
++# We cannot use PYTHONPATH, because it would prepend the giscanner
++# root, and we have an "ast" module that conflicts with Python's
++# own ast. In some cases, Python's distutils ends up importing ast,
++# and that will end up trying to import giscanner.ast
++path = os.getenv('GISCANNER_DIR', None)
++assert path is not None
++for p in path.split(os.pathsep):
++    sys.path.append(p)
++
+ from giscanner.annotationparser import GtkDocCommentBlockParser
+ from giscanner.ast import Include, Namespace
+ from giscanner.introspectablepass import IntrospectablePass
+-- 
+GitLab
+
