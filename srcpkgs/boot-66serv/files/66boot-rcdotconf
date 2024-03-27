@@ -1,0 +1,109 @@
+#!/bin/sh
+# Copyright 2021 mobinmob <mobinmob@disroot.org>
+# Use of this source code is governed by the 2-Clause BSD License
+# that can be found in the LICENSE file at the root project directory.
+# SPDX short identifier: BSD-2-Clause
+
+# This script reads a **valid** rc.conf and writes the values to the 
+# corresponding configuration options in the boot@system environment file.
+# Excluding the common posix userland commands, the script needs 66-yeller
+# (from 66-tools) and 66-env (from 66).
+
+# Variables for 66-yeller
+export PROG="66boot-rcdotconf"
+export COLOR_ENABLED="1"
+export CLOCK_ENABLED="0"
+
+
+# Script must run as root.
+user=$(id -u)
+[ "$user" != "0" ] && 66-yeller -F %r You need to run this script as root! %n  && exit 1
+
+HOSTNAME=
+HOSTNAME1=
+HARDWARECLOCK=
+TIMEZONE=
+KEYMAP=
+FONT=
+FONT_MAP=
+FONT_UNIMAP=
+TTYS=
+
+apply_conf_from_to(){
+	# Set configuration value ${3} from ${1} to ${2}
+	# ${1} is the conf option from /etc/rc.conf
+	# ${2} is the conf option from the boot@ conf file
+	# ${3} is the value from the /etc/rc.conf option/var
+	if [ -n "${3}" ]
+	then
+		66-env -t boot -r "${2}"=!"${3}" boot@system
+		66-yeller %g "${2} set to [${3}]." %n
+	fi
+}
+
+set_hostname() { 
+	# ${1} HOSTNAME value
+	[ -r /etc/hostname ] && HOSTNAME1="$( cat /etc/hostname )" && export HOSTNAME1
+	
+	if [ -n "${1}" ]
+	then
+		66-env -t boot -r HOSTNAME=!"${1}" boot@system
+		66-yeller %g "HOSTNAME set to [${1}]." %n
+	elif [ -n "$HOSTNAME1" ]
+	then
+		66-env -t boot -r HOSTNAME=!"$HOSTNAME1" boot@system
+		66-yeller %g "HOSTNAME set to [$HOSTNAME1]." %n
+	elif [ -z "${1}" ] && [ -z "$HOSTNAME1" ]
+	then
+	66-env -t boot -r HOSTNAME=!void-live boot@system
+	66-yeller -W %b "No HOSTNAME set, reverting
+ to the default [void-live]." %n
+	fi
+}
+ 
+set_ttys() {
+	# Same positional args as apply_conf_from_to
+	if  [ -n "${3}" ]
+	then
+		if [ "${3}" -lt 11 ] && [ "${3}" -gt 0 ]
+		 then
+		 	apply_conf_from_to "${1}" "${2}" "${3}"
+		else
+		66-env -t boot -r TTY=!4 boot@system
+		66-yeller -W %b "${3} TTYS is not valid as a tty number,
+reverting to the default [4]." %n
+		exit 1
+		fi
+	else 
+		66-env -t boot -r TTY=!4 boot@system
+		66-yeller  -W  %b "TTY number not set, reverting
+ to the default [4]." %n
+	fi
+}
+
+check_tz() {
+	# On installation timezone can be set by symlink and not by the 
+	# TIMEZONE key in rc.conf. In that case follow the symlink.
+	if [ "$(realpath /etc/localtime | cut -d / -f 1,2,3,4)" = "/usr/share/zoneinfo" ]; then
+		TIMEZONE="$(realpath /etc/localtime | cut -d / -f 5,6)"
+		export TIMEZONE
+	fi
+}
+
+
+# shellcheck disable=SC1091
+. /etc/rc.conf
+
+check_tz
+set_hostname "$HOSTNAME"
+apply_conf_from_to TIMEZONE TZ "$TIMEZONE"
+apply_conf_from_to HARDWARECLOCK HARDWARECLOCK "$HARDWARECLOCK"
+apply_conf_from_to KEYMAP KEYMAP "$KEYMAP"
+apply_conf_from_to FONT_MAP FONT_MAP "$FONT_MAP"
+apply_conf_from_to FONT FONT "$FONT"
+apply_conf_from_to FONT_UNIMAP FONT_UNIMAP "$FONT_UNIMAP"
+set_ttys TTYS TTY "$TTYS"
+
+66-yeller %g "Please re-enable the boot@system service
+for the changes to take effect by running (as root):
+'66-enable -F -t boot boot@system' " %n
