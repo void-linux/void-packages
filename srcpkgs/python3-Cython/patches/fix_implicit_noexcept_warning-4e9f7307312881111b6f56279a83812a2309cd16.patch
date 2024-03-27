@@ -1,0 +1,449 @@
+See: https://github.com/cython/cython/pull/6087#issuecomment-2013134848
+
+From 4e9f7307312881111b6f56279a83812a2309cd16 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Thu, 21 Mar 2024 14:25:04 -0300
+Subject: [PATCH] Fix warnings for "implicit noexcept" when using
+ `legacy_implicit_noexcept=True` (#6087)
+
+---
+ Cython/Compiler/Nodes.py               | 13 +++++
+ Cython/Compiler/Parsing.py             |  4 +-
+ Cython/Includes/cpython/array.pxd      |  2 +-
+ Cython/Includes/cpython/complex.pxd    |  4 +-
+ Cython/Includes/cpython/datetime.pxd   | 80 +++++++++++++-------------
+ Cython/Includes/cpython/time.pxd       |  2 +-
+ tests/run/legacy_implicit_noexcept.pyx | 55 +++++++++---------
+ 7 files changed, 85 insertions(+), 75 deletions(-)
+
+diff --git a/Cython/Compiler/Nodes.py b/Cython/Compiler/Nodes.py
+index b648df2928e..bbecbe7c83a 100644
+--- a/Cython/Compiler/Nodes.py
++++ b/Cython/Compiler/Nodes.py
+@@ -711,6 +711,19 @@ def analyse(self, return_type, env, nonempty=0, directive_locals=None, visibilit
+ 
+         exc_val = None
+         exc_check = 0
++
++        if (env.directives["legacy_implicit_noexcept"]
++                and not return_type.is_pyobject
++                and not self.has_explicit_exc_clause
++                and self.exception_check
++                and visibility != 'extern'):
++            # implicit noexcept, with a warning
++            self.exception_check = False
++            warning(self.pos,
++                    "Implicit noexcept declaration is deprecated."
++                    " Function declaration should contain 'noexcept' keyword.",
++                    level=2)
++
+         if self.exception_check == '+':
+             env.add_include_file('ios')         # for std::ios_base::failure
+             env.add_include_file('new')         # for std::bad_alloc
+diff --git a/Cython/Compiler/Parsing.py b/Cython/Compiler/Parsing.py
+index 46638b5eed4..25c0de92cf1 100644
+--- a/Cython/Compiler/Parsing.py
++++ b/Cython/Compiler/Parsing.py
+@@ -3128,9 +3128,7 @@ def p_exception_value_clause(s, is_extern):
+                 exc_check = False
+             # exc_val can be non-None even if exc_check is False, c.f. "except -1"
+             exc_val = p_test(s)
+-    if not is_extern and not exc_clause and s.context.legacy_implicit_noexcept:
+-        exc_check = False
+-        warning(s.position(), "Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.", level=2)
++
+     return exc_val, exc_check, exc_clause
+ 
+ c_arg_list_terminators = cython.declare(frozenset, frozenset((
+diff --git a/Cython/Includes/cpython/array.pxd b/Cython/Includes/cpython/array.pxd
+index 8431f7b6602..c64e972775b 100644
+--- a/Cython/Includes/cpython/array.pxd
++++ b/Cython/Includes/cpython/array.pxd
+@@ -169,6 +169,6 @@ cdef inline int extend(array self, array other) except -1:
+         PyErr_BadArgument()
+     return extend_buffer(self, other.data.as_chars, Py_SIZE(other))
+ 
+-cdef inline void zero(array self):
++cdef inline void zero(array self) noexcept:
+     """ set all elements of array to zero. """
+     memset(self.data.as_chars, 0, Py_SIZE(self) * self.ob_descr.itemsize)
+diff --git a/Cython/Includes/cpython/complex.pxd b/Cython/Includes/cpython/complex.pxd
+index 3fa1450087c..c0147547ce3 100644
+--- a/Cython/Includes/cpython/complex.pxd
++++ b/Cython/Includes/cpython/complex.pxd
+@@ -16,11 +16,11 @@ cdef extern from "Python.h":
+         cdef Py_complex cval
+ 
+         @property
+-        cdef inline double real(self):
++        cdef inline double real(self) noexcept:
+             return self.cval.real
+ 
+         @property
+-        cdef inline double imag(self):
++        cdef inline double imag(self) noexcept:
+             return self.cval.imag
+ 
+     # PyTypeObject PyComplex_Type
+diff --git a/Cython/Includes/cpython/datetime.pxd b/Cython/Includes/cpython/datetime.pxd
+index 7d6ee29f376..3dce3958882 100644
+--- a/Cython/Includes/cpython/datetime.pxd
++++ b/Cython/Includes/cpython/datetime.pxd
+@@ -69,32 +69,32 @@ cdef extern from "datetime.h":
+ 
+     ctypedef extern class datetime.date[object PyDateTime_Date]:
+         @property
+-        cdef inline int year(self):
++        cdef inline int year(self) noexcept:
+             return PyDateTime_GET_YEAR(self)
+ 
+         @property
+-        cdef inline int month(self):
++        cdef inline int month(self) noexcept:
+             return PyDateTime_GET_MONTH(self)
+ 
+         @property
+-        cdef inline int day(self):
++        cdef inline int day(self) noexcept:
+             return PyDateTime_GET_DAY(self)
+ 
+     ctypedef extern class datetime.time[object PyDateTime_Time]:
+         @property
+-        cdef inline int hour(self):
++        cdef inline int hour(self) noexcept:
+             return PyDateTime_TIME_GET_HOUR(self)
+ 
+         @property
+-        cdef inline int minute(self):
++        cdef inline int minute(self) noexcept:
+             return PyDateTime_TIME_GET_MINUTE(self)
+ 
+         @property
+-        cdef inline int second(self):
++        cdef inline int second(self) noexcept:
+             return PyDateTime_TIME_GET_SECOND(self)
+ 
+         @property
+-        cdef inline int microsecond(self):
++        cdef inline int microsecond(self) noexcept:
+             return PyDateTime_TIME_GET_MICROSECOND(self)
+ 
+         @property
+@@ -102,37 +102,37 @@ cdef extern from "datetime.h":
+             return <object>PyDateTime_TIME_GET_TZINFO(self)
+ 
+         @property
+-        cdef inline int fold(self):
++        cdef inline int fold(self) noexcept:
+             # For Python < 3.6 this returns 0 no matter what
+             return PyDateTime_TIME_GET_FOLD(self)
+ 
+     ctypedef extern class datetime.datetime[object PyDateTime_DateTime]:
+         @property
+-        cdef inline int year(self):
++        cdef inline int year(self) noexcept:
+             return PyDateTime_GET_YEAR(self)
+ 
+         @property
+-        cdef inline int month(self):
++        cdef inline int month(self) noexcept:
+             return PyDateTime_GET_MONTH(self)
+ 
+         @property
+-        cdef inline int day(self):
++        cdef inline int day(self) noexcept:
+             return PyDateTime_GET_DAY(self)
+ 
+         @property
+-        cdef inline int hour(self):
++        cdef inline int hour(self) noexcept:
+             return PyDateTime_DATE_GET_HOUR(self)
+ 
+         @property
+-        cdef inline int minute(self):
++        cdef inline int minute(self) noexcept:
+             return PyDateTime_DATE_GET_MINUTE(self)
+ 
+         @property
+-        cdef inline int second(self):
++        cdef inline int second(self) noexcept:
+             return PyDateTime_DATE_GET_SECOND(self)
+ 
+         @property
+-        cdef inline int microsecond(self):
++        cdef inline int microsecond(self) noexcept:
+             return PyDateTime_DATE_GET_MICROSECOND(self)
+ 
+         @property
+@@ -140,21 +140,21 @@ cdef extern from "datetime.h":
+             return <object>PyDateTime_DATE_GET_TZINFO(self)
+ 
+         @property
+-        cdef inline int fold(self):
++        cdef inline int fold(self) noexcept:
+             # For Python < 3.6 this returns 0 no matter what
+             return PyDateTime_DATE_GET_FOLD(self)
+ 
+     ctypedef extern class datetime.timedelta[object PyDateTime_Delta]:
+         @property
+-        cdef inline int day(self):
++        cdef inline int day(self) noexcept:
+             return PyDateTime_DELTA_GET_DAYS(self)
+ 
+         @property
+-        cdef inline int second(self):
++        cdef inline int second(self) noexcept:
+             return PyDateTime_DELTA_GET_SECONDS(self)
+ 
+         @property
+-        cdef inline int microsecond(self):
++        cdef inline int microsecond(self) noexcept:
+             return PyDateTime_DELTA_GET_MICROSECONDS(self)
+ 
+     ctypedef extern class datetime.tzinfo[object PyDateTime_TZInfo]:
+@@ -279,7 +279,7 @@ cdef extern from "datetime.h":
+ 
+ # Datetime C API initialization function.
+ # You have to call it before any usage of DateTime CAPI functions.
+-cdef inline void import_datetime():
++cdef inline void import_datetime() noexcept:
+     PyDateTime_IMPORT
+ 
+ # Create date object using DateTime CAPI factory function.
+@@ -337,84 +337,84 @@ cdef inline object datetime_tzinfo(object o):
+     return <object>PyDateTime_DATE_GET_TZINFO(o)
+ 
+ # Get year of date
+-cdef inline int date_year(object o):
++cdef inline int date_year(object o) noexcept:
+     return PyDateTime_GET_YEAR(o)
+ 
+ # Get month of date
+-cdef inline int date_month(object o):
++cdef inline int date_month(object o) noexcept:
+     return PyDateTime_GET_MONTH(o)
+ 
+ # Get day of date
+-cdef inline int date_day(object o):
++cdef inline int date_day(object o) noexcept:
+     return PyDateTime_GET_DAY(o)
+ 
+ # Get year of datetime
+-cdef inline int datetime_year(object o):
++cdef inline int datetime_year(object o) noexcept:
+     return PyDateTime_GET_YEAR(o)
+ 
+ # Get month of datetime
+-cdef inline int datetime_month(object o):
++cdef inline int datetime_month(object o) noexcept:
+     return PyDateTime_GET_MONTH(o)
+ 
+ # Get day of datetime
+-cdef inline int datetime_day(object o):
++cdef inline int datetime_day(object o) noexcept:
+     return PyDateTime_GET_DAY(o)
+ 
+ # Get hour of time
+-cdef inline int time_hour(object o):
++cdef inline int time_hour(object o) noexcept:
+     return PyDateTime_TIME_GET_HOUR(o)
+ 
+ # Get minute of time
+-cdef inline int time_minute(object o):
++cdef inline int time_minute(object o) noexcept:
+     return PyDateTime_TIME_GET_MINUTE(o)
+ 
+ # Get second of time
+-cdef inline int time_second(object o):
++cdef inline int time_second(object o) noexcept:
+     return PyDateTime_TIME_GET_SECOND(o)
+ 
+ # Get microsecond of time
+-cdef inline int time_microsecond(object o):
++cdef inline int time_microsecond(object o) noexcept:
+     return PyDateTime_TIME_GET_MICROSECOND(o)
+ 
+ # Get fold of time
+-cdef inline int time_fold(object o):
++cdef inline int time_fold(object o) noexcept:
+     # For Python < 3.6 this returns 0 no matter what
+     return PyDateTime_TIME_GET_FOLD(o)
+ 
+ # Get hour of datetime
+-cdef inline int datetime_hour(object o):
++cdef inline int datetime_hour(object o) noexcept:
+     return PyDateTime_DATE_GET_HOUR(o)
+ 
+ # Get minute of datetime
+-cdef inline int datetime_minute(object o):
++cdef inline int datetime_minute(object o) noexcept:
+     return PyDateTime_DATE_GET_MINUTE(o)
+ 
+ # Get second of datetime
+-cdef inline int datetime_second(object o):
++cdef inline int datetime_second(object o) noexcept:
+     return PyDateTime_DATE_GET_SECOND(o)
+ 
+ # Get microsecond of datetime
+-cdef inline int datetime_microsecond(object o):
++cdef inline int datetime_microsecond(object o) noexcept:
+     return PyDateTime_DATE_GET_MICROSECOND(o)
+ 
+ # Get fold of datetime
+-cdef inline int datetime_fold(object o):
++cdef inline int datetime_fold(object o) noexcept:
+     # For Python < 3.6 this returns 0 no matter what
+     return PyDateTime_DATE_GET_FOLD(o)
+ 
+ # Get days of timedelta
+-cdef inline int timedelta_days(object o):
++cdef inline int timedelta_days(object o) noexcept:
+     return (<PyDateTime_Delta*>o).days
+ 
+ # Get seconds of timedelta
+-cdef inline int timedelta_seconds(object o):
++cdef inline int timedelta_seconds(object o) noexcept:
+     return (<PyDateTime_Delta*>o).seconds
+ 
+ # Get microseconds of timedelta
+-cdef inline int timedelta_microseconds(object o):
++cdef inline int timedelta_microseconds(object o) noexcept:
+     return (<PyDateTime_Delta*>o).microseconds
+ 
+-cdef inline double total_seconds(timedelta obj):
++cdef inline double total_seconds(timedelta obj) noexcept:
+     # Mirrors the "timedelta.total_seconds()" method.
+     # Note that this implementation is not guaranteed to give *exactly* the same
+     # result as the original method, due to potential differences in floating point rounding.
+diff --git a/Cython/Includes/cpython/time.pxd b/Cython/Includes/cpython/time.pxd
+index 7f20095a12f..3f333a72a9d 100644
+--- a/Cython/Includes/cpython/time.pxd
++++ b/Cython/Includes/cpython/time.pxd
+@@ -17,7 +17,7 @@ from libc.time cimport (
+ )
+ 
+ 
+-cdef inline double time() nogil:
++cdef inline double time() noexcept nogil:
+     cdef:
+         _PyTime_t tic
+ 
+diff --git a/tests/run/legacy_implicit_noexcept.pyx b/tests/run/legacy_implicit_noexcept.pyx
+index d3b932f8388..07f1da2f4c1 100644
+--- a/tests/run/legacy_implicit_noexcept.pyx
++++ b/tests/run/legacy_implicit_noexcept.pyx
+@@ -46,55 +46,51 @@ cdef test_noexcept_warning():
+ def func_pure_implicit() -> cython.int:
+     raise RuntimeError
+ 
+-@cython.excetval(check=False)
++@cython.exceptval(check=False)
+ @cython.cfunc
+ def func_pure_noexcept() -> cython.int:
+     raise RuntimeError
+ 
+-def return_stderr(func):
++def print_stderr(func):
+     @functools.wraps(func)
+     def testfunc():
+-        old_stderr = sys.stderr
+-        stderr = sys.stderr = StringIO()
+-        try:
++        from contextlib import redirect_stderr
++        with redirect_stderr(sys.stdout):
+             func()
+-        finally:
+-            sys.stderr = old_stderr
+-        return stderr.getvalue().strip()
+ 
+     return testfunc
+ 
+-@return_stderr
++@print_stderr
+ def test_noexcept():
+     """
+-    >>> print(test_noexcept())  # doctest: +ELLIPSIS
++    >>> test_noexcept()  # doctest: +ELLIPSIS
+     RuntimeError
+     Exception...ignored...
+     """
+     func_noexcept(3, 5)
+ 
+-@return_stderr
++@print_stderr
+ def test_ptr_noexcept():
+     """
+-    >>> print(test_ptr_noexcept())  # doctest: +ELLIPSIS
++    >>> test_ptr_noexcept()  # doctest: +ELLIPSIS
+     RuntimeError
+     Exception...ignored...
+     """
+     ptr_func_noexcept(3, 5)
+ 
+-@return_stderr
++@print_stderr
+ def test_implicit():
+     """
+-    >>> print(test_implicit())  # doctest: +ELLIPSIS
++    >>> test_implicit()  # doctest: +ELLIPSIS
+     RuntimeError
+     Exception...ignored...
+     """
+     func_implicit(1, 2)
+ 
+-@return_stderr
++@print_stderr
+ def test_ptr_implicit():
+     """
+-    >>> print(test_ptr_implicit())  # doctest: +ELLIPSIS
++    >>> test_ptr_implicit()  # doctest: +ELLIPSIS
+     RuntimeError
+     Exception...ignored...
+     """
+@@ -128,31 +124,34 @@ def test_return_obj_implicit():
+     """
+     func_return_obj_implicit(1, 2)
+ 
++@print_stderr
+ def test_pure_implicit():
+     """
+-    >>> test_pure_implicit()
+-    Traceback (most recent call last):
+-    ...
++    >>> test_pure_implicit()  # doctest: +ELLIPSIS
+     RuntimeError
++    Exception...ignored...
+     """
+     func_pure_implicit()
+ 
++@print_stderr
+ def test_pure_noexcept():
+     """
+-    >>> test_pure_noexcept()
+-    Traceback (most recent call last):
+-    ...
++    >>> test_pure_noexcept()  # doctest: +ELLIPSIS
+     RuntimeError
++    Exception...ignored...
+     """
+     func_pure_noexcept()
+ 
++# extern functions are implicit noexcept, without warning
++cdef extern int extern_fun()
++cdef extern int extern_fun_fun(int (*f)(int))
++
+ _WARNINGS = """
+ 12:5: Unraisable exception in function 'legacy_implicit_noexcept.func_implicit'.
+-12:36: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
++12:22: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
+ 15:5: Unraisable exception in function 'legacy_implicit_noexcept.func_noexcept'.
+-24:43: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
+-27:38: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
+-36:43: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
+-39:36: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
+-42:28: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
++27:28: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
++45:0: Implicit noexcept declaration is deprecated. Function declaration should contain 'noexcept' keyword.
++45:0: Unraisable exception in function 'legacy_implicit_noexcept.func_pure_implicit'.
++49:0: Unraisable exception in function 'legacy_implicit_noexcept.func_pure_noexcept'.
+ """
