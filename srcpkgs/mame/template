@@ -1,78 +1,26 @@
 # Template file for 'mame'
 pkgname=mame
-version=0262
-revision=2
-hostmakedepends="pkg-config python3 qt5-host-tools tar xz which"
-makedepends="SDL2_ttf-devel fontconfig-devel glm libgomp-devel libjpeg-turbo-devel
- libutf8proc-devel libuv-devel portaudio-devel portmidi-devel
- pugixml-devel rapidjson libXinerama-devel $(vopt_if qt 'qt5-devel')"
+version=0264
+revision=1
+hostmakedepends="pkg-config python3 qt6-base"
+makedepends="qt6-base-devel SDL2_ttf-devel asio libutf8proc-devel libgomp-devel
+ rapidjson glm pugixml-devel portmidi-devel portaudio-devel"
 depends="liberation-fonts-ttf"
 short_desc="Multiple Arcade Machine Emulator"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="GPL-2.0-or-later"
-homepage="http://mamedev.org"
+homepage="https://mamedev.org"
 distfiles="https://github.com/mamedev/mame/archive/mame${version}.tar.gz"
-checksum=64e482f3dd13be4e91c5dfa076fb7a71f450f2879118c6ae452b0037b661aaae
+checksum=3d9f69ed3ef7c1628d5714c8ae2695ea77b1a652a93347b2703f7c862299376e
 nodebug=yes
 replaces="sdlmame>=0 sdlmess>=0"
 
-[ "$XBPS_TARGET_LIBC" = "musl" ] && CXXFLAGS+=" -DBX_CRT_MUSL=1"
-
-case "$XBPS_TARGET_MACHINE" in
-	ppc*)
-		CFLAGS+=" -mlong-double-64"
-		CXXFLAGS+=" -mlong-double-64"
-		;;
-	armv[67]*)
-		LDFLAGS+=" -Wl,--long-plt"
-		;;
-esac
-
-build_options="qt"
-build_options_default="qt"
-
-_options="REGENIE=1 TARGETOS=linux NOWERROR=1 OPENMP=1 OPTIMIZE=3
- TOOLS=1 LTO=0 USE_SYSTEM_LIB_ASIO=0 USE_SYSTEM_LIB_EXPAT=1
- USE_SYSTEM_LIB_ZLIB=1 USE_SYSTEM_LIB_JPEG=1 USE_SYSTEM_LIB_FLAC=1
- USE_SYSTEM_LIB_SQLITE3=1
- USE_SYSTEM_LIB_PORTMIDI=1 USE_SYSTEM_LIB_PORTAUDIO=1
- USE_SYSTEM_LIB_UTF8PROC=1 USE_SYSTEM_LIB_GLM=1
- USE_SYSTEM_LIB_RAPIDJSON=1 USE_SYSTEM_LIB_PUGIXML=1"
-if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
-	_options+=" BIGENDIAN=1"
-else
-	_options+=" BIGENDIAN=0"
-fi
-if [ "${CROSS_BUILD}" ]; then
-	_options+=" NOASM=1"
-fi
-if [ "$XBPS_TARGET_WORDSIZE" = 32 ]; then
-	# Overcome linker memory exhaustion
-	_options+=" SYMBOLS=0"
-	LDFLAGS+=" -Wl,--no-keep-memory"
-else
-	_options+=" PTR64=1"
-	if [ "${XBPS_TARGET_MACHINE%-musl}" = "aarch64" ]; then
-		# Help to reduce impact on our aarch64 builders
-		LDFLAGS+=" -Wl,--no-keep-memory"
-	fi
-fi
-if [ "$build_option_qt" ]; then
-	_options+=" USE_QTDEBUG=1"
-fi
-
-# To test flags with a tiny build remove hash (#) on the following line
-#_options+=" TARGET=mame SUBTARGET=tiny VERBOSE=1"
+post_patch() {
+	vsed -i scripts/toolchain.lua -i 3rdparty/genie/src/host/scripts.c -e 's/-m32//' -e 's/-m64//'
+}
 
 do_configure() {
 	if [ "${CROSS_BUILD}" ]; then
-		case "$XBPS_TARGET_MACHINE" in
-			i686*|x86_64*) ;;
-			*) # Cross compilers don't need/use -m32 or -m64
-				grep -rlw -- -m32 | xargs sed -i "s;-m32;;"
-				grep -rlw -- -m64 | xargs sed -i "s;-m64;;"
-			;;
-		esac
 		CC="$CC_host"
 		CXX="$CXX_host"
 		LD="$CXX_host"
@@ -80,37 +28,57 @@ do_configure() {
 		CXXFLAGS="$CXXFLAGS_host"
 		LDFLAGS="$LDFLAGS_host"
 	fi
-	make CC="$CC" CXX="$CXX" LD="$CXX" \
-		CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS" \
-		${makejobs} ${_options} genie
+
+	make $makejobs genie
 }
 
 do_build() {
-	# The build sometimes fails due to parallelism and generated files
-	# not being ready but the 2nd try then passes.
-	make OVERRIDE_CC="$CC" OVERRIDE_CXX="$CXX" OVERRIDE_LD="$CXX" ${makejobs} ${_options} || \
-	make OVERRIDE_CC="$CC" OVERRIDE_CXX="$CXX" OVERRIDE_LD="$CXX" ${makejobs} ${_options}
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*)
+			CFLAGS+=" -mlong-double-64"
+			CXXFLAGS+=" -mlong-double-64"
+			;;
+		armv*)
+			LDFLAGS+=" -Wl,--long-plt"
+			;;
+		aarch64*)
+			# Help to reduce impact on our aarch64 builders
+			LDFLAGS+=" -Wl,--no-keep-memory"
+			;;
+	esac
+
+	CXXFLAGS+=" -I$XBPS_CROSS_BASE/include/qt6"
+	[ "$XBPS_TARGET_LIBC" = "musl" ] && CXXFLAGS+=" -DBX_CRT_MUSL=1"
+
+	if [ "$XBPS_TARGET_WORDSIZE" = 32 ]; then
+		ptr64=0
+		# Overcome linker memory exhaustion
+		LDFLAGS+=" -Wl,--no-keep-memory"
+	else
+		ptr64=1
+	fi
+
+	[ "$XBPS_TARGET_ENDIAN" = be ] && bigendian=1 || bigendian=0
+
+	make $makejobs TOOLS=1 NOWERROR=1 OPENMP=1 SYMBOLS=0 \
+	 OVERRIDE_CC="$CC" OVERRIDE_CXX="$CXX" OVERRIDE_LD="$CXX" \
+	 PTR64=$ptr64 BIGENDIAN=$bigendian QT_HOME=/usr/lib/qt6 \
+	 USE_SYSTEM_LIB_ASIO=1 USE_SYSTEM_LIB_EXPAT=1 \
+	 USE_SYSTEM_LIB_ZLIB=1 USE_SYSTEM_LIB_ZSTD=1 \
+	 USE_SYSTEM_LIB_JPEG=1 USE_SYSTEM_LIB_FLAC=1 \
+	 USE_SYSTEM_LIB_SQLITE3=1 \
+	 USE_SYSTEM_LIB_PORTMIDI=1 USE_SYSTEM_LIB_PORTAUDIO=1 \
+	 USE_SYSTEM_LIB_UTF8PROC=1 USE_SYSTEM_LIB_GLM=1 \
+	 USE_SYSTEM_LIB_RAPIDJSON=1 USE_SYSTEM_LIB_PUGIXML=1
 }
 
 do_install() {
-	local f
-
 	# Install the mame script
 	vbin ${FILESDIR}/mame.sh mame
 
 	# Install the main application(s)
-	for f in mame mame64 mamearcade mamearcade64; do
-		if [ -r ${f} ]; then
-			vinstall ${f} 755 usr/libexec/${pkgname} mame
-			break
-		fi
-	done
-	for f in mess mess64; do
-		if [ -r ${f} ]; then
-			vinstall ${f} 755 usr/libexec/${pkgname} mess
-			break
-		fi
-	done
+	vinstall mame 755 usr/libexec/mame mame
+	vman docs/man/mame.6
 
 	# Install the tools
 	for f in chdman jedutil regrep pngcmp romcmp srcclean \
@@ -118,11 +86,6 @@ do_install() {
 		vbin ${f}
 		if [ -f docs/man/${f}.1 ]; then
 			vman docs/man/${f}.1
-		fi
-	done
-	for f in mame mess; do
-		if [ -r docs/man/${f}.6 ]; then
-			vman docs/man/${f}.6
 		fi
 	done
 
