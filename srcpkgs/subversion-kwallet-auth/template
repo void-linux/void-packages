@@ -9,12 +9,11 @@ build_style=gnu-configure
 configure_args="--disable-javahl --disable-static --config-cache
  --with-kwallet=${XBPS_CROSS_BASE}/usr/include:${XBPS_CROSS_BASE}/usr/lib
  --with-gnome-keyring --with-editor=vi --disable-mod-activation
- --with-utf8proc=internal"
-hostmakedepends="automake libtool pkg-config perl python3
- apache-devel gettext swig"
-makedepends="apache-devel gdbm-devel libgnome-keyring-devel serf-devel
- libsecret-devel liblz4-devel python3-devel sqlite-devel py3c
- kdelibs4support-devel file-devel perl"
+ --with-utf8proc=internal --with-apr=${XBPS_CROSS_BASE}/usr/bin/apr-1-config"
+hostmakedepends="pkg-config gettext perl"
+makedepends="apache-devel gdbm-devel serf-devel expat-devel dbus-devel
+ libsecret-devel liblz4-devel sqlite-devel kwallet-devel
+ kdelibs4support-devel file-devel"
 short_desc="KDE kwallet authentication support in subversion"
 maintainer="Piotr Wójcik <chocimier@tlen.pl>"
 license="Apache-2.0, BSD-3-Clause"
@@ -25,15 +24,7 @@ checksum=c9130e8d0b75728a66f0e7038fc77052e671830d785b5616aad53b4810d3cc28
 lib32disabled=yes
 
 pre_configure() {
-	./autogen.sh --release
-
 	# Based on native build values
-	cat <<-EOF >config.cache
-	ac_cv_python_includes=-I${XBPS_CROSS_BASE}/usr/include/python${py3_ver}
-	ac_cv_python_compile="${CC} -fPIC"
-	ac_cv_python_link="${CC} -shared ${LDFLAGS}"
-	ac_cv_python_libs="${LDFLAGS}"
-	EOF
 	if [ "$CROSS_BUILD" ]; then
 		cp -a ${XBPS_CROSS_BASE}/usr/bin/apxs ${wrksrc}
 		cp -a ${XBPS_CROSS_BASE}/usr/share/apache/webroot/build/config_vars.mk ${wrksrc}
@@ -43,22 +34,15 @@ pre_configure() {
 
 		# Use the ${wrksrc}/config_vars.mk
 		vsed -i apxs \
-			-e "s;[$]installbuilddir/config_vars.mk;${wrksrc}/config_vars.mk;g"
+			-e "/^my [$]destdir/s%=.*%= \"${XBPS_CROSS_BASE}\";%" \
+			-e "s;(.*config_vars[.]mk;(\"${wrksrc}/config_vars.mk;g" \
+			-e "/[$]apu_config =/s%=.*%= \"${XBPS_WRAPPERDIR}/apu-1-config\";%"
 
-		# Use apr-1-config and apu-1-config wrappers
+
 		vsed -i config_vars.mk \
-			-e "/^APR_CONFIG/ s;=.*;= ${XBPS_WRAPPERDIR}/apr-1-config;" \
-			-e "/^APU_CONFIG/ s;=.*;= ${XBPS_WRAPPERDIR}/apu-1-config;" \
-			-e "s;\([I ]\)/usr/include;\1${XBPS_CROSS_BASE}/usr/include;g"
-
-		export PERL5LIB=${XBPS_STATEDIR}/perlprefix/${XBPS_TARGET_MACHINE}-linux
-		mkdir -p $PERL5LIB
-		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? $PERL5LIB
-		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $PERL5LIB
-		vsed -e "s;archlibexp => '\(.*\)';archlibexp => '${XBPS_CROSS_BASE}\1';" \
-			-i $PERL5LIB/Config.pm
-		vsed -e "s;archlibexp='\(.*\)';archlibexp='${XBPS_CROSS_BASE}\1';" \
-			-i $PERL5LIB/Config_heavy.pl
+			-e "s; \(/usr/include\); $XBPS_CROSS_BASE\1;g" \
+			-e "s;-I\(/usr/include\);-I$XBPS_CROSS_BASE\1;g" \
+			-e "/^includedir =/s;=.*include;= $XBPS_CROSS_BASE/usr/include;"
 	else
 		configure_args+=" --with-apxs"
 	fi
@@ -68,23 +52,6 @@ pre_configure() {
 		# because flock() will ignore file permissions.
 		vsed -i subversion/tests/libsvn_fs/locks-test.c -e '/SVN_TEST_OPTS_PASS(obtain_write_lock_failure,/,+3d'
 	fi
-}
-
-post_configure() {
-	if [ "$CROSS_BUILD" ]; then
-		cd subversion/bindings/swig/perl/native
-		PERL_MM_USE_DEFAULT=1 CC="$CC" LD="$CC" OPTIMIZE="$CFLAGS" \
-			CFLAGS="$CFLAGS -I$XBPS_CROSS_BASE/usr/include" \
-			CCFLAGS="$CFLAGS -I$XBPS_CROSS_BASE/usr/include" \
-			LDFLAGS="$LDFLAGS -L$XBPS_CROSS_BASE/usr/lib -lperl" \
-			LDDLFLAGS="-shared $CFLAGS -L$XBPS_CROSS_BASE/usr/lib" \
-			INSTALLDIRS=vendor \
-			perl Makefile.PL PREFIX=/usr
-	fi
-}
-
-do_build() {
-	make ${makejobs} LT_LDFLAGS="-L$Fdestdir/usr/lib"
 }
 
 do_install() {
