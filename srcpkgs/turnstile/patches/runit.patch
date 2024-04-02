@@ -1,0 +1,256 @@
+From 3974343c76392aad6f6998805fc0d2a6fa1eab8d Mon Sep 17 00:00:00 2001
+From: classabbyamp <dev@placeviolette.net>
+Date: Wed, 28 Jun 2023 05:05:25 -0400
+Subject: [PATCH] add runit backend
+
+---
+ backend/meson.build                   | 25 ++++++++
+ backend/runit                         | 88 +++++++++++++++++++++++++++
+ backend/runit.conf                    | 16 +++++
+ backend/turnstile-update-runit-env.in | 31 ++++++++++
+ meson.build                           | 14 +++--
+ meson_options.txt                     | 10 +++
+ 6 files changed, 180 insertions(+), 4 deletions(-)
+ create mode 100644 backend/runit
+ create mode 100644 backend/runit.conf
+ create mode 100644 backend/turnstile-update-runit-env.in
+
+diff --git a/backend/meson.build b/backend/meson.build
+index 681e6a0..5a5b200 100644
+--- a/backend/meson.build
++++ b/backend/meson.build
+@@ -13,3 +13,28 @@ if have_dinit
+         install_mode: 'rw-r--r--'
+     )
+ endif
++
++# runit backend
++
++if have_runit
++    install_data(
++        'runit',
++        install_dir: join_paths(get_option('libexecdir'), 'turnstile'),
++        install_mode: 'rwxr-xr-x'
++    )
++
++    install_data(
++        'runit.conf',
++        install_dir: join_paths(get_option('sysconfdir'), 'turnstile/backend'),
++        install_mode: 'rw-r--r--'
++    )
++
++    configure_file(
++        input: 'turnstile-update-runit-env.in',
++        output: 'turnstile-update-runit-env',
++        configuration: conf_data,
++        install: true,
++        install_dir: get_option('bindir'),
++        install_mode: 'rwxr-xr-x'
++    )
++endif
+diff --git a/backend/runit b/backend/runit
+new file mode 100644
+index 0000000..a9d7454
+--- /dev/null
++++ b/backend/runit
+@@ -0,0 +1,88 @@
++#!/bin/sh
++#
++# This is the turnstile runit backend. It accepts the action as its first
++# argument, which is either "ready", "run", or "stop". In case of "run", it's
++# invoked directly through /bin/sh as if it was a login shell, and therefore
++# it has acccess to shell profile, and the shebang is functionally useless but
++# should be preserved as a convention. For "ready", it's a regular shell.
++#
++# Arguments for "ready":
++#
++# ready_sv: path to the readiness service
++#
++# Arguments for "run":
++#
++# ready_p:  readiness pipe (fifo). has the path to the ready service written to it.
++# srvdir:   unused
++# confdir:  the path where turnstile's configuration data resides, used
++#           to source the configuration file
++#
++# Arguments for "stop":
++#
++# pid:      the PID of the service manager to stop (gracefully); it should
++#           terminate the services it's running and then stop itself
++#
++# Copyright 2023 classabbyamp <dev@placeviolette.net>
++# License: BSD-2-Clause
++
++case "$1" in
++    run) ;;
++    ready)
++        if [ -z "$2" ] || [ ! -d "$2" ]; then
++            echo "runit: invalid readiness service '$2'" >&2
++            exit 69
++        fi
++        exec sv start "$2" >&2
++        ;;
++    stop)
++        # If runsvdir receives a HUP signal, it sends a TERM signal to each
++        # runsv(8) process it is monitoring and then exits with 111.
++        exec kill -s HUP "$2"
++        ;;
++    *)
++        exit 32
++        ;;
++esac
++
++RUNIT_READY_PIPE="$2"
++RUNIT_CONF="$4/runit.conf"
++
++if [ ! -p "$RUNIT_READY_PIPE" ]; then
++    echo "runit: invalid input argument(s)" >&2
++    exit 69
++fi
++
++if [ -z "$HOME" ] || [ ! -d "$HOME" ]; then
++    echo "runit: invalid home directory" >&2
++    exit 70
++fi
++
++shift $#
++
++# be strict
++set -e
++
++# source the conf
++[ -r "$RUNIT_CONF" ] && . "$RUNIT_CONF"
++
++# set some defaults in case the conf cannot be read or is mangled
++: "${ready_sv:="turnstile-ready"}"
++: "${services_dir:="${HOME}/.config/service"}"
++: "${service_env_dir:="${HOME}/.config/service-env"}"
++
++mkdir -p "${services_dir}/${ready_sv}" > /dev/null 2>&1
++mkdir -p "${service_env_dir}" > /dev/null 2>&1
++
++# this must succeed
++cat << EOF > "${services_dir}/${ready_sv}/run"
++#!/bin/sh
++[ -r ./conf ] && . ./conf
++[ -n "\$core_services" ] && SVDIR=".." sv start \$core_services
++[ -p "$RUNIT_READY_PIPE" ] && printf "${services_dir}/${ready_sv}" > "$RUNIT_READY_PIPE"
++exec pause
++EOF
++chmod +x "${services_dir}/${ready_sv}/run"
++
++exec env TURNSTILE_ENV_DIR="$service_env_dir" \
++    runsvdir -P "$services_dir" \
++    'log: ...........................................................................................................................................................................................................................................................................................................................................................................................................'
+diff --git a/backend/runit.conf b/backend/runit.conf
+new file mode 100644
+index 0000000..88a2d04
+--- /dev/null
++++ b/backend/runit.conf
+@@ -0,0 +1,16 @@
++# This is the configuration file for turnstile's runit backend.
++#
++# It follows the POSIX shell syntax (being sourced into a script).
++# The complete launch environment available to dinit can be used.
++#
++# It is a low-level configuration file. In most cases, it should
++# not be modified by the user.
++
++# the name of the service that turnstile will check for login readiness
++ready_sv="turnstile-ready"
++
++# the directory user service files are read from.
++services_dir="${HOME}/.config/service"
++
++# the environment variable directory user service files can read from.
++service_env_dir="${HOME}/.config/service-env"
+diff --git a/backend/turnstile-update-runit-env.in b/backend/turnstile-update-runit-env.in
+new file mode 100644
+index 0000000..9999459
+--- /dev/null
++++ b/backend/turnstile-update-runit-env.in
+@@ -0,0 +1,31 @@
++#!/bin/sh
++# Copyright 2023 classabbyamp <dev@placeviolette.net>
++# License: BSD-2-Clause
++
++usage() {
++	cat <<-EOF
++	turnstile-update-runit-env [VAR] ...
++	Updates values in the shared chpst(8) env dir.
++	
++	If VAR is a variable name, the value is taken from the environment.
++	If VAR is VAR=VAL, sets VAR to VAL.
++	EOF
++}
++
++. @CONF_PATH@/backend/runit.conf
++
++if [ $# -eq 0 ] || [ "$1" = "-h" ]; then
++	usage
++	exit 0
++fi
++
++for var; do
++	case "$var" in
++	*=*)
++		eval echo "${var#*=}" > "$service_env_dir/${var%%=*}"
++		;;
++	*)
++		eval echo '$'"$var" > "$service_env_dir/$var"
++		;;
++	esac
++done
+diff --git a/meson.build b/meson.build
+index 762aac7..d5467a2 100644
+--- a/meson.build
++++ b/meson.build
+@@ -23,6 +23,7 @@ scdoc_dep = dependency(
+ )
+ 
+ have_dinit = get_option('dinit').enabled()
++have_runit = get_option('runit').enabled()
+ 
+ conf_data = configuration_data()
+ conf_data.set_quoted('RUN_PATH', get_option('rundir'))
+@@ -118,10 +119,15 @@ install_data(
+ )
+ 
+ # decide the default backend
+-if have_dinit
+-    default_backend = 'dinit'
+-else
+-    default_backend = 'none'
++default_backend = get_option('default_backend')
++if default_backend == ''
++    if have_dinit
++        default_backend = 'dinit'
++    elif have_runit
++        default_backend = 'runit'
++    else
++        default_backend = 'none'
++    endif
+ endif
+ 
+ uconf_data = configuration_data()
+diff --git a/meson_options.txt b/meson_options.txt
+index 9b03995..4325042 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -3,6 +3,16 @@ option('dinit',
+     description: 'Whether to install Dinit-related backend and data'
+ )
+ 
++option('runit',
++    type: 'feature', value: 'disabled',
++    description: 'Whether to install runit-related backend and data'
++)
++
++option('default_backend',
++    type: 'string', value: '',
++    description: 'Override the default backend'
++)
++
+ option('rundir',
+     type: 'string', value: '/run',
+     description: 'Where the base directory will be located'

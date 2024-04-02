@@ -1,0 +1,121 @@
+From cae619b4f23c7b1bc44ba8cef59d004a1911a01d Mon Sep 17 00:00:00 2001
+From: q66 <q66@chimera-linux.org>
+Date: Fri, 1 Sep 2023 22:57:46 +0200
+Subject: [PATCH] defer creation of rundir for after pam session is established
+
+---
+ src/exec_utils.cc | 19 ++++++++++++++++++-
+ src/turnstiled.cc | 16 +++++-----------
+ src/turnstiled.hh |  2 +-
+ 3 files changed, 24 insertions(+), 13 deletions(-)
+
+diff --git a/src/exec_utils.cc b/src/exec_utils.cc
+index 49918be..96440ec 100644
+--- a/src/exec_utils.cc
++++ b/src/exec_utils.cc
+@@ -106,6 +106,8 @@ static pam_handle_t *dpam_begin(char const *user, unsigned int gid) {
+ static void sanitize_limits() {
+     struct rlimit l{0, 0};
+ 
++    print_dbg("srv: sanitize rlimits");
++
+     setrlimit(RLIMIT_NICE, &l);
+     setrlimit(RLIMIT_RTPRIO, &l);
+ 
+@@ -129,6 +131,8 @@ static bool dpam_open(pam_handle_t *pamh) {
+     /* before opening session, do not rely on just PAM and sanitize a bit */
+     sanitize_limits();
+ 
++    print_dbg("srv: open pam session");
++
+     auto pst = pam_open_session(pamh, 0);
+     if (pst != PAM_SUCCESS) {
+         fprintf(stderr, "srv: pam_open_session: %s", pam_strerror(pamh, pst));
+@@ -136,6 +140,7 @@ static bool dpam_open(pam_handle_t *pamh) {
+         pam_end(pamh, pst);
+         return false;
+     }
++
+     return true;
+ }
+ 
+@@ -288,7 +293,7 @@ static void srv_dummy() {
+     exit(0);
+ }
+ 
+-void srv_child(login &lgn, char const *backend) {
++void srv_child(login &lgn, char const *backend, bool make_rundir) {
+     pam_handle_t *pamh = nullptr;
+     bool is_root = (getuid() == 0);
+     /* create a new session */
+@@ -297,11 +302,23 @@ void srv_child(login &lgn, char const *backend) {
+     }
+     /* begin pam session setup */
+     if (is_root) {
++        print_dbg("srv: establish pam");
+         pamh = dpam_begin(lgn.username.data(), lgn.gid);
+         if (!dpam_open(pamh)) {
+             return;
+         }
+     }
++    /* make rundir if needed, we want to make it as late as possible, ideally
++     * after the PAM session setup is already finalized (so that nothing gets
++     * the idea to nuke it), but before we fork and drop privileges
++     */
++    if (make_rundir) {
++        print_dbg("srv: setup rundir for %u", lgn.uid);
++        if (!rundir_make(lgn.rundir.data(), lgn.uid, lgn.gid)) {
++            return;
++        }
++    }
++    print_dbg("srv: forking for service manager exec");
+     /* handle the parent/child logic here
+      * if we're forking, only child makes it past this func
+      */
+diff --git a/src/turnstiled.cc b/src/turnstiled.cc
+index 71f8372..a886739 100644
+--- a/src/turnstiled.cc
++++ b/src/turnstiled.cc
+@@ -124,16 +124,6 @@ static bool srv_start(login &lgn) {
+     std::snprintf(uidbuf, sizeof(uidbuf), "%u", lgn.uid);
+     /* mark as waiting */
+     lgn.srv_wait = true;
+-    /* make rundir if needed, we don't want to create that and login dir
+-     * any earlier than here as here we are sure the previous instance has
+-     * definitely terminated and stuff like login dirfd is actually clear
+-     */
+-    if (cdata->manage_rdir) {
+-        print_dbg("srv: setup rundir for %u", lgn.uid);
+-        if (!rundir_make(lgn.rundir.data(), lgn.uid, lgn.gid)) {
+-            return false;
+-        }
+-    }
+     bool has_backend = !cdata->disable && (
+         (lgn.uid != 0) || cdata->root_session
+     );
+@@ -208,7 +198,11 @@ static bool srv_start(login &lgn) {
+         close(sigpipe[0]);
+         close(sigpipe[1]);
+         /* and run the login */
+-        srv_child(lgn, has_backend ? cdata->backend.data() : nullptr);
++        srv_child(
++            lgn,
++            has_backend ? cdata->backend.data() : nullptr,
++            cdata->manage_rdir
++        );
+         exit(1);
+     } else if (pid < 0) {
+         print_err("srv: fork failed (%s)", strerror(errno));
+diff --git a/src/turnstiled.hh b/src/turnstiled.hh
+index d80043c..479ef83 100644
+--- a/src/turnstiled.hh
++++ b/src/turnstiled.hh
+@@ -144,7 +144,7 @@ void cfg_expand_rundir(
+ );
+ 
+ /* service manager utilities */
+-void srv_child(login &sess, char const *backend);
++void srv_child(login &sess, char const *backend, bool make_rundir);
+ bool srv_boot(login &sess, char const *backend);
+ 
+ struct cfg_data {

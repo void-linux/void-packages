@@ -40,8 +40,8 @@ store_pkgdestdir_rundeps() {
                      -z "$($XBPS_UHELPER_CMD getpkgname ${_curdep} 2>/dev/null)" ]; then
                     _curdep="${_curdep}>=0"
                 fi
-                printf -- "${_curdep}\n"
-            done | sort | xargs > ${PKGDESTDIR}/rdeps
+                printf "%s " "${_curdep}"
+            done > "${PKGDESTDIR}/rdeps"
         fi
 }
 
