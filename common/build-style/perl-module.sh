@@ -47,7 +47,7 @@ do_configure() {
 			CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \
 			LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
 			LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
-			perl -I. Makefile.PL ${configure_args} INSTALLDIRS=vendor
+			perl -I. Makefile.PL "${configure_args[@]}" INSTALLDIRS=vendor
 	fi
 
 	for i in ${perl_configure_dirs}; do

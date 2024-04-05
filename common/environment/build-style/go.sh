@@ -1,9 +1,9 @@
-if [ -z "$hostmakedepends" -o "${hostmakedepends##*gcc-go-tools*}" ]; then
+if [ "${#hostmakedepends[@]}" -eq 0 ] || ! array_contains hostmakedepends "gcc-go-tools"; then
 	# gc compiler
 	if [ -z "$archs" ]; then
 		archs="aarch64* armv[567]* i686* x86_64* ppc64le* riscv64*"
 	fi
-	hostmakedepends+=" go"
+	hostmakedepends+=(go)
 	nopie=yes
 else
 	# gccgo compiler

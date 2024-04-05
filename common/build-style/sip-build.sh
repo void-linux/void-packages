@@ -124,7 +124,7 @@ do_configure() {
 	sip-build --no-make \
 		${_qt:+--qmake "$XBPS_WRAPPERDIR/sip-qmake"} \
 		--api-dir /usr/share/$_qt/qsci/api/python \
-		$configure_args \
+		"${configure_args[@]}" \
 		--build-dir "$sip_builddir"
 
 	if [ "$CROSS_BUILD" ]; then

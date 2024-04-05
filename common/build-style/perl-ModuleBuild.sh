@@ -24,7 +24,7 @@ do_configure() {
 			perl Build.PL --config optimize="$_optimize" --config ccflags="$_ccflags" \
 			--config lddlflags="$_lddlflags" --config ldflags="$_ldflags" \
 			--config archlibexp="${XBPS_CROSS_BASE}${_archlibexp}" \
-			${configure_args} INSTALLDIRS=vendor
+			"${configure_args[@]}" INSTALLDIRS=vendor
 	else
 		msg_error "$pkgver: cannot find Build.PL for perl module!\n"
 	fi

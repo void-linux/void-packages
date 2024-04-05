@@ -1,27 +1,27 @@
 # vim: set ts=4 sw=4 et:
 
 show_pkg() {
-    show_pkg_var "pkgname" "$pkgname"
-    show_pkg_var "version" "$version"
-    show_pkg_var "revision" "$revision"
-    show_pkg_var "distfiles" "$distfiles" 1
-    show_pkg_var "checksum" "$checksum" 1
-    show_pkg_var "archs" "$archs" 1
-    show_pkg_var "maintainer" "${maintainer}"
-    show_pkg_var "Upstream URL" "$homepage"
-    show_pkg_var "License(s)" "${license//,/ }" 1
-    show_pkg_var "Changelog" "$changelog"
-    show_pkg_var "build_style" "$build_style"
-    show_pkg_var "build_helper" "$build_helper" 1
-    show_pkg_var "configure_args" "$configure_args" 1
-    show_pkg_var "short_desc" "$short_desc"
-    show_pkg_var "subpackages" "$subpackages" 1
+    show_pkg_var no "pkgname" "$pkgname"
+    show_pkg_var no "version" "$version"
+    show_pkg_var no "revision" "$revision"
+    show_pkg_var st "distfiles" "$distfiles"
+    show_pkg_var st "checksum" "$checksum"
+    show_pkg_var st "archs" "$archs"
+    show_pkg_var no "maintainer" "${maintainer}"
+    show_pkg_var no "Upstream URL" "$homepage"
+    show_pkg_var st "License(s)" "${license//,/ }"
+    show_pkg_var no "Changelog" "$changelog"
+    show_pkg_var no "build_style" "$build_style"
+    show_pkg_var st "build_helper" "$build_helper"
+    show_pkg_var ar "configure_args" "${configure_args[@]}"
+    show_pkg_var no "short_desc" "$short_desc"
+    show_pkg_var st "subpackages" "$subpackages"
     set -f
-    show_pkg_var "conf_files" "$conf_files" 1
+    show_pkg_var st "conf_files" "$conf_files"
     set +f
-    show_pkg_var "replaces" "$replaces" 1
-    show_pkg_var "provides" "$provides" 1
-    show_pkg_var "conflicts" "$conflicts" 1
+    show_pkg_var st "replaces" "$replaces"
+    show_pkg_var st "provides" "$provides"
+    show_pkg_var st "conflicts" "$conflicts"
     local OIFS="$IFS"
     IFS=','
     for var in $1; do
@@ -29,9 +29,9 @@ show_pkg() {
         if [ ${var} != ${var/'*'} ]
         then
             var="${var/'*'}"
-            show_pkg_var "$var" "${!var//$'\n'/' '}"
+            show_pkg_var no "$var" "${!var//$'\n'/' '}"
         else
-            show_pkg_var "$var" "${!var}" 1
+            show_pkg_var st "$var" "${!var}"
         fi
     done
     IFS="$OIFS"
@@ -41,24 +41,57 @@ show_pkg() {
 
 show_pkg_var() {
     local _sep i=
-    local _label="$1"
-    local _value="$2"
-    local _always_split="$3"
-    if [ -n "$_value" ] && [ -n "$_label" ]; then
+    local _split="$1"
+    local _label="$2"
+    shift 2
+    if [ -n "$_label" ]; then
         # on short labels, use more padding so everything lines up
         if [ "${#_label}" -lt 7 ]; then
             _sep="		"
         else
             _sep="	"
         fi
-        if [ -n "$_always_split" ] || [[ "$_value" =~ $'\n' ]]; then
-            for i in ${_value}; do
+
+        # treat as an array
+        if [ "$_split" = "ar" ]; then
+            for _value; do
+                if [ -n "$_value" ]; then
+                    if [[ "$_value" =~ $'\n' ]]; then
+                        OIFS="$IFS"; IFS=$'\n'
+                        for i in $_value; do
+                            [ -n "$i" ] && echo "${_label}:${_sep}${i}"
+                        done
+                        IFS="$OIFS"
+                    else
+                        echo "${_label}:${_sep}${_value}"
+                    fi
+                fi
+            done
+        # treat as a string, always split at whitespace
+        elif [ "$_split" = "st" ] || [[ "$@" =~ $'\n' ]]; then
+            _value="$@"
+            for i in $_value; do
                 [ -n "$i" ] && echo "${_label}:${_sep}${i}"
             done
         else
-            echo "${_label}:${_sep}${_value}"
+            _value="$@"
+            [ -n "$_value" ] && echo "${_label}:${_sep}${_value}"
         fi
     fi
+}
+
+show_pkg_arr() {
+    local _sep i=
+    local _label="$1"
+    shift
+    for _value; do
+        # on short labels, use more padding so everything lines up
+        if [ "${#_label}" -lt 7 ]; then
+            _sep="		"
+        else
+            _sep="	"
+        fi
+    done
 }
 
 show_pkg_deps() {
@@ -116,15 +149,15 @@ show_pkg_build_depends() {
 }
 
 show_pkg_build_deps() {
-    show_pkg_build_depends "${makedepends} $(setup_pkg_depends '' 1 1)" "${hostmakedepends}"
+    show_pkg_build_depends "${makedepends[*]} $(setup_pkg_depends '' 1 1)" "${hostmakedepends[*]}"
 }
 
 show_pkg_hostmakedepends() {
-    show_pkg_build_depends "" "${hostmakedepends}"
+    show_pkg_build_depends "" "${hostmakedepends[*]}"
 }
 
 show_pkg_makedepends() {
-    show_pkg_build_depends "${makedepends}" ""
+    show_pkg_build_depends "${makedepends[*]}" ""
 }
 
 show_pkg_build_options() {
