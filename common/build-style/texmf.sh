@@ -3,14 +3,11 @@ do_build() {
 	# Extract the source files
 	mkdir -p "build/usr/share/texmf-dist"
 	find . -maxdepth 1 -print -name "*.tar.xz" \
-		-exec bsdtar -C "build/usr/share/texmf-dist" -xf {} \;
+		-exec bsdtar \
+		-s '|^texmf-dist/||' \
+		-C "build/usr/share/texmf-dist" \
+		-xf {} \;
 	cd "build/usr/share/texmf-dist/"
-	# Everything in usr/share/texmf-dist/texmf-dist should really be in
-	# usr/share/texmf-dist, so we move it
-	if [ -d "texmf-dist" ] ; then
-		rsync -ar texmf-dist/ ./
-		rm -rf texmf-dist/
-	fi
 	# LICENSEs are unneeded
 	rm -f LICENSE*
 

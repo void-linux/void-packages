@@ -12,7 +12,7 @@ do_check() {
 		if python3 -c 'import xdist' >/dev/null 2>&1; then
 			testjobs="-n $XBPS_MAKEJOBS"
 		fi
-		PYTHONPATH="$(cd build/lib* && pwd)" \
+		PYTHONPATH="$(cd build/lib* && pwd)" PY_IGNORE_IMPORTMISMATCH=1 \
 			${make_check_pre} \
 			python3 -m pytest ${testjobs} ${make_check_args} ${make_check_target}
 	else
