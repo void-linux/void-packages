@@ -12,6 +12,10 @@ hook() {
 		pyver="$python_version"
 	fi
 
+	if [ "$python_version" = ignore ]; then
+		return
+	fi
+
 	if [ -n "$pyver" ]; then
 		default_shebang="#!/usr/bin/python${pyver%.*}"
 	fi
