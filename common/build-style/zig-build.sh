@@ -30,9 +30,11 @@ do_build() {
 	# prefix used by the zig build system.
 	DESTDIR="zig-out" zig build \
 		--sysroot "${XBPS_CROSS_BASE}" \
+		--search-prefix "${XBPS_CROSS_BASE}/usr" \
+		--global-cache-dir /host/zig \
 		--libc xbps_zig_libc.txt \
 		-Dtarget="${zig_target}" -Dcpu="${zig_cpu}" \
-		-Drelease-safe --prefix /usr install \
+		--release=safe --prefix /usr install \
 		${configure_args}
 }
 
