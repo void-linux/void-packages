@@ -1,12 +1,12 @@
 # Template file for 'wine'
 pkgname=wine
 version=9.7
-revision=1
+revision=2
 _pkgver=${version/r/-r}
 create_wrksrc=yes
 build_wrksrc=wine-${_pkgver}
 build_style=gnu-configure
-configure_args="--bindir=/usr/libexec/wine $(vopt_with xshm)"
+configure_args="--bindir=/usr/libexec/wine $(vopt_with xshm) --with-wayland"
 short_desc="Run Microsoft Windows applications"
 maintainer="Helmut Pozimski <helmut@pozimski.eu>"
 license="LGPL-2.1-or-later"
@@ -18,15 +18,19 @@ checksum="d9f3c333656e88bd4cef5331f34b1c8b69c964a52759eef745d8ddae51a15353
 
 # NOTE: wine depends on specific versions of wine-mono and wine-gecko,
 # check for updates to these packages when updating wine
-
 build_options="mingw staging xshm"
-build_options_default="mingw xshm"
+build_options_default="xshm"
+case "$XBPS_TARGET_MACHINE" in
+	aarch64*) ;;
+	*) build_options_default+=" mingw" ;;
+esac
+
 desc_option_mingw="Use the MinGW cross compiler to build WinPE DLLs"
 desc_option_staging="Apply the wine-staging patchset"
 desc_option_xshm="Enable support for the X Shared Memory Extension"
 
 lib32mode=full
-archs="i686* x86_64*"
+archs="i686* x86_64* aarch64*"
 
 patch_args="-Np1 --directory=${build_wrksrc}"
 
@@ -49,7 +53,7 @@ makedepends="gettext-devel ncurses-devel glu-devel libSM-devel
  freetype-devel pulseaudio-devel giflib-devel
  v4l-utils-devel fontconfig-devel gnutls-devel dbus-devel sane-devel
  libpcap-devel cups-devel ocl-icd-devel vulkan-loader gst-plugins-base1-devel
- SDL2-devel"
+ SDL2-devel wayland-devel libxkbcommon-devel"
 depends="libXi libXinerama libXcomposite libXcursor libOSMesa
  desktop-file-utils hicolor-icon-theme liberation-fonts-ttf
  gnutls SDL2 wine-common>=${version}_${revision}"
@@ -62,7 +66,8 @@ replaces="libwine>=0"
 make_check=extended
 
 if [ "$XBPS_TARGET_WORDSIZE" != 32 ]; then
-	configure_args+=" --enable-win64 --libdir=/usr/lib"
+	_64bit_configure_args=" --enable-win64 --libdir=/usr/lib"
+	configure_args+=$_64bit_configure_args}
 	_wine_suffix="64"
 	_wineserver_suffix=${_wine_suffix}
 else
@@ -70,13 +75,36 @@ else
 	CFLAGS=" -D_LARGE_FILE_SOURCE=1 -D_FILE_OFFSET_BITS=64"
 fi
 
+if [ "$CROSS_BUILD" ] && [ -z "$build_option_mingw" ]; then
+	case "$XBPS_MACHINE" in
+		x86_64*|i686*) hostmakedepends+=" cross-${XBPS_MACHINE%-musl}-w64-mingw32" ;;
+	esac
+	hostmakedepends+=" ${makedepends} lld17 clang17 llvm17"
+	pre_configure() {
+		# native compilation for wine-tools
+		vsrcextract -C ../wine-tools-for-cross wine-${_pkgver}.tar.xz
+		cd ../wine-tools-for-cross
+		env CC=cc LD=ld CXX=g++ \
+			CFLAGS="" CXXFLAGS="" LDFLAGS="" \
+			./configure $_64bit_configure_args # not set if 32bit
+		make ${makejobs}
+		configure_args+=" --with-wine-tools=../wine-tools-for-cross --enable-tools"
+	}
+fi
+
 if [ "$XBPS_LIBC" = "glibc" ]; then
 	hostmakedepends+=" prelink"
 fi
 
+if [ "$XBPS_TARGET_MACHINE" = aarch64 ]; then
+	# build with WoW64 support for aarch64
+	configure_args+=" --enable-archs=i386,x86_64"
+fi
 if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 	configure_args+=" --enable-archs=i386,x86_64"
-	makedepends+=" cross-i686-w64-mingw32"
+	if [ "$XBPS_TARGET_MACHINE" != aarch64-musl ]; then
+		makedepends+=" cross-i686-w64-mingw32"
+	fi
 fi
 
 _wine_libexec="/usr/libexec/wine"
