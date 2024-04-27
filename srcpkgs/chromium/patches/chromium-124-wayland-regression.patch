@@ -1,0 +1,88 @@
+commit c7f4c58f896a651eba80ad805ebdb49d19ebdbd4
+Author: Tom Anderson <thomasanderson@chromium.org>
+Date:   Wed Mar 20 00:00:12 2024 +0000
+
+    Fix --ozone-platform-hint
+    
+    This fixes a regression after r1269993 which moved ozone platform
+    early initialization before the ozone platform hint flag was
+    processed.  This CL ensures the flag processing happens even earlier.
+    
+    R=sky
+    
+    Change-Id: Icc9649beb0b86753265be2b6cdf3059611eb410f
+    Bug: None
+    Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/5375669
+    Reviewed-by: Scott Violet <sky@chromium.org>
+    Auto-Submit: Thomas Anderson <thomasanderson@chromium.org>
+    Commit-Queue: Thomas Anderson <thomasanderson@chromium.org>
+    Cr-Commit-Position: refs/heads/main@{#1275306}
+
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 73b6ab0934b14..0b4c44be679d0 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -249,6 +249,9 @@
+ #include "base/scoped_add_feature_flags.h"
+ #include "ui/base/ui_base_features.h"
+ #include "ui/ozone/public/ozone_platform.h"
++#if BUILDFLAG(IS_LINUX)
++#include "chrome/browser/chrome_browser_main_extra_parts_linux.h"
++#endif
+ #endif  // BUILDFLAG(IS_OZONE)
+ 
+ base::LazyInstance<ChromeContentGpuClient>::DestructorAtExit
+@@ -959,6 +962,9 @@ std::optional<int> ChromeMainDelegate::PostEarlyInitialization(
+   // Initialize Ozone platform and add required feature flags as per platform's
+   // properties. Must be added before feature list is created otherwise the
+   // added flag won't be picked up.
++#if BUILDFLAG(IS_LINUX)
++  ChromeBrowserMainExtraPartsLinux::InitOzonePlatformHint();
++#endif
+   ui::OzonePlatform::PreEarlyInitialization();
+   AddFeatureFlagsToCommandLine();
+ #endif  // BUILDFLAG(IS_OZONE)
+diff --git a/chrome/browser/chrome_browser_main_extra_parts_linux.cc b/chrome/browser/chrome_browser_main_extra_parts_linux.cc
+index dba7b116ecaa0..ea0487022dcdc 100644
+--- a/chrome/browser/chrome_browser_main_extra_parts_linux.cc
++++ b/chrome/browser/chrome_browser_main_extra_parts_linux.cc
+@@ -168,7 +168,13 @@ ChromeBrowserMainExtraPartsLinux::ChromeBrowserMainExtraPartsLinux() = default;
+ 
+ ChromeBrowserMainExtraPartsLinux::~ChromeBrowserMainExtraPartsLinux() = default;
+ 
+-void ChromeBrowserMainExtraPartsLinux::PreEarlyInitialization() {
++void ChromeBrowserMainExtraPartsLinux::PostBrowserStart() {
++  RecordDisplayServerProtocolSupport();
++  ChromeBrowserMainExtraPartsOzone::PostBrowserStart();
++}
++
++// static
++void ChromeBrowserMainExtraPartsLinux::InitOzonePlatformHint() {
+ #if BUILDFLAG(IS_LINUX)
+   // On the desktop, we fix the platform name if necessary.
+   // See https://crbug.com/1246928.
+@@ -189,8 +195,3 @@ void ChromeBrowserMainExtraPartsLinux::PreEarlyInitialization() {
+   }
+ #endif  // BUILDFLAG(IS_LINUX)
+ }
+-
+-void ChromeBrowserMainExtraPartsLinux::PostBrowserStart() {
+-  RecordDisplayServerProtocolSupport();
+-  ChromeBrowserMainExtraPartsOzone::PostBrowserStart();
+-}
+diff --git a/chrome/browser/chrome_browser_main_extra_parts_linux.h b/chrome/browser/chrome_browser_main_extra_parts_linux.h
+index 3847bd2090e28..4f188a7bdfe38 100644
+--- a/chrome/browser/chrome_browser_main_extra_parts_linux.h
++++ b/chrome/browser/chrome_browser_main_extra_parts_linux.h
+@@ -17,9 +17,10 @@ class ChromeBrowserMainExtraPartsLinux
+       const ChromeBrowserMainExtraPartsLinux&) = delete;
+   ~ChromeBrowserMainExtraPartsLinux() override;
+ 
++  static void InitOzonePlatformHint();
++
+  private:
+   // ChromeBrowserMainExtraParts overrides.
+-  void PreEarlyInitialization() override;
+   void PostBrowserStart() override;
+ };
+ 

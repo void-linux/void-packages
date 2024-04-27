@@ -116,7 +116,9 @@ show_pkg_build_depends() {
 }
 
 show_pkg_build_deps() {
-    show_pkg_build_depends "${makedepends} $(setup_pkg_depends '' 1 1)" "${hostmakedepends}"
+    local build_depends="${makedepends} $(setup_pkg_depends '' 1 1)"
+    skip_check_step || build_depends+=" ${checkdepends}"
+    show_pkg_build_depends "${build_depends}" "${hostmakedepends}"
 }
 
 show_pkg_hostmakedepends() {
@@ -125,6 +127,10 @@ show_pkg_hostmakedepends() {
 
 show_pkg_makedepends() {
     show_pkg_build_depends "${makedepends}" ""
+}
+
+show_pkg_checkdepends() {
+    show_pkg_build_depends "${checkdepends}" ""
 }
 
 show_pkg_build_options() {

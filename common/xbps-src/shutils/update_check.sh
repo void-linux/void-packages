@@ -132,6 +132,7 @@ update_check() {
             *pythonhosted.org*)
                 pkgname=${pkgname#python-}
                 pkgname=${pkgname#python3-}
+                rx="(?<=${pkgname//-/[-_]}-)[0-9.]+(post[0-9]*)?(?=(([.]tar|-cp|-py[0-9]+-none)))"
                 url="https://pypi.org/simple/$pkgname";;
             *github.com*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"

@@ -10,7 +10,7 @@ if [ "$3" = 1 ]; then
 	test="-Q"
 fi
 
-PKGS=$(/hostrepo/xbps-src sort-dependencies $(cat /tmp/templates))
+PKGS=$(/hostrepo/xbps-src $test sort-dependencies $(cat /tmp/templates))
 
 for pkg in ${PKGS}; do
 	/hostrepo/xbps-src -j$(nproc) -s -H "$HOME"/hostdir $arch $test pkg "$pkg"

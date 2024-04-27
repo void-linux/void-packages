@@ -272,7 +272,7 @@ _EOF
 		fi
 	fi
 
-	if [ -n "$python_version" ]; then
+	if [ -n "$python_version" ] && [ "$python_version" != ignore ]; then
 		pycompile_version=${python_version}
 	fi
 
