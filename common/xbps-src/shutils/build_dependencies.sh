@@ -22,8 +22,11 @@ setup_pkg_depends() {
         _rpkgname="${j%\?*}"
         _depname="${j#*\?}"
         if [[ ${_rpkgname} == virtual ]]; then
-            _pkgname=$(xbps-uhelper getpkgname $_depname 2>/dev/null)
-            [ -z "$_pkgname" ] && _pkgname="$_depname"
+            _pkgname="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
+            if [ -z "$_pkgname" ]; then
+                _pkgname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
+                [ -z "$_pkgname" ] && _pkgname="${_depname}"
+            fi
             if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
                 foo=$(grep -E "^${_pkgname}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
             elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
