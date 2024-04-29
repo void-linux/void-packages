@@ -11,7 +11,9 @@ update_check() {
     local curlargs=(
         -A "xbps-src-update-check/$XBPS_SRC_VERSION"
         --max-time 10 --compressed -Lsk
-   )
+    )
+
+    pkgname=${pkgname#kf6-}
 
     # XBPS_UPDATE_CHECK_VERBOSE is the old way to show verbose messages
     [ "$XBPS_UPDATE_CHECK_VERBOSE" ] && XBPS_VERBOSE="$XBPS_UPDATE_CHECK_VERBOSE"
@@ -67,7 +69,7 @@ update_check() {
               *code.google.com*|*googlecode*|\
               *launchpad.net*|\
               *cpan.*|\
-              *pythonhosted.org*|\
+              *pythonhosted.org*|*pypi.org/project/*|\
               *github.com*|\
               *//gitlab.*|\
               *bitbucket.org*|\
@@ -129,10 +131,10 @@ update_check() {
                 url="https://launchpad.net/$pkgurlname/+download";;
             *cpan.*)
                 pkgname=${pkgname#perl-};;
-            *pythonhosted.org*)
+            *pythonhosted.org*|*pypi.org/project/*)
                 pkgname=${pkgname#python-}
                 pkgname=${pkgname#python3-}
-                rx="(?<=${pkgname//-/[-_]}-)[0-9.]+(post[0-9]*)?(?=(([.]tar|-cp|-py[0-9]+-none)))"
+                rx="(?<=${pkgname//-/[-_]}-)[0-9.]+(post[0-9]*)?(?=(([.]tar|-cp|-py)))"
                 url="https://pypi.org/simple/$pkgname";;
             *github.com*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
