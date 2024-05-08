@@ -2,18 +2,20 @@
 pkgname=mozc
 # src/data/version/mozc_version_template.bzl
 # revision is always 102, template always says 100 ;)
-version=2.28.4800.102
-revision=2
-_commit=056163a5fddbb261b258beb8444998e4882f0cc5
-_abseil=20211102.0
-_protobuf_commit=cc7b1b53234cd7a8f50d90ac3933b240dcf4cd97
+version=2.30.5448.100
+revision=1
+_commit=c0bdc91234eb5afe29798876790d599f4d99f6e4
+_bazel_skylib=1.4.1
+_bazel_rule_py=0.0.1
+_abseil=20240116.1
+_protobuf=26.1
 _gyp=0.1+20220404git9ecf45e
 _jpn_dict=e5b3425575734c323e1d947009dd74709437b684
-create_wrksrc=yes
-build_wrksrc=mozc/src
-hostmakedepends="gettext ninja pkg-config
+# create_wrksrc=yes
+build_wrksrc=src
+hostmakedepends="gettext ninja pkg-config bazel qt6-base
  python3-six which qt5-qmake qt5-host-tools"
-makedepends="gtk+-devel ibus-devel libzinnia-devel qt5-devel
+makedepends="gtk+-devel ibus-devel libzinnia-devel qt5-devel qt6-base-devel
  fcitx-devel libfcitx5-devel"
 depends="tegaki-zinnia-japanese>=0.3 mozc-base-${version}_${revision}"
 short_desc="Japanese IME (Open Source version of Google Japanese Input)"
@@ -22,16 +24,24 @@ license="BSD-3-Clause"
 homepage="https://github.com/google/mozc"
 distfiles="
  https://github.com/fcitx/mozc/archive/$_commit.tar.gz
- https://github.com/abseil/abseil-cpp/archive/refs/tags/$_abseil.tar.gz
- https://github.com/protocolbuffers/protobuf/archive/$_protobuf_commit.tar.gz
- ${DEBIAN_SITE}/main/g/gyp/gyp_$_gyp.orig.tar.xz
- https://github.com/hiroyuki-komatsu/japanese-usage-dictionary/archive/$_jpn_dict.tar.gz
-"
-checksum="259d87bfd7535ad03bd554185677d7345a90166353a6db0b6a3606183ad2923d
- dcf71b9cba8dc0ca9940c4b316a0c796be8fab42b070bb6b7cab62b48f0e66c4
- 863e27f6d24f40bce2bbfe5adcf365f2af5479ea917f254331ee60ce88f8c8a5
- 0325006f012db66dfa27bf7bb048f3fe38f96e512ebe065930cbc70bcdc06bc9
+ https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/${_bazel_skylib}/bazel-skylib-${_bazel_skylib}.tar.gz
+ https://github.com/bazelbuild/rules_python/releases/download/${_bazel_rule_py}/rules_python-${_bazel_rule_py}.tar.gz
+ https://github.com/abseil/abseil-cpp/releases/download/${_abseil}/abseil-cpp-${_abseil}.tar.gz
+ https://github.com/protocolbuffers/protobuf/releases/download/v${_protobuf}/protobuf-${_protobuf}.tar.gz
+ https://github.com/hiroyuki-komatsu/japanese-usage-dictionary/archive/$_jpn_dict.tar.gz"
+checksum="134e6f1413836c55cb200298ad077319655c3382c702fcbf771b01ebd756e984
+ b8a1527901774180afc798aeb28c4634bdccf19c4d98e7bdd1ce79d1fe9aaad7
+ aa96a691d3a8177f3215b14b0edc9641787abaaa30363a080165d06ab65e1161
+ 3c743204df78366ad2eaf236d6631d83f6bc928d1705dd0000b872e53b73dc6a
+ 4fc5ff1b2c339fb86cd3a25f0b5311478ab081e65ad258c6789359cd84d421f8
  0b6efee0eebac2c1a8eeea333278aa40fcef7846bba9a379962c6e567e7e3dc1"
+
+skip_extraction="
+ bazel-skylib-${_bazel_skylib}.tar.gz
+ rules_python-${_bazel_rule_py}.tar.gz
+ abseil-cpp-$_abseil.tar.gz
+ protobuf-$_protobuf.tar.gz
+ $_jpn_dict.tar.gz"
 
 CXXFLAGS="-D_GNU_SOURCE"
 lib32disabled=yes
@@ -40,24 +50,29 @@ if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
 	broken="Does not build"
 fi
 
+_absl="absl_algorithm absl_base absl_cleanup absl_flags absl_hash absl_log absl_memory absl_meta absl_numeric absl_status absl_strings absl_synchronization absl_time"
 post_extract() {
-	mv mozc-* mozc
-
-	# symlink "submodules" into place
-	for _src_dest in gyp \
-		abseil-cpp \
-		japanese-usage-dictionary:japanese_usage_dictionary \
-		protobuf
-	do
-		_src=${_src_dest%:*}
-		_dst=${_src_dest#*:}
-		mv $_src-* $_dst
-		rmdir mozc/src/third_party/$_dst
-		ln -sr $_dst mozc/src/third_party
-	done
+	vsrcextract -C src/third_party/abseil-cpp abseil-cpp-${_abseil}.tar.gz
+	vsrcextract -C src/third_party/japanese_usage_dictionary ${_jpn_dict}.tar.gz
+	vsrcextract -C src/third_party/protobuf protobuf-${_protobuf}.tar.gz
 }
 
-do_configure() {
+xpre_patch() {
+	grep --exclude="*.orig" -rl '@com_google_absl//[a-z/]*' |
+	xargs -r sed -i.orig '
+		s,@com_google_absl//absl/[-_a-z:/]*,@abseil//:abseil,
+		x
+		\,@abseil//:abseil,{x;H;}
+		x
+		\,@abseil//:abseil,!{p;s/.*//;x;d;}
+		\,@abseil//:abseil.*[]],{p;s/.*//;x;d;}
+		s=\(@abseil//:abseil.*\)[[:space:]]*"@abseil//:abseil",*=\1=
+		x
+		d
+	'
+}
+
+xdo_configure() {
 	GYP_DEFINES="
 	 document_dir=/usr/share/licenses/${pkgname}
 	 ibus_mozc_path=/usr/libexec/ibus-engine-mozc
@@ -67,57 +82,65 @@ do_configure() {
 }
 
 do_build() {
-	local _file _lang
-	local _modir=out_linux/Release/gen/unix/fcitx5/po
+	local _file _lang _tool _flag
+	local _opts=(--copt=-fPIC --copt=-U_FORTIFY_SOURCE)
+	for _flag in $CFLAGS; do
+		_opts+=("--conlyopt=$_flag")
+		_opts+=("--linkopt=$_flag")
+	done
+	for _flag in $CXXFLAGS; do
+		_opts+=("--cxxopt=$_flag")
+		_opts+=("--linkopt=$_flag")
+	done
 
-	python3 build_mozc.py build \
-		--use_gyp_for_ibus_build \
-		-c Release \
-		server/server.gyp:mozc_server \
-		gui/gui.gyp:mozc_tool \
-		unix/emacs/emacs.gyp:mozc_emacs_helper \
-		unix/ibus/ibus.gyp:ibus_mozc \
-		renderer/renderer.gyp:mozc_renderer \
-		unix/fcitx/fcitx.gyp:fcitx-mozc \
-		unix/fcitx5/fcitx5.gyp:fcitx5-mozc
+	if ! bazel build -c opt ${_opts[@]} \
+		--verbose_failures \
+		--config oss_linux \
+		gui/tool:mozc_tool \
+		renderer/qt:mozc_renderer \
+		server/mozc_server \
+		unix/emacs:mozc_emacs_helper \
+		unix/ibus:ibus_mozc \
+		unix/fcitx:fcitx-mozc.so \
+		unix/fcitx5:fcitx5-mozc.so
+	then
+		bazel shutdown
+		msg_error "bazel build failed\n"
+	fi
 
-	mkdir -p $_modir
-	for _file in unix/fcitx5/po/*.po
+	for _file in unix/fcitx/po/*.po unix/fcitx5/po/*.po
 	do
-		_lang=${_file##*/}
-		_lang=${_lang%.po}
-		msgfmt "$_file" -o $_modir/$_lang.mo
+		msgfmt "$_file" -o "${_file%.po}.mo"
 	done
 	msgfmt --xml -d unix/fcitx5/po \
 		--template unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml.in \
-		-o $_modir/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
+		-o unix/fcitx5/po/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
 
 }
 
 do_install() {
 	local f
 	# Base package
-	vinstall out_linux/Release/mozc_server 755 usr/lib/mozc
+	vinstall bazel-bin/server/mozc_server 755 usr/lib/mozc
 	vlicense data/installer/credits_en.html license.html
 	head -n 29 unix/fcitx5/fcitx_key_translator.cc >fcitx.LICENSE
 	vlicense fcitx.LICENSE
 	# emacs
-	vbin out_linux/Release/mozc_emacs_helper
+	vbin bazel-bin/unix/emacs/mozc_emacs_helper
 	vinstall unix/emacs/mozc.el 644 usr/share/emacs/site-lisp
-	# Qt5 tools
-	vinstall out_linux/Release/mozc_tool 755 usr/lib/mozc
+	# Qt tools
+	vinstall bazel-bin/gui/tool/mozc_tool 755 usr/lib/mozc
 	# ibus
-	vinstall out_linux/Release/ibus_mozc 755 usr/libexec ibus-engine-mozc
-	vinstall out_linux/Release/gen/unix/ibus/mozc.xml 644 \
-		usr/share/ibus/component
+	vinstall bazel-bin/unix/ibus/ibus_mozc 755 usr/libexec ibus-engine-mozc
+	vinstall bazel-bin/unix/ibus/mozc.xml 644 usr/share/ibus/component
 	vinstall data/images/product_icon_32bpp-128.png 644 \
 		usr/share/ibus-mozc product_icon.png
 	for f in data/images/unix/48x48/*.png; do
 		vinstall "$f" 644 usr/share/ibus-mozc
 	done
-	vinstall out_linux/Release/mozc_renderer 755 usr/lib/mozc
+	vinstall bazel-bin/renderer/qt/mozc_renderer 755 usr/lib/mozc
 	# fcitx
-	vinstall out_linux/Release/fcitx-mozc.so 644 usr/lib/fcitx
+	vinstall bazel-bin/unix/fcitx/fcitx-mozc.so 644 usr/lib/fcitx
 	vinstall unix/fcitx/fcitx-mozc.conf 644 usr/share/fcitx/addon
 	vinstall unix/fcitx/mozc.conf 644 usr/share/fcitx/inputmethod
 	vinstall data/images/product_icon_32bpp-128.png 644 \
@@ -132,7 +155,7 @@ do_install() {
 			usr/share/fcitx/mozc/icon mozc-$f.png
 	done
 	# fcitx5
-	vinstall out_linux/Release/fcitx5-mozc.so 644 usr/lib/fcitx5
+	vinstall bazel-bin/unix/fcitx5/fcitx5-mozc.so 644 usr/lib/fcitx5
 	vinstall unix/fcitx5/mozc-addon.conf 644 \
 		usr/share/fcitx5/addon mozc.conf
 	vinstall unix/fcitx5/mozc.conf 644 usr/share/fcitx5/inputmethod
@@ -149,7 +172,7 @@ do_install() {
 		vinstall data/images/unix/48x48/$f.png 644 \
 			usr/share/icons/hicolor/48x48/apps fcitx-mozc-${f/_/-}.png
 	done
-	vinstall out_linux/Release/gen/unix/fcitx5/po/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml \
+	vinstall unix/fcitx5/po/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml \
 		644 usr/share/metainfo/
 }
 
@@ -187,7 +210,7 @@ fcitx-mozc_package() {
 		vmove usr/lib/fcitx
 		vmove usr/share/fcitx
 		# vmove "usr/share/locale/*/LC_MESSAGES/fcitx-mozc.mo"
-		for _file in out_linux/Release/gen/unix/fcitx/po/*.mo
+		for _file in unix/fcitx/po/*.mo
 		do
 			_lang=${_file##*/}
 			_lang=${_lang%.mo}
@@ -208,7 +231,7 @@ fcitx5-mozc_package() {
 		vmove usr/share/fcitx5
 		vmove usr/share/icons
 		# vmove "usr/share/locale/*/LC_MESSAGES/fcitx5-mozc.mo"
-		for _file in out_linux/Release/gen/unix/fcitx5/po/*.mo
+		for _file in unix/fcitx5/po/*.mo
 		do
 			_lang=${_file##*/}
 			_lang=${_lang%.mo}
