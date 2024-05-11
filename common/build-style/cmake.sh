@@ -63,6 +63,7 @@ _EOF
 		# QT_HOST_PATH isn't enough in my system,
 		# which have binfmts support on and off
 		cmake_args+=" -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake"
+		cmake_args+=" -DKDE_INSTALL_LIBDIR=lib"
 	fi
 
 	if [[ $build_helper = *"qemu"* ]]; then
