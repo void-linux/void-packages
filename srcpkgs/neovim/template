@@ -1,26 +1,61 @@
 # Template file for 'neovim'
 pkgname=neovim
-version=0.9.5
-revision=2
+version=0.10.0
+revision=1
+# as per https://github.com/neovim/neovim/blob/master/cmake.deps/deps.txt
+_treesitter_c_version=0.21.0
+_treesitter_lua_version=0.1.0
+_treesitter_vim_version=0.4.0
+_treesitter_vimdoc_version=2.5.1
+_treesitter_query_version=0.3.0
+_treesitter_python_version=0.21.0
+_treesitter_bash_version=0.21.0
+_treesitter_markdown_version=0.2.3
 build_style=cmake
 build_helper="qemu"
 configure_args="-DCOMPILE_LUA=OFF -DPREFER_LUA=$(vopt_if luajit OFF ON)"
-hostmakedepends="gettext lua51-lpeg lua51-mpack lua51-BitOp
- $(vopt_if luajit LuaJIT lua51)"
-makedepends="libtermkey-devel libuv-devel libvterm-devel msgpack-devel
- libluv-devel tree-sitter-devel $(vopt_if luajit LuaJIT-devel lua51-devel)"
+hostmakedepends="gettext patchelf"
+makedepends="libuv-devel libvterm-devel msgpack-devel
+ libluv-devel tree-sitter-devel unibilium-devel
+ lua51-lpeg $(vopt_if luajit LuaJIT-devel lua51-devel)"
 short_desc="Fork of Vim aiming to improve user experience, plugins and GUIs"
 maintainer="Marcin Puc <tranzystorek.io@protonmail.com>"
 license="Apache-2.0, Vim"
 homepage="https://neovim.io"
 changelog="https://github.com/neovim/neovim/releases"
-distfiles="https://github.com/neovim/neovim/archive/refs/tags/v${version}.tar.gz"
-checksum=fe74369fc30a32ec7a086b1013acd0eacd674e7570eb1acc520a66180c9e9719
+distfiles="https://github.com/neovim/neovim/archive/refs/tags/v${version}.tar.gz
+ https://github.com/tree-sitter/tree-sitter-c/archive/refs/tags/v${_treesitter_c_version}.tar.gz>treesitter_c_${_treesitter_c_version}.tar.gz
+ https://github.com/tree-sitter-grammars/tree-sitter-lua/archive/refs/tags/v${_treesitter_lua_version}.tar.gz>treesitter_lua_${_treesitter_lua_version}.tar.gz
+ https://github.com/tree-sitter-grammars/tree-sitter-vim/archive/refs/tags/v${_treesitter_vim_version}.tar.gz>treesitter_vim_${_treesitter_vim_version}.tar.gz
+ https://github.com/neovim/tree-sitter-vimdoc/archive/refs/tags/v${_treesitter_vimdoc_version}.tar.gz>treesitter_vimdoc_${_treesitter_vimdoc_version}.tar.gz
+ https://github.com/tree-sitter-grammars/tree-sitter-query/archive/refs/tags/v${_treesitter_query_version}.tar.gz>treesitter_query_${_treesitter_query_version}.tar.gz
+ https://github.com/tree-sitter/tree-sitter-python/archive/refs/tags/v${_treesitter_python_version}.tar.gz>treesitter_python_${_treesitter_python_version}.tar.gz
+ https://github.com/tree-sitter/tree-sitter-bash/archive/refs/tags/v${_treesitter_bash_version}.tar.gz>treesitter_bash_${_treesitter_bash_version}.tar.gz
+ https://github.com/tree-sitter-grammars/tree-sitter-markdown/archive/refs/tags/v${_treesitter_markdown_version}.tar.gz>treesitter_markdown_${_treesitter_markdown_version}.tar.gz"
+checksum="372ea2584b0ea2a5a765844d95206bda9e4a57eaa1a2412a9a0726bab750f828
+ 6f0f5d1b71cf8ffd8a37fb638c6022fa1245bd630150b538547d52128ce0ea7e
+ 230cfcbfa74ed1f7b8149e9a1f34c2efc4c589a71fe0f5dc8560622f8020d722
+ 9f856f8b4a10ab43348550fa2d3cb2846ae3d8e60f45887200549c051c66f9d5
+ 063645096504b21603585507c41c6d8718ff3c11b2150c5bfc31e8f3ee9afea3
+ f878ff37abcb83250e31a6569e997546f3dbab74dcb26683cb2d613f7568cfc0
+ 720304a603271fa89e4430a14d6a81a023d6d7d1171b1533e49c0ab44f1e1c13
+ f0515efda839cfede851adb24ac154227fbc0dfb60c6c11595ecfa9087d43ceb
+ 4909d6023643f1afc3ab219585d4035b7403f3a17849782ab803c5f73c8a31d5"
+
+skip_extraction="
+ treesitter_c_${_treesitter_c_version}.tar.gz
+ treesitter_lua_${_treesitter_lua_version}.tar.gz
+ treesitter_vim_${_treesitter_vim_version}.tar.gz
+ treesitter_vimdoc_${_treesitter_vimdoc_version}.tar.gz
+ treesitter_query_${_treesitter_query_version}.tar.gz
+ treesitter_python_${_treesitter_python_version}.tar.gz
+ treesitter_bash_${_treesitter_bash_version}.tar.gz
+ treesitter_markdown_${_treesitter_markdown_version}.tar.gz"
 
 build_options=luajit
 
 case "$XBPS_TARGET_MACHINE" in
-	riscv64*) build_options_default="" ;;
+	armv7l|riscv64*) build_options_default="" ;;
 	*) build_options_default="luajit" ;;
 esac
 
@@ -35,13 +70,24 @@ alternatives="
 # They want assertion
 CFLAGS=-UNDEBUG
 
+post_extract() {
+	for _distfile in ${skip_extraction}; do
+		vsrcextract -C .deps/build/src/${_distfile%_*} ${_distfile}
+	done
+}
+
 pre_configure() {
-	vsed -i runtime/CMakeLists.txt \
-		-e "s|\".*/bin/nvim|\${CMAKE_CROSSCOMPILING_EMULATOR} &|g"
-	vsed -i src/nvim/po/CMakeLists.txt \
-		-e "s|\$<TARGET_FILE:nvim|\${CMAKE_CROSSCOMPILING_EMULATOR} &|g"
+	# build bundled treesitter parsers
+	cmake -S cmake.deps -B .deps -G Ninja -DUSE_BUNDLED=OFF -DUSE_BUNDLED_TS_PARSERS=ON
+	cmake --build .deps
 }
 
 post_install() {
 	vlicense LICENSE.txt
+
+	if [ "${CROSS_BUILD}" ]; then
+		patchelf --replace-needed \
+			${XBPS_CROSS_BASE}/usr/lib/lua/5.1/lpeg.so /usr/lib/lua/5.1/lpeg.so \
+			${DESTDIR}/usr/bin/nvim
+	fi
 }
