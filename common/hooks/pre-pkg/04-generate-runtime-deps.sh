@@ -98,7 +98,12 @@ hook() {
     for f in ${verify_deps}; do
         unset _rdep _pkgname _rdepver
 
-        if [ "$(find ${PKGDESTDIR} -name "$f")" ]; then
+        local _findargs="-name"
+        # if SONAME is a path, find should use -wholename
+        if [[ "$f" = */* ]]; then
+            _findargs="-wholename"
+        fi
+        if [ "$(find "${PKGDESTDIR}" $_findargs "$f")" ]; then
             # Ignore libs by current pkg
             echo "   SONAME: $f <-> $pkgname (ignored)"
             continue
