@@ -56,7 +56,7 @@ do_build() {
 		fi
 	else
 		# Otherwise, build using GOPATH
-		go get -p "$XBPS_MAKEJOBS" -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
+		go install -p "$XBPS_MAKEJOBS" -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
 	fi
 }
 
