@@ -128,11 +128,11 @@ link_cksum() {
 }
 
 try_mirrors() {
-	local curfile="$1" distfile="$2" cksum="$3" f="$4"
+	local curfile="$1" distfile="$2" cksum="$3" f="$4" mirror_list="$5"
 	local filesum basefile mirror path scheme good
-	[ -z "$XBPS_DISTFILES_MIRROR" ] && return 1
+	[ -z "$mirror_list" ] && return 1
 	basefile="${f##*/}"
-	for mirror in $XBPS_DISTFILES_MIRROR; do
+	for mirror in $mirror_list; do
 		scheme="file"
 		if [[ $mirror == *://* ]]; then
 			scheme="${mirror%%:/*}"
@@ -286,11 +286,17 @@ hook() {
 		fi
 
 		# If distfile does not exist, download it from a mirror location.
-		if try_mirrors "$curfile" "$distfile" "${_checksums[$i]}" "${_distfiles[$i]}"; then
+		if try_mirrors "$curfile" "$distfile" "${_checksums[$i]}" "${_distfiles[$i]}" "$XBPS_DISTFILES_MIRROR"; then
 			continue
 		fi
 
-		if ! try_urls "$curfile"; then
+		# Try the urls in the template
+		if try_urls "$curfile"; then
+			continue
+		fi
+
+		# finally, try the fallback mirrors
+		if ! try_mirrors "$curfile" "$distfile" "${_checksums[$i]}" "${_distfiles[$i]}" "$XBPS_DISTFILES_FALLBACK"; then
 			msg_error "$pkgver: failed to fetch '$curfile'.\n"
 		fi
 	done
