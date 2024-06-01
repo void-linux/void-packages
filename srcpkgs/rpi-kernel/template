@@ -1,9 +1,9 @@
 # Template file for 'rpi-kernel'
 #
 # We track the latest Raspberry Pi LTS kernel as that is what is used in the
-# official Raspberry Pi OS distribution. This is currently 6.1:
+# official Raspberry Pi OS distribution. This is currently 6.6:
 #
-# https://forums.raspberrypi.com/viewtopic.php?t=344246
+# https://forums.raspberrypi.com/viewtopic.php?t=361116
 #
 # Commit hash is picked from latest tag [1], if appropriate, or from latest
 # "Merge remote-tracking branch 'stable/linux-6.x.y' into rpi-6.x.y" commit.
@@ -12,10 +12,11 @@
 #
 # Upstream documentation: https://www.raspberrypi.com/documentation/computers/linux_kernel.html
 pkgname=rpi-kernel
-version=6.1.77
+version=6.6.31
 revision=1
-_githash=fdd0eca49f6d09d4520d9d9827abfef1c605ce74
+_githash=1ac74d2f9773922731a11bc329ae2710fce172d4
 archs="armv6l* armv7l* aarch64*"
+build_wrksrc="build-rpi"
 hostmakedepends="perl kmod uboot-mkimage openssl-devel bc bison flex xz"
 makedepends="ncurses-devel"
 short_desc="Linux kernel for Raspberry Pi (${version%.*} series)"
@@ -23,7 +24,7 @@ maintainer="classabbyamp <void@placeviolette.net>"
 license="GPL-2.0-only"
 homepage="http://www.kernel.org"
 distfiles="https://github.com/raspberrypi/linux/archive/${_githash}.tar.gz"
-checksum=611dd843760ea80753ed8c67e665dbe923827e79a381c27c353d33b1da52e211
+checksum=961ce72e339ca024c6dd1ae57c0dfc25ab1f39eee9699813a535f138b31d670c
 python_version=3
 provides="rpi-kernel-${version}_${revision}"
 replaces="rpi5-kernel>=0"
@@ -34,6 +35,15 @@ nodebug=yes
 nostrip=yes
 noverifyrdeps=yes
 noshlibprovides=yes
+
+build_options="rpi5"
+desc_option_rpi5="build large page-size rpi5-kernel"
+
+if [[ "$XBPS_TARGET_MACHINE" = aarch64* ]]; then
+	build_options_default+=" rpi5"
+elif [ "$build_option_rpi5" ]; then
+	broken="rpi5 build option only works on aarch64*"
+fi
 
 triggers="kernel-hooks"
 # These files could be modified when an external module is built.
@@ -58,10 +68,21 @@ make_install_args=("-j$XBPS_MAKEJOBS" "ARCH=$_arch")
 
 if [ "$CROSS_BUILD" ]; then
 	make_build_args+=("CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-")
+	make_install_args+=("CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-")
 fi
+
+post_extract() {
+	mkdir build-rpi
+	mv * build-rpi || true
+	if [ "$build_option_rpi5" ]; then
+		cp -a build-rpi build-rpi5
+	fi
+}
 
 _configure() {
 	local target="$1" defconfig
+
+	msg_normal "configuring for ${target} in ${PWD##*/}\n"
 
 	defconfig="arch/${_arch}/configs/${target}"
 	cp "$defconfig" .config
@@ -113,6 +134,7 @@ _configure() {
 	CONFIG_IKCONFIG_PROC=y
 	CONFIG_LEDS_TRIGGER_ACTIVITY=m
 	CONFIG_MACVTAP=m
+	CONFIG_IPV6=y
 	!
 
 	while read -r line; do
@@ -141,9 +163,17 @@ _configure() {
 	make "${make_build_args[@]}" olddefconfig
 }
 
+_build() {
+	msg_normal "building in ${PWD##*/}\n"
+	make "${make_build_args[@]}" prepare
+	make "${make_build_args[@]}" "${_image_target}" modules dtbs
+}
+
 _install() {
 	local _pkg="$1" _destdir="$2"
 	local hdrdest="usr/src/${_pkg}-headers-${_kernver}"
+
+	msg_normal "installing ${_pkg} from ${PWD##*/} into ${_destdir}\n"
 
 	# Run depmod after compressing modules.
 	vsed -i -e '2iexit 0' scripts/depmod.sh
@@ -260,11 +290,20 @@ do_configure() {
 	esac
 
 	_configure "$target"
+
+	if [ "$build_option_rpi5" ]; then
+		cd "$wrksrc"/build-rpi5
+		_configure "bcm2712_defconfig"
+	fi
 }
 
 do_build() {
-	make "${make_build_args[@]}" prepare
-	make "${make_build_args[@]}" "${_image_target}" modules dtbs
+	_build
+
+	if [ "$build_option_rpi5" ]; then
+		cd "$wrksrc"/build-rpi5
+		_build
+	fi
 }
 
 do_install() {
@@ -275,8 +314,12 @@ subpackages="rpi-kernel-headers"
 
 case "$XBPS_TARGET_MACHINE" in
 	armv7l*) subpackages+=" rpi2-kernel rpi2-kernel-headers" ;;
-	aarch64*) subpackages+=" rpi3-kernel rpi3-kernel-headers rpi4-kernel rpi4-kernel-headers rpi5-kernel rpi5-kernel-headers" ;;
+	aarch64*) subpackages+=" rpi3-kernel rpi3-kernel-headers rpi4-kernel rpi4-kernel-headers" ;;
 esac
+
+if [ "$build_option_rpi5" ]; then
+	subpackages+=" rpi5-kernel rpi5-kernel-headers"
+fi
 
 rpi-kernel-headers_package() {
 	nostrip=yes
@@ -313,9 +356,7 @@ rpi5-kernel_package() {
 	provides="rpi-kernel-${version}_${revision}"
 	replaces="rpi-kernel>=0"
 	pkg_install() {
-		_configure "bcm2712_defconfig"
-		make "${make_build_args[@]}" prepare
-		make "${make_build_args[@]}" "${_image_target}" modules dtbs
+		cd "$wrksrc"/build-rpi5
 		_install "rpi5-kernel" "$PKGDESTDIR"
 	}
 }
