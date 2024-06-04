@@ -1,0 +1,152 @@
+From 013e69988ffdbed1d3c684a536c0d4b79c7de680 Mon Sep 17 00:00:00 2001
+From: David Edmundson <kde@davidedmundson.co.uk>
+Date: Fri, 10 May 2024 14:35:11 +0000
+Subject: [PATCH] Reconnect Pipewire on Failure
+
+Our connection to pipewire can go down if the pipewire service restarts, it's on us to tear down and reconnect.
+To ensure Streams can tear down on their own properly, this patch leaves existing streams with a defunct connection
+and creates a new connection for new streams, sharing the connection between them.
+
+This also implicitly fixes the case for distributions without working socket activation.
+
+BUG: 483137
+---
+ src/plugins/screencast/pipewirecore.cpp      |  7 ++++++
+ src/plugins/screencast/pipewirecore.h        |  4 ++++
+ src/plugins/screencast/screencastmanager.cpp | 24 ++++++++++++++++----
+ src/plugins/screencast/screencastmanager.h   |  4 +++-
+ 4 files changed, 33 insertions(+), 6 deletions(-)
+
+diff --git a/src/plugins/screencast/pipewirecore.cpp b/src/plugins/screencast/pipewirecore.cpp
+index 077854c65ee..085d0595372 100644
+--- a/src/plugins/screencast/pipewirecore.cpp
++++ b/src/plugins/screencast/pipewirecore.cpp
+@@ -48,6 +48,7 @@ void PipeWireCore::onCoreError(void *data, uint32_t id, int seq, int res, const
+     qCWarning(KWIN_SCREENCAST) << "PipeWire remote error: " << message;
+     if (id == PW_ID_CORE && res == -EPIPE) {
+         PipeWireCore *pw = static_cast<PipeWireCore *>(data);
++        pw->m_valid = false;
+         Q_EMIT pw->pipewireFailed(QString::fromUtf8(message));
+     }
+ }
+@@ -91,9 +92,15 @@ bool PipeWireCore::init()
+     }
+ 
+     pw_core_add_listener(pwCore, &coreListener, &pwCoreEvents, this);
++    m_valid = true;
+     return true;
+ }
+ 
++bool PipeWireCore::isValid() const
++{
++    return m_valid;
++}
++
+ } // namespace KWin
+ 
+ #include "moc_pipewirecore.cpp"
+diff --git a/src/plugins/screencast/pipewirecore.h b/src/plugins/screencast/pipewirecore.h
+index cb20ba8b523..f66dc0edb22 100644
+--- a/src/plugins/screencast/pipewirecore.h
++++ b/src/plugins/screencast/pipewirecore.h
+@@ -28,6 +28,7 @@ public:
+     ~PipeWireCore();
+ 
+     bool init();
++    bool isValid() const;
+ 
+     static std::shared_ptr<PipeWireCore> self();
+ 
+@@ -41,6 +42,9 @@ public:
+ 
+ Q_SIGNALS:
+     void pipewireFailed(const QString &message);
++
++private:
++    bool m_valid = false;
+ };
+ 
+ } // namespace KWin
+diff --git a/src/plugins/screencast/screencastmanager.cpp b/src/plugins/screencast/screencastmanager.cpp
+index 87c84e93f39..e0b009c3b70 100644
+--- a/src/plugins/screencast/screencastmanager.cpp
++++ b/src/plugins/screencast/screencastmanager.cpp
+@@ -27,9 +27,9 @@ namespace KWin
+ 
+ ScreencastManager::ScreencastManager()
+     : m_screencast(new ScreencastV1Interface(waylandServer()->display(), this))
+-    , m_core(new PipeWireCore)
+ {
+-    m_core->init();
++    getPipewireConnection();
++
+     connect(m_screencast, &ScreencastV1Interface::windowScreencastRequested, this, &ScreencastManager::streamWindow);
+     connect(m_screencast, &ScreencastV1Interface::outputScreencastRequested, this, &ScreencastManager::streamWaylandOutput);
+     connect(m_screencast, &ScreencastV1Interface::virtualOutputScreencastRequested, this, &ScreencastManager::streamVirtualOutput);
+@@ -46,7 +46,7 @@ void ScreencastManager::streamWindow(ScreencastStreamV1Interface *waylandStream,
+         return;
+     }
+ 
+-    auto stream = new ScreenCastStream(new WindowScreenCastSource(window), m_core, this);
++    auto stream = new ScreenCastStream(new WindowScreenCastSource(window), getPipewireConnection(), this);
+     stream->setObjectName(window->desktopFileName());
+     stream->setCursorMode(mode, 1, window->clientGeometry());
+ 
+@@ -88,7 +88,7 @@ void ScreencastManager::streamOutput(ScreencastStreamV1Interface *waylandStream,
+         return;
+     }
+ 
+-    auto stream = new ScreenCastStream(new OutputScreenCastSource(streamOutput), m_core, this);
++    auto stream = new ScreenCastStream(new OutputScreenCastSource(streamOutput), getPipewireConnection(), this);
+     stream->setObjectName(streamOutput->name());
+     stream->setCursorMode(mode, streamOutput->scale(), streamOutput->geometry());
+ 
+@@ -112,7 +112,7 @@ void ScreencastManager::streamRegion(ScreencastStreamV1Interface *waylandStream,
+     }
+ 
+     auto source = new RegionScreenCastSource(geometry, scale);
+-    auto stream = new ScreenCastStream(source, m_core, this);
++    auto stream = new ScreenCastStream(source, getPipewireConnection(), this);
+     stream->setObjectName(rectToString(geometry));
+     stream->setCursorMode(mode, scale, geometry);
+ 
+@@ -135,6 +135,20 @@ void ScreencastManager::integrateStreams(ScreencastStreamV1Interface *waylandStr
+     }
+ }
+ 
++std::shared_ptr<PipeWireCore> ScreencastManager::getPipewireConnection()
++{
++    if (m_pipewireConnectionCache && m_pipewireConnectionCache->isValid()) {
++        return m_pipewireConnectionCache;
++    } else {
++        std::shared_ptr<PipeWireCore> pipeWireCore = std::make_shared<PipeWireCore>();
++        if (pipeWireCore->init()) {
++            m_pipewireConnectionCache = pipeWireCore;
++        }
++        // return a valid object even if init fails
++        return pipeWireCore;
++    }
++}
++
+ } // namespace KWin
+ 
+ #include "moc_screencastmanager.cpp"
+diff --git a/src/plugins/screencast/screencastmanager.h b/src/plugins/screencast/screencastmanager.h
+index 059e64b545a..436040dea9a 100644
+--- a/src/plugins/screencast/screencastmanager.h
++++ b/src/plugins/screencast/screencastmanager.h
+@@ -46,8 +46,10 @@ private:
+ 
+     void integrateStreams(ScreencastStreamV1Interface *waylandStream, ScreenCastStream *stream);
+ 
++    std::shared_ptr<PipeWireCore> getPipewireConnection();
++
+     ScreencastV1Interface *m_screencast;
+-    std::shared_ptr<PipeWireCore> m_core;
++    std::shared_ptr<PipeWireCore> m_pipewireConnectionCache;
+ };
+ 
+ } // namespace KWin
+-- 
+GitLab
+

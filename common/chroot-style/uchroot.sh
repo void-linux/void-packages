@@ -9,12 +9,27 @@ readonly EXTRA_ARGS="$4"
 readonly CMD="$5"
 shift 5
 
-if ! command -v xbps-uchroot >/dev/null 2>&1; then
+msg_red() {
+	# error messages in bold/red
+	[ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[31m"
+	printf "=> ERROR: %s\\n" "$@" >&2
+	[ -n "$NOCOLORS" ] || printf >&2 "\033[m"
+}
+
+readonly XBPS_UCHROOT_CMD="$(command -v xbps-uchroot 2>/dev/null)"
+
+if [ -z "$XBPS_UCHROOT_CMD" ]; then
+	msg_red "could not find xbps-uchroot"
 	exit 1
 fi
 
-if [ -z "$MASTERDIR" -o -z "$DISTDIR" ]; then
-	echo "$0 MASTERDIR/DISTDIR not set"
+if ! [ -x "$XBPS_UCHROOT_CMD" ]; then
+	msg_red "xbps-uchroot is not executable. Are you in the $(stat -c %G "$XBPS_UCHROOT_CMD") group?"
+	exit 1
+fi
+
+if [ -z "$MASTERDIR" ] || [ -z "$DISTDIR" ]; then
+	msg_red "$0: MASTERDIR/DISTDIR not set"
 	exit 1
 fi
 
