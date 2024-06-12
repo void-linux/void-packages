@@ -1,4 +1,4 @@
-# vim: set ts=4 sw=4 et:
+# vim: set ts=4 sw=4 et ft=bash :
 
 update_check() {
     local i p url pkgurlname rx found_version consider
@@ -152,10 +152,10 @@ update_check() {
                 url="https://bitbucket.org/$pkgurlname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar)';;
             *ftp.gnome.org*|*download.gnome.org*)
-                : ${pattern="(?<=LATEST-IS-)([0-24-9]|3\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=\")"}
+                rx='(?<=LATEST-IS-)([0-24-9]|3\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=\")'
                 url="https://download.gnome.org/sources/$pkgname/cache.json";;
             *archive.xfce.org*)
-                : ${pattern="\Q$pkgname\E-\K((([4-9]|([1-9][0-9]+))\.[0-9]*[02468]\.[0-9.]*[0-9])|([0-3]\.[0-9.]*))(?=.tar)"}
+                rx='\Q'"$pkgname"'\E-\K((([4-9]|([1-9][0-9]+))\.[0-9]*[02468]\.[0-9.]*[0-9])|([0-3]\.[0-9.]*))(?=.tar)'
                 url="https://archive.xfce.org/feeds/project/$pkgname" ;;
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
