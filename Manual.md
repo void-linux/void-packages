@@ -778,6 +778,9 @@ A special value `noarch` used to be available, but has since been removed.
 
 - `nofixperms` If set, xbps-src will not fix common permission errors (executable manpages, etc.)
 
+- `no_generic_pkgconfig_link` If set, xbps-src will not create a symlink from `$XBPS_CROSS_TRIPLET-pkg-config`
+  to `$XBPS_WRAPPERDIR/pkg-config` before building the template.
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
 
