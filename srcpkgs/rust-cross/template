@@ -1,0 +1,99 @@
+# Template file for 'rust-cross'
+#
+# Permission to use rust and cargo trademark is granted.
+# See: https://github.com/rust-lang/core-team/issues/4
+#
+# Update in lockstep with rust!
+# Thanks to @seppel3210@chaos.social for helping me figure this out.
+pkgname=rust-cross
+version=1.77.1
+revision=1
+hostmakedepends="cargo cmake curl llvm17-devel ninja pkg-config python3 rust tar"
+makedepends="llvm17-devel"
+depends="rust"
+short_desc="Rust no_std targets for cross-compilation"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
+license="MIT, Apache-2.0"
+homepage="https://www.rust-lang.org/"
+distfiles="https://static.rust-lang.org/dist/rustc-${version}-src.tar.gz"
+checksum=ee106e4c569f52dba3b5b282b105820f86bd8f6b3d09c06b8dce82fb1bb3a4a1
+lib32disabled=yes
+make_check=no # CBA for now
+python_version=3 # needed for python files in rust-src
+nocross=yes # for now
+nostrip=yes # cross-archs
+
+# we need this because cargo verifies checksums of all files in vendor
+# crates when it builds and gives us no way to override or update the
+# file sanely... so just clear out the file list
+_clear_vendor_checksums() {
+	sed -i 's/\("files":{\)[^}]*/\1/' vendor/$1/.cargo-checksum.json
+}
+
+post_patch() {
+	rm -rf src/llvm-project
+
+	# clear out all the checksum nonsense of patched vendor crates
+	_clear_vendor_checksums libc
+	_clear_vendor_checksums typenum
+	_clear_vendor_checksums cc
+	_clear_vendor_checksums target-lexicon
+
+	_clear_vendor_checksums tikv-jemallocator
+}
+
+do_configure() {
+	cat >config.toml <<EOF
+profile = 'dist'
+[llvm]
+link-shared = true
+[build]
+target = [
+  'thumbv6m-none-eabi',
+  'riscv32imc-unknown-none-elf',
+  'riscv32imac-unknown-none-elf',
+  'wasm32-unknown-unknown'
+]
+cargo = '/usr/bin/cargo'
+rustc = '/usr/bin/rustc'
+docs = false
+submodules = false
+locked-deps = true
+vendor = true
+full-bootstrap = false
+optimized-compiler-builtins = false
+local-rebuild = true
+[install]
+prefix = '/usr'
+[rust]
+codegen-units = 1
+codegen-units-std = 1
+parallel-compiler = false
+channel = 'stable'
+description = 'Void Linux'
+rpath = false
+llvm-libunwind = 'no'
+[target.x86_64-unknown-linux-gnu]
+llvm-config = '/usr/bin/llvm-config'
+[target."*"]
+cc = "clang"
+ar = "llvm-ar"
+ranlib = "llvm-ranlib"
+EOF
+}
+
+do_build() {
+	export RUST_BACKTRACE=1
+	export CARGO_HOME="$wrksrc/.cargo"
+	# prevent sysroot from leaking in
+	export RUSTFLAGS=""
+
+	python3 x.py dist rust-std --stage 0 --jobs $XBPS_MAKEJOBS
+}
+
+do_install() {
+	vmkdir usr
+	for f in build/dist/rust-std-${version}-*.tar.gz; do
+		tar xf $f -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
+	done
+}
