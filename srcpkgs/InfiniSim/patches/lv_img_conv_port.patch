@@ -1,0 +1,324 @@
+﻿From b260f00b860b487f65c451f9f63ae7fc1a4d8275 Mon Sep 17 00:00:00 2001
+From: Reinhold Gschweicher <pyro4hell@gmail.com>
+Date: Wed, 20 Sep 2023 21:39:09 +0200
+Subject: [PATCH] lv_img_conv_py: minimal python port of node module
+
+Create a minimal python port of the node.js module `lv_img_conv`. Only
+the currently in use color formats `CF_INDEXED_1_BIT` and
+`CF_TRUE_COLOR_ALPHA` are implemented.
+
+Output only as binary with format `ARGB8565_RBSWAP`.
+
+This is enough to create the `resources-1.13.0.zip`.
+
+Python3 implements "propper" "banker's rounding" by rounding to the nearest
+even number. Javascript rounds to the nearest integer.
+To have the same output as the original JavaScript implementation add a custom
+rounding function, which does "school" rounding (to the nearest integer)
+
+Update CMake file in `resources` folder to call `lv_img_conf.py` instead of
+node module.
+
+For docker-files install `python3-pil` package for `lv_img_conv.py` script.
+And remove the `lv_img_conv` node installation.
+
+---
+
+gen_img: special handling for python lv_img_conv script
+
+Not needed on Linux systems, as the shebang of the python script is read
+and used. But just to be sure use the python interpreter found by CMake.
+Also helps if tried to run on Windows host.
+
+---
+
+doc: buildAndProgram: remove node script lv_img_conv mention
+
+Remove node script `lv_img_conv` mention and replace it for
+runtime-depency `python3-pil` of python script `lv_img_conv.py`.
+---
+ InfiniSim-1.13.0/InfiniTime/.devcontainer/Dockerfile      |   1 +
+ InfiniSim-1.13.0/InfiniTime/doc/buildAndProgram.md        |   2 +-
+ InfiniSim-1.13.0/InfiniTime/docker/Dockerfile             |   5 +-
+ InfiniSim-1.13.0/InfiniTime/src/resources/CMakeLists.txt  |   4 +-
+ InfiniSim-1.13.0/InfiniTime/src/resources/generate-img.py |   3 +
+ InfiniSim-1.13.0/InfiniTime/src/resources/lv_img_conv.py  | 193 ++++++++++++++++++++++++++++++++++
+ 6 files changed, 201 insertions(+), 7 deletions(-)
+ create mode 100755 src/resources/lv_img_conv.py
+
+diff --git a/InfiniSim-1.13.0/InfiniTime/.devcontainer/Dockerfile b/InfiniSim-1.13.0/InfiniTime/.devcontainer/Dockerfile
+index 46e2facbde..e4ad5c4fa8 100644
+--- a/InfiniSim-1.13.0/InfiniTime/.devcontainer/Dockerfile
++++ b/InfiniSim-1.13.0/InfiniTime/.devcontainer/Dockerfile
+@@ -11,6 +11,7 @@ RUN apt-get update -qq \
+       make \
+       python3 \
+       python3-pip \
++      python3-pil \
+       tar \
+       unzip \
+       wget \ 
+diff --git a/InfiniSim-1.13.0/InfiniTime/doc/buildAndProgram.md b/InfiniSim-1.13.0/InfiniTime/doc/buildAndProgram.md
+index 29b9107619..3b4ed22c0d 100644
+--- a/InfiniSim-1.13.0/InfiniTime/doc/buildAndProgram.md
++++ b/InfiniSim-1.13.0/InfiniTime/doc/buildAndProgram.md
+@@ -42,7 +42,7 @@ CMake configures the project according to variables you specify the command line
+ **NRF5_SDK_PATH**|path to the NRF52 SDK|`-DNRF5_SDK_PATH=/home/jf/nrf52/Pinetime/sdk`|
+ **CMAKE_BUILD_TYPE (\*)**| Build type (Release or Debug). Release is applied by default if this variable is not specified.|`-DCMAKE_BUILD_TYPE=Debug`
+ **BUILD_DFU (\*\*)**|Build DFU files while building (needs [adafruit-nrfutil](https://github.com/adafruit/Adafruit_nRF52_nrfutil)).|`-DBUILD_DFU=1`
+-**BUILD_RESOURCES (\*\*)**| Generate external resource while building (needs [lv_font_conv](https://github.com/lvgl/lv_font_conv) and [lv_img_conv](https://github.com/lvgl/lv_img_conv). |`-DBUILD_RESOURCES=1`
++**BUILD_RESOURCES (\*\*)**| Generate external resource while building (needs [lv_font_conv](https://github.com/lvgl/lv_font_conv) and [python3-pil/pillow](https://pillow.readthedocs.io) module). |`-DBUILD_RESOURCES=1`
+ **TARGET_DEVICE**|Target device, used for hardware configuration. Allowed: `PINETIME, MOY-TFK5, MOY-TIN5, MOY-TON5, MOY-UNK`|`-DTARGET_DEVICE=PINETIME` (Default)
+ 
+ #### (\*) Note about **CMAKE_BUILD_TYPE**
+diff --git a/InfiniSim-1.13.0/InfiniTime/docker/Dockerfile b/InfiniSim-1.13.0/InfiniTime/docker/Dockerfile
+index 927160dbeb..6055659407 100644
+--- a/InfiniSim-1.13.0/InfiniTime/docker/Dockerfile
++++ b/InfiniSim-1.13.0/InfiniTime/docker/Dockerfile
+@@ -11,6 +11,7 @@ RUN apt-get update -qq \
+       make \
+       python3 \
+       python3-pip \
++      python3-pil \
+       python-is-python3 \
+       tar \
+       unzip \
+@@ -39,10 +40,6 @@ RUN pip3 install -Iv cryptography==3.3
+ RUN pip3 install cbor
+ RUN npm i lv_font_conv@1.5.2 -g
+ 
+-RUN npm i ts-node@10.9.1 -g
+-RUN npm i @swc/core -g
+-RUN npm i lv_img_conv@0.3.0 -g
+-
+ # build.sh knows how to compile
+ COPY build.sh /opt/
+ 
+diff --git a/InfiniSim-1.13.0/InfiniTime/src/resources/CMakeLists.txt b/InfiniSim-1.13.0/InfiniTime/src/resources/CMakeLists.txt
+index 0983aaffe6..3834e854fe 100644
+--- a/InfiniSim-1.13.0/InfiniTime/src/resources/CMakeLists.txt
++++ b/InfiniSim-1.13.0/InfiniTime/src/resources/CMakeLists.txt
+@@ -3,8 +3,8 @@ find_program(LV_FONT_CONV "lv_font_conv" NO_CACHE REQUIRED
+     HINTS "${CMAKE_SOURCE_DIR}/node_modules/.bin")
+ message(STATUS "Using ${LV_FONT_CONV} to generate font files")
+ 
+-find_program(LV_IMG_CONV "lv_img_conv" NO_CACHE REQUIRED
+-    HINTS "${CMAKE_SOURCE_DIR}/node_modules/.bin")
++find_program(LV_IMG_CONV "lv_img_conv.py" NO_CACHE REQUIRED
++    HINTS "${CMAKE_CURRENT_SOURCE_DIR}")
+ message(STATUS "Using ${LV_IMG_CONV} to generate font files")
+ 
+ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.12)
+diff --git a/InfiniSim-1.13.0/InfiniTime/src/resources/generate-img.py b/InfiniSim-1.13.0/InfiniTime/src/resources/generate-img.py
+index cdbfc03048..518d22062e 100755
+--- a/InfiniSim-1.13.0/InfiniTime/src/resources/generate-img.py
++++ b/InfiniSim-1.13.0/InfiniTime/src/resources/generate-img.py
+@@ -11,6 +11,9 @@
+ 
+ def gen_lvconv_line(lv_img_conv: str, dest: str, color_format: str, output_format: str, binary_format: str, sources: str):
+     args = [lv_img_conv, sources, '--force', '--output-file', dest, '--color-format', color_format, '--output-format', output_format, '--binary-format', binary_format]
++    if lv_img_conv.endswith(".py"):
++        # lv_img_conv is a python script, call with current python executable
++        args = [sys.executable] + args
+ 
+     return args
+ 
+diff --git a/InfiniSim-1.13.0/InfiniTime/src/resources/lv_img_conv.py b/InfiniSim-1.13.0/InfiniTime/src/resources/lv_img_conv.py
+new file mode 100755
+index 0000000000..04765462ee
+--- /dev/null
++++ b/InfiniSim-1.13.0/InfiniTime/src/resources/lv_img_conv.py
+@@ -0,0 +1,193 @@
++#!/usr/bin/env python3
++import argparse
++import pathlib
++import sys
++import decimal
++from PIL import Image
++
++
++def classify_pixel(value, bits):
++    def round_half_up(v):
++        """python3 implements "propper" "banker's rounding" by rounding to the nearest
++        even number. Javascript rounds to the nearest integer.
++        To have the same output as the original JavaScript implementation add a custom
++        rounding function, which does "school" rounding (to the nearest integer).
++
++        see: https://stackoverflow.com/questions/43851273/how-to-round-float-0-5-up-to-1-0-while-still-rounding-0-45-to-0-0-as-the-usual
++        """
++        return int(decimal.Decimal(v).quantize(decimal.Decimal('1'), rounding=decimal.ROUND_HALF_UP))
++    tmp = 1 << (8 - bits)
++    val = round_half_up(value / tmp) * tmp
++    if val < 0:
++        val = 0
++    return val
++
++
++def test_classify_pixel():
++    # test difference between round() and round_half_up()
++    assert classify_pixel(18, 5) == 16
++    # school rounding 4.5 to 5, but banker's rounding 4.5 to 4
++    assert classify_pixel(18, 6) == 20
++
++
++def main():
++    parser = argparse.ArgumentParser()
++
++    parser.add_argument("img",
++        help="Path to image to convert to C header file")
++    parser.add_argument("-o", "--output-file",
++        help="output file path (for single-image conversion)",
++        required=True)
++    parser.add_argument("-f", "--force",
++        help="allow overwriting the output file",
++        action="store_true")
++    parser.add_argument("-i", "--image-name",
++        help="name of image structure (not implemented)")
++    parser.add_argument("-c", "--color-format",
++        help="color format of image",
++        default="CF_TRUE_COLOR_ALPHA",
++        choices=[
++            "CF_ALPHA_1_BIT", "CF_ALPHA_2_BIT", "CF_ALPHA_4_BIT",
++            "CF_ALPHA_8_BIT", "CF_INDEXED_1_BIT", "CF_INDEXED_2_BIT", "CF_INDEXED_4_BIT",
++            "CF_INDEXED_8_BIT", "CF_RAW", "CF_RAW_CHROMA", "CF_RAW_ALPHA",
++            "CF_TRUE_COLOR", "CF_TRUE_COLOR_ALPHA", "CF_TRUE_COLOR_CHROMA", "CF_RGB565A8",
++        ],
++        required=True)
++    parser.add_argument("-t", "--output-format",
++        help="output format of image",
++        default="bin", # default in original is 'c'
++        choices=["c", "bin"])
++    parser.add_argument("--binary-format",
++        help="binary color format (needed if output-format is binary)",
++        default="ARGB8565_RBSWAP",
++        choices=["ARGB8332", "ARGB8565", "ARGB8565_RBSWAP", "ARGB8888"])
++    parser.add_argument("-s", "--swap-endian",
++        help="swap endian of image (not implemented)",
++        action="store_true")
++    parser.add_argument("-d", "--dither",
++        help="enable dither (not implemented)",
++        action="store_true")
++    args = parser.parse_args()
++
++    img_path = pathlib.Path(args.img)
++    out = pathlib.Path(args.output_file)
++    if not img_path.is_file():
++        print(f"Input file is missing: '{args.img}'")
++        return 1
++    print(f"Beginning conversion of {args.img}")
++    if out.exists():
++        if args.force:
++            print(f"overwriting {args.output_file}")
++        else:
++            pritn(f"Error: refusing to overwrite {args.output_file} without -f specified.")
++            return 1
++    out.touch()
++
++    # only implemented the bare minimum, everything else is not implemented
++    if args.color_format not in ["CF_INDEXED_1_BIT", "CF_TRUE_COLOR_ALPHA"]:
++        raise NotImplementedError(f"argument --color-format '{args.color_format}' not implemented")
++    if args.output_format != "bin":
++        raise NotImplementedError(f"argument --output-format '{args.output_format}' not implemented")
++    if args.binary_format not in ["ARGB8565_RBSWAP", "ARGB8888"]:
++        raise NotImplementedError(f"argument --binary-format '{args.binary_format}' not implemented")
++    if args.image_name:
++        raise NotImplementedError(f"argument --image-name not implemented")
++    if args.swap_endian:
++        raise NotImplementedError(f"argument --swap-endian not implemented")
++    if args.dither:
++        raise NotImplementedError(f"argument --dither not implemented")
++
++    # open image using Pillow
++    img = Image.open(img_path)
++    img_height = img.height
++    img_width = img.width
++    if args.color_format == "CF_TRUE_COLOR_ALPHA" and args.binary_format == "ARGB8888":
++        buf = bytearray(img_height*img_width*4) # 4 bytes (32 bit) per pixel
++        for y in range(img_height):
++            for x in range(img_width):
++                i = (y*img_width + x)*4 # buffer-index
++                pixel = img.getpixel((x,y))
++                r, g, b, a = pixel
++                buf[i + 0] = r
++                buf[i + 1] = g
++                buf[i + 2] = b
++                buf[i + 3] = a
++
++    elif args.color_format == "CF_TRUE_COLOR_ALPHA" and args.binary_format == "ARGB8565_RBSWAP":
++        buf = bytearray(img_height*img_width*3) # 3 bytes (24 bit) per pixel
++        for y in range(img_height):
++            for x in range(img_width):
++                i = (y*img_width + x)*3 # buffer-index
++                pixel = img.getpixel((x,y))
++                r_act = classify_pixel(pixel[0], 5)
++                g_act = classify_pixel(pixel[1], 6)
++                b_act = classify_pixel(pixel[2], 5)
++                a = pixel[3]
++                r_act = min(r_act, 0xF8)
++                g_act = min(g_act, 0xFC)
++                b_act = min(b_act, 0xF8)
++                c16 = ((r_act) << 8) | ((g_act) << 3) | ((b_act) >> 3) # RGR565
++                buf[i + 0] = (c16 >> 8) & 0xFF
++                buf[i + 1] = c16 & 0xFF
++                buf[i + 2] = a
++
++    elif args.color_format == "CF_INDEXED_1_BIT": # ignore binary format, use color format as binary format
++        w = img_width >> 3
++        if img_width & 0x07:
++            w+=1
++        max_p = w * (img_height-1) + ((img_width-1) >> 3) + 8  # +8 for the palette
++        buf = bytearray(max_p+1)
++
++        for y in range(img_height):
++            for x in range(img_width):
++                c, a = img.getpixel((x,y))
++                p = w * y + (x >> 3) + 8  # +8 for the palette
++                buf[p] |= (c & 0x1) << (7 - (x & 0x7))
++        # write palette information, for indexed-1-bit we need palette with two values
++        # write 8 palette bytes
++        buf[0] = 0
++        buf[1] = 0
++        buf[2] = 0
++        buf[3] = 0
++        # Normally there is much math behind this, but for the current use case this is close enough
++        # only needs to be more complicated if we have more than 2 colors in the palette
++        buf[4] = 255
++        buf[5] = 255
++        buf[6] = 255
++        buf[7] = 255
++    else:
++        # raise just to be sure
++        raise NotImplementedError(f"args.color_format '{args.color_format}' with args.binary_format '{args.binary_format}' not implemented")
++
++    # write header
++    match args.color_format:
++        case "CF_TRUE_COLOR_ALPHA":
++            lv_cf = 5
++        case "CF_INDEXED_1_BIT":
++            lv_cf = 7
++        case _:
++            # raise just to be sure
++            raise NotImplementedError(f"args.color_format '{args.color_format}' not implemented")
++    header_32bit = lv_cf | (img_width << 10) | (img_height << 21)
++    buf_out = bytearray(4 + len(buf))
++    buf_out[0] = header_32bit & 0xFF
++    buf_out[1] = (header_32bit & 0xFF00) >> 8
++    buf_out[2] = (header_32bit & 0xFF0000) >> 16
++    buf_out[3] = (header_32bit & 0xFF000000) >> 24
++    buf_out[4:] = buf
++
++    # write byte buffer to file
++    with open(out, "wb") as f:
++        f.write(buf_out)
++    return 0
++
++
++if __name__ == '__main__':
++    if "--test" in sys.argv:
++        # run small set of tests and exit
++        print("running tests")
++        test_classify_pixel()
++        print("success!")
++        sys.exit(0)
++    # run normal program
++    sys.exit(main())
