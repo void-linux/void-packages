@@ -2,6 +2,9 @@
 #
 # changed_templates.sh
 
+ci_check=$( echo -e "$PR_TITLE\n$PR_BODY" |
+	sed -ne 's/.*\[ci \+check \+\([^]]*[^ ]\) *].*/\1/p' )
+
 tip="$(git rev-list -1 --parents HEAD)"
 case "$tip" in
 	# This is a merge commit, pick last parent
@@ -27,3 +30,11 @@ git diff-tree -r --no-renames --name-only --diff-filter=AM \
 	xargs ./xbps-src sort-dependencies |
 	tee /tmp/templates |
 	sed "s/^/  /" >&2
+
+if [ -n "$ci_check" ]; then
+	/bin/echo -e '\x1b[32mAdditional packages to build and check:\x1b[0m'
+	printf "%s\n" $ci_check |
+		xargs ./xbps-src sort-dependencies |
+		tee -a /tmp/templates |
+		sed "s/^/  /" >&2
+fi
