@@ -439,7 +439,12 @@ The list of mandatory variables for a template:
 - <a id="var_license"></a>
 `license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
 `Public Domain`, or string prefixed with `custom:` for other licenses.
-Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, custom:Hugware`.
+Multiple licenses should be listed as an
+[SPDX license expression](https://spdx.github.io/spdx-spec/v3.0/annexes/SPDX-license-expressions/)
+(examples: `MIT OR Apache-2.0`, `MIT AND (LGPL-2.1-or-later OR BSD-3-Clause)`).
+Usage of `AND`, `OR`, `WITH`, and `()` are supported by xlint. The legacy
+comma-separated format should be converted when encountered (example:
+`GPL-3.0-or-later, custom:Hugware`).
 
   Empty meta-packages that don't include any files
   and thus have and require no license should use
