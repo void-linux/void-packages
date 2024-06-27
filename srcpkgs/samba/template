@@ -1,14 +1,10 @@
 # Template file for 'samba'
 pkgname=samba
 version=4.20.1
-revision=2
+revision=3
 build_style=waf3
 build_helper="qemu"
 configure_script="buildtools/bin/waf"
-_idmap_modules="idmap_ad,idmap_rid,idmap_ldap,idmap_hash,idmap_tdb2"
-_pdb_modules="pdb_tdbsam,pdb_ldap,pdb_smbpasswd,pdb_wbc_sam,pdb_samba4"
-_auth_modules="auth_unix,auth_wbc,auth_server,auth_samba4,auth_skel"
-_vfs_modules="vfs_io_uring"
 configure_args="--enable-fhs --sysconfdir=/etc --localstatedir=/var
  --sbindir=/usr/bin --with-privatelibdir=/usr/lib
  --with-privatedir=/etc/samba/private --with-piddir=/run/samba
@@ -16,8 +12,7 @@ configure_args="--enable-fhs --sysconfdir=/etc --localstatedir=/var
  --disable-rpath --disable-rpath-install --nopyc --nopyo
  --without-gettext --without-systemd --without-gpgme
  --with-cluster-support --with-system-mitkrb5 --with-experimental-mit-ad-dc
- --bundled-libraries=NONE --builtin-libraries=NONE
- --with-shared-modules=${_idmap_modules},${_pdb_modules},${_auth_modules},${_vfs_modules}"
+ --bundled-libraries=NONE --builtin-libraries=NONE"
 hostmakedepends="pkg-config perl-Parse-Yapp rpcsvc-proto docbook-xsl libxslt
  libtasn1-tools tdb-python3 tevent-python3 talloc-python3 ldb-python3 flex
  bison mit-krb5 python3-Markdown python3-dnspython"
@@ -37,20 +32,29 @@ make_dirs="/etc/samba/private 0750 root root"
 subpackages="smbclient samba-ctdb samba-cups samba-devel samba-libs
  samba-python3 samba-dc"
 
+_idmap_modules="idmap_ad,idmap_rid,idmap_ldap,idmap_hash,idmap_tdb2"
+_pdb_modules="pdb_tdbsam,pdb_ldap,pdb_smbpasswd,pdb_wbc_sam,pdb_samba4"
+_auth_modules="auth_unix,auth_wbc,auth_server,auth_samba4"
+_vfs_modules="vfs_io_uring"
+
 if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 	makedepends+=" musl-legacy-compat musl-nscd-devel libexecinfo-devel"
 else
+	_vfs_modules+=",vfs_glusterfs"
 	makedepends+=" glusterfs-devel"
 	subpackages+=" samba-glusterfs"
-
-	if [ "$XBPS_CHECK_PKGS" ]; then
-		configure_args+=" --enable-selftest"
-		hostmakedepends+=" python3-cryptography python3-iso8601
-		 python3-pyasn1"
-		makedepends+=" nss_wrapper pam_wrapper resolv_wrapper
-		  socket_wrapper uid_wrapper"
-	fi
 fi
+
+if [ "$XBPS_CHECK_PKGS" ] && [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
+	_auth_modules+=",auth_skel"
+	configure_args+=" --enable-selftest"
+	hostmakedepends+=" python3-cryptography python3-iso8601 python3-pyasn1"
+	makedepends+=" nss_wrapper pam_wrapper resolv_wrapper socket_wrapper
+	 uid_wrapper"
+	checkdepends+=" tdb python3-setproctitle"
+fi
+
+configure_args+=" --with-shared-modules=${_idmap_modules},${_pdb_modules},${_auth_modules},${_vfs_modules}"
 
 export PYTHON_CONFIG="${XBPS_CROSS_BASE}/usr/bin/python3-config"
 export PYTHONHASHSEED=1
@@ -60,24 +64,20 @@ post_patch() {
 	vsed -i third_party/waf/waflib/Tools/python.py \
 		-e "s|env.pyext_PATTERN = .*$|env.pyext_PATTERN = '%s.so'|g"
 
-	# Fix for our `kdb` linking against the system `db` package which
-	# doesn't distribute a pkg-config file and the samba build scripts just
-	# can't handle that.
-	cat >>wscript_configure_system_mitkrb5 <<_EOF
-if ("db" in conf.env["LIB_KDB5"]
-      and not conf.check_cfg(package="db", mandatory=False)):
-    krb5_define_syslib(conf, "db", [])
-_EOF
-
 	# Fix log and spool locations in conf file
 	vsed -i examples/smb.conf.default \
 		-e 's|/usr/spool/samba|/var/spool/samba|g' \
 		-e 's|log file = .*$|log file = /var/log/samba/%m.log|g'
 }
 
+do_check() {
+	${configure_script} test --quick
+}
+
 post_install() {
 	# install conf file
 	vinstall examples/smb.conf.default 644 etc/samba smb.conf
+	vinstall ctdb/config/ctdb.conf 644 etc/ctdb
 
 	# move winbind krb5 locator into place
 	vmkdir usr/lib/krb5/plugins/libkrb5
@@ -86,6 +86,7 @@ post_install() {
 
 	vsv nmbd
 	vsv smbd
+	vsv winbindd
 
 	# PAM support
 	vinstall ${FILESDIR}/samba.pam 644 etc/pam.d samba
@@ -147,6 +148,7 @@ smbclient_package() {
 samba-ctdb_package() {
 	depends="${sourcepkg}>=${version}_${revision}"
 	short_desc+=" - Clustered TDB support"
+	conf_files="/etc/ctdb/ctdb.conf"
 	pkg_install() {
 		local _f
 		vmove "usr/bin/ctdb*"
