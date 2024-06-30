@@ -1,0 +1,180 @@
+From 700336294285a553fe47600b6d155a4a7dba8339 Mon Sep 17 00:00:00 2001
+From: Ember Sawady <ecs@d2evs.net>
+Date: Sun, 18 Feb 2024 19:32:10 +0000
+Subject: [PATCH hare] hare build: pass -a to harec
+
+reported by Jonas Fenkter
+
+Signed-off-by: Ember Sawady <ecs@d2evs.net>
+---
+ cmd/hare/arch.ha        | 22 ++++++++--------------
+ cmd/hare/build.ha       |  7 +++----
+ cmd/hare/build/types.ha | 10 +++++++++-
+ cmd/hare/build/util.ha  |  9 +++++++--
+ 4 files changed, 27 insertions(+), 21 deletions(-)
+
+diff --git a/cmd/hare/arch.ha b/cmd/hare/arch.ha
+index 791fac9b..10bf79f7 100644
+--- a/cmd/hare/arch.ha
++++ b/cmd/hare/arch.ha
+@@ -1,6 +1,8 @@
+ // SPDX-License-Identifier: GPL-3.0-only
+ // (c) Hare authors <https://harelang.org>
+ 
++use cmd::hare::build;
++
+ // When building the bootstrap toolchain, these values will get overwritten to
+ // equal the values in config.mk
+ def AARCH64_AS = "as";
+@@ -13,32 +15,24 @@ def X86_64_AS  = "as";
+ def X86_64_CC  = "cc";
+ def X86_64_LD  = "ld";
+ 
+-type arch = struct {
+-	name: str,
+-	qbe_name: str,
+-	as_cmd: str,
+-	cc_cmd: str,
+-	ld_cmd: str,
+-};
+-
+ // TODO: implement cross compiling to other kernels (e.g. linux => freebsd)
+ // TODO: sysroots
+-const arches: [_]arch = [
+-	arch {
++const arches: [_]build::arch = [
++	build::arch {
+ 		name = "aarch64",
+ 		qbe_name = "arm64",
+ 		as_cmd = AARCH64_AS,
+ 		cc_cmd = AARCH64_CC,
+ 		ld_cmd = AARCH64_LD,
+ 	},
+-	arch {
++	build::arch {
+ 		name = "riscv64",
+ 		qbe_name = "rv64",
+ 		as_cmd = RISCV64_AS,
+ 		cc_cmd = RISCV64_CC,
+ 		ld_cmd = RISCV64_LD,
+ 	},
+-	arch {
++	build::arch {
+ 		name = "x86_64",
+ 		qbe_name = "amd64_sysv",
+ 		as_cmd = X86_64_AS,
+@@ -47,12 +41,12 @@ const arches: [_]arch = [
+ 	},
+ ];
+ 
+-fn set_arch_tags(tags: *[]str, a: *arch) void = {
++fn set_arch_tags(tags: *[]str, a: *build::arch) void = {
+ 	merge_tags(tags, "-aarch64-riscv64-x86_64")!;
+ 	append(tags, a.name);
+ };
+ 
+-fn get_arch(name: str) (*arch | unknown_arch) = {
++fn get_arch(name: str) (*build::arch | unknown_arch) = {
+ 	for (let i = 0z; i < len(arches); i += 1) {
+ 		if (arches[i].name == name) {
+ 			return &arches[i];
+diff --git a/cmd/hare/build.ha b/cmd/hare/build.ha
+index b2ac6518..bf6b26a9 100644
+--- a/cmd/hare/build.ha
++++ b/cmd/hare/build.ha
+@@ -21,8 +21,7 @@ use strings;
+ use unix::tty;
+ 
+ fn build(name: str, cmd: *getopt::command) (void | error) = {
+-	let arch = os::arch_name(os::architecture());
+-	let arch = get_arch(arch)!;
++	let arch = get_arch(os::arch_name(os::architecture()))!;
+ 	let output = "";
+ 	let ctx = build::context {
+ 		ctx = module::context {
+@@ -38,7 +37,7 @@ fn build(name: str, cmd: *getopt::command) (void | error) = {
+ 			yield ncpu;
+ 		},
+ 		version = build::get_version(os::tryenv("HAREC", "harec"))?,
+-		arch = arch.qbe_name,
++		arch = arch,
+ 		platform = build::get_platform(os::sysname())?,
+ 		...
+ 	};
+@@ -59,7 +58,7 @@ fn build(name: str, cmd: *getopt::command) (void | error) = {
+ 		switch (opt.0) {
+ 		case 'a' =>
+ 			arch = get_arch(opt.1)?;
+-			ctx.arch = arch.qbe_name;
++			ctx.arch = arch;
+ 		case 'D' =>
+ 			let buf = memio::fixed(strings::toutf8(opt.1));
+ 			let sc = bufio::newscanner(&buf, len(opt.1));
+diff --git a/cmd/hare/build/types.ha b/cmd/hare/build/types.ha
+index df6c12b9..d7086c47 100644
+--- a/cmd/hare/build/types.ha
++++ b/cmd/hare/build/types.ha
+@@ -51,9 +51,17 @@ export type output = enum {
+ 	VVERBOSE,
+ };
+ 
++export type arch = struct {
++	name: str,
++	qbe_name: str,
++	as_cmd: str,
++	cc_cmd: str,
++	ld_cmd: str,
++};
++
+ export type context = struct {
+ 	ctx: module::context,
+-	arch: str,
++	arch: *arch,
+ 	platform: *platform,
+ 	goal: stage,
+ 	defines: []ast::decl_const,
+diff --git a/cmd/hare/build/util.ha b/cmd/hare/build/util.ha
+index a648788f..d4725b1e 100644
+--- a/cmd/hare/build/util.ha
++++ b/cmd/hare/build/util.ha
+@@ -104,7 +104,7 @@ fn get_flags(ctx: *context, t: *task) ([]str | error) = {
+ 	case stage::SSA => void; // below
+ 	case stage::S =>
+ 		append(flags, strings::dup("-t"));
+-		append(flags, strings::dup(ctx.arch));
++		append(flags, strings::dup(ctx.arch.qbe_name));
+ 		return flags;
+ 	case stage::O =>
+ 		return flags;
+@@ -123,6 +123,9 @@ fn get_flags(ctx: *context, t: *task) ([]str | error) = {
+ 		return flags;
+ 	};
+ 
++	append(flags, strings::dup("-a"));
++	append(flags, strings::dup(ctx.arch.name));
++
+ 	let mod = ctx.mods[t.idx];
+ 	if (len(ctx.ns) != 0 && t.idx == ctx.top) {
+ 		append(flags, strings::dup("-N"));
+@@ -190,6 +193,8 @@ fn get_hash(
+ 	switch (t.kind) {
+ 	case stage::TD => abort();
+ 	case stage::SSA =>
++		hash::write(&h, strings::toutf8(ctx.arch.name));
++		hash::write(&h, [0]);
+ 		hash::write(&h, ctx.version);
+ 		hash::write(&h, [0]);
+ 		for (let i = 0z; i < len(ctx.mods[t.idx].deps); i += 1) {
+@@ -209,7 +214,7 @@ fn get_hash(
+ 			hash::write(&h, [0]);
+ 		};
+ 	case stage::S =>
+-		hash::write(&h, strings::toutf8(ctx.arch));
++		hash::write(&h, strings::toutf8(ctx.arch.qbe_name));
+ 		hash::write(&h, [0]);
+ 	case stage::O => void;
+ 	case stage::BIN =>
+-- 
+2.43.1
+
+
