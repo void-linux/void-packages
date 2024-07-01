@@ -19,8 +19,8 @@ fi
 
 # python3-setuptools finds numpy libs and headers on the host first;
 # adding search paths up front allows the target to take priority
-CFLAGS+=" -I${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/core/include"
-LDFLAGS+=" -L${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/core/lib"
+CFLAGS+=" -I${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/_core/include"
+LDFLAGS+=" -L${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/_core/lib"
 LDFLAGS+=" -L${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/random/lib"
 
 # distutils from python3-numpy looks to environment variables F77 and
@@ -45,7 +45,7 @@ if [[ "${build_helper}" = *meson* ]]; then
 		mkdir -p "${XBPS_WRAPPERDIR}/meson"
 		cat > "${_npy_meson_cross}" <<-EOF
 			[properties]
-			numpy-include-dir = '${_cross_py_site}/numpy/core/include'
+			numpy-include-dir = '${_cross_py_site}/numpy/_core/include'
 			pythran-include-dir = '${_cross_py_site}/pythran'
 			EOF
 	fi
