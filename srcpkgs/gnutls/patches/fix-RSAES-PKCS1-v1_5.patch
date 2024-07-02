@@ -1,0 +1,263 @@
+From 2d73d945c4b1dfcf8d2328c4d23187d62ffaab2d Mon Sep 17 00:00:00 2001
+From: Zoltan Fridrich <zfridric@redhat.com>
+Date: Wed, 10 Apr 2024 12:51:33 +0200
+Subject: [PATCH 1/2] Fix RSAES-PKCS1-v1_5 system-wide configuration
+
+Signed-off-by: Zoltan Fridrich <zfridric@redhat.com>
+---
+ lib/priority.c                                | 125 +++++++++++-------
+ ...system-override-allow-rsa-pkcs1-encrypt.sh |  27 +++-
+ 2 files changed, 96 insertions(+), 56 deletions(-)
+
+diff --git a/lib/priority.c b/lib/priority.c
+index 8abe00d1ff..3434619aad 100644
+--- a/lib/priority.c
++++ b/lib/priority.c
+@@ -1018,6 +1018,12 @@ struct cfg {
+ 	bool force_ext_master_secret_set;
+ };
+ 
++static inline void cfg_init(struct cfg *cfg)
++{
++	memset(cfg, 0, sizeof(*cfg));
++	cfg->allow_rsa_pkcs1_encrypt = true;
++}
++
+ static inline void cfg_deinit(struct cfg *cfg)
+ {
+ 	if (cfg->priority_strings) {
+@@ -1095,6 +1101,12 @@ struct ini_ctx {
+ 	size_t curves_size;
+ };
+ 
++static inline void ini_ctx_init(struct ini_ctx *ctx)
++{
++	memset(ctx, 0, sizeof(*ctx));
++	cfg_init(&ctx->cfg);
++}
++
+ static inline void ini_ctx_deinit(struct ini_ctx *ctx)
+ {
+ 	cfg_deinit(&ctx->cfg);
+@@ -1423,9 +1435,6 @@ static inline int cfg_apply(struct cfg *cfg, struct ini_ctx *ctx)
+ 		_gnutls_default_priority_string = cfg->default_priority_string;
+ 	}
+ 
+-	/* enable RSA-PKCS1-V1_5 by default */
+-	cfg->allow_rsa_pkcs1_encrypt = true;
+-
+ 	if (cfg->allowlisting) {
+ 		/* also updates `flags` of global `hash_algorithms[]` */
+ 		ret = cfg_hashes_set_array(cfg, ctx->hashes, ctx->hashes_size);
+@@ -2217,22 +2226,73 @@ update_system_wide_priority_string(void)
+ 	return 0;
+ }
+ 
++/* Returns false on parse error, otherwise true.
++ * The system_wide_config must be locked for writing.
++ */
++static inline bool load_system_priority_file(void)
++{
++	int err;
++	FILE *fp;
++	struct ini_ctx ctx;
++
++	cfg_init(&system_wide_config);
++
++	fp = fopen(system_priority_file, "re");
++	if (fp == NULL) {
++		_gnutls_debug_log("cfg: unable to open: %s: %d\n",
++				  system_priority_file, errno);
++		return true;
++	}
++
++	/* Parsing the configuration file needs to be done in 2 phases:
++	 * first parsing the [global] section
++	 * and then the other sections,
++	 * because the [global] section modifies the parsing behavior.
++	 */
++	ini_ctx_init(&ctx);
++	err = ini_parse_file(fp, global_ini_handler, &ctx);
++	if (!err) {
++		if (fseek(fp, 0L, SEEK_SET) < 0) {
++			_gnutls_debug_log("cfg: unable to rewind: %s\n",
++					  system_priority_file);
++			if (fail_on_invalid_config)
++				exit(1);
++		}
++		err = ini_parse_file(fp, cfg_ini_handler, &ctx);
++	}
++	fclose(fp);
++	if (err) {
++		ini_ctx_deinit(&ctx);
++		_gnutls_debug_log("cfg: unable to parse: %s: %d\n",
++				  system_priority_file, err);
++		return false;
++	}
++	cfg_apply(&system_wide_config, &ctx);
++	ini_ctx_deinit(&ctx);
++	return true;
++}
++
+ static int _gnutls_update_system_priorities(bool defer_system_wide)
+ {
+-	int ret, err = 0;
++	int ret;
++	bool config_parse_error = false;
+ 	struct stat sb;
+-	FILE *fp;
+ 	gnutls_buffer_st buf;
+-	struct ini_ctx ctx;
+ 
+ 	ret = gnutls_rwlock_rdlock(&system_wide_config_rwlock);
+-	if (ret < 0) {
++	if (ret < 0)
+ 		return gnutls_assert_val(ret);
+-	}
+ 
+ 	if (stat(system_priority_file, &sb) < 0) {
+ 		_gnutls_debug_log("cfg: unable to access: %s: %d\n",
+ 				  system_priority_file, errno);
++
++		(void)gnutls_rwlock_unlock(&system_wide_config_rwlock);
++		ret = gnutls_rwlock_wrlock(&system_wide_config_rwlock);
++		if (ret < 0)
++			goto out;
++		/* If system-wide config is unavailable, apply the defaults */
++		cfg_init(&system_wide_config);
+ 		goto out;
+ 	}
+ 
+@@ -2240,63 +2300,27 @@ static int _gnutls_update_system_priorities(bool defer_system_wide)
+ 	    system_priority_last_mod == sb.st_mtime) {
+ 		_gnutls_debug_log("cfg: system priority %s has not changed\n",
+ 				  system_priority_file);
+-		if (system_wide_config.priority_string) {
++		if (system_wide_config.priority_string)
+ 			goto out; /* nothing to do */
+-		}
+ 	}
+ 
+ 	(void)gnutls_rwlock_unlock(&system_wide_config_rwlock);
+ 
+ 	ret = gnutls_rwlock_wrlock(&system_wide_config_rwlock);
+-	if (ret < 0) {
++	if (ret < 0)
+ 		return gnutls_assert_val(ret);
+-	}
+ 
+ 	/* Another thread could have successfully re-read system-wide config,
+ 	 * skip re-reading if the mtime it has used is exactly the same.
+ 	 */
+-	if (system_priority_file_loaded) {
++	if (system_priority_file_loaded)
+ 		system_priority_file_loaded =
+ 			(system_priority_last_mod == sb.st_mtime);
+-	}
+ 
+ 	if (!system_priority_file_loaded) {
+-		_name_val_array_clear(&system_wide_config.priority_strings);
+-
+-		gnutls_free(system_wide_config.priority_string);
+-		system_wide_config.priority_string = NULL;
+-
+-		fp = fopen(system_priority_file, "re");
+-		if (fp == NULL) {
+-			_gnutls_debug_log("cfg: unable to open: %s: %d\n",
+-					  system_priority_file, errno);
++		config_parse_error = !load_system_priority_file();
++		if (config_parse_error)
+ 			goto out;
+-		}
+-		/* Parsing the configuration file needs to be done in 2 phases:
+-		 * first parsing the [global] section
+-		 * and then the other sections,
+-		 * because the [global] section modifies the parsing behavior.
+-		 */
+-		memset(&ctx, 0, sizeof(ctx));
+-		err = ini_parse_file(fp, global_ini_handler, &ctx);
+-		if (!err) {
+-			if (fseek(fp, 0L, SEEK_SET) < 0) {
+-				_gnutls_debug_log("cfg: unable to rewind: %s\n",
+-						  system_priority_file);
+-				if (fail_on_invalid_config)
+-					exit(1);
+-			}
+-			err = ini_parse_file(fp, cfg_ini_handler, &ctx);
+-		}
+-		fclose(fp);
+-		if (err) {
+-			ini_ctx_deinit(&ctx);
+-			_gnutls_debug_log("cfg: unable to parse: %s: %d\n",
+-					  system_priority_file, err);
+-			goto out;
+-		}
+-		cfg_apply(&system_wide_config, &ctx);
+-		ini_ctx_deinit(&ctx);
+ 		_gnutls_debug_log("cfg: loaded system config %s mtime %lld\n",
+ 				  system_priority_file,
+ 				  (unsigned long long)sb.st_mtime);
+@@ -2332,9 +2356,8 @@ static int _gnutls_update_system_priorities(bool defer_system_wide)
+ out:
+ 	(void)gnutls_rwlock_unlock(&system_wide_config_rwlock);
+ 
+-	if (err && fail_on_invalid_config) {
++	if (config_parse_error && fail_on_invalid_config)
+ 		exit(1);
+-	}
+ 
+ 	return ret;
+ }
+diff --git a/tests/system-override-allow-rsa-pkcs1-encrypt.sh b/tests/system-override-allow-rsa-pkcs1-encrypt.sh
+index b7d477c96e..714d0af946 100755
+--- a/tests/system-override-allow-rsa-pkcs1-encrypt.sh
++++ b/tests/system-override-allow-rsa-pkcs1-encrypt.sh
+@@ -19,9 +19,8 @@
+ # You should have received a copy of the GNU Lesser General Public License
+ # along with this program.  If not, see <https://www.gnu.org/licenses/>
+ 
+-: ${srcdir=.}
+-TEST=${srcdir}/rsaes-pkcs1-v1_5
+-CONF=${srcdir}/config.$$.tmp
++TEST=${builddir}/rsaes-pkcs1-v1_5
++CONF=config.$$.tmp
+ export GNUTLS_SYSTEM_PRIORITY_FILE=${CONF}
+ export GNUTLS_SYSTEM_PRIORITY_FAIL_ON_INVALID=1
+ 
+@@ -38,15 +37,33 @@ cat <<_EOF_ > ${CONF}
+ allow-rsa-pkcs1-encrypt = true
+ _EOF_
+ 
+-${TEST} && fail "RSAES-PKCS1-v1_5 expected to succeed"
++${TEST}
++if [ $? != 0 ]; then
++	echo "${TEST} expected to succeed"
++	exit 1
++fi
++echo "RSAES-PKCS1-v1_5 successfully enabled"
+ 
+ cat <<_EOF_ > ${CONF}
+ [overrides]
+ allow-rsa-pkcs1-encrypt = false
+ _EOF_
+ 
+-${TEST} || fail "RSAES-PKCS1-v1_5 expected to fail"
++${TEST}
++if [ $? = 0 ]; then
++	echo "${TEST} expected to fail"
++	exit 1
++fi
++echo "RSAES-PKCS1-v1_5 successfully disabled"
+ 
+ unset GNUTLS_SYSTEM_PRIORITY_FILE
+ unset GNUTLS_SYSTEM_PRIORITY_FAIL_ON_INVALID
++
++${TEST}
++if [ $? != 0 ]; then
++	echo "${TEST} expected to succeed by default"
++	exit 1
++fi
++echo "RSAES-PKCS1-v1_5 successfully enabled by default"
++
+ exit 0
+
