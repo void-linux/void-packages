@@ -1047,7 +1047,7 @@ Additional install arguments can be specified via `make_install_args`.
 - `slashpackage` For packages that use the /package hierarchy and package/compile to build,
 such as `daemontools` or any `djb` software.
 
-- `qmake` For packages that use Qt4/Qt5 qmake profiles (`*.pro`), qmake arguments
+- `qmake` For packages that use Qt5/Qt6 qmake profiles (`*.pro`), qmake arguments
 for the configure phase can be passed in via `configure_args`, make build arguments can
 be passed in via `make_build_args` and install arguments via `make_install_args`. The build
 target can be overridden via `make_build_target` and the install target
@@ -1130,7 +1130,9 @@ It also creates the `vtargetrun` function to wrap commands in a call to
 needed for cross builds and a qmake-wrapper to make `qmake` use this configuration.
 This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-configure` style the configure script calls `qmake` or a `Makefile` in
-`gnu-makefile` style, respectively.
+`gnu-makefile` style, respectively. This is for Qt5 packages.
+
+- `qmake6` is like `qmake` but for Qt6.
 
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
 for compiling cargo -sys crates. This helper is added by default for packages that use the
