@@ -80,21 +80,22 @@ _EOF
 }
 
 pkgconfig_wrapper() {
-	if [ ! -x /usr/bin/pkg-config ]; then
+	local pc_bin="$1"
+	if [ ! -x "/usr/bin/${pc_bin}" ]; then
 		return 0
 	fi
-	[ -x ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config ] && return 0
-	cat >>${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config<<_EOF
+	[ -x "${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${pc_bin}" ] && return 0
+	cat >>"${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${pc_bin}"<<_EOF
 #!/bin/sh
 
 export PKG_CONFIG_SYSROOT_DIR="$XBPS_CROSS_BASE"
 export PKG_CONFIG_PATH="$XBPS_CROSS_BASE/usr/lib/pkgconfig:$XBPS_CROSS_BASE/usr/share/pkgconfig\${PKG_CONFIG_PATH:+:\${PKG_CONFIG_PATH}}"
 export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/usr/lib/pkgconfig\${PKG_CONFIG_LIBDIR:+:\${PKG_CONFIG_LIBDIR}}"
-exec /usr/bin/pkg-config "\$@"
+exec /usr/bin/${pc_bin} "\$@"
 _EOF
-	chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
+	chmod 755 "${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${pc_bin}"
 	if [ -z "$no_generic_pkgconfig_link" ]; then
-		ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
+		ln -sf "${XBPS_CROSS_TRIPLET}-${pc_bin}" "${XBPS_WRAPPERDIR}/${pc_bin}"
 	fi
 }
 
@@ -192,7 +193,8 @@ hook() {
 	[ -z "$CROSS_BUILD" ] && return 0
 
 	install_cross_wrappers
-	pkgconfig_wrapper
+	pkgconfig_wrapper pkg-config
+	pkgconfig_wrapper pkgconf
 	vapigen_wrapper
 	valac_wrapper
 
