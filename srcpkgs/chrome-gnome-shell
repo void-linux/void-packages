@@ -1,0 +1,1 @@
+gnome-browser-connector

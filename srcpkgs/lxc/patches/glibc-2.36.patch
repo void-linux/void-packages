@@ -1,0 +1,383 @@
+From c1115e1503bf955c97f4cf3b925a6a9f619764c3 Mon Sep 17 00:00:00 2001
+From: Christian Brauner <brauner@kernel.org>
+Date: Tue, 9 Aug 2022 16:14:25 +0200
+Subject: [PATCH 1/3] build: detect where struct mount_attr is declared
+
+Fixes: #4176
+Signed-off-by: Christian Brauner (Microsoft) <christian.brauner@ubuntu.com>
+---
+ meson.build                | 30 ++++++++++++++++++++++++++++--
+ src/lxc/conf.c             |  6 +++---
+ src/lxc/conf.h             |  2 +-
+ src/lxc/mount_utils.c      |  6 +++---
+ src/lxc/syscall_wrappers.h | 12 ++++++++++--
+ 5 files changed, 45 insertions(+), 11 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index a145faf069..f679aabbc8 100644
+--- a/meson.build
++++ b/meson.build
+@@ -590,7 +590,6 @@ decl_headers = '''
+ foreach decl: [
+     '__aligned_u64',
+     'struct clone_args',
+-    'struct mount_attr',
+     'struct open_how',
+     'struct rtnl_link_stats64',
+ ]
+@@ -610,7 +609,6 @@ foreach tuple: [
+     ['struct seccomp_notif_sizes'],
+     ['struct clone_args'],
+     ['__aligned_u64'],
+-    ['struct mount_attr'],
+     ['struct open_how'],
+     ['struct rtnl_link_stats64'],
+ ]
+@@ -630,6 +628,34 @@ foreach tuple: [
+     endif
+ endforeach
+ 
++## Types.
++decl_headers = '''
++#include <sys/mount.h>
++'''
++
++# We get -1 if the size cannot be determined
++if cc.sizeof('struct mount_attr', prefix: decl_headers, args: '-D_GNU_SOURCE') > 0
++    srcconf.set10('HAVE_' + 'struct mount_attr'.underscorify().to_upper(), true)
++    found_types += 'struct mount_attr (sys/mount.h)'
++else
++    srcconf.set10('HAVE_' + 'struct mount_attr'.underscorify().to_upper(), false)
++    missing_types += 'struct mount_attr (sys/mount.h)'
++endif
++
++## Types.
++decl_headers = '''
++#include <linux/mount.h>
++'''
++
++# We get -1 if the size cannot be determined
++if cc.sizeof('struct mount_attr', prefix: decl_headers, args: '-D_GNU_SOURCE') > 0
++    srcconf.set10('HAVE_UAPI_' + 'struct mount_attr'.underscorify().to_upper(), true)
++    found_types += 'struct mount_attr (linux/mount.h)'
++else
++    srcconf.set10('HAVE_UAPI_' + 'struct mount_attr'.underscorify().to_upper(), false)
++    missing_types += 'struct mount_attr (linux/mount.h)'
++endif
++
+ ## Headers.
+ foreach ident: [
+     ['bpf',               '''#include <sys/syscall.h>
+diff --git a/src/lxc/conf.c b/src/lxc/conf.c
+index ffbe74c2f6..4193cd07f5 100644
+--- a/src/lxc/conf.c
++++ b/src/lxc/conf.c
+@@ -2885,7 +2885,7 @@ static int __lxc_idmapped_mounts_child(struct lxc_handler *handler, FILE *f)
+ 		struct lxc_mount_options opts = {};
+ 		int dfd_from;
+ 		const char *source_relative, *target_relative;
+-		struct lxc_mount_attr attr = {};
++		struct mount_attr attr = {};
+ 
+ 		ret = parse_lxc_mount_attrs(&opts, mntent.mnt_opts);
+ 		if (ret < 0)
+@@ -3005,7 +3005,7 @@ static int __lxc_idmapped_mounts_child(struct lxc_handler *handler, FILE *f)
+ 
+ 		/* Set propagation mount options. */
+ 		if (opts.attr.propagation) {
+-			attr = (struct lxc_mount_attr) {
++			attr = (struct mount_attr) {
+ 				.propagation = opts.attr.propagation,
+ 			};
+ 
+@@ -4109,7 +4109,7 @@ int lxc_idmapped_mounts_parent(struct lxc_handler *handler)
+ 
+ 	for (;;) {
+ 		__do_close int fd_from = -EBADF, fd_userns = -EBADF;
+-		struct lxc_mount_attr attr = {};
++		struct mount_attr attr = {};
+ 		struct lxc_mount_options opts = {};
+ 		ssize_t ret;
+ 
+diff --git a/src/lxc/conf.h b/src/lxc/conf.h
+index 7dc2f15b60..772479f9e1 100644
+--- a/src/lxc/conf.h
++++ b/src/lxc/conf.h
+@@ -223,7 +223,7 @@ struct lxc_mount_options {
+ 	unsigned long mnt_flags;
+ 	unsigned long prop_flags;
+ 	char *data;
+-	struct lxc_mount_attr attr;
++	struct mount_attr attr;
+ 	char *raw_options;
+ };
+ 
+diff --git a/src/lxc/mount_utils.c b/src/lxc/mount_utils.c
+index bba75f933c..88dd73ee36 100644
+--- a/src/lxc/mount_utils.c
++++ b/src/lxc/mount_utils.c
+@@ -31,7 +31,7 @@ lxc_log_define(mount_utils, lxc);
+  * setting in @attr_set, but must also specify MOUNT_ATTR__ATIME in the
+  * @attr_clr field.
+  */
+-static inline void set_atime(struct lxc_mount_attr *attr)
++static inline void set_atime(struct mount_attr *attr)
+ {
+ 	switch (attr->attr_set & MOUNT_ATTR__ATIME) {
+ 	case MOUNT_ATTR_RELATIME:
+@@ -272,7 +272,7 @@ int create_detached_idmapped_mount(const char *path, int userns_fd,
+ {
+ 	__do_close int fd_tree_from = -EBADF;
+ 	unsigned int open_tree_flags = OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC;
+-	struct lxc_mount_attr attr = {
++	struct mount_attr attr = {
+ 		.attr_set	= MOUNT_ATTR_IDMAP | attr_set,
+ 		.attr_clr	= attr_clr,
+ 		.userns_fd	= userns_fd,
+@@ -335,7 +335,7 @@ int __fd_bind_mount(int dfd_from, const char *path_from, __u64 o_flags_from,
+ 		    __u64 attr_clr, __u64 propagation, int userns_fd,
+ 		    bool recursive)
+ {
+-	struct lxc_mount_attr attr = {
++	struct mount_attr attr = {
+ 		.attr_set	= attr_set,
+ 		.attr_clr	= attr_clr,
+ 		.propagation	= propagation,
+diff --git a/src/lxc/syscall_wrappers.h b/src/lxc/syscall_wrappers.h
+index a5e98b565c..c8a7d0c7b7 100644
+--- a/src/lxc/syscall_wrappers.h
++++ b/src/lxc/syscall_wrappers.h
+@@ -18,6 +18,12 @@
+ #include "macro.h"
+ #include "syscall_numbers.h"
+ 
++#if HAVE_STRUCT_MOUNT_ATTR
++#include <sys/mount.h>
++#elif HAVE_UAPI_STRUCT_MOUNT_ATTR
++#include <linux/mount.h>
++#endif
++
+ #ifdef HAVE_LINUX_MEMFD_H
+ #include <linux/memfd.h>
+ #endif
+@@ -210,16 +216,18 @@ extern int fsmount(int fs_fd, unsigned int flags, unsigned int attr_flags);
+ /*
+  * mount_setattr()
+  */
+-struct lxc_mount_attr {
++#if !HAVE_STRUCT_MOUNT_ATTR && !HAVE_UAPI_STRUCT_MOUNT_ATTR
++struct mount_attr {
+ 	__u64 attr_set;
+ 	__u64 attr_clr;
+ 	__u64 propagation;
+ 	__u64 userns_fd;
+ };
++#endif
+ 
+ #if !HAVE_MOUNT_SETATTR
+ static inline int mount_setattr(int dfd, const char *path, unsigned int flags,
+-				struct lxc_mount_attr *attr, size_t size)
++				struct mount_attr *attr, size_t size)
+ {
+ 	return syscall(__NR_mount_setattr, dfd, path, flags, attr, size);
+ }
+
+From ef1e0607b82e27350c2d677d649c6a0a9693fd40 Mon Sep 17 00:00:00 2001
+From: Christian Brauner <brauner@kernel.org>
+Date: Tue, 9 Aug 2022 16:27:40 +0200
+Subject: [PATCH 2/3] build: detect sys/pidfd.h availability
+
+Fixes: #4176
+Signed-off-by: Christian Brauner (Microsoft) <christian.brauner@ubuntu.com>
+---
+ meson.build             | 1 +
+ src/lxc/process_utils.h | 6 ++++++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/meson.build b/meson.build
+index f679aabbc8..e999542336 100644
+--- a/meson.build
++++ b/meson.build
+@@ -735,6 +735,7 @@ foreach tuple: [
+     ['sys/resource.h'],
+     ['sys/memfd.h'],
+     ['sys/personality.h'],
++    ['sys/pidfd.h'],
+     ['sys/signalfd.h'],
+     ['sys/timerfd.h'],
+     ['pty.h'],
+diff --git a/src/lxc/process_utils.h b/src/lxc/process_utils.h
+index 9c15b15741..ed84741d0e 100644
+--- a/src/lxc/process_utils.h
++++ b/src/lxc/process_utils.h
+@@ -15,6 +15,10 @@
+ #include <sys/syscall.h>
+ #include <unistd.h>
+ 
++#if HAVE_SYS_PIDFD_H
++#include <sys/pidfd.h>
++#endif
++
+ #include "compiler.h"
+ #include "syscall_numbers.h"
+ 
+@@ -136,9 +140,11 @@
+ #endif
+ 
+ /* waitid */
++#if !HAVE_SYS_PIDFD_H
+ #ifndef P_PIDFD
+ #define P_PIDFD 3
+ #endif
++#endif
+ 
+ #ifndef CLONE_ARGS_SIZE_VER0
+ #define CLONE_ARGS_SIZE_VER0 64 /* sizeof first published struct */
+
+From cbabe8abf11e7e7fb49c123bae31efdd9bc8f1e8 Mon Sep 17 00:00:00 2001
+From: Christian Brauner <brauner@kernel.org>
+Date: Tue, 9 Aug 2022 17:19:40 +0200
+Subject: [PATCH 3/3] build: check for FS_CONFIG_* header symbol in sys/mount.h
+
+Fixes: #4176
+Signed-off-by: Christian Brauner (Microsoft) <christian.brauner@ubuntu.com>
+---
+ meson.build           | 59 +++++++++++++++++++++++++++++++++++++++++--
+ src/lxc/mount_utils.h | 16 ++++++++++++
+ 2 files changed, 73 insertions(+), 2 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index e999542336..9f8a5de60c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -639,8 +639,7 @@ if cc.sizeof('struct mount_attr', prefix: decl_headers, args: '-D_GNU_SOURCE') >
+     found_types += 'struct mount_attr (sys/mount.h)'
+ else
+     srcconf.set10('HAVE_' + 'struct mount_attr'.underscorify().to_upper(), false)
+-    missing_types += 'struct mount_attr (sys/mount.h)'
+-endif
++    missing_types += 'struct mount_attr (sys/mount.h)' endif
+ 
+ ## Types.
+ decl_headers = '''
+@@ -656,6 +655,62 @@ else
+     missing_types += 'struct mount_attr (linux/mount.h)'
+ endif
+ 
++if cc.has_header_symbol('sys/mount.h', 'FSCONFIG_SET_FLAG')
++    srcconf.set10('HAVE_' + 'FSCONFIG_SET_FLAG'.underscorify().to_upper(), true)
++    found_types += 'FSCONFIG_SET_FLAG'
++else
++    srcconf.set10('HAVE_' + 'FSCONFIG_SET_FLAG'.underscorify().to_upper(), false)
++    missing_types += 'FSCONFIG_SET_FLAG'
++endif
++
++if cc.has_header_symbol('sys/mount.h', 'FS_CONFIG_SET_STRING')
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_STRING'.underscorify().to_upper(), true)
++    found_types += 'FS_CONFIG_SET_STRING'
++else
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_STRING'.underscorify().to_upper(), false)
++    missing_types += 'FS_CONFIG_SET_STRING'
++endif
++
++if cc.has_header_symbol('sys/mount.h', 'FS_CONFIG_SET_BINARY')
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_BINARY'.underscorify().to_upper(), true)
++    found_types += 'FS_CONFIG_SET_BINARY'
++else
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_BINARY'.underscorify().to_upper(), false)
++    missing_types += 'FS_CONFIG_SET_BINARY'
++endif
++
++if cc.has_header_symbol('sys/mount.h', 'FS_CONFIG_SET_PATH_EMPTY')
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_PATH_EMPTY'.underscorify().to_upper(), true)
++    found_types += 'FS_CONFIG_SET_PATH_EMPTY'
++else
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_PATH_EMPTY'.underscorify().to_upper(), false)
++    missing_types += 'FS_CONFIG_SET_PATH_EMPTY'
++endif
++
++if cc.has_header_symbol('sys/mount.h', 'FS_CONFIG_SET_PATH_FD')
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_PATH_FD'.underscorify().to_upper(), true)
++    found_types += 'FS_CONFIG_SET_PATH_FD'
++else
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_PATH_FD'.underscorify().to_upper(), false)
++    missing_types += 'FS_CONFIG_SET_PATH_FD'
++endif
++
++if cc.has_header_symbol('sys/mount.h', 'FS_CONFIG_SET_CMD_CREATE')
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_CMD_CREATE'.underscorify().to_upper(), true)
++    found_types += 'FS_CONFIG_SET_CMD_CREATE'
++else
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_CMD_CREATE'.underscorify().to_upper(), false)
++    missing_types += 'FS_CONFIG_SET_CMD_CREATE'
++endif
++
++if cc.has_header_symbol('sys/mount.h', 'FS_CONFIG_SET_CMD_RECONFIGURE')
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_CMD_RECONFIGURE'.underscorify().to_upper(), true)
++    found_types += 'FS_CONFIG_SET_CMD_RECONFIGURE'
++else
++    srcconf.set10('HAVE_' + 'FS_CONFIG_SET_CMD_RECONFIGURE'.underscorify().to_upper(), false)
++    missing_types += 'FS_CONFIG_SET_CMD_RECONFIGURE'
++endif
++
+ ## Headers.
+ foreach ident: [
+     ['bpf',               '''#include <sys/syscall.h>
+diff --git a/src/lxc/mount_utils.h b/src/lxc/mount_utils.h
+index ea392672d8..fd34739459 100644
+--- a/src/lxc/mount_utils.h
++++ b/src/lxc/mount_utils.h
+@@ -82,37 +82,53 @@ struct lxc_rootfs;
+ #endif
+ 
+ /* fsconfig() commands */
++#if !HAVE_FSCONFIG_SET_FLAG
+ #ifndef FSCONFIG_SET_FLAG
+ #define FSCONFIG_SET_FLAG 0 /* Set parameter, supplying no value */
+ #endif
++#endif
+ 
++#if !HAVE_FSCONFIG_SET_STRING
+ #ifndef FSCONFIG_SET_STRING
+ #define FSCONFIG_SET_STRING 1 /* Set parameter, supplying a string value */
+ #endif
++#endif
+ 
++#if !HAVE_FSCONFIG_SET_BINARY
+ #ifndef FSCONFIG_SET_BINARY
+ #define FSCONFIG_SET_BINARY 2 /* Set parameter, supplying a binary blob value */
+ #endif
++#endif
+ 
++#if !HAVE_FSCONFIG_SET_PATH
+ #ifndef FSCONFIG_SET_PATH
+ #define FSCONFIG_SET_PATH 3 /* Set parameter, supplying an object by path */
+ #endif
++#endif
+ 
++#if !HAVE_FSCONFIG_SET_PATH_EMPTY
+ #ifndef FSCONFIG_SET_PATH_EMPTY
+ #define FSCONFIG_SET_PATH_EMPTY 4 /* Set parameter, supplying an object by (empty) path */
+ #endif
++#endif
+ 
++#if !HAVE_FSCONFIG_SET_FD
+ #ifndef FSCONFIG_SET_FD
+ #define FSCONFIG_SET_FD 5 /* Set parameter, supplying an object by fd */
+ #endif
++#endif
+ 
++#if !HAVE_FSCONFIG_CMD_CREATE
+ #ifndef FSCONFIG_CMD_CREATE
+ #define FSCONFIG_CMD_CREATE 6 /* Invoke superblock creation */
+ #endif
++#endif
+ 
++#if !FSCONFIG_CMD_RECONFIGURE
+ #ifndef FSCONFIG_CMD_RECONFIGURE
+ #define	FSCONFIG_CMD_RECONFIGURE 7	/* Invoke superblock reconfiguration */
+ #endif
++#endif
+ 
+ /* fsmount() flags */
+ #ifndef FSMOUNT_CLOEXEC

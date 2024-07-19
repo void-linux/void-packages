@@ -1,0 +1,418 @@
+# Template file for 'rpi-kernel'
+#
+# We track the latest Raspberry Pi LTS kernel as that is what is used in the
+# official Raspberry Pi OS distribution. This is currently 6.6:
+#
+# https://forums.raspberrypi.com/viewtopic.php?t=361116
+#
+# Commit hash is picked from latest tag [1], if appropriate, or from latest
+# "Merge remote-tracking branch 'stable/linux-6.x.y' into rpi-6.x.y" commit.
+#
+# [1] https://github.com/raspberrypi/linux/tags
+#
+# Upstream documentation: https://www.raspberrypi.com/documentation/computers/linux_kernel.html
+pkgname=rpi-kernel
+version=6.6.35
+revision=1
+_githash=d2813c02131b9ddf938277f4123da7ccbd113ea7
+archs="armv6l* armv7l* aarch64*"
+build_wrksrc="build-rpi"
+hostmakedepends="perl kmod uboot-mkimage openssl-devel bc bison flex xz"
+makedepends="ncurses-devel"
+short_desc="Linux kernel for Raspberry Pi (${version%.*} series)"
+maintainer="classabbyamp <void@placeviolette.net>"
+license="GPL-2.0-only"
+homepage="http://www.kernel.org"
+distfiles="https://github.com/raspberrypi/linux/archive/${_githash}.tar.gz"
+checksum=a443bcb9f4548db18b8774e448ed4ed811abc26b32cf017e0ae691abc2789db9
+python_version=3
+provides="rpi-kernel-${version}_${revision}"
+replaces="rpi5-kernel>=0"
+
+_kernver="${version}_${revision}"
+
+nodebug=yes
+nostrip=yes
+noverifyrdeps=yes
+noshlibprovides=yes
+
+build_options="rpi5"
+desc_option_rpi5="build large page-size rpi5-kernel"
+
+if [[ "$XBPS_TARGET_MACHINE" = aarch64* ]]; then
+	build_options_default+=" rpi5"
+elif [ "$build_option_rpi5" ]; then
+	broken="rpi5 build option only works on aarch64*"
+fi
+
+triggers="kernel-hooks"
+# These files could be modified when an external module is built.
+mutable_files="
+ /usr/lib/modules/${_kernver}/modules.dep
+ /usr/lib/modules/${_kernver}/modules.dep.bin
+ /usr/lib/modules/${_kernver}/modules.symbols
+ /usr/lib/modules/${_kernver}/modules.symbols.bin
+ /usr/lib/modules/${_kernver}/modules.alias
+ /usr/lib/modules/${_kernver}/modules.alias.bin
+ /usr/lib/modules/${_kernver}/modules.devname"
+
+case "$XBPS_TARGET_MACHINE" in
+	armv6l*) _arch=arm; _image_target=zImage; _image_name=kernel.img ;;
+	armv7l*) _arch=arm; _image_target=zImage; _image_name=kernel7.img ;;
+	aarch64*) _arch=arm64; _image_target=Image.gz; _image_name=kernel8.img ;;
+	*) broken="No Raspberry Pi exists for this arch" ;;
+esac
+
+make_build_args=("-j$XBPS_MAKEJOBS" "ARCH=$_arch")
+make_install_args=("-j$XBPS_MAKEJOBS" "ARCH=$_arch")
+
+if [ "$CROSS_BUILD" ]; then
+	make_build_args+=("CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-")
+	make_install_args+=("CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-")
+fi
+
+post_extract() {
+	mkdir build-rpi
+	mv * build-rpi || true
+	if [ "$build_option_rpi5" ]; then
+		cp -a build-rpi build-rpi5
+	fi
+}
+
+_configure() {
+	local target="$1" defconfig
+
+	msg_normal "configuring for ${target} in ${PWD##*/}\n"
+
+	defconfig="arch/${_arch}/configs/${target}"
+	cp "$defconfig" .config
+
+	cat <<-! > void.config
+	CONFIG_CONNECTOR=y
+	CONFIG_HID_STEAM=y
+	CONFIG_PROC_EVENTS=y
+	CONFIG_GCC_PLUGINS=n
+	CONFIG_BRIDGE_VLAN_FILTERING=y
+	CONFIG_FUNCTION_TRACER=n
+	CONFIG_STACK_TRACER=n
+	CONFIG_ATM=n
+	CONFIG_SLAB_FREELIST_RANDOM=y
+	CONFIG_CGROUP_PIDS=y
+	CONFIG_SLAB_FREELIST_HARDENED=y
+	CONFIG_PACKET=m
+	CONFIG_NF_CT_PROTO_DCCP=y
+	CONFIG_NF_CT_PROTO_SCTP=y
+	CONFIG_NF_CT_PROTO_UDPLITE=y
+	CONFIG_BATMAN_ADV=n
+	CONFIG_INPUT_LEDS=m
+	CONFIG_SQUASHFS_LZ4=y
+	CONFIG_STRICT_DEVMEM=y
+	CONFIG_IO_STRICT_DEVMEM=y
+	CONFIG_ENCRYPTED_KEYS=m
+	CONFIG_KEY_DH_OPERATIONS=y
+	CONFIG_HARDENED_USERCOPY=y
+	CONFIG_LOCALVERSION="_${revision}"
+	CONFIG_IP_PNP=n
+	CONFIG_USB_DWC2=m
+	CONFIG_USB_ETH=m
+	CONFIG_RTC_HCTOSYS=y
+	CONFIG_RTC_HCTOSYS_DEVICE="rtc0"
+	CONFIG_RTC_DRV_DS1307=y
+	CONFIG_I2C_BCM2835=y
+	CONFIG_MEMCG=y
+	CONFIG_CGROUP_PIDS=y
+	CONFIG_CGROUP_DEVICE=y
+	CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+	CONFIG_PSI=y
+	CONFIG_ZSTD_COMPRESS=y
+	CONFIG_LZ4_COMPRESS=y
+	CONFIG_CRYPTO_RNG=y
+	CONFIG_CRYPTO_RNG_DEFAULT=y
+	CONFIG_BTRFS_FS=y
+	CONFIG_BTRFS_POSIX_ACL=y
+	CONFIG_IKCONFIG=y
+	CONFIG_IKCONFIG_PROC=y
+	CONFIG_LEDS_TRIGGER_ACTIVITY=m
+	CONFIG_MACVTAP=m
+	CONFIG_IPV6=y
+	CONFIG_XFS_FS=y
+	CONFIG_F2FS_CHECK_FS=y
+	CONFIG_F2FS_FS_COMPRESSION=y
+	CONFIG_F2FS_UNFAIR_RWSEM=y
+	!
+
+	while read -r line; do
+		local option="" str="" cmd=""
+		# skip comments
+		case "$line" in
+			"#"*) continue;;
+		esac
+		option="${line%%=*}"
+		cmd="$(echo "$line" | cut -d= -f2)"
+		case "$cmd" in
+			y) cmd="enable";;
+			n) cmd="disable";;
+			m) cmd="module";;
+			'"'*) cmd="set-str"; str="${line#*=}";;
+			[0-9]*) cmd="set-val"; str="${line#*=}";;
+			'') continue ;;
+			*) msg_error "Command $cmd not accepted\n" ;;
+		esac
+		msg_normal "config: $cmd: $option $str\n"
+		./scripts/config \
+			--file .config \
+			"--$cmd" "$option" "${str//\"/}"
+	done < void.config
+
+	make "${make_build_args[@]}" olddefconfig
+}
+
+_build() {
+	msg_normal "building in ${PWD##*/}\n"
+	make "${make_build_args[@]}" prepare
+	make "${make_build_args[@]}" "${_image_target}" modules dtbs
+}
+
+_install() {
+	local _pkg="$1" _destdir="$2"
+	local hdrdest="usr/src/${_pkg}-headers-${_kernver}"
+
+	msg_normal "installing ${_pkg} from ${PWD##*/} into ${_destdir}\n"
+
+	# Run depmod after compressing modules.
+	vsed -i -e '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make "${make_install_args[@]}" INSTALL_MOD_PATH="${_destdir}" modules_install
+
+	# Install device tree blobs
+	make "${make_install_args[@]}" INSTALL_DTBS_PATH="${_destdir}/boot" dtbs_install
+
+	# move dtbs that ended up in /boot/broadcom
+	if [ -d "${_destdir}/boot/broadcom" ]; then
+		mv "${_destdir}"/boot/broadcom/*dtb "${_destdir}/boot"
+	fi
+
+	# Install kernel image
+	vinstall "arch/${_arch}/boot/${_image_target}" 644 boot "${_image_name}"
+
+	# Switch to /usr.
+	vmkdir usr
+	mv "${_destdir}/lib" "${_destdir}/usr"
+
+	pushd "${_destdir}/usr/lib/modules/${_kernver}"
+	rm -f source build
+	ln -sf "../../../src/${_pkg}-headers-${_kernver}" build
+	popd
+
+	# Install required headers to build external modules
+	vinstall Makefile 644 "${hdrdest}"
+	vinstall Kbuild 644 "${hdrdest}"
+	vinstall kernel/Makefile 644 "${hdrdest}/kernel"
+	vinstall .config 644 "${hdrdest}"
+	find . -name 'Kconfig*' | \
+		while read -r file; do
+		vinstall "$file" 644 "${hdrdest}/$(dirname "$file")"
+	done
+	find "arch/${_arch}" scripts -name module.lds -o -name Kbuild.platforms -o -name Platform | \
+		while read -r file; do
+		vinstall "$file" 644 "${hdrdest}/$(dirname "$file")"
+	done
+	vmkdir "${hdrdest}/include"
+
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf "${_destdir}/usr/lib/firmware"
+
+	for d in acpi asm-generic clocksource config crypto drm dt-bindings generated linux \
+		math-emu media net pcmcia scsi sound trace uapi vdso video xen; do
+		[ -d include/$d ] && vcopy "include/$d" "${hdrdest}/include"
+	done
+
+	# Remove helper binaries built for host,
+	# if generated files from the scripts/ directory need to be included,
+	# they need to be copied to ${hdrdest} before this step
+	if [ "$CROSS_BUILD" ]; then
+		make "${make_install_args[@]}" _mrproper_scripts
+		# remove host specific objects as well
+		find scripts -name '*.o' -delete
+	fi
+
+	# Copy files necessary for later builds.
+	vinstall Module.symvers 644 "${hdrdest}"
+	vcopy scripts "${hdrdest}"
+	vmkdir "${hdrdest}/security/selinux"
+	vcopy security/selinux/include "${hdrdest}/security/selinux"
+	vmkdir "${hdrdest}/tools/include"
+	vcopy tools/include/tools "${hdrdest}/tools/include"
+	if [ -d "arch/${_arch}/tools" ]; then
+		vcopy "arch/${_arch}/tools" "${hdrdest}/arch/${_arch}"
+	fi
+	vinstall kernel/time/timeconst.bc 644 "${hdrdest}/kernel/time"
+	vinstall kernel/bounds.c 644 "${hdrdest}/kernel"
+	vinstall arch/x86/entry/syscalls/syscall_32.tbl 644 "${hdrdest}/arch/x86/entry/syscalls"
+
+	# copy arch includes for external modules
+	vmkdir "${hdrdest}/arch/${_arch}"
+	vcopy "arch/${_arch}/include" "${hdrdest}/arch/${_arch}"
+
+	mkdir -p "${hdrdest}/arch/${_arch}/kernel"
+	vinstall "arch/${_arch}/Makefile" 644 "${hdrdest}/arch/${_arch}"
+	vinstall "arch/${_arch}/kernel/asm-offsets.s" 644 "${hdrdest}/arch/${_arch}/kernel"
+	if [ "$_arch" = "arm64" ] ; then
+		vcopy "arch/${_arch}/kernel/vdso" "${hdrdest}/arch/${_arch}/kernel/"
+	fi
+
+	# Add md headers
+	vmkdir "${hdrdest}/drivers/md"
+	vcopy drivers/md/*.h "${hdrdest}/drivers/md"
+
+	# Add inotify.h
+	vinstall include/linux/inotify.h 644 "${hdrdest}/include/linux"
+
+	# Add wireless headers
+	vmkdir "${hdrdest}/net/mac80211/"
+	vcopy net/mac80211/*.h "${hdrdest}/net/mac80211"
+
+	# Compress all modules with xz to save a few MBs.
+	msg_normal "$_pkg-$version: compressing kernel modules with gzip, please wait...\n"
+	find "${_destdir}" -name '*.ko' | xargs -n1 -P0 gzip -9
+
+	# ... and run depmod again.
+	depmod -b "${_destdir}/usr" -F System.map "${_kernver}"
+}
+
+do_configure() {
+	local target
+
+	case "$XBPS_TARGET_MACHINE" in
+		# for zero, 1
+		armv6l*) target=bcmrpi_defconfig ;;
+		# for 2
+		armv7l*) target=bcm2709_defconfig ;;
+		# for 3, 4, zero 2, 5
+		aarch64*) target=bcm2711_defconfig ;;
+	esac
+
+	_configure "$target"
+
+	if [ "$build_option_rpi5" ]; then
+		cd "$wrksrc"/build-rpi5
+		_configure "bcm2712_defconfig"
+	fi
+}
+
+do_build() {
+	_build
+
+	if [ "$build_option_rpi5" ]; then
+		cd "$wrksrc"/build-rpi5
+		_build
+	fi
+}
+
+do_install() {
+	_install "$pkgname" "$DESTDIR"
+}
+
+subpackages="rpi-kernel-headers"
+
+case "$XBPS_TARGET_MACHINE" in
+	armv7l*) subpackages+=" rpi2-kernel rpi2-kernel-headers" ;;
+	aarch64*) subpackages+=" rpi3-kernel rpi3-kernel-headers rpi4-kernel rpi4-kernel-headers" ;;
+esac
+
+if [ "$build_option_rpi5" ]; then
+	subpackages+=" rpi5-kernel rpi5-kernel-headers"
+fi
+
+rpi-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	short_desc="${short_desc/kernel/kernel headers}"
+	provides="rpi-kernel-headers-${version}_${revision}"
+	replaces="rpi5-kernel-headers>=0"
+	pkg_install() {
+		vmove usr/src
+		vmove "usr/lib/modules/${_kernver}/build"
+	}
+}
+
+_rpi5_short_desc="Linux kernel for Raspberry Pi 5 (${version%.*} series)"
+
+rpi5-kernel_package() {
+	nodebug=yes
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	python_version=3
+	triggers="kernel-hooks"
+	# These files could be modified when an external module is built.
+	mutable_files="
+	 /usr/lib/modules/${_kernver}/modules.dep
+	 /usr/lib/modules/${_kernver}/modules.dep.bin
+	 /usr/lib/modules/${_kernver}/modules.symbols
+	 /usr/lib/modules/${_kernver}/modules.symbols.bin
+	 /usr/lib/modules/${_kernver}/modules.alias
+	 /usr/lib/modules/${_kernver}/modules.alias.bin
+	 /usr/lib/modules/${_kernver}/modules.devname"
+	short_desc="$_rpi5_short_desc"
+	provides="rpi-kernel-${version}_${revision}"
+	replaces="rpi-kernel>=0"
+	pkg_install() {
+		cd "$wrksrc"/build-rpi5
+		_install "rpi5-kernel" "$PKGDESTDIR"
+	}
+}
+
+rpi5-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	short_desc="${_rpi5_short_desc/kernel/kernel headers}"
+	provides="rpi-kernel-headers-${version}_${revision}"
+	replaces="rpi-kernel-headers>=0"
+	pkg_install() {
+		mv "${PKGDESTDIR}/../rpi5-kernel-${version}/usr/src" "${PKGDESTDIR}"/usr/src
+		vmkdir "usr/lib/modules/${_kernver}"
+		mv "${PKGDESTDIR}/../rpi5-kernel-${version}/usr/lib/modules/${_kernver}/build" "${PKGDESTDIR}/usr/lib/modules/${_kernver}/build"
+	}
+}
+
+# hard-code the minimum version to prevent possible issues with partial upgrades
+# of legacy (split) systems
+rpi2-kernel_package() {
+	build_style=meta
+	short_desc+=" (transitional dummy package)"
+	depends="rpi-kernel>=5.15.68_1"
+}
+
+rpi2-kernel-headers_package() {
+	build_style=meta
+	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
+	depends="rpi-kernel-headers>=5.15.68_1"
+}
+
+rpi3-kernel_package() {
+	build_style=meta
+	short_desc+=" (transitional dummy package)"
+	depends="rpi-kernel>=5.15.68_1"
+}
+
+rpi3-kernel-headers_package() {
+	build_style=meta
+	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
+	depends="rpi-kernel-headers>=5.15.68_1"
+}
+
+rpi4-kernel_package() {
+	build_style=meta
+	short_desc+=" (transitional dummy package)"
+	depends="rpi-kernel>=5.15.68_1"
+}
+
+rpi4-kernel-headers_package() {
+	build_style=meta
+	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
+	depends="rpi-kernel-headers>=5.15.68_1"
+}

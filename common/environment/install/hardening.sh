@@ -1,0 +1,1 @@
+../configure/hardening.sh

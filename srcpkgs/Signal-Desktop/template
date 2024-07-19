@@ -1,0 +1,64 @@
+# Template file for 'Signal-Desktop'
+pkgname=Signal-Desktop
+version=7.10.0
+revision=2
+# Signal officially only supports x86_64
+# x86_64-musl could potentially work based on the Alpine port:
+# https://git.alpinelinux.org/aports/tree/testing/signal-desktop
+# ARM: https://github.com/signalapp/Signal-Desktop/issues/3410
+archs="x86_64"
+hostmakedepends="git git-lfs nodejs-lts python3 python3-distutils-extra tar"
+depends="cairo gtk+3 libvips pango"
+short_desc="Signal Private Messenger for Linux"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="AGPL-3.0-only"
+homepage="https://github.com/signalapp/Signal-Desktop"
+distfiles="https://github.com/signalapp/Signal-Desktop/archive/v${version}.tar.gz"
+checksum=4b695219fcd347ae41590633a7e4c461bf98bceeb5254b3cf744663ac2703ee0
+nostrip_files="signal-desktop"
+
+post_extract() {
+	# git-lfs hook needs to be installed for one of the dependencies
+	git lfs install
+
+	# FIXME: We currently don't have the latest Node so let's force Signal
+	# to use what we have. This is very far from ideal.
+	vsed 's/"node": ".*"/"node": ">=18.19.1"/' -i package.json
+
+	npm install -g yarn
+	# Dependencies have to be installed before applying patch
+	yarn install --ignore-engines --frozen-lockfile
+}
+
+do_build() {
+	yarn generate
+	yarn build-release
+
+	bsdtar xOf release/signal-desktop_*.deb data.tar.xz | \
+		bsdtar xO ./usr/share/applications/signal-desktop.desktop > signal-desktop.desktop
+	vsed -i -e 's/\/opt\/Signal\///' signal-desktop.desktop
+}
+
+do_install() {
+	vmkdir usr/lib/signal-desktop
+
+	# Remove prebuilt binaries for foreign architectures (to not confuse strip)
+	for prebin in darwin-x64 linux-arm64 win32-ia32 win32-x64; do
+		rm -rf release/linux-unpacked/resources/app.asar.unpacked/node_modules/{ffi-napi,ref-napi}/prebuilds/$prebin
+		rm -rf release/linux-unpacked/resources/app.asar.unpacked/node_modules/ffi-napi/node_modules/ref-napi/prebuilds/$prebin
+	done
+
+	vcopy release/linux-unpacked/* usr/lib/signal-desktop
+
+	vmkdir usr/bin
+	ln -s /usr/lib/signal-desktop/signal-desktop ${DESTDIR}/usr/bin/
+
+	vinstall signal-desktop.desktop 644 usr/share/applications
+
+	vmkdir usr/share/icons/hicolor
+	for size in 16 32 256; do
+		vinstall images/icon_${size}.png 644 usr/share/icons/hicolor/${size}x${size}/apps/ signal-desktop.png
+	done
+
+	vlicense LICENSE
+}

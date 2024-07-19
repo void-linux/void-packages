@@ -1,0 +1,110 @@
+From c1d9e33049263fed3cb27806a97f094acc350905 Mon Sep 17 00:00:00 2001
+From: Nate Prewitt <nate.prewitt@gmail.com>
+Date: Thu, 12 Oct 2023 08:30:42 -0700
+Subject: [PATCH] Support Flask 3.0 (#29)
+
+---
+ httpbin/core.py    |  8 +++-----
+ httpbin/helpers.py | 21 ++++++++++++++++-----
+ pyproject.toml     |  3 +--
+ 3 files changed, 20 insertions(+), 12 deletions(-)
+
+diff --git a/httpbin/core.py b/httpbin/core.py
+index 5c1783a1..a82c1b88 100644
+--- a/httpbin/core.py
++++ b/httpbin/core.py
+@@ -32,7 +32,7 @@
+     from werkzeug.wrappers import Response
+ except ImportError:  # werkzeug < 2.1
+     from werkzeug.wrappers import BaseResponse as Response
+-from werkzeug.http import parse_authorization_header
++
+ from flasgger import Swagger, NO_SANITIZER
+ 
+ from . import filters
+@@ -47,6 +47,7 @@
+     H,
+     ROBOT_TXT,
+     ANGRY_ASCII,
++    parse_authorization_header,
+     parse_multi_value_header,
+     next_stale_after_value,
+     digest_challenge_response,
+@@ -636,16 +637,13 @@ def redirect_to():
+     args_dict = request.args.items()
+     args = CaseInsensitiveDict(args_dict)
+ 
+-    # We need to build the response manually and convert to UTF-8 to prevent
+-    # werkzeug from "fixing" the URL. This endpoint should set the Location
+-    # header to the exact string supplied.
+     response = app.make_response("")
+     response.status_code = 302
+     if "status_code" in args:
+         status_code = int(args["status_code"])
+         if status_code >= 300 and status_code < 400:
+             response.status_code = status_code
+-    response.headers["Location"] = args["url"].encode("utf-8")
++    response.headers["Location"] = args["url"]
+ 
+     return response
+ 
+diff --git a/httpbin/helpers.py b/httpbin/helpers.py
+index b29e1835..836c8026 100644
+--- a/httpbin/helpers.py
++++ b/httpbin/helpers.py
+@@ -13,8 +13,14 @@
+ import time
+ import os
+ from hashlib import md5, sha256, sha512
+-from werkzeug.http import parse_authorization_header
+ from werkzeug.datastructures import WWWAuthenticate
++from werkzeug.http import dump_header
++
++try:
++    from werkzeug.http import parse_authorization_header
++except ImportError: # werkzeug < 2.3
++    from werkzeug.datastructures import Authorization
++    parse_authorization_header = Authorization.from_header
+ 
+ from flask import request, make_response
+ from six.moves.urllib.parse import urlparse, urlunparse
+@@ -466,9 +472,14 @@ def digest_challenge_response(app, qop, algorithm, stale = False):
+     ]), algorithm)
+     opaque = H(os.urandom(10), algorithm)
+ 
+-    auth = WWWAuthenticate("digest")
+-    auth.set_digest('me@kennethreitz.com', nonce, opaque=opaque,
+-                    qop=('auth', 'auth-int') if qop is None else (qop,), algorithm=algorithm)
+-    auth.stale = stale
++    values = {
++        'realm': 'me@kennethreitz.com',
++        'nonce': nonce,
++        'opaque': opaque,
++        'qop': dump_header(('auth', 'auth-int') if qop is None else (qop,)),
++        'algorithm': algorithm,
++        'stale': stale,
++    }
++    auth = WWWAuthenticate("digest", values=values)
+     response.headers['WWW-Authenticate'] = auth.to_header()
+     return response
+diff --git a/pyproject.toml b/pyproject.toml
+index 020457ec..9454e569 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -31,15 +31,14 @@ classifiers = [
+     "Programming Language :: Python :: 3.12",
+ ]
+ dependencies = [
+-    "Flask",
++    "flask >= 2.2.4",
+     "brotli; platform_python_implementation == 'CPython'",
+     "brotlicffi; platform_python_implementation != 'CPython'",
+     "decorator",
+     "flasgger",
+     'greenlet < 3.0; python_version<"3.12"',
+     'greenlet >= 3.0.0a1; python_version>="3.12.0rc0"',
+     'importlib-metadata; python_version<"3.8"',
+-    "werkzeug >= 0.14.1",
+     "six",
+ ]
+ 
