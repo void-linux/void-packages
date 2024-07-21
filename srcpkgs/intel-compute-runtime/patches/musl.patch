@@ -1,0 +1,98 @@
+--- a/shared/source/os_interface/linux/os_library_linux.cpp
++++ b/shared/source/os_interface/linux/os_library_linux.cpp
+@@ -42,8 +42,10 @@
+     } else {
+ #if defined(SANITIZER_BUILD)
+         auto dlopenFlag = RTLD_LAZY;
+-#else
++#elif defined(__GLIBC__)
+         auto dlopenFlag = RTLD_LAZY | RTLD_DEEPBIND;
++#else
++        auto dlopenFlag = RTLD_LAZY | RTLD_GLOBAL;
+         /* Background: https://github.com/intel/compute-runtime/issues/122 */
+ #endif
+         adjustLibraryFlags(dlopenFlag);
+
+--- a/shared/offline_compiler/source/utilities/linux/safety_guard_linux.h
++++ b/shared/offline_compiler/source/utilities/linux/safety_guard_linux.h
+@@ -10,7 +10,9 @@
+
+ #include <cstdio>
+ #include <cstdlib>
++#ifdef __GLIBC__
+ #include <execinfo.h>
++#endif
+ #include <setjmp.h>
+ #include <signal.h>
+
+@@ -39,6 +39,7 @@
+     }
+
+     static void sigAction(int sigNum, siginfo_t *info, void *ucontext) {
++#ifdef __GLIBC__
+         const int callstackDepth = 30;
+         void *addresses[callstackDepth];
+         char **callstack;
+@@ -52,6 +53,9 @@
+         }
+
+         free(callstack);
++#else
++        printf("ERROR: MUSL HAS NO BACKTRACE() or execinfo!\n");
++#endif
+         longjmp(jmpbuf, 1);
+     }
+
+# https://github.com/intel/compute-runtime/issues/265#issuecomment-594581483
+--- a/shared/source/os_interface/linux/os_library_helper.cpp
++++ b/shared/source/os_interface/linux/os_library_helper.cpp
+@@ -14,7 +14,11 @@
+ namespace Linux {
+ void adjustLibraryFlags(int &dlopenFlag) {
+     if (debugManager.flags.DisableDeepBind.get()) {
++#ifdef __GLIBC__
+         dlopenFlag &= ~RTLD_DEEPBIND;
++#else
++        dlopenFlag &= ~RTLD_GLOBAL;
++#endif
+     }
+ }
+ } // namespace Linux
+--- a/level_zero/sysman/source/shared/linux/udev/udev_lib.h
++++ b/level_zero/sysman/source/shared/linux/udev/udev_lib.h
+@@ -9,6 +9,9 @@
+
+ #include <string>
+ #include <vector>
++#ifndef __dev_t_defined
++#include <sys/types.h>
++#endif /* __dev_t_defined */
+
+ namespace L0 {
+ namespace Sysman {
+
+--- a/level_zero/tools/source/sysman/linux/udev/udev_lib.h
++++ b/level_zero/tools/source/sysman/linux/udev/udev_lib.h
+@@ -9,6 +9,9 @@
+
+ #include <string>
+ #include <vector>
++#ifndef __dev_t_defined
++#include <sys/types.h>
++#endif /* __dev_t_defined */
+
+ namespace L0 {
+ class UdevLib {
+
+--- a/level_zero/sysman/source/shared/linux/sysman_fs_access_interface.cpp
++++ b/level_zero/sysman/source/shared/linux/sysman_fs_access_interface.cpp
+@@ -12,6 +12,9 @@
+ #include <fstream>
+ #include <sstream>
+ #include <unistd.h>
++#ifndef __GLIBC__
++#include <limits.h> // PATH_MAX
++#endif
+
+ namespace L0 {
+ namespace Sysman {
