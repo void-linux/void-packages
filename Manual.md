@@ -778,6 +778,9 @@ A special value `noarch` used to be available, but has since been removed.
 
 - `nofixperms` If set, xbps-src will not fix common permission errors (executable manpages, etc.)
 
+- `no_generic_pkgconfig_link` If set, xbps-src will not create a symlink from `$XBPS_CROSS_TRIPLET-pkg-config`
+  to `$XBPS_WRAPPERDIR/pkg-config` before building the template.
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
 
@@ -1044,7 +1047,7 @@ Additional install arguments can be specified via `make_install_args`.
 - `slashpackage` For packages that use the /package hierarchy and package/compile to build,
 such as `daemontools` or any `djb` software.
 
-- `qmake` For packages that use Qt4/Qt5 qmake profiles (`*.pro`), qmake arguments
+- `qmake` For packages that use Qt5/Qt6 qmake profiles (`*.pro`), qmake arguments
 for the configure phase can be passed in via `configure_args`, make build arguments can
 be passed in via `make_build_args` and install arguments via `make_install_args`. The build
 target can be overridden via `make_build_target` and the install target
@@ -1127,7 +1130,9 @@ It also creates the `vtargetrun` function to wrap commands in a call to
 needed for cross builds and a qmake-wrapper to make `qmake` use this configuration.
 This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-configure` style the configure script calls `qmake` or a `Makefile` in
-`gnu-makefile` style, respectively.
+`gnu-makefile` style, respectively. This is for Qt5 packages.
+
+- `qmake6` is like `qmake` but for Qt6.
 
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
 for compiling cargo -sys crates. This helper is added by default for packages that use the
@@ -1801,8 +1806,19 @@ executable binary formats, know as binfmts.
 During installation/removal it uses `update-binfmts` from the `binfmt-support` package
 to register/remove entries from the arbitrary executable binary formats database.
 
-To include the trigger use the `binfmts` variable, as the trigger won't do anything unless
-it is defined.
+It is automatically added to packages that contain files in `usr/share/binfmts`.
+These files should be `update-binfmts` format files and will be imported with
+`update-binfmts --import`.
+
+While it is not preferred, the trigger can also be added by using the `binfmts` variable,
+which should contain lines defining binfmts to register:
+
+```
+/path/to/interpreter [update-binfmts binary format specification arguments ...]
+...
+```
+
+See [`update-binfmts(8)`](https://man.voidlinux.org/man8/update-binfmts.8) for more details.
 
 <a id="triggers_dkms"></a>
 #### dkms

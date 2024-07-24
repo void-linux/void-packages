@@ -1,11 +1,10 @@
 # Template file for 'llvm17'
 pkgname=llvm17
 version=17.0.6
-revision=2
+revision=3
 build_wrksrc=llvm
 build_style=cmake
 _ext_suffix=".cpython-${py3_ver/./}-linux-${XBPS_TARGET_LIBC/glibc/gnu}.so"
-pycompile_dirs="usr/share/scan-view"
 configure_args="
  -DCMAKE_BUILD_TYPE=Release -Wno-dev
  -DENABLE_LINKER_BUILD_ID=YES
@@ -42,14 +41,21 @@ license="Apache-2.0"
 homepage="https://www.llvm.org"
 distfiles="https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/llvm-project-${version}.src.tar.xz"
 checksum=58a8818c60e6627064f312dbf46c02d9949956558340938b71cf731ad8bc0813
+conflicts="llvm15>=0"
 lib32disabled=yes
 python_version=3
 
-build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt"
-build_options_default="clang clang_tools_extra lld mlir libclc polly lldb"
+build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt openmp"
+build_options_default="clang clang_tools_extra lld mlir libclc polly lldb openmp"
 
+if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
+	build_options_default+=" flang bolt"
+fi
+
+# build fails because compiler_rt generates armv7 instructions when target is armv6
 case "$XBPS_TARGET_MACHINE" in
-	x86_64*|aarch64*) build_options_default+=" flang bolt ";;
+	armv6*) ;;
+	*) configure_args+=" -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON" ;;
 esac
 
 if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
@@ -58,8 +64,9 @@ if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 fi
 
 subpackages="libllvm17 llvm17-doc llvm17-devel"
-_enabled_projects=
-_enabled_runtimes=
+
+# use $(:) to silence xlint
+_enabled_projects=$(:)
 
 if [ "$build_option_clang" ]; then
 	_enabled_projects+="clang;"
@@ -78,7 +85,7 @@ if [ "$build_option_polly" ]; then
 fi
 if [ "$build_option_lldb" ]; then
 	_enabled_projects+="lldb;"
-	subpackages+=" lldb17 lldb17-devel "
+	subpackages+=" lldb17 lldb17-devel liblldb17 "
 fi
 if [ "$build_option_lld" ]; then
 	_enabled_projects+="lld;"
@@ -96,41 +103,25 @@ if [ "$build_option_flang" ]; then
 	subpackages+=" flang17 flang17-devel "
 fi
 
-# enable if runtime subpackages link to this version of llvm
-if true; then
-	subpackages+=" llvm-libunwind llvm-libunwind-devel "
-	_enabled_runtimes+="${_enabled_runtimes:+;}libunwind"
+subpackages+=" compiler-rt17 "
+_enabled_runtimes="compiler-rt"
 
-	subpackages+=" libcxx libcxx-devel libcxxabi libcxxabi-devel "
-	_enabled_runtimes+="${_enabled_runtimes:+;}libcxxabi;libcxx"
-
-	subpackages+=" compiler-rt "
-	_enabled_runtimes+="${_enabled_runtimes:+;}compiler-rt"
-
-	case "$XBPS_TARGET_MACHINE" in
-		x86_64*|aarch64*)
-			# openmp fails when built as runtime if cross-compiled
-			if [ "$CROSS_BUILD" ]; then
-				_enabled_projects+="openmp;"
-			else
-				_enabled_runtimes+="${_enabled_runtimes:+;}openmp"
-			fi
-			subpackages+=" libomp libomp-devel "
-			;;
-	esac
-
-	configure_args+=" -DLLVM_ENABLE_RUNTIMES=${_enabled_runtimes}"
+if [ "$build_option_openmp" ]; then
+	# openmp fails when built as runtime if cross-compiled
+	if [ "$CROSS_BUILD" ]; then
+		_enabled_projects+="openmp;"
+	else
+		_enabled_runtimes+=";openmp"
+	fi
+	subpackages+=" libomp17 libomp17-devel "
 fi
 
+configure_args+=" -DLLVM_ENABLE_RUNTIMES=${_enabled_runtimes}"
 configure_args+=" -DLLVM_ENABLE_PROJECTS=${_enabled_projects}"
 
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" llvm17-cross-tools"
-	# Seems to require a full host llvm/clang build
-	configure_args+=" -DLIBOMPTARGET_BUILD_CUDA_PLUGIN=OFF"
-	configure_args+=" -DLIBOMPTARGET_BUILD_AMDGPU_PLUGIN=OFF"
 fi
-
 
 # For OCaml bindings and lldb lua scripting
 if [ -z "$CROSS_BUILD" ]; then
@@ -207,7 +198,9 @@ pre_configure() {
 	case "$XBPS_TARGET_MACHINE" in
 	arm*-musl|i686-musl|riscv64-musl)
 		# sanitizer code is broken since it duplicates some libc bits
-		configure_args+=" -DCOMPILER_RT_BUILD_SANITIZERS=OFF"
+		configure_args+=" -DCOMPILER_RT_BUILD_SANITIZERS=NO"
+		configure_args+=" -DCOMPILER_RT_BUILD_XRAY=NO"
+		configure_args+=" -DCOMPILER_RT_BUILD_MEMPROF=NO"
 		;;
 	esac
 
@@ -231,15 +224,6 @@ pre_configure() {
 }
 
 post_build() {
-
-	mkdir -p ${wrksrc}/${build_wrksrc}/runtimes-doc
-	cmake -G Ninja ${wrksrc}/runtimes -B ${wrksrc}/${build_wrksrc}/runtimes-doc \
-		-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
-		-DLLVM_ENABLE_SPHINX=ON \
-		-DSPHINX_WARNINGS_AS_ERRORS=OFF
-
-	ninja ${makejobs} -C ${wrksrc}/${build_wrksrc}/runtimes-doc docs-libcxx-html docs-libunwind-html
-
 	if [ -z "$CROSS_BUILD" ]; then
 		# Binaries ONLY used during the process of building llvm, and aren't usually installed
 		vmkdir usr/bin
@@ -267,28 +251,15 @@ post_install() {
 
 	rm -rf ${DESTDIR}/usr/share/gdb
 
-	# Install libcxxabi headers
-	vinstall ${wrksrc}/libcxxabi/include/__cxxabi_config.h 644 usr/include
-	vinstall ${wrksrc}/libcxxabi/include/cxxabi.h 644 usr/include
-
-	# Install libunwind headers
-	vinstall ${wrksrc}/libunwind/include/__libunwind_config.h 644 usr/include
-	vinstall ${wrksrc}/libunwind/include/libunwind.h 644 usr/include
-	vinstall ${wrksrc}/libunwind/include/unwind.h 644 usr/include
-	vinstall ${wrksrc}/libunwind/include/mach-o/compact_unwind_encoding.h \
-		644 usr/include/mach-o
-
-	# Install libcxx and libunwind docs
-	cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr -P ${wrksrc}/${build_wrksrc}/runtimes-doc/libcxx/docs/cmake_install.cmake
-	cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr -P ${wrksrc}/${build_wrksrc}/runtimes-doc/libunwind/docs/cmake_install.cmake
-
 	# Can this be disabled some other way?
 	rm -rf ${DESTDIR}/usr/lib64
 }
 
 clang17_package() {
 	lib32disabled=yes
-	depends="libstdc++-devel libgcc-devel  binutils ${XBPS_TARGET_LIBC}-devel"
+	depends="libstdc++-devel libgcc-devel  binutils ${XBPS_TARGET_LIBC}-devel
+	 compiler-rt17>=0"
+	conflicts="clang15>=0"
 	short_desc+=" - C language family frontend"
 	homepage="https://clang.llvm.org/"
 	pkg_install() {
@@ -312,6 +283,8 @@ clang17_package() {
 		vmove usr/bin/diagtool
 		vmove usr/bin/amdgpu-arch
 		vmove usr/bin/nvptx-arch
+		vmove usr/bin/hmaptool
+		vmove usr/bin/git-clang-format
 		vmove usr/share/man/man1/clang.1
 		vmove usr/share/man/man1/diagtool.1
 		if [ "$build_option_polly" ]; then
@@ -335,6 +308,7 @@ clang17-devel_package() {
 	depends="libstdc++-devel libgcc-devel  binutils ${XBPS_TARGET_LIBC}-devel
 	 clang17>=${version}_${revision} clang-analyzer17>=${version}_${revision}
 	 llvm17>=${version}_${revision}"
+	conflicts="clang15-devel>=0"
 	if [ "$build_option_clang_tools_extra" ]; then
 		depends+=" clang-tools-extra17>=${version}_${revision}"
 	fi
@@ -348,8 +322,6 @@ clang17-devel_package() {
 		vmove "usr/lib/libclang*.a"
 		vmove "usr/lib/libclang*.so"
 		vmove usr/share/clang
-		vmove usr/bin/hmaptool
-		vmove usr/bin/git-clang-format
 		if [ "$build_option_clang_tools_extra" ]; then
 			vmove usr/include/clang-tidy
 			vmove usr/lib/libfindAllSymbols.a
@@ -382,6 +354,8 @@ clang-analyzer17_package() {
 	depends="clang17>=${version}_${revision} python3 perl"
 	short_desc+=" - A source code analysis framework"
 	homepage="https://clang-analyzer.llvm.org/"
+	pycompile_dirs="usr/share/scan-view"
+	conflicts="clang-analyzer15>=0"
 	pkg_install() {
 		vmove usr/share/scan-view
 		vmove usr/share/scan-build
@@ -405,6 +379,7 @@ clang-tools-extra17_package() {
 	depends="clang17>=${version}_${revision} python3"
 	short_desc+=" - Extra Clang tools"
 	homepage="https://clang.llvm.org/extra/"
+	conflicts="clang-tools-extra15>=0"
 	pkg_install() {
 		vmove usr/bin/clang-apply-replacements
 		vmove usr/bin/clang-change-namespace
@@ -450,13 +425,13 @@ lldb17_package() {
 	depends+=" python3-six"
 	short_desc+=" - LLDB debugger"
 	homepage="https://lldb.llvm.org/"
+	conflicts="lldb15>=0"
 	pkg_install() {
 		vmove usr/bin/lldb
 		vmove usr/bin/lldb-argdumper
 		vmove usr/bin/lldb-instr
 		vmove usr/bin/lldb-server
 		vmove usr/bin/lldb-vscode
-		vmove "usr/lib/liblldb*.so.*"
 		vmove "usr/lib/python${py3_ver}/site-packages/lldb"
 		if [ -z "$CROSS_BUILD" ]; then
 			vmove /usr/lib/lua/5.3/lldb.so
@@ -468,9 +443,18 @@ lldb17-devel_package() {
 	lib32disabled=yes
 	depends="lldb17>=${version}_${revision}"
 	short_desc+=" - LLDB debugger - development files"
+	conflicts="lldb15-devel>=0"
 	pkg_install() {
 		vmove usr/include/lldb
 		vmove "usr/lib/liblldb*.so"
+	}
+}
+
+liblldb17_package() {
+	lib32disabled=yes
+	short_desc+=" - LLDB debugger - runtime library"
+	pkg_install() {
+		vmove "usr/lib/liblldb*.so.*"
 	}
 }
 
@@ -478,6 +462,7 @@ lld17_package() {
 	lib32disabled=yes
 	short_desc+=" - linker"
 	homepage="https://lld.llvm.org"
+	conflicts="lld15>=0"
 	pkg_install() {
 		vmove usr/bin/lld
 		vmove usr/bin/lld-link
@@ -492,6 +477,7 @@ lld17-devel_package() {
 	short_desc+=" - linker - development files"
 	homepage="https://lld.llvm.org"
 	depends="lld17>=${version}_${revision} llvm17>=${version}_${revision}"
+	conflicts="lld15-devel>=0"
 	pkg_install() {
 		vmove usr/include/lld
 		vmove usr/lib/cmake/lld
@@ -565,96 +551,45 @@ flang17-devel_package() {
 	}
 }
 
-libomp_package() {
+libomp17_package() {
 	short_desc+=" - Clang OpenMP support library"
 	pkg_install() {
 		vmove "usr/lib/libomp*.so.*"
 	}
 }
 
-libomp-devel_package() {
+libomp17-devel_package() {
 	short_desc+=" - Clang OpenMP support library - development files"
-	depends="libomp>=${version}_${revision} llvm17>=${version}_${revision}"
+	depends="libomp17>=${version}_${revision} llvm17>=${version}_${revision}"
 	pkg_install() {
-		vmove usr/bin/llvm-omp-device-info
-		vmove usr/bin/llvm-omp-kernel-replay
-		vmove "usr/lib/libarcher*.so"
+		if [ -f "${DESTDIR}/usr/bin/llvm-omp-device-info" ]; then
+			vmove usr/bin/llvm-omp-device-info
+		fi
+		if [ -f "${DESTDIR}/usr/bin/llvm-omp-kernel-replay" ]; then
+			vmove usr/bin/llvm-omp-kernel-replay
+		fi
+		if [ -f "${DESTDIR}/usr/lib/libarcher.so" ]; then
+			vmove "usr/lib/libarcher*.so"
+		fi
+		if [ -f "${DESTDIR}/usr/lib/libarcher_static.a" ]; then
+			vmove "usr/lib/libarcher*.a"
+		fi
 		vmove "usr/lib/libomp*.so"
 		vmove usr/lib/cmake/openmp
 		if [ -f "${DESTDIR}/usr/share/man/man1/llvmopenmp.1" ]; then
 			vmove usr/share/man/man1/llvmopenmp.1
 		fi
-		if [ -z "$CROSS_BUILD" ]; then
-			vmove "usr/lib/libomptarget*.bc"
-			vmove "usr/lib/libarcher*.a"
-			vmove "usr/lib/libomp*.a"
-		fi
+
+		case "$XBPS_TARGET_MACHINE" in
+			x86_64*)
+				vmove "usr/lib/libomptarget*.bc"
+				vmove "usr/lib/libomp*.a"
+			;;
+		esac
 	}
 }
 
-llvm-libunwind_package() {
-	short_desc+=" - libunwind"
-	pkg_install() {
-		vmove "usr/lib/libunwind.so.*"
-	}
-}
-
-llvm-libunwind-devel_package() {
-	short_desc+=" - libunwind - development files"
-	depends="llvm-libunwind>=${version}_${revision}"
-	conflicts="libunwind-devel>=0"
-	pkg_install() {
-		vmove usr/include/mach-o
-		vmove "usr/include/*unwind*"
-		vmove "usr/lib/libunwind.a"
-		vmove "usr/lib/libunwind.so"
-
-		LIBUNWIND_DOCS=usr/share/doc/LLVM/libunwind
-		vmkdir ${LIBUNWIND_DOCS}
-		vcopy ${wrksrc}/${build_wrksrc}/runtimes-doc/libunwind/docs/html ${LIBUNWIND_DOCS}
-	}
-}
-
-libcxxabi_package() {
-	short_desc+=" - low level support for libc++"
-	pkg_install() {
-		vmove "usr/lib/libc++abi.so.*"
-	}
-}
-
-libcxxabi-devel_package() {
-	short_desc+=" - low level support for libc++ - development files"
-	depends="libcxxabi>=${version}_${revision}"
-	pkg_install() {
-		vmove "usr/include/*cxxabi*"
-		vmove "usr/lib/libc++abi.so"
-		vmove "usr/lib/libc++abi.a"
-	}
-}
-
-libcxx_package() {
-	short_desc+=" - C++ standard library"
-	pkg_install() {
-		vmove "usr/lib/libc++.so.*"
-	}
-}
-
-libcxx-devel_package() {
-	short_desc+=" - C++ standard library - development files"
-	depends="libcxx>=${version}_${revision}"
-	pkg_install() {
-		vmove usr/include/c++
-		vmove "usr/lib/libc++.so"
-		vmove "usr/lib/libc++.a"
-		vmove "usr/lib/libc++experimental.a"
-
-		LIBCXX_DOCS=usr/share/doc/LLVM/libcxx
-		vmkdir ${LIBCXX_DOCS}
-		vcopy ${wrksrc}/${build_wrksrc}/runtimes-doc/libcxx/docs/html ${LIBCXX_DOCS}
-	}
-}
-
-compiler-rt_package() {
+compiler-rt17_package() {
 	short_desc+=" - runtime libraries"
 	homepage="https://compiler-rt.llvm.org/"
 	pkg_install() {
@@ -685,8 +620,9 @@ llvm17-doc_package() {
 llvm17-devel_package() {
 	short_desc+=" - development files"
 	depends="llvm17>=${version}_${revision}"
+	conflicts="llvm15-devel>=0"
 	if [ "$build_option_openmp" ]; then
-		depends+=" libomp-devel>=${version}_${revision} "
+		depends+=" libomp17-devel>=${version}_${revision} "
 	fi
 	if [ "$build_option_mlir" ]; then
 		depends+=" mlir17-devel>=${version}_${revision} "
