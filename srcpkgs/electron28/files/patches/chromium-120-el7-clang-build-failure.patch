@@ -1,0 +1,230 @@
+commit 57526b8dc45b2e6c67bba7306f1dde73b1f2910c
+Author: sisidovski <sisidovski@chromium.org>
+Date:   Tue Oct 24 09:32:49 2023 +0000
+
+    Remove unused items from the RaceNetworkRequest hashmap
+    
+    When the AutoPreload or the race-network-and-fetch-handler option in the
+    static routing API is enabled, network requests are dispatched and
+    URLLoaderFactories are held in a hashmap in ServiceWorkerGlobalScope.
+    Those are consumed inside the fetch handler when fetch(e.request) is
+    called. But if the fetch handler doesn't call fetch() e.g. fallback,
+    those hashmap items does not have a chance to be removed.
+    
+    This CL changes the hashmap items to be removed when the fetch event
+    finishes, and the URLLoaderFactory is still not consumed at that time.
+    This may loose the dedupe capability if fetch() is called later e.g.
+    setTimeout(() => fetch()), but it makes sense to prioritize keeping the
+    hashmap small.
+    
+    Change-Id: I51bdc9d5eb5185f2b5b4df6ee785715b1180c848
+    Bug: 1492640
+    Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/4964840
+    Reviewed-by: Minoru Chikamune <chikamune@chromium.org>
+    Commit-Queue: Yoshisato Yanagisawa <yyanagisawa@chromium.org>
+    Reviewed-by: Yoshisato Yanagisawa <yyanagisawa@chromium.org>
+    Cr-Commit-Position: refs/heads/main@{#1214064}
+
+diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
+index 02887edc10883..b3624fc0162df 100644
+--- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
++++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
+@@ -46,6 +46,7 @@
+ #include "services/network/public/cpp/cross_origin_embedder_policy.h"
+ #include "services/network/public/mojom/cookie_manager.mojom-blink.h"
+ #include "services/network/public/mojom/cross_origin_embedder_policy.mojom.h"
++#include "services/network/public/mojom/url_loader_factory.mojom-blink.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
+ #include "third_party/blink/public/mojom/notifications/notification.mojom-blink.h"
+@@ -1096,6 +1097,10 @@ void ServiceWorkerGlobalScope::DidHandleFetchEvent(
+       TRACE_ID_WITH_SCOPE(kServiceWorkerGlobalScopeTraceScope,
+                           TRACE_ID_LOCAL(event_id)),
+       TRACE_EVENT_FLAG_FLOW_IN, "status", MojoEnumToString(status));
++
++  // Delete the URLLoaderFactory for the RaceNetworkRequest if it's not used.
++  RemoveItemFromRaceNetworkRequests(event_id);
++
+   if (!RunEventCallback(&fetch_event_callbacks_, event_queue_.get(), event_id,
+                         status)) {
+     // The event may have been aborted. Its response callback also needs to be
+@@ -1495,6 +1500,7 @@ void ServiceWorkerGlobalScope::AbortCallbackForFetchEvent(
+     response_callback_iter->value->TakeValue().reset();
+     fetch_response_callbacks_.erase(response_callback_iter);
+   }
++  RemoveItemFromRaceNetworkRequests(event_id);
+ 
+   // Run the event callback with the error code.
+   auto event_callback_iter = fetch_event_callbacks_.find(event_id);
+@@ -1551,52 +1557,11 @@ void ServiceWorkerGlobalScope::StartFetchEvent(
+ 
+   if (params->race_network_request_loader_factory &&
+       params->request->service_worker_race_network_request_token) {
+-    auto insert_result = race_network_request_loader_factories_.insert(
+-        String(params->request->service_worker_race_network_request_token
+-                   ->ToString()),
+-        std::move(params->race_network_request_loader_factory));
+-
+-    // DumpWithoutCrashing if the token is empty, or not inserted as a new entry
+-    // to |race_network_request_loader_factories_|.
+-    // TODO(crbug.com/1492640) Remove DumpWithoutCrashing once we collect data
+-    // and identify the cause.
+-    static bool has_dumped_without_crashing_for_empty_token = false;
+-    static bool has_dumped_without_crashing_for_not_new_entry = false;
+-    if (!has_dumped_without_crashing_for_empty_token &&
+-        params->request->service_worker_race_network_request_token
+-            ->is_empty()) {
+-      has_dumped_without_crashing_for_empty_token = true;
+-      SCOPED_CRASH_KEY_BOOL(
+-          "SWGlobalScope", "empty_race_token",
+-          params->request->service_worker_race_network_request_token
+-              ->is_empty());
+-      SCOPED_CRASH_KEY_STRING64(
+-          "SWGlobalScope", "race_token_string",
+-          params->request->service_worker_race_network_request_token
+-              ->ToString());
+-      SCOPED_CRASH_KEY_BOOL("SWGlobalScope", "race_insert_new_entry",
+-                            insert_result.is_new_entry);
+-      SCOPED_CRASH_KEY_STRING256("SWGlobalScope", "race_request_url",
+-                                 params->request->url.GetString().Utf8());
+-      base::debug::DumpWithoutCrashing();
+-    }
+-    if (!has_dumped_without_crashing_for_not_new_entry &&
+-        !insert_result.is_new_entry) {
+-      has_dumped_without_crashing_for_not_new_entry = true;
+-      SCOPED_CRASH_KEY_BOOL(
+-          "SWGlobalScope", "empty_race_token",
+-          params->request->service_worker_race_network_request_token
+-              ->is_empty());
+-      SCOPED_CRASH_KEY_STRING64(
+-          "SWGlobalScope", "race_token_string",
+-          params->request->service_worker_race_network_request_token
+-              ->ToString());
+-      SCOPED_CRASH_KEY_BOOL("SWGlobalScope", "race_insert_new_entry",
+-                            insert_result.is_new_entry);
+-      SCOPED_CRASH_KEY_STRING256("SWGlobalScope", "race_request_url",
+-                                 params->request->url.GetString().Utf8());
+-      base::debug::DumpWithoutCrashing();
+-    }
++    InsertNewItemToRaceNetworkRequests(
++        event_id,
++        params->request->service_worker_race_network_request_token.value(),
++        std::move(params->race_network_request_loader_factory),
++        params->request->url);
+   }
+ 
+   Request* request = Request::Create(
+@@ -2808,12 +2773,71 @@ bool ServiceWorkerGlobalScope::SetAttributeEventListener(
+ absl::optional<mojo::PendingRemote<network::mojom::blink::URLLoaderFactory>>
+ ServiceWorkerGlobalScope::FindRaceNetworkRequestURLLoaderFactory(
+     const base::UnguessableToken& token) {
+-  mojo::PendingRemote<network::mojom::blink::URLLoaderFactory> result =
+-      race_network_request_loader_factories_.Take(String(token.ToString()));
++  std::unique_ptr<RaceNetworkRequestInfo> result =
++      race_network_requests_.Take(String(token.ToString()));
+   if (result) {
+-    return result;
++    race_network_request_fetch_event_ids_.erase(result->fetch_event_id);
++    return absl::optional<
++        mojo::PendingRemote<network::mojom::blink::URLLoaderFactory>>(
++        std::move(result->url_loader_factory));
+   }
+   return absl::nullopt;
+ }
+ 
++void ServiceWorkerGlobalScope::InsertNewItemToRaceNetworkRequests(
++    int fetch_event_id,
++    const base::UnguessableToken& token,
++    mojo::PendingRemote<network::mojom::blink::URLLoaderFactory>
++        url_loader_factory,
++    const KURL& request_url) {
++  auto race_network_request_token = String(token.ToString());
++  auto info = std::make_unique<RaceNetworkRequestInfo>(
++      fetch_event_id, race_network_request_token,
++      std::move(url_loader_factory));
++  race_network_request_fetch_event_ids_.insert(fetch_event_id, info.get());
++  auto insert_result = race_network_requests_.insert(race_network_request_token,
++                                                     std::move(info));
++
++  // DumpWithoutCrashing if the token is empty, or not inserted as a new entry
++  // to |race_network_request_loader_factories_|.
++  // TODO(crbug.com/1492640) Remove DumpWithoutCrashing once we collect data
++  // and identify the cause.
++  static bool has_dumped_without_crashing_for_empty_token = false;
++  static bool has_dumped_without_crashing_for_not_new_entry = false;
++  if (!has_dumped_without_crashing_for_empty_token && token.is_empty()) {
++    has_dumped_without_crashing_for_empty_token = true;
++    SCOPED_CRASH_KEY_BOOL("SWGlobalScope", "empty_race_token",
++                          token.is_empty());
++    SCOPED_CRASH_KEY_STRING64("SWGlobalScope", "race_token_string",
++                              token.ToString());
++    SCOPED_CRASH_KEY_BOOL("SWGlobalScope", "race_insert_new_entry",
++                          insert_result.is_new_entry);
++    SCOPED_CRASH_KEY_STRING256("SWGlobalScope", "race_request_url",
++                               request_url.GetString().Utf8());
++    base::debug::DumpWithoutCrashing();
++  }
++  if (!has_dumped_without_crashing_for_not_new_entry &&
++      !insert_result.is_new_entry) {
++    has_dumped_without_crashing_for_not_new_entry = true;
++    SCOPED_CRASH_KEY_BOOL("SWGlobalScope", "empty_race_token",
++                          token.is_empty());
++    SCOPED_CRASH_KEY_STRING64("SWGlobalScope", "race_token_string",
++                              token.ToString());
++    SCOPED_CRASH_KEY_BOOL("SWGlobalScope", "race_insert_new_entry",
++                          insert_result.is_new_entry);
++    SCOPED_CRASH_KEY_STRING256("SWGlobalScope", "race_request_url",
++                               request_url.GetString().Utf8());
++    base::debug::DumpWithoutCrashing();
++  }
++}
++
++void ServiceWorkerGlobalScope::RemoveItemFromRaceNetworkRequests(
++    int fetch_event_id) {
++  RaceNetworkRequestInfo* info =
++      race_network_request_fetch_event_ids_.Take(fetch_event_id);
++  if (info) {
++    race_network_requests_.erase(info->token);
++  }
++}
++
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
+index 46c431b395825..ac4cac0b1d8fb 100644
+--- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
++++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
+@@ -623,6 +623,14 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
+   // ServiceWorker.FetchEvent.QueuingTime histogram.
+   void RecordQueuingTime(base::TimeTicks created_time);
+ 
++  void InsertNewItemToRaceNetworkRequests(
++      int fetch_event_id,
++      const base::UnguessableToken& token,
++      mojo::PendingRemote<network::mojom::blink::URLLoaderFactory>
++          url_loader_factory,
++      const KURL& request_url);
++  void RemoveItemFromRaceNetworkRequests(int fetch_event_id);
++
+   Member<ServiceWorkerClients> clients_;
+   Member<ServiceWorkerRegistration> registration_;
+   Member<::blink::ServiceWorker> service_worker_;
+@@ -768,10 +776,17 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
+ 
+   blink::BlinkStorageKey storage_key_;
+ 
++  struct RaceNetworkRequestInfo {
++    int fetch_event_id;
++    String token;
++    mojo::PendingRemote<network::mojom::blink::URLLoaderFactory>
++        url_loader_factory;
++  };
+   // TODO(crbug.com/918702) WTF::HashMap cannot use base::UnguessableToken as a
+   // key. As a workaround uses WTF::String as a key instead.
+-  HashMap<String, mojo::PendingRemote<network::mojom::blink::URLLoaderFactory>>
+-      race_network_request_loader_factories_;
++  HashMap<String, std::unique_ptr<RaceNetworkRequestInfo>>
++      race_network_requests_;
++  HashMap<int, RaceNetworkRequestInfo*> race_network_request_fetch_event_ids_;
+ 
+   HeapMojoAssociatedRemote<mojom::blink::AssociatedInterfaceProvider>
+       remote_associated_interfaces_{this};
