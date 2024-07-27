@@ -1,26 +1,68 @@
-https://github.com/obsproject/obs-studio/issues/11029#issuecomment-2249747587
+--- a/libobs/obs-module.c
++++ b/libobs/obs-module.c
+@@ -22,6 +22,8 @@
+ #include "obs-internal.h"
+ #include "obs-module.h"
+
++#include <sys/stat.h>
++
+ extern const char *get_module_extension(void);
+
+ static inline int req_func_not_found(const char *name, const char *path)
+@@ -269,6 +271,34 @@
+ 	if (!obs || !bin || !data)
+ 		return;
+
++	char tmp_data[255] = {0}; // shouldn't hit paths 255 big?
++	for (size_t i = 0; i < obs->module_paths.num; i++) {
++		struct obs_module_path *old_omp = obs->module_paths.array + i;
++		char *mod_loc = 0;
++		struct stat old_bin, new_bin, old_data, new_data;
++		size_t maxlen = strlen(old_omp->data);
++		if (maxlen > 254) {
++			maxlen = 254;
++			blog(LOG_WARNING, "Max length of module path is over void-hackery 254 character length");
++		}
++		memcpy(tmp_data, old_omp->data, maxlen);
++		mod_loc = strstr(tmp_data, "%module%");
++		if (mod_loc) *mod_loc = 0;
++		stat(old_omp->bin, &old_bin);
++		stat(bin, &new_bin);
++		stat(tmp_data, &old_data);
++		stat(data, &new_data);
++		if ((old_bin.st_dev == new_bin.st_dev
++			&& old_bin.st_ino == new_bin.st_ino)
++			|| (old_data.st_dev == new_data.st_dev
++				&& old_data.st_ino == new_data.st_ino) )
++			{
++			blog(LOG_WARNING, "Skipping duplicate module path: bin: '%s', data: '%s'"
++				,bin, data);
++			return;
++			}
++	}
++
+ 	omp.bin = bstrdup(bin);
+ 	omp.data = bstrdup(data);
+ 	da_push_back(obs->module_paths, &omp);
 --- a/libobs/obs-nix.c
 +++ b/libobs/obs-nix.c
-@@ -67,22 +67,6 @@ static const struct obs_nix_hotkeys_vtable *hotkeys_vtable = NULL;
- 
- void add_default_module_paths(void)
- {
--	char *module_bin_path = os_get_executable_path_ptr("../" OBS_PLUGIN_PATH);
--	char *module_data_path = os_get_executable_path_ptr("../" OBS_DATA_PATH "/obs-plugins/%module%");
--
--	if (module_bin_path && module_data_path) {
--		char *abs_module_bin_path = os_get_abs_path_ptr(module_bin_path);
--
--		if (abs_module_bin_path &&
--		    strcmp(abs_module_bin_path, OBS_INSTALL_PREFIX "/" OBS_PLUGIN_DESTINATION) != 0) {
--			obs_add_module_path(module_bin_path, module_data_path);
--		}
--		bfree(abs_module_bin_path);
--	}
--
--	bfree(module_bin_path);
--	bfree(module_data_path);
--
+@@ -33,6 +33,7 @@
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <unistd.h>
++#include <sys/stat.h>
+ #if defined(__FreeBSD__) || defined(__OpenBSD__)
+ #include <sys/sysctl.h>
+ #endif
+@@ -83,7 +84,11 @@
+ 	bfree(module_bin_path);
+ 	bfree(module_data_path);
+
++	struct stat stat_info;
++
  	for (int i = 0; i < module_patterns_size; i++) {
++		if ((stat(module_bin[i], &stat_info) == 0 && !!S_ISDIR(stat_info.st_mode) )
++			&& (stat(module_data[i], &stat_info) == 0 && !!S_ISDIR(stat_info.st_mode) ) )
  		obs_add_module_path(module_bin[i], module_data[i]);
  	}
+ }
