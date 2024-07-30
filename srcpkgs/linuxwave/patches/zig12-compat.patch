@@ -1,0 +1,440 @@
+From 6120822d7c168333184f1aec52f934e2fb91a7b6 Mon Sep 17 00:00:00 2001
+From: tranzystorekk <tranzystorek.io@protonmail.com>
+Date: Mon, 8 Jul 2024 08:09:27 +0200
+Subject: [PATCH 1/4] refactor: rewrite for zig 0.12
+
+---
+ .gitignore   |  1 +
+ build.zig    | 62 +++++++++++++++++++++++++++++++++-------------------
+ src/file.zig |  2 +-
+ src/gen.zig  | 11 +++++-----
+ src/main.zig | 32 ++++++++-------------------
+ src/wav.zig  | 45 ++++++++++++++++++++------------------
+ 6 files changed, 80 insertions(+), 73 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index fcd3a02..2f8a917 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -5,6 +5,7 @@
+ # Zig programming language
+ 
+ zig-cache/
++.zig-cache/
+ zig-out/
+ build/
+ build-*/
+diff --git a/build.zig b/build.zig
+index dbaa2e5..869b871 100644
+--- a/build.zig
++++ b/build.zig
+@@ -9,25 +9,28 @@ const version = "0.1.5"; // managed by release.sh
+ /// Adds the required packages to the given executable.
+ ///
+ /// This is used for providing the dependencies for main executable as well as the tests.
+-fn addPackages(allocator: std.mem.Allocator, exe: *std.build.LibExeObjStep) !void {
+-    exe.addPackagePath("clap", "libs/zig-clap/clap.zig");
++fn addPackages(b: *std.Build, exe: *std.Build.Step.Compile) !void {
++    exe.root_module.addImport("clap", b.createModule(.{
++        .root_source_file = b.path("libs/zig-clap/clap.zig"),
++    }));
+     for ([_][]const u8{ "file", "gen", "wav" }) |package| {
+-        const path = try std.fmt.allocPrint(allocator, "src/{s}.zig", .{package});
+-        defer allocator.free(path);
+-        exe.addPackagePath(package, path);
++        const path = b.fmt("src/{s}.zig", .{package});
++        exe.root_module.addImport(package, b.createModule(.{
++            .root_source_file = b.path(path),
++        }));
+     }
+ }
+ 
+-pub fn build(b: *std.build.Builder) !void {
++pub fn build(b: *std.Build) void {
+     // Standard target options allows the person running `zig build` to choose
+     // what target to build for. Here we do not override the defaults, which
+     // means any target is allowed, and the default is native. Other options
+     // for restricting supported target set are available.
+     const target = b.standardTargetOptions(.{});
+ 
+-    // Standard release options allow the person running `zig build` to select
++    // Standard optimization options allow the person running `zig build` to select
+     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
+-    const mode = b.standardReleaseOptions();
++    const optimize = b.standardOptimizeOption(.{});
+ 
+     // Add custom options.
+     const pie = b.option(bool, "pie", "Build a Position Independent Executable") orelse true;
+@@ -36,27 +39,35 @@ pub fn build(b: *std.build.Builder) !void {
+     const documentation = b.option(bool, "docs", "Generate documentation") orelse false;
+ 
+     // Add main executable.
+-    const exe = b.addExecutable(exe_name, "src/main.zig");
+-    exe.setTarget(target);
+-    exe.setBuildMode(mode);
++    const exe = b.addExecutable(.{
++        .name = exe_name,
++        .root_source_file = b.path("src/main.zig"),
++        .target = target,
++        .optimize = optimize,
++    });
+     if (documentation) {
+-        exe.emit_docs = .emit;
++        const install_docs = b.addInstallDirectory(.{
++            .source_dir = exe.getEmittedDocs(),
++            .install_dir = .prefix,
++            .install_subdir = "docs",
++        });
++        b.getInstallStep().dependOn(&install_docs.step);
+     }
+     exe.pie = pie;
+     exe.link_z_relro = relro;
+-    exe.install();
++    b.installArtifact(exe);
+ 
+     // Add packages.
+-    try addPackages(b.allocator, exe);
++    try addPackages(b, exe);
+ 
+     // Add executable options.
+     const exe_options = b.addOptions();
+-    exe.addOptions("build_options", exe_options);
++    exe.root_module.addOptions("build_options", exe_options);
+     exe_options.addOption([]const u8, "version", version);
+     exe_options.addOption([]const u8, "exe_name", exe_name);
+ 
+     // Create the run step and add arguments.
+-    const run_cmd = exe.run();
++    const run_cmd = b.addRunArtifact(exe);
+     run_cmd.step.dependOn(b.getInstallStep());
+     if (b.args) |args| {
+         run_cmd.addArgs(args);
+@@ -68,9 +79,15 @@ pub fn build(b: *std.build.Builder) !void {
+ 
+     // Add tests.
+     const test_step = b.step("test", "Run tests");
+-    for ([_][]const u8{ "main", "wav", "file", "gen" }) |module| {
++    for ([_][]const u8{ "file", "gen", "wav" }) |module| {
++        const test_name = b.fmt("{s}-tests", .{module});
+         const test_module = b.fmt("src/{s}.zig", .{module});
+-        var exe_tests = b.addTest(test_module);
++        var exe_tests = b.addTest(.{
++            .name = test_name,
++            .root_source_file = b.path(test_module),
++            .target = target,
++            .optimize = optimize,
++        });
+         if (coverage) {
+             exe_tests.setExecCmd(&[_]?[]const u8{
+                 "kcov",
+@@ -78,10 +95,9 @@ pub fn build(b: *std.build.Builder) !void {
+                 null,
+             });
+         }
+-        exe_tests.setTarget(target);
+-        exe_tests.setBuildMode(mode);
+-        try addPackages(b.allocator, exe_tests);
+-        exe_tests.addOptions("build_options", exe_options);
+-        test_step.dependOn(&exe_tests.step);
++        try addPackages(b, exe_tests);
++        exe_tests.root_module.addOptions("build_options", exe_options);
++        const run_unit_tests = b.addRunArtifact(exe_tests);
++        test_step.dependOn(&run_unit_tests.step);
+     }
+ }
+diff --git a/src/file.zig b/src/file.zig
+index a1b9ff2..c5a565e 100644
+--- a/src/file.zig
++++ b/src/file.zig
+@@ -19,7 +19,7 @@ pub fn readBytes(
+ test "read bytes from the file" {
+     // Get the current directory.
+     var cwd_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+-    var cwd = try std.os.getcwd(&cwd_buffer);
++    const cwd = try std.posix.getcwd(&cwd_buffer);
+ 
+     // Concatenate the current directory with the builder file.
+     const allocator = std.testing.allocator;
+diff --git a/src/gen.zig b/src/gen.zig
+index f593146..a81a52b 100644
+--- a/src/gen.zig
++++ b/src/gen.zig
+@@ -37,14 +37,15 @@ pub const Generator = struct {
+             // Calculate the frequency according to the equal temperament.
+             // Hertz = 440 * 2^(semitone distance / 12)
+             // (<http://en.wikipedia.org/wiki/Equal_temperament>)
+-            var amp = @sin(self.config.note * std.math.pi *
+-                std.math.pow(f32, 2, @intToFloat(f32, self.config.scale[sample % self.config.scale.len]) / 12) *
+-                (@intToFloat(f64, i) * 0.0001));
++            const tone_distance: f32 = @floatFromInt(self.config.scale[sample % self.config.scale.len]);
++            const increment: f32 = @floatFromInt(i);
++            var amp = @sin(self.config.note * std.math.pi * std.math.pow(f32, 2, tone_distance / 12) * (increment * 0.0001));
+             // Scale the amplitude between 0 and 256.
+             amp = (amp * std.math.maxInt(u8) / 2) + (std.math.maxInt(u8) / 2);
+             // Apply the volume control.
+-            amp = amp * @intToFloat(f64, self.config.volume) / 100;
+-            try buffer.append(@floatToInt(u8, amp));
++            const volume: f32 = @floatFromInt(self.config.volume);
++            amp = amp * volume / 100;
++            try buffer.append(@intFromFloat(amp));
+         }
+         return buffer.toOwnedSlice();
+     }
+diff --git a/src/main.zig b/src/main.zig
+index ba4aedf..42dbee8 100644
+--- a/src/main.zig
++++ b/src/main.zig
+@@ -10,12 +10,12 @@ const clap = @import("clap");
+ /// Runs `linuxwave`.
+ fn run(allocator: std.mem.Allocator, output: anytype) !void {
+     // Parse command-line arguments.
+-    const cli = try clap.parse(clap.Help, &args.params, args.parsers, .{});
++    const cli = try clap.parse(clap.Help, &args.params, args.parsers, .{ .allocator = allocator });
+     defer cli.deinit();
+-    if (cli.args.help) {
++    if (cli.args.help != 0) {
+         try output.print("{s}\n", .{args.banner});
+         return clap.help(output, clap.Help, &args.params, args.help_options);
+-    } else if (cli.args.version) {
++    } else if (cli.args.version != 0) {
+         try output.print("{s} {s}\n", .{ build_options.exe_name, build_options.version });
+         return;
+     }
+@@ -23,18 +23,18 @@ fn run(allocator: std.mem.Allocator, output: anytype) !void {
+     // Create encoder configuration.
+     const encoder_config = wav.EncoderConfig{
+         .num_channels = if (cli.args.channels) |channels| channels else defaults.channels,
+-        .sample_rate = if (cli.args.rate) |rate| @floatToInt(usize, rate) else defaults.sample_rate,
++        .sample_rate = if (cli.args.rate) |rate| @intFromFloat(rate) else defaults.sample_rate,
+         .format = if (cli.args.format) |format| format else defaults.format,
+     };
+ 
+     // Create generator configuration.
+-    var scale = s: {
++    const scale = s: {
+         var scale = std.ArrayList(u8).init(allocator);
+         var splits = std.mem.split(u8, if (cli.args.scale) |s| s else defaults.scale, ",");
+         while (splits.next()) |chunk| {
+             try scale.append(try std.fmt.parseInt(u8, chunk, 0));
+         }
+-        break :s scale.toOwnedSlice();
++        break :s try scale.toOwnedSlice();
+     };
+     defer allocator.free(scale);
+     const generator_config = gen.GeneratorConfig{
+@@ -51,7 +51,7 @@ fn run(allocator: std.mem.Allocator, output: anytype) !void {
+         if (std.mem.eql(u8, input_file, "-")) {
+             try output.print("Reading {d} bytes from stdin\n", .{data_len});
+             var list = try std.ArrayList(u8).initCapacity(allocator, data_len);
+-            var buffer = list.allocatedSlice();
++            const buffer = list.allocatedSlice();
+             const stdin = std.io.getStdIn().reader();
+             try stdin.readNoEof(buffer);
+             break :b buffer;
+@@ -66,7 +66,7 @@ fn run(allocator: std.mem.Allocator, output: anytype) !void {
+     const generator = gen.Generator.init(generator_config);
+     var data = std.ArrayList(u8).init(allocator);
+     for (buffer) |v| {
+-        var gen_data = try generator.generate(allocator, v);
++        const gen_data = try generator.generate(allocator, v);
+         defer allocator.free(gen_data);
+         try data.appendSlice(gen_data);
+     }
+@@ -83,7 +83,7 @@ fn run(allocator: std.mem.Allocator, output: anytype) !void {
+             break :w out_file.writer();
+         }
+     };
+-    const wav_data = data.toOwnedSlice();
++    const wav_data = try data.toOwnedSlice();
+     defer allocator.free(wav_data);
+     try wav.Encoder(@TypeOf(writer)).encode(writer, wav_data, encoder_config);
+ }
+@@ -97,17 +97,3 @@ pub fn main() !void {
+         try stderr.print("Error occurred: {}\n", .{err});
+     };
+ }
+-
+-test "run" {
+-    const allocator = std.testing.allocator;
+-    var buffer = std.ArrayList(u8).init(allocator);
+-    const output = buffer.writer();
+-    try run(allocator, output);
+-    const result = buffer.toOwnedSlice();
+-    defer allocator.free(result);
+-    try std.testing.expectEqualStrings(
+-        \\Reading 96 bytes from /dev/urandom
+-        \\Saving to output.wav
+-        \\
+-    , result);
+-}
+diff --git a/src/wav.zig b/src/wav.zig
+index 31c7b33..df37894 100644
+--- a/src/wav.zig
++++ b/src/wav.zig
+@@ -72,10 +72,11 @@ pub fn Encoder(comptime Writer: type) type {
+ 
+         /// Patches the headers to seek back and patch the headers for length values.
+         pub fn patchHeader(writer: Writer, seeker: anytype, data_len: u32) !void {
++            const endian = std.builtin.Endian.little;
+             try seeker.seekTo(4);
+-            try writer.writeIntLittle(u32, data_chunk_pos + 8 + data_len - 8);
++            try writer.writeInt(u32, data_chunk_pos + 8 + data_len - 8, endian);
+             try seeker.seekTo(data_chunk_pos + 4);
+-            try writer.writeIntLittle(u32, data_len);
++            try writer.writeInt(u32, data_len, endian);
+         }
+ 
+         /// Writes the WAV chunks with optional data.
+@@ -90,38 +91,39 @@ pub fn Encoder(comptime Writer: type) type {
+         fn writeChunks(writer: Writer, config: EncoderConfig, opt_data: ?[]const u8) !void {
+             // Chunk configuration.
+             const bytes_per_sample = config.format.getNumBytes();
+-            const num_channels = @intCast(u16, config.num_channels);
+-            const sample_rate = @intCast(u32, config.sample_rate);
++            const num_channels: u16 = @intCast(config.num_channels);
++            const sample_rate: u32 = @intCast(config.sample_rate);
+             const byte_rate = sample_rate * @as(u32, num_channels) * bytes_per_sample;
+             const block_align: u16 = num_channels * bytes_per_sample;
+             const bits_per_sample: u16 = bytes_per_sample * 8;
+-            const data_len = if (opt_data) |data| @intCast(u32, data.len) else 0;
++            const data_len: u32 = if (opt_data) |data| @intCast(data.len) else 0;
++            const endian = std.builtin.Endian.little;
+             // Write the file header.
+             try writer.writeAll(&RIFF);
+             if (opt_data != null) {
+-                try writer.writeIntLittle(u32, data_chunk_pos + 8 + data_len - 8);
++                try writer.writeInt(u32, data_chunk_pos + 8 + data_len - 8, endian);
+             } else {
+-                try writer.writeIntLittle(u32, 0);
++                try writer.writeInt(u32, 0, endian);
+             }
+             try writer.writeAll(&WAVE);
+             // Write the format chunk.
+             try writer.writeAll(&FMT_);
+             // Encode with pulse-code modulation (LPCM).
+-            try writer.writeIntLittle(u32, 16);
++            try writer.writeInt(u32, 16, endian);
+             // Uncompressed.
+-            try writer.writeIntLittle(u16, 1);
+-            try writer.writeIntLittle(u16, num_channels);
+-            try writer.writeIntLittle(u32, sample_rate);
+-            try writer.writeIntLittle(u32, byte_rate);
+-            try writer.writeIntLittle(u16, block_align);
+-            try writer.writeIntLittle(u16, bits_per_sample);
++            try writer.writeInt(u16, 1, endian);
++            try writer.writeInt(u16, num_channels, endian);
++            try writer.writeInt(u32, sample_rate, endian);
++            try writer.writeInt(u32, byte_rate, endian);
++            try writer.writeInt(u16, block_align, endian);
++            try writer.writeInt(u16, bits_per_sample, endian);
+             // Write the data chunk.
+             try writer.writeAll(&DATA);
+             if (opt_data) |data| {
+-                try writer.writeIntLittle(u32, data_len);
++                try writer.writeInt(u32, data_len, endian);
+                 try writer.writeAll(data);
+             } else {
+-                try writer.writeIntLittle(u32, 0);
++                try writer.writeInt(u32, 0, endian);
+             }
+         }
+     };
+@@ -130,7 +132,7 @@ pub fn Encoder(comptime Writer: type) type {
+ test "encode WAV" {
+     var buffer: [1000]u8 = undefined;
+     var stream = std.io.fixedBufferStream(&buffer);
+-    var writer = stream.writer();
++    const writer = stream.writer();
+     try Encoder(@TypeOf(writer)).encode(writer, &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 }, .{
+         .num_channels = 1,
+         .sample_rate = 44100,
+@@ -142,6 +144,7 @@ test "encode WAV" {
+ test "stream out WAV" {
+     var buffer: [1000]u8 = undefined;
+     var fbs = std.io.fixedBufferStream(&buffer);
++    const endian = std.builtin.Endian.little;
+     const WavEncoder = Encoder(@TypeOf(fbs).Writer);
+     try WavEncoder.writeHeader(fbs.writer(), .{
+         .num_channels = 1,
+@@ -149,13 +152,13 @@ test "stream out WAV" {
+         .format = .S16_LE,
+     });
+     try std.testing.expectEqual(@as(u64, 44), try fbs.getPos());
+-    try std.testing.expectEqual(@as(u32, 0), std.mem.readIntLittle(u32, buffer[4..8]));
+-    try std.testing.expectEqual(@as(u32, 0), std.mem.readIntLittle(u32, buffer[40..44]));
++    try std.testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, buffer[4..8], endian));
++    try std.testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, buffer[40..44], endian));
+ 
+     const data = &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 };
+     try fbs.writer().writeAll(data);
+     try std.testing.expectEqual(@as(u64, 52), try fbs.getPos());
+     try WavEncoder.patchHeader(fbs.writer(), fbs.seekableStream(), data.len);
+-    try std.testing.expectEqual(@as(u32, 44), std.mem.readIntLittle(u32, buffer[4..8]));
+-    try std.testing.expectEqual(@as(u32, 8), std.mem.readIntLittle(u32, buffer[40..44]));
++    try std.testing.expectEqual(@as(u32, 44), std.mem.readInt(u32, buffer[4..8], endian));
++    try std.testing.expectEqual(@as(u32, 8), std.mem.readInt(u32, buffer[40..44], endian));
+ }
+
+From 92bae56c0497211ceb029d88777b83920e2a4861 Mon Sep 17 00:00:00 2001
+From: tranzystorekk <tranzystorek.io@protonmail.com>
+Date: Mon, 8 Jul 2024 08:26:48 +0200
+Subject: [PATCH 2/4] chore(build): switch to the zig package manager scheme
+
+---
+ .gitmodules   |  3 ---
+ build.zig     |  5 ++---
+ build.zig.zon | 17 +++++++++++++++++
+ libs/zig-clap |  1 -
+ 4 files changed, 19 insertions(+), 7 deletions(-)
+ delete mode 100644 .gitmodules
+ create mode 100644 build.zig.zon
+ delete mode 160000 libs/zig-clap
+
+diff --git a/.gitmodules b/.gitmodules
+deleted file mode 100644
+index 7a6afbb..0000000
+--- a/.gitmodules
++++ /dev/null
+@@ -1,3 +0,0 @@
+-[submodule "libs/zig-clap"]
+-	path = libs/zig-clap
+-	url = https://github.com/Hejsil/zig-clap
+diff --git a/build.zig b/build.zig
+index 869b871..a920df4 100644
+--- a/build.zig
++++ b/build.zig
+@@ -10,9 +10,8 @@ const version = "0.1.5"; // managed by release.sh
+ ///
+ /// This is used for providing the dependencies for main executable as well as the tests.
+ fn addPackages(b: *std.Build, exe: *std.Build.Step.Compile) !void {
+-    exe.root_module.addImport("clap", b.createModule(.{
+-        .root_source_file = b.path("libs/zig-clap/clap.zig"),
+-    }));
++    const clap = b.dependency("zig-clap", .{}).module("clap");
++    exe.root_module.addImport("clap", clap);
+     for ([_][]const u8{ "file", "gen", "wav" }) |package| {
+         const path = b.fmt("src/{s}.zig", .{package});
+         exe.root_module.addImport(package, b.createModule(.{
+diff --git a/build.zig.zon b/build.zig.zon
+new file mode 100644
+index 0000000..50496dc
+--- /dev/null
++++ b/build.zig.zon
+@@ -0,0 +1,17 @@
++.{
++    .name = "linuxwave",
++    .version = "0.1.5",
++    .paths = .{
++        "build.zig",
++        "build.zig.zon",
++        "src",
++        "LICENSE",
++        "README.md",
++    },
++    .dependencies = .{
++        .@"zig-clap" = .{
++            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.9.1.tar.gz",
++            .hash = "122062d301a203d003547b414237229b09a7980095061697349f8bef41be9c30266b",
++        },
++    },
++}

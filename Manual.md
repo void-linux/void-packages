@@ -316,7 +316,7 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	`${FILESDIR}/$service`, containing `exec vlogger -t $service -p $facility`.
 	if a second argument is not specified, the `daemon` facility is used.
 	For more information about `vlogger` and available values for the facility,
-	see [vlogger(1)](https://man.voidlinux.org/vlogger.1).
+	see [vlogger(8)](https://man.voidlinux.org/vlogger.8).
 
 - *vsed()* `vsed -i <file> -e <regex>`
 
@@ -334,6 +334,29 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	and with the appropriate filename for `shell`. If `command` isn't specified,
 	it will default to `pkgname`. The `shell` argument can be one of `bash`,
 	`fish` or `zsh`.
+
+- *vextract()* `[-C <target directory>] [--no-strip-components|--strip-components=<n>] <file>`
+
+	Extracts `file` to `target directory` with `n` directory components stripped. If
+	`target directory` not specified, defaults to the working directory. If
+	`--strip-components` or `--no-strip-components` is not specified, defaults to
+	`--strip-components=1`.
+
+- *vsrcextract()* `[-C <target directory>] [--no-strip-components|--strip-components=<n>] <file>`
+
+	Extracts `$XBPS_SRCDISTDIR/$pkgname-$version/<file>` to `target directory`
+	with `n` directory components stripped. If `target directory` not specified,
+	defaults to the working directory. If `--strip-components` or `--no-strip-components`
+	is not specified, defaults to `--strip-components=1`.
+
+	This is useful when used in conjunction with `skip_extraction` and for submodule distfiles.
+
+- *vsrccopy()* `<file>... <target>`
+
+	Copies `file`s from `$XBPS_SRCDISTDIR/$pkgname-$version/` into the `target` directory,
+	creating `target` if it does not exist.
+
+	This is useful when used in conjunction with `skip_extraction`.
 
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
@@ -736,9 +759,9 @@ built for, available architectures can be found under `common/cross-profiles`.
 In general, `archs` should only be set if the upstream software explicitly targets
 certain architectures or there is a compelling reason why the software should not be
 available on some supported architectures.
-Prepending pattern with tilde means disallowing build on indicated archs.
-First matching pattern is taken to allow/deny build. When no pattern matches,
-package is build if last pattern includes tilde.
+Prepending a pattern with a tilde means disallowing build on the indicated archs.
+The first matching pattern is taken to allow/deny build. When no pattern matches,
+the package is built if the last pattern includes a tilde.
 Examples:
 
 	```
@@ -754,6 +777,9 @@ A special value `noarch` used to be available, but has since been removed.
 - `nocheckperms` If set, xbps-src will not fail on common permission errors (world writable files, etc.)
 
 - `nofixperms` If set, xbps-src will not fix common permission errors (executable manpages, etc.)
+
+- `no_generic_pkgconfig_link` If set, xbps-src will not create a symlink from `$XBPS_CROSS_TRIPLET-pkg-config`
+  to `$XBPS_WRAPPERDIR/pkg-config` before building the template.
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
@@ -1021,7 +1047,7 @@ Additional install arguments can be specified via `make_install_args`.
 - `slashpackage` For packages that use the /package hierarchy and package/compile to build,
 such as `daemontools` or any `djb` software.
 
-- `qmake` For packages that use Qt4/Qt5 qmake profiles (`*.pro`), qmake arguments
+- `qmake` For packages that use Qt5/Qt6 qmake profiles (`*.pro`), qmake arguments
 for the configure phase can be passed in via `configure_args`, make build arguments can
 be passed in via `make_build_args` and install arguments via `make_install_args`. The build
 target can be overridden via `make_build_target` and the install target
@@ -1104,7 +1130,9 @@ It also creates the `vtargetrun` function to wrap commands in a call to
 needed for cross builds and a qmake-wrapper to make `qmake` use this configuration.
 This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-configure` style the configure script calls `qmake` or a `Makefile` in
-`gnu-makefile` style, respectively.
+`gnu-makefile` style, respectively. This is for Qt5 packages.
+
+- `qmake6` is like `qmake` but for Qt6.
 
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
 for compiling cargo -sys crates. This helper is added by default for packages that use the
@@ -1227,7 +1255,7 @@ package accordingly. Additionally, the following functions are available:
 - *vopt_feature()* `vopt_feature <option> <property>`
 
   Same as `vopt_bool`, but uses `-D<property=enabled` and
-	`-D<property>=disabled` respectively. 
+	`-D<property>=disabled` respectively.
 
 The following example shows how to change a source package that uses GNU
 configure to enable a new build option to support PNG images:
@@ -1607,6 +1635,8 @@ In most cases version is inferred from shebang, install path or build style.
 Only required for some multi-language
 applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
+If `python_version` is set to `ignore`, python-containing shebangs will not be rewritten.
+Use this only if a package should not be using a system version of python.
 
 Also, a set of useful variables are defined to use in the templates:
 
@@ -1776,8 +1806,19 @@ executable binary formats, know as binfmts.
 During installation/removal it uses `update-binfmts` from the `binfmt-support` package
 to register/remove entries from the arbitrary executable binary formats database.
 
-To include the trigger use the `binfmts` variable, as the trigger won't do anything unless
-it is defined.
+It is automatically added to packages that contain files in `usr/share/binfmts`.
+These files should be `update-binfmts` format files and will be imported with
+`update-binfmts --import`.
+
+While it is not preferred, the trigger can also be added by using the `binfmts` variable,
+which should contain lines defining binfmts to register:
+
+```
+/path/to/interpreter [update-binfmts binary format specification arguments ...]
+...
+```
+
+See [`update-binfmts(8)`](https://man.voidlinux.org/man8/update-binfmts.8) for more details.
 
 <a id="triggers_dkms"></a>
 #### dkms
@@ -2159,7 +2200,7 @@ otherwise the `debug` packages won't have debugging symbols.
 <a id="contributing"></a>
 ### Contributing via git
 
-To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
+To get started, [fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 

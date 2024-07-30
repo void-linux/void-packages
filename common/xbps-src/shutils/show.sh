@@ -75,7 +75,7 @@ show_avail() {
 
 show_eval_dep() {
     local f x _pkgname _srcpkg found
-    local _dep="$1"
+    local _dep="${1%-32bit}"
     local _host="$2"
     if [ -z "$CROSS_BUILD" ] || [ -z "$_host" ]; then
         # ignore dependency on itself
@@ -92,8 +92,7 @@ show_eval_dep() {
         [[ $_dep == $x ]] && found=1 && break
     done
     [[ $found ]] && return
-    _pkgname=${_dep/-32bit}
-    _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname})
+    _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_dep})
     _srcpkg=${_srcpkg##*/}
     echo $_srcpkg
 }
@@ -117,7 +116,9 @@ show_pkg_build_depends() {
 }
 
 show_pkg_build_deps() {
-    show_pkg_build_depends "${makedepends} $(setup_pkg_depends '' 1 1)" "${hostmakedepends}"
+    local build_depends="${makedepends} $(setup_pkg_depends '' 1 1)"
+    skip_check_step || build_depends+=" ${checkdepends}"
+    show_pkg_build_depends "${build_depends}" "${hostmakedepends}"
 }
 
 show_pkg_hostmakedepends() {
@@ -126,6 +127,10 @@ show_pkg_hostmakedepends() {
 
 show_pkg_makedepends() {
     show_pkg_build_depends "${makedepends}" ""
+}
+
+show_pkg_checkdepends() {
+    show_pkg_build_depends "${checkdepends}" ""
 }
 
 show_pkg_build_options() {

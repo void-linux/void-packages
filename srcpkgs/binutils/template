@@ -1,28 +1,30 @@
 # Template file for 'binutils'
 pkgname=binutils
-version=2.39
+version=2.41
 revision=3
 bootstrap=yes
 hostmakedepends="pkgconf"
-makedepends="zlib-devel"
+makedepends="zlib-devel libzstd-devel"
 short_desc="GNU binary utilities"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="GPL-3.0-or-later"
 homepage="http://www.gnu.org/software/binutils/"
 distfiles="${GNU_SITE}/binutils/binutils-${version}.tar.xz"
-checksum=645c25f563b8adc0a81dbd6a41cffbf4d37083a382e02d5d3df4f65c09516d00
+checksum=ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450
 
 build_options="all_targets"
 desc_option_all_targets="Enable all supported targets"
-
-subpackages="binutils-doc"
 
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends+=" flex perl texinfo"
 	makedepends+=" elfutils-devel"
 	checkdepends="bc"
-	depends="binutils-doc"
-	subpackages+=" libiberty-devel binutils-devel"
+	depends="binutils-doc binutils-libs"
+	subpackages="binutils-doc libiberty-devel binutils-libs binutils-devel"
+else
+	_makeinfo=MAKEINFO=/bin/true
+	# Set to space force no subpackages
+	subpackages=" "
 fi
 
 _get_triplet() {
@@ -43,10 +45,16 @@ do_configure() {
 		conf+=" --with-debuginfod --enable-shared --enable-install-libiberty"
 	else
 		conf+=" --without-debuginfod --disable-shared --disable-install-libbfd"
+		sed -i "
+			s;zlibinc=\$;&-I${XBPS_MASTERDIR}/usr/include;
+			s;zlibdir=\$;&-L${XBPS_MASTERDIR}/usr/lib;
+		" */configure
 	fi
 	if [ "$CROSS_BUILD" ]; then
 		# we don't want --with-sysroot=${XBPS_CROSS_BASE} like gnu-configure
 		conf+=" --host=${XBPS_CROSS_TRIPLET} --with-build-sysroot=${XBPS_CROSS_BASE}"
+		# pkgconf adds sysroot includes to cflags and ldflags, which breaks binutils cross-compile with zstd
+		vsed -e '/PKG_CONFIG_SYSROOT_DIR/d' -i ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
 	fi
 
 	# gprofng currently only supports x86 and aarch64 glibc.
@@ -107,11 +115,12 @@ do_configure() {
 		--with-system-zlib \
 		--with-mmap \
 		--with-pic \
+		--with-zstd \
 		$conf
 }
 
 do_build() {
-	cd ${wrksrc}/build && make ${makejobs}
+	cd ${wrksrc}/build && make ${makejobs} ${_makeinfo}
 }
 
 # there is a testsuite now, but e.g. ifunc tests all fail on musl and
@@ -126,7 +135,7 @@ do_install() {
 	cd ${wrksrc}/build
 
 	local _triplet=$(_get_triplet)
-	make DESTDIR=${DESTDIR} tooldir=/usr install
+	make DESTDIR=${DESTDIR} tooldir=/usr install ${_makeinfo}
 
 	cd ..
 
@@ -138,9 +147,9 @@ do_install() {
 		# Remove these symlinks, they are not ABI stable.
 		# Programs should compile static to the .a file.
 		rm -f ${DESTDIR}/usr/lib/lib{bfd,opcodes}.so
-		echo "INPUT ( /usr/lib/libbfd.a -liberty -lz )" \
+		echo "INPUT ( /usr/lib${XBPS_TARGET_WORDSIZE}/libbfd.a -lsframe -liberty -lzstd -lz )" \
 			>${DESTDIR}/usr/lib/libbfd.so
-		echo "INPUT ( /usr/lib/libopcodes.a -lbfd )" \
+		echo "INPUT ( /usr/lib${XBPS_TARGET_WORDSIZE}/libopcodes.a -lbfd )" \
 			>${DESTDIR}/usr/lib/libopcodes.so
 
 		# Install PIC version of libiberty.a
@@ -158,13 +167,20 @@ do_install() {
 }
 
 binutils-devel_package() {
-	depends="zlib-devel libiberty-devel"
+	depends="binutils-libs zlib-devel libzstd-devel libiberty-devel"
 	short_desc+=" - development files"
 	pkg_install() {
 		vmove usr/include
 		vmove "usr/lib/*.a"
-		vmove "usr/lib/libbfd.so"
-		vmove "usr/lib/libopcodes.so"
+		vmove "usr/lib/*.so"
+	}
+}
+
+binutils-libs_package() {
+	short_desc+=" - shared libraries"
+	pkg_install() {
+		vmove "usr/lib/lib*-${version}.so"
+		vmove "usr/lib/*.so.*"
 	}
 }
 
@@ -172,8 +188,6 @@ binutils-doc_package() {
 	short_desc+=" - info files"
 	pkg_install() {
 		vmove usr/share/info
-		# Remove info file that conflicts with autoconf.
-		rm -f ${PKGDESTDIR}/usr/share/info/standards.info
 	}
 }
 

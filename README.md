@@ -217,7 +217,7 @@ The following directory hierarchy is used with a default configuration file:
             |  |- repocache ...
             |  |- sources ...
             |
-            |- masterdir
+            |- masterdir-<arch>
             |  |- builddir -> ...
             |  |- destdir -> ...
             |  |- host -> bind mounted from <hostdir>
@@ -226,7 +226,7 @@ The following directory hierarchy is used with a default configuration file:
 
 The description of these directories is as follows:
 
- - `masterdir`: master directory to be used as rootfs to build/install packages.
+ - `masterdir-<arch>`: master directory to be used as rootfs to build/install packages.
  - `builddir`: to unpack package source tarballs and where packages are built.
  - `destdir`: to install packages, aka **fake destdir**.
  - `hostdir/ccache`: to store ccache data if the `XBPS_CCACHE` option is enabled.
@@ -450,7 +450,7 @@ and `xbps-src` should be fully functional; just start the `bootstrap` process, i
 
     $ ./xbps-src binary-bootstrap
 
-The default masterdir is created in the current working directory, i.e `void-packages/masterdir`.
+The default masterdir is created in the current working directory, i.e. `void-packages/masterdir-<arch>`, where `<arch>` for the default masterdir is is the native xbps architecture.
 
 <a name="remaking-masterdir"></a>
 ### Remaking the masterdir
@@ -477,20 +477,21 @@ Two ways are available to build 32bit packages on x86\_64:
 
 The canonical mode (native) needs a new x86 `masterdir`:
 
-    $ ./xbps-src -m masterdir-x86 binary-bootstrap i686
-    $ ./xbps-src -m masterdir-x86 ...
+    $ ./xbps-src -A i686 binary-bootstrap
+    $ ./xbps-src -A i686 ...
 
 <a name="building-for-musl"></a>
 ### Building packages natively for the musl C library
 
-Canonical way of building packages for same architecture but different C library is through dedicated masterdir.
+The canonical way of building packages for same architecture but different C library is through a dedicated masterdir by using the host architecture flag `-A`.
 To build for x86_64-musl on glibc x86_64 system, prepare a new masterdir with the musl packages:
 
-    $ ./xbps-src -m masterdir-x86_64-musl binary-bootstrap x86_64-musl
+    $ ./xbps-src -A x86_64-musl binary-bootstrap
 
+This will create and bootstrap a new masterdir called `masterdir-x86_64-musl` that will be used when `-A x86_64-musl` is specified.
 Your new masterdir is now ready to build packages natively for the musl C library:
 
-    $ ./xbps-src -m masterdir-x86_64-musl pkg ...
+    $ ./xbps-src -A x86_64-musl pkg ...
 
 <a name="building-base-system"></a>
 ### Building void base-system from scratch

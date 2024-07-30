@@ -3,14 +3,14 @@
 # which use the version number.
 
 pkgname=gcc
-version=12.2.0
-revision=4
+version=13.2.0
+revision=2
 _minorver="${version%.*}"
 _majorver="${_minorver%.*}"
-_gmp_version=6.2.1
-_mpfr_version=4.1.0
-_mpc_version=1.2.1
-_isl_version=0.24
+_gmp_version=6.3.0
+_mpfr_version=4.2.1
+_mpc_version=1.3.1
+_isl_version=0.26
 create_wrksrc=yes
 short_desc="GNU Compiler Collection"
 maintainer="Enno Boland <gottox@voidlinux.org>"
@@ -19,15 +19,15 @@ license="GFDL-1.2-or-later, GPL-3.0-or-later, LGPL-2.1-or-later"
 # *-musl builders have issues fetching https://ftp.gnu.org/gnu/mpc/mpc-1.1.0.tar.gz
 distfiles="
  ${GNU_SITE}/gcc/gcc-${version}/gcc-${version}.tar.xz
- https://gmplib.org/download/gmp/gmp-${_gmp_version}.tar.xz
+ ${GNU_SITE}/gmp/gmp-${_gmp_version}.tar.xz
  ${GNU_SITE}/mpfr/mpfr-${_mpfr_version}.tar.xz
  ${GNU_SITE}/mpc/mpc-${_mpc_version}.tar.gz
  ${SOURCEFORGE_SITE}/libisl/isl-${_isl_version}.tar.bz2"
-checksum="e549cf9cf3594a00e27b6589d4322d70e0720cdd213f39beb4181e06926230ff
- fd4829912cddd12f84181c3451cc752be224643e87fac497b69edddadc49b4f2
- 0c98a3f1732ff6ca4ea690552079da9c597872d30e96ec28414ee23c95558a7f
- 17503d2c395dfcf106b622dc142683c1199431d095367c6aacba6eec30340459
- fcf78dd9656c10eb8cf9fbd5f59a0b6b01386205fe1934b3b287a0a1898145c0"
+checksum="e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da
+ a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898
+ 277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2
+ ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8
+ 5eac8664e9d67be6bd0bee5085d6840b8baf738c06814df47eaf4166d9776436"
 
 nopie=yes
 lib32disabled=yes
@@ -36,6 +36,7 @@ replaces="gcc-gcj<7.2.0 gcc-gcj-jdk-compat<7.2.0 libmpx>=0 libmpx-devel>=0
  libssp>=0 libssp-devel>=0"
 
 _have_gccgo=yes
+_have_libquadmath=no
 
 # MIPS is untested and does not have go in crosstoolchains
 # 32-bit PowerPC seems weirdly broken since the 10.x release
@@ -43,6 +44,10 @@ _have_gccgo=yes
 case "$XBPS_TARGET_MACHINE" in
 	ppc64*) ;;
 	mips*-musl|ppc*) _have_gccgo=no ;;
+esac
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*|x86_64*|ppc64le*) _have_libquadmath=yes ;;
 esac
 
 if [ "$CHROOT_READY" ]; then
@@ -85,6 +90,10 @@ fi
 if [ "$CHROOT_READY" ]; then
 	subpackages+=" gcc-fortran libgfortran-devel libgfortran"
 	subpackages+=" gcc-objc gcc-objc++ libobjc-devel libobjc"
+
+	if [ "$_have_libquadmath" = "yes" ]; then
+		subpackages+=" libquadmath libquadmath-devel"
+	fi
 fi
 
 if [ "$_have_gccgo" = "yes" ]; then
@@ -136,11 +145,7 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 case "$XBPS_TARGET_MACHINE" in
 	i686*|x86_64*)
-		subpackages+=" libquadmath libquadmath-devel"
 		subpackages+=" libvtv libvtv-devel"
-		;;
-	ppc64le)
-		subpackages+=" libquadmath libquadmath-devel"
 		;;
 esac
 case "$XBPS_TARGET_MACHINE" in
@@ -187,8 +192,12 @@ pre_configure() {
 	# Do not run fixincludes
 	sed -i 's@\./fixinc\.sh@-c true@' gcc/Makefile.in
 
+	# Do not enable C++17, gcc compiles with -std=c++11
+	sed -i 's/HAVE_CXX17=1/HAVE_CXX17=0/' isl/configure
+
 	if [ "$XBPS_TARGET_LIBC" = musl ]; then
 		for p in ${FILESDIR}/*-musl.patch; do
+			msg_normal "patching: $p\n"
 			patch -p1 -i $p
 		done
 	fi
@@ -211,9 +220,9 @@ do_configure() {
 		ppc*) _args+=" --enable-secureplt --enable-autolink-libatomic";;
 	esac
 
-	# on ppc64le-musl and all big endian ppc64
+	# on all big endian ppc64
 	case "$XBPS_TARGET_MACHINE" in
-		ppc64le) ;;
+		ppc64le*) ;;
 		ppc64*) _args+=" --disable-libquadmath" ;;
 	esac
 
@@ -385,10 +394,9 @@ do_install() {
 		vman ${FILESDIR}/${f}.1
 	done
 
-	case "$XBPS_TARGET_MACHINE" in
-		i686*|x86_64*|ppc64le) ;;
-		*) rm -f ${DESTDIR}/usr/share/info/libquadmath.info;;
-	esac
+	if [ "$_have_libquadmath" != "yes"]; then
+		rm -f ${DESTDIR}/usr/share/info/libquadmath.info*
+	fi
 }
 
 gcc-ada_package() {
@@ -502,6 +510,11 @@ libada_package() {
 libgfortran-devel_package() {
 	depends="libgfortran>=${_minorver}"
 	short_desc+=" - Fortran library - development files"
+
+	if [ "$_have_libquadmath" = "yes" ]; then
+		depends+=" libquadmath-devel"
+	fi
+
 	pkg_install() {
 		vmove usr/lib/libgfortran.spec
 		vmove usr/lib/libgfortran.a
@@ -675,7 +688,7 @@ libsanitizer-devel_package() {
 	pkg_install() {
 		vmove "usr/lib/lib*san*.so"
 		vmove "usr/lib/lib*san*.a"
-		vmove usr/lib/libasan_preinit.o
+		vmove "usr/lib/lib*san_preinit.o"
 		vmove usr/lib/libsanitizer.spec
 	}
 }

@@ -176,10 +176,21 @@ msg_warn_nochroot() {
 
 msg_normal() {
     if [ -z "$XBPS_QUIET" ]; then
-        # normal messages in bold
-        [ -n "$NOCOLORS" ] || printf "\033[1m"
+        # normal messages in bright bold white
+        if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+            # Github CI considers '1m' to be just a font bold
+            [ -n "$NOCOLORS" ] || printf "\033[97m\033[1m"
+        else
+            [ -n "$NOCOLORS" ] || printf "\033[1m"
+        fi
         printf "=> $@"
         [ -n "$NOCOLORS" ] || printf "\033[m"
+    fi
+}
+
+msg_verbose() {
+    if [ -n "$XBPS_VERBOSE" ]; then
+        printf >&2 "$@"
     fi
 }
 
@@ -201,7 +212,12 @@ report_broken() {
 }
 
 msg_normal_append() {
-    [ -n "$NOCOLORS" ] || printf "\033[1m"
+    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+        # Github CI considers '1m' to be just a font bold
+        [ -n "$NOCOLORS" ] || printf "\033[97m\033[1m"
+    else
+        [ -n "$NOCOLORS" ] || printf "\033[1m"
+    fi
     printf "$@"
     [ -n "$NOCOLORS" ] || printf "\033[m"
 }

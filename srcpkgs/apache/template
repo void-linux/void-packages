@@ -1,7 +1,7 @@
 # Template file for 'apache'
 pkgname=apache
-version=2.4.56
-revision=4
+version=2.4.58
+revision=1
 build_style=gnu-configure
 configure_args="--prefix= --sbindir=/usr/bin --enable-pie --enable-modules=all
  --enable-mods-shared=all --enable-authn-dbm --enable-authn-anon
@@ -18,13 +18,14 @@ configure_args="--prefix= --sbindir=/usr/bin --enable-pie --enable-modules=all
  --enable-dav --enable-info --enable-cgi --enable-cgid --enable-dav-fs
  --enable-dav-lock --enable-vhost-alias --enable-imagemap --enable-so
  --enable-rewrite --enable-layout=XBPS --sysconfdir=/etc/${pkgname}
- --enable-mpms-shared=all --with-z=${XBPS_CROSS_BASE}/usr"
+ --enable-mpms-shared=all --with-z=${XBPS_CROSS_BASE}/usr
+ --with-apr=${XBPS_CROSS_BASE}/usr/bin/apr-1-config"
 conf_files="
 	/etc/${pkgname}/extra/*.conf
 	/etc/${pkgname}/httpd.conf
 	/etc/${pkgname}/magic
 	/etc/${pkgname}/mime.types"
-hostmakedepends="pkg-config perl apr-util-devel"
+hostmakedepends="pkg-config perl"
 makedepends="zlib-devel libuuid-devel pcre2-devel nghttp2-devel
  openssl-devel db-devel gdbm-devel expat-devel libldap-devel apr-util-devel"
 depends="apache-htpasswd"
@@ -34,7 +35,7 @@ license="Apache-2.0"
 homepage="https://httpd.apache.org/"
 changelog="https://www.apache.org/dist/httpd/CHANGES_2.4"
 distfiles="https://archive.apache.org/dist/httpd/httpd-${version}.tar.bz2"
-checksum=d8d45f1398ba84edd05bb33ca7593ac2989b17cb9c7a0cafe5442d41afdb2d7c
+checksum=fa16d72a078210a54c47dd5bef2f8b9b8a01d94909a51453956b3ec6442ea4c5
 
 if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
 	makedepends+=" libxcrypt-devel"
@@ -47,14 +48,11 @@ make_dirs="
  /srv/www/apache 0755 _apache _apache
  /var/log/httpd 0755 _apache _apache"
 
-# Do not redefine struct iovec in include/apr_want.h
-CFLAGS="-DAPR_IOVEC_DEFINED=1 -I${XBPS_CROSS_BASE}/usr/include/apr-1"
-
 if [ "$CROSS_BUILD" ]; then
 	# FIXME: is sizeof(void*) ever less than sizeof(long)?
 	export ap_cv_void_ptr_lt_long=no
-	# This is missing in cross compiled apr-1-config (?)
-	LDFLAGS="-pthread"
+	# apr is 1.3.0 or later
+	export ap_cv_aprver13=yes
 fi
 
 pre_configure() {
@@ -89,11 +87,9 @@ pre_configure() {
 		# since httpd-2.4.53, manually export PCRE_CONFIG
 		# to let configure know where it is
 		export PCRE_CONFIG="${XBPS_CROSS_BASE}/usr/bin/pcre2-config"
-		configure_args+=" --with-apr=$XBPS_WRAPPERDIR/apr-1-config
-		 --with-apr-util=$XBPS_WRAPPERDIR/apu-1-config"
+		configure_args+=" --with-apr-util=$XBPS_WRAPPERDIR/apu-1-config"
 	else
-		configure_args+=" --with-apr=/usr/bin/apr-1-config
-		 --with-apr-util=/usr/bin/apu-1-config"
+		configure_args+=" --with-apr-util=/usr/bin/apu-1-config"
 	fi
 }
 
@@ -110,6 +106,15 @@ post_configure() {
 }
 
 post_install() {
+	# Remove CROSS_BUILD and ccache reference
+	sed -i -e "s; -L${XBPS_CROSS_BASE}/*usr/lib$;;" \
+		-e "s; -L[^[:space:]]*/usr/lib[36][24] ; ;" \
+		-e "s; -I${XBPS_CROSS_BASE}/*usr/include/* ; ;" \
+		-e "s; -I${XBPS_CROSS_BASE}/*usr/include/*$;;" \
+		-e "s;${XBPS_CROSS_BASE}/*usr/;/usr/;g" \
+		-e 's; -ffile-prefix-map=[^[:space:]]*;;' \
+		"$DESTDIR/usr/share/apache/webroot/build/config_vars.mk"
+
 	# Set a working ServerRoot
 	#
 	# Load modules:
@@ -172,5 +177,6 @@ apache-devel_package() {
 		vmove usr/share/apache/webroot/build
 		vmove usr/bin/apxs
 		vmove "usr/share/man/man1/apxs*"
+		vmove "usr/share/apache/webroot/manual/programs/apxs*"
 	}
 }
