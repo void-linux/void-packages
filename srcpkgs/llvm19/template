@@ -33,6 +33,7 @@ configure_args="
  -DLLDB_PYTHON_RELATIVE_PATH=lib/python${py3_ver}/site-packages
  -DLLDB_PYTHON_EXE_RELATIVE_PATH=bin/python${py3_ver}
  -DLLDB_PYTHON_EXT_SUFFIX=$_ext_suffix
+ -DLIBC_WNO_ERROR=YES
  -DLLVM_EXTERNAL_SPIRV_HEADERS_SOURCE_DIR=/usr "
 hostmakedepends="perl python3 zlib-devel libffi-devel swig python3-Sphinx
  python3-recommonmark python3-sphinx-automodapi git python3-sphinx-markdown-tables python3-yaml pkg-config
@@ -55,21 +56,21 @@ lib32disabled=yes
 python_version=3
 
 build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt
- openmp libcxx libunwind offload llvm_spirv lto graphviz full_debug"
+ openmp libc libcxx libunwind offload llvm_spirv lto graphviz full_debug"
 build_options_default="clang clang_tools_extra lld mlir libclc polly lldb openmp
  libcxx libunwind llvm_spirv"
 
-if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
-	build_options_default+=" flang bolt offload"
+# hack to set correct order of subpackages after processing build options
+subpackages=$(:)
+
+# if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
+
 	# if [ "$XBPS_TARGET_LIBC" = "musl" ] ; then
-	# 	if [ -z "$CROSS_BUILD" ]; then
-	# 		build_options_default+=" flang"
-	# 	fi
 	# else
 	# 	build_options_default+=" flang"
 	# fi
 	# x86_64|i686) makedepends+=" libquadmath-devel" ;;
-fi
+# fi
 
 # fails to build with libquadmth on musl
 case "$XBPS_TARGET_MACHINE" in
@@ -80,6 +81,12 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 
 case "$XBPS_TARGET_MACHINE" in
+	x86_64*|aarch64*)
+		build_options_default+=" flang bolt"
+		if [ -z "$CROSS_BUILD" ]; then
+			build_options_default+=" offload"
+		fi
+	;;
 	armv*)
 		nopie=yes
 		configure_args+=" -DLLVM_ENABLE_PIE=NO"
@@ -102,7 +109,11 @@ if [ "$build_option_lto" ]; then
 	configure_args+=" -DLLVM_ENABLE_LTO=On"
 fi
 
-subpackages="libllvm19 llvm19-doc llvm19-devel"
+if [ "$build_option_llvm_spirv" ]; then
+	subpackages+=" SPIRV-LLVM-Translator19 SPIRV-LLVM-Translator19-devel "
+fi
+
+subpackages+=" libllvm19 llvm19-doc llvm19-devel "
 
 # use $(:) to silence xlint
 _enabled_runtimes=$(:)
@@ -144,6 +155,7 @@ if [ "$build_option_flang" ]; then
 	subpackages+=" flang19 flang19-devel "
 fi
 
+
 subpackages+=" compiler-rt19 "
 _enabled_runtimes="compiler-rt"
 
@@ -155,6 +167,10 @@ if [ "$build_option_openmp" ]; then
 		_enabled_runtimes+=";offload"
 		configure_args+=" -DOPENMP_ENABLE_LIBOMPTARGET=YES"
 	fi
+fi
+
+if [ "$build_option_libc" ]; then
+	_enabled_runtimes+=";libc"
 fi
 
 if [ "$build_option_libunwind" ]; then
@@ -173,6 +189,21 @@ configure_args+=" -DLLVM_ENABLE_PROJECTS=${_enabled_projects}"
 
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" llvm19-cross-tools "
+
+	configure_args+=" -DLLVM_NATIVE_TOOL_DIR=/usr/bin"
+	configure_args+=" -DLLVM_TABLEGEN=/usr/bin/llvm-tblgen"
+	configure_args+=" -DCLANG_TABLEGEN=/usr/bin/clang-tblgen"
+	configure_args+=" -DMLIR_TABLEGEN=/usr/bin/mlir-tblgen"
+	configure_args+=" -DMLIR_PDLL_TABLEGEN=/usr/bin/mlir-pdll"
+	configure_args+=" -DMLIR_LINALG_ODS_YAML_GEN=/usr/bin/mlir-linalg-ods-yaml-gen"
+	configure_args+=" -DMLIR_CONFIG_SRC_SHARDER_TABLEGEN_EXE=/usr/bin/mlir-src-sharder"
+	configure_args+=" -DFLANG_NEW_EXE=/usr/bin/flang-new"
+	configure_args+=" -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=/usr/bin/clang-tidy-confusable-chars-gen"
+	configure_args+=" -DCLANG_PSEUDO_GEN=/usr/bin/clang-pseudo-gen"
+	configure_args+=" -DLLVM_CONFIG_PATH=/usr/bin/llvm-config"
+	configure_args+=" -DLLDB_TABLEGEN_EXE=/usr/bin/lldb-tblgen"
+
+	configure_args+=" -DLIBOMP_OMPD_GDB_SUPPORT=NO"
 fi
 
 # For OCaml bindings and lldb lua scripting
@@ -185,6 +216,41 @@ if [ -z "$CROSS_BUILD" ]; then
 	# lldb cross build fails with lua
 	makedepends+=" lua53-devel "
 fi
+
+if [ ! "$build_option_full_debug" ]; then
+	# Vastly reduce size of debugging symbols:
+	CFLAGS=${CFLAGS/ -g/ -g1}
+	CXXFLAGS=${CXXFLAGS/ -g/ -g1}
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+arm*-musl|i686-musl)
+	# sanitizer code is broken since it duplicates some libc bits
+	configure_args+=" -DCOMPILER_RT_BUILD_SANITIZERS=OFF"
+	# configure_args+=" -DCOMPILER_RT_BUILD_LIBFUZZER=OFF"
+	configure_args+=" -DCOMPILER_RT_BUILD_XRAY=OFF"
+	configure_args+=" -DCOMPILER_RT_BUILD_MEMPROF=OFF"
+	;;
+esac
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*) _arch="X86";;
+	x86_64*) _arch="X86";;
+	armv5*) _arch="Armv5te";;
+	armv6*) _arch="Armv6";;
+	armv7*) _arch="Armv7";;
+	aarch64*) _arch="AArch64";;
+	mips*) _arch="Mips";;
+	ppc*) _arch="PowerPC";;
+	riscv64*) _arch="RISCV64";;
+esac
+
+
+_triplet=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}
+
+configure_args+=" -DLLVM_TARGET_ARCH=${_arch}"
+configure_args+=" -DLLVM_HOST_TRIPLE=${_triplet}"
+configure_args+=" -DLLVM_DEFAULT_TARGET_TRIPLE=${_triplet}"
 
 post_extract() {
 	if [ "$build_option_llvm_spirv" ]; then
@@ -228,15 +294,6 @@ post_patch() {
 }
 
 pre_configure() {
-
-	if [ "$build_option_llvm_spirv" ]; then
-		if [ "$CROSS_BUILD" ]; then
-			configure_args+=" -DLLVM_SPIRV=/usr/bin/llvm-spirv"
-		else
-			configure_args+=" -DLLVM_SPIRV=${wrksrc}/llvm/build/bin/llvm-spirv"
-		fi
-	fi
-
 	if [ "$CROSS_BUILD" ]; then
 		CC="clang"
 		CXX="clang++"
@@ -249,8 +306,7 @@ pre_configure() {
 		CFLAGS+=" --target=${XBPS_CROSS_TRIPLET} --sysroot=${XBPS_CROSS_BASE}"
 		CFLAGS+=" --gcc-toolchain=/usr"
 		CFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
-		# CFLAGS+=" -isystem /usr/lib/gcc/${gcc_version}/include"
-		CFLAGS+=" -isystem /usr/lib/gcc/${XBPS_CROSS_TRIPLET}/${gcc_version}/include"
+		# CFLAGS+=" -isystem /usr/lib/gcc/${XBPS_CROSS_TRIPLET}/${gcc_version}/include"
 
 		CXXFLAGS+=" --target=${XBPS_CROSS_TRIPLET} --sysroot=${XBPS_CROSS_BASE}"
 		CXXFLAGS+=" --gcc-toolchain=/usr"
@@ -258,71 +314,15 @@ pre_configure() {
 		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}"
 		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward"
 		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
-		# CXXFLAGS+=" -isystem /usr/lib/gcc/${gcc_version}/include"
-		CXXFLAGS+=" -isystem /usr/lib/gcc/${XBPS_CROSS_TRIPLET}/${gcc_version}/include"
+		# CXXFLAGS+=" -isystem /usr/lib/gcc/${XBPS_CROSS_TRIPLET}/${gcc_version}/include"
 	fi
-
-
-
-	if [ ! "$build_option_full_debug" ]; then
-		# Vastly reduce size of debugging symbols:
-		CFLAGS=${CFLAGS/ -g/ -g1}
-		CXXFLAGS=${CXXFLAGS/ -g/ -g1}
+	if [ "$build_option_llvm_spirv" ]; then
+		if [ "$CROSS_BUILD" ]; then
+			configure_args+=" -DLLVM_SPIRV=/usr/bin/llvm-spirv"
+		else
+			configure_args+=" -DLLVM_SPIRV=${wrksrc}/llvm/build/bin/llvm-spirv"
+		fi
 	fi
-
-	# # since gcc9, the build likes to blow up for ppc32 apparently because
-	# # of clang being too large for a 24-bit relative call to the PLT, so
-	# # optimize for size instead
-	# case "$XBPS_TARGET_MACHINE" in
-	# 	ppc64*) ;;
-	# 	mips*-musl|ppc*) configure_args+=" -DVOID_CXX_OPT_FLAGS=-Os" ;;
-	# 	armv*) configure_args+=" -DLIBCXX_VOID_GCC_BUG_109180_WORKAROUND=ON ";;
-	# esac
-
-	if [ "$CROSS_BUILD" ]; then
-		configure_args+=" -DLLVM_NATIVE_TOOL_DIR=/usr/bin"
-		configure_args+=" -DLLVM_TABLEGEN=/usr/bin/llvm-tblgen"
-		configure_args+=" -DCLANG_TABLEGEN=/usr/bin/clang-tblgen"
-		configure_args+=" -DMLIR_TABLEGEN=/usr/bin/mlir-tblgen"
-		configure_args+=" -DMLIR_PDLL_TABLEGEN=/usr/bin/mlir-pdll"
-		configure_args+=" -DMLIR_LINALG_ODS_YAML_GEN=/usr/bin/mlir-linalg-ods-yaml-gen"
-		configure_args+=" -DMLIR_CONFIG_SRC_SHARDER_TABLEGEN_EXE=/usr/bin/mlir-src-sharder"
-		configure_args+=" -DFLANG_NEW_EXE=/usr/bin/flang-new"
-		configure_args+=" -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=/usr/bin/clang-tidy-confusable-chars-gen"
-		configure_args+=" -DCLANG_PSEUDO_GEN=/usr/bin/clang-pseudo-gen"
-		configure_args+=" -DLLVM_CONFIG_PATH=/usr/bin/llvm-config"
-		configure_args+=" -DLLDB_TABLEGEN_EXE=/usr/bin/lldb-tblgen"
-	fi
-
-	case "$XBPS_TARGET_MACHINE" in
-	arm*-musl|i686-musl)
-		# sanitizer code is broken since it duplicates some libc bits
-		configure_args+=" -DCOMPILER_RT_BUILD_SANITIZERS=OFF"
-		# configure_args+=" -DCOMPILER_RT_BUILD_LIBFUZZER=OFF"
-		configure_args+=" -DCOMPILER_RT_BUILD_XRAY=OFF"
-		configure_args+=" -DCOMPILER_RT_BUILD_MEMPROF=OFF"
-		;;
-	esac
-
-	case "$XBPS_TARGET_MACHINE" in
-		i686*) _arch="X86";;
-		x86_64*) _arch="X86";;
-		armv5*) _arch="Armv5te";;
-		armv6*) _arch="Armv6";;
-		armv7*) _arch="Armv7";;
-		aarch64*) _arch="AArch64";;
-		mips*) _arch="Mips";;
-		ppc*) _arch="PowerPC";;
-		riscv64*) _arch="RISCV64";;
-	esac
-
-	local triplet
-
-	triplet=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}
-
-	configure_args+=" -DLLVM_TARGET_ARCH=${_arch}"
-	configure_args+=" -DLLVM_HOST_TRIPLE=${triplet}"
-	configure_args+=" -DLLVM_DEFAULT_TARGET_TRIPLE=${triplet}"
 }
 
 post_build() {
@@ -386,6 +386,10 @@ post_install() {
 
 	# Can this be disabled some other way?
 	rm -f ${DESTDIR}/usr/lib64
+
+	if [ "$build_option_llvm_spirv" ]; then
+		mv ${DESTDIR}/usr/bin/llvm-spirv ${DESTDIR}/usr/bin/llvm-spirv-19
+	fi
 }
 
 clang19_package() {
@@ -715,13 +719,9 @@ libomp19-devel_package() {
 			vmove usr/share/man/man1/llvmopenmp.1
 		fi
 
-		if [ -z "$CROSS_BUILD" ]; then
-			case "$XBPS_TARGET_MACHINE" in
-				x86_64*|aarch64*)
-					vmove "usr/lib/libomptarget*.bc"
-					vmove "usr/lib/libomp*.a"
-				;;
-			esac
+		if [ "$build_option_offload" ]; then
+			vmove "usr/lib/libomptarget*.bc"
+			vmove "usr/lib/libomp*.a"
 		fi
 	}
 }
@@ -823,6 +823,9 @@ llvm19-devel_package() {
 	if [ "$build_option_clang" ]; then
 		depends+=" clang19-devel>=${version}_${revision} "
 	fi
+	if [ "$build_option_llvm_spirv" ]; then
+		depends+=" SPIRV-LLVM-Translator19-devel>=${version}_${revision} "
+	fi
 	pkg_install() {
 		vmove usr/lib/libLLVM.so
 		vmove usr/lib/libLTO.so
@@ -856,5 +859,23 @@ libclc19_package() {
 		vmove usr/share/clc
 		vmove usr/include/clc
 		vmove usr/share/pkgconfig/libclc.pc
+	}
+}
+
+SPIRV-LLVM-Translator19_package() {
+	short_desc+=" - API and commands for processing SPIR-V modules"
+	alternatives="llvm-spirv:llvm-spirv:/usr/bin/llvm-spirv-19"
+	pkg_install() {
+		vmove usr/bin/llvm-spirv-19
+	}
+}
+
+SPIRV-LLVM-Translator19-devel_package() {
+	depends="SPIRV-LLVM-Translator19>=${version}_${revision}"
+	short_desc+=" - API and commands for processing SPIR-V modules - development files"
+	pkg_install() {
+		vmove usr/include/LLVMSPIRVLib
+		vmove usr/lib/pkgconfig/LLVMSPIRVLib.pc
+		vmove "usr/lib/libLLVMSPIRV*.a"
 	}
 }
