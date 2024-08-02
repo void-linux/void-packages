@@ -32,7 +32,6 @@ configure_args="
  -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=NO
  -DLLDB_PYTHON_RELATIVE_PATH=lib/python${py3_ver}/site-packages
  -DLLDB_PYTHON_EXE_RELATIVE_PATH=bin/python${py3_ver}
- -DFLANG_INCLUDE_TESTS=NO
  -DLLDB_PYTHON_EXT_SUFFIX=$_ext_suffix
  -DLLVM_EXTERNAL_SPIRV_HEADERS_SOURCE_DIR=/usr "
 hostmakedepends="perl python3 zlib-devel libffi-devel swig python3-Sphinx
@@ -56,14 +55,12 @@ lib32disabled=yes
 python_version=3
 
 build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt
- openmp libcxx libunwind llvm_spirv lto graphviz smaller_debug full_debug"
+ openmp libcxx libunwind offload llvm_spirv lto graphviz full_debug"
 build_options_default="clang clang_tools_extra lld mlir libclc polly lldb openmp
- libunwind llvm_spirv smaller_debug"
-
-vopt_conflict smaller_debug full_debug
+ libcxx libunwind llvm_spirv"
 
 if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
-	build_options_default+=" flang bolt"
+	build_options_default+=" flang bolt offload"
 	# if [ "$XBPS_TARGET_LIBC" = "musl" ] ; then
 	# 	if [ -z "$CROSS_BUILD" ]; then
 	# 		build_options_default+=" flang"
@@ -136,7 +133,7 @@ fi
 
 if [ "$build_option_libclc" ]; then
 	_enabled_projects+="libclc;"
-	subpackages+=" libclc"
+	subpackages+=" libclc19"
 fi
 if [ "$build_option_mlir" ]; then
 	_enabled_projects+="mlir;"
@@ -151,16 +148,13 @@ subpackages+=" compiler-rt19 "
 _enabled_runtimes="compiler-rt"
 
 if [ "$build_option_openmp" ]; then
-	# openmp fails when built as runtime if cross-compiled
-	if [ "$CROSS_BUILD" ]; then
-		# _enabled_projects+="openmp;"
-		#TODO?
-		_enabled_runtimes+=";openmp"
-	else
-		_enabled_runtimes+=";openmp"
+	_enabled_runtimes+=";openmp"
+	subpackages+=" libomp19 libomp19-devel "
+
+	if [ "$build_option_offload" ]; then
+		_enabled_runtimes+=";offload"
 		configure_args+=" -DOPENMP_ENABLE_LIBOMPTARGET=YES"
 	fi
-	subpackages+=" libomp19 libomp19-devel "
 fi
 
 if [ "$build_option_libunwind" ]; then
@@ -247,12 +241,16 @@ pre_configure() {
 		CC="clang"
 		CXX="clang++"
 
+		CFLAGS+=" -Wno-gnu-include-next -Wno-unused-command-line-argument"
+		CXXFLAGS+=" -Wno-gnu-include-next -Wno-unused-command-line-argument"
+
 		local gcc_version=$(gcc -dumpversion)
 
 		CFLAGS+=" --target=${XBPS_CROSS_TRIPLET} --sysroot=${XBPS_CROSS_BASE}"
 		CFLAGS+=" --gcc-toolchain=/usr"
 		CFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
-		CFLAGS+=" -isystem /usr/lib/gcc/${gcc_version}/include"
+		# CFLAGS+=" -isystem /usr/lib/gcc/${gcc_version}/include"
+		CFLAGS+=" -isystem /usr/lib/gcc/${XBPS_CROSS_TRIPLET}/${gcc_version}/include"
 
 		CXXFLAGS+=" --target=${XBPS_CROSS_TRIPLET} --sysroot=${XBPS_CROSS_BASE}"
 		CXXFLAGS+=" --gcc-toolchain=/usr"
@@ -260,30 +258,26 @@ pre_configure() {
 		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}"
 		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward"
 		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
-		CXXFLAGS+=" -isystem /usr/lib/gcc/${gcc_version}/include"
+		# CXXFLAGS+=" -isystem /usr/lib/gcc/${gcc_version}/include"
+		CXXFLAGS+=" -isystem /usr/lib/gcc/${XBPS_CROSS_TRIPLET}/${gcc_version}/include"
 	fi
 
 
-	if [ "$build_option_smaller_debug" ]; then
+
+	if [ ! "$build_option_full_debug" ]; then
 		# Vastly reduce size of debugging symbols:
 		CFLAGS=${CFLAGS/ -g/ -g1}
 		CXXFLAGS=${CXXFLAGS/ -g/ -g1}
 	fi
 
-	if [ "$build_option_full_debug" ]; then
-		# Vastly increase size of debugging symbols:
-		CFLAGS=${CFLAGS/ -g/ -g3}
-		CXXFLAGS=${CXXFLAGS/ -g/ -g3}
-	fi
-
-	# since gcc9, the build likes to blow up for ppc32 apparently because
-	# of clang being too large for a 24-bit relative call to the PLT, so
-	# optimize for size instead
-	case "$XBPS_TARGET_MACHINE" in
-		ppc64*) ;;
-		mips*-musl|ppc*) configure_args+=" -DVOID_CXX_OPT_FLAGS=-Os" ;;
-		armv*) configure_args+=" -DLIBCXX_VOID_GCC_BUG_109180_WORKAROUND=ON ";;
-	esac
+	# # since gcc9, the build likes to blow up for ppc32 apparently because
+	# # of clang being too large for a 24-bit relative call to the PLT, so
+	# # optimize for size instead
+	# case "$XBPS_TARGET_MACHINE" in
+	# 	ppc64*) ;;
+	# 	mips*-musl|ppc*) configure_args+=" -DVOID_CXX_OPT_FLAGS=-Os" ;;
+	# 	armv*) configure_args+=" -DLIBCXX_VOID_GCC_BUG_109180_WORKAROUND=ON ";;
+	# esac
 
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" -DLLVM_NATIVE_TOOL_DIR=/usr/bin"
@@ -293,7 +287,7 @@ pre_configure() {
 		configure_args+=" -DMLIR_PDLL_TABLEGEN=/usr/bin/mlir-pdll"
 		configure_args+=" -DMLIR_LINALG_ODS_YAML_GEN=/usr/bin/mlir-linalg-ods-yaml-gen"
 		configure_args+=" -DMLIR_CONFIG_SRC_SHARDER_TABLEGEN_EXE=/usr/bin/mlir-src-sharder"
-		configure_args+=" -DLIBOMP_FORTRAN_MODULES_COMPILER_EXE=/usr/bin/flang-new"
+		configure_args+=" -DFLANG_NEW_EXE=/usr/bin/flang-new"
 		configure_args+=" -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=/usr/bin/clang-tidy-confusable-chars-gen"
 		configure_args+=" -DCLANG_PSEUDO_GEN=/usr/bin/clang-pseudo-gen"
 		configure_args+=" -DLLVM_CONFIG_PATH=/usr/bin/llvm-config"
@@ -304,6 +298,9 @@ pre_configure() {
 	arm*-musl|i686-musl)
 		# sanitizer code is broken since it duplicates some libc bits
 		configure_args+=" -DCOMPILER_RT_BUILD_SANITIZERS=OFF"
+		# configure_args+=" -DCOMPILER_RT_BUILD_LIBFUZZER=OFF"
+		configure_args+=" -DCOMPILER_RT_BUILD_XRAY=OFF"
+		configure_args+=" -DCOMPILER_RT_BUILD_MEMPROF=OFF"
 		;;
 	esac
 
@@ -721,9 +718,8 @@ libomp19-devel_package() {
 		if [ -z "$CROSS_BUILD" ]; then
 			case "$XBPS_TARGET_MACHINE" in
 				x86_64*|aarch64*)
-					# TODO: Fix libomp
-					# vmove "usr/lib/libomptarget*.bc"
-					# vmove "usr/lib/libomp*.a"
+					vmove "usr/lib/libomptarget*.bc"
+					vmove "usr/lib/libomp*.a"
 				;;
 			esac
 		fi
@@ -853,7 +849,7 @@ llvm19-cross-tools_package() {
 	}
 }
 
-libclc_package() {
+libclc19_package() {
 	short_desc+=" - Open implementation of the OpenCL C programming language"
 	replaces="libclc-git>=0"
 	pkg_install() {
