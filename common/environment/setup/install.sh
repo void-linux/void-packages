@@ -38,13 +38,10 @@ _vsv() {
 
 	vmkdir etc/sv
 	vcopy "${FILESDIR}/$service" etc/sv
-	if [ ! -L "$svdir/run" ]; then
-		grep -Fq 'exec 2>&1' "$svdir/run" || msg_warn "$pkgver: vsv: service '$service' does not contain 'exec 2>&1' to log stderr\n"
-		chmod 755 "$svdir/run"
-	fi
-	if [ -e "$svdir/finish" ] && [ ! -L "$svdir/finish" ]; then
-		chmod 755 "$svdir/finish"
-	fi
+	grep -Fq 'exec 2>&1' "$svdir/run" || msg_warn "$pkgver: vsv: service '$service' does not contain 'exec 2>&1' to log stderr\n"
+	for f in run finish check control/{a,c,d,h,i,k,p,q,t,u,x,1,2}; do
+		[ -e "$svdir/$f" ] && [ ! -L "$svdir/$f" ] && chmod 755 "$svdir/$f"
+	done
 	ln ${LN_OPTS} "/run/runit/supervise.${service}" "$svdir/supervise"
 	if [ -d "$svdir/log" ] || [ -L "$svdir/log" ]; then
 		msg_warn "$pkgver: vsv: overriding default log service\n"
