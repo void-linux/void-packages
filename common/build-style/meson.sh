@@ -51,11 +51,12 @@ do_build() {
 }
 
 do_check() {
-	: ${make_cmd:=ninja}
+	: ${make_cmd:=meson}
 	: ${make_check_target:=test}
 	: ${meson_builddir:=build}
 
-	${make_check_pre} ${make_cmd} -C ${meson_builddir} ${makejobs} ${make_check_args} ${make_check_target}
+	export PYTHONUNBUFFERED=1
+	${make_check_pre} ${make_cmd} ${make_check_target} -C ${meson_builddir} ${makejobs} ${make_check_args}
 }
 
 do_install() {
@@ -63,5 +64,5 @@ do_install() {
 	: ${make_install_target:=install}
 	: ${meson_builddir:=build}
 
-	DESTDIR=${DESTDIR} ${make_cmd} -C ${meson_builddir} ${make_install_args} ${make_install_target}
+	env PYTHONUNBUFFERED=1 DESTDIR=${DESTDIR} ${make_cmd} -C ${meson_builddir} ${make_install_args} ${make_install_target}
 }
