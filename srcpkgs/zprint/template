@@ -1,0 +1,85 @@
+# Template file for 'zprint'
+pkgname=zprint
+version=1.2.9
+revision=1
+hostmakedepends="clojure leiningen mandrel"
+makedepends="zlib-devel"
+checkdepends="diffutils grep"
+short_desc="Pretty print Clojure source and s-expressions"
+maintainer="Andy Weidenbaum <atweiden@tutanota.de>"
+license="MIT"
+homepage="https://github.com/kkinnear/zprint"
+changelog="https://github.com/kkinnear/zprint/raw/main/CHANGELOG.md"
+distfiles="https://github.com/kkinnear/zprint/archive/${version}.tar.gz"
+checksum=f765621426c7404b1ada632987890279c38bc8a614f9f61063d68bb06de8a30a
+nocross="mandrel"
+
+pre_build() {
+	local _ss
+	# don't exceed host machine max stack size
+	_ss="$(ulimit -s)K"
+	vsed -i -e "s/Xss500m/Xss$_ss/" project.clj
+}
+
+export JAVA_HOME=/usr/lib/jvm/mandrel21
+export GRAALVM_HOME=/usr/lib/jvm/mandrel21
+export PATH="${PATH}:${GRAALVM_HOME}/bin"
+
+do_build() {
+	local _args
+
+	lein deps
+	lein uberjar
+
+	_args+=" --static"
+	# necessary for compatibility with older machines, e.g. see:
+	# https://github.com/borkdude/deps.clj/actions/runs/6337277754/job/17212028399
+	_args+=" -march=compatibility"
+	_args+=" -O1"
+	_args+=" --enable-preview"
+
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		_args+=" --libc=musl"
+		# see: https://github.com/oracle/graal/issues/3398
+		_args+=" -H:CCompilerOption=-Wl,-z,stack-size=2097152"
+	else
+		# see: https://github.com/oracle/graal/issues/3737
+		_args+=" -H:+StaticExecutableWithDynamicLibC"
+	fi
+
+	# see: kkinnear/zprint/zprintl.sh
+	LC_ALL=C.UTF-8 \
+		${GRAALVM_HOME}/bin/native-image \
+		--no-server \
+		-J-Xmx3G \
+		-J-Xms2G \
+		-jar target/zprint-filter-${version} \
+		$_args \
+		-H:Name="zprintl-${version}" \
+		-H:EnableURLProtocols=https,http \
+		-H:+ReportExceptionStackTraces \
+		--report-unsupported-elements-at-runtime \
+		--initialize-at-build-time \
+		--no-fallback
+}
+
+do_check() {
+	# see: kkinnear/zprint/test_zprintm
+	local _exe _jar
+	_exe=./zprintl-${version}
+	_jar=target/zprint-filter-${version}
+	$_exe <src/zprint/zprint.cljc >z.cljc
+	diff z.cljc src/zprint/zprint.cljc
+	rm -f z.cljc
+	java -jar $_jar -e 2>uj.edn
+	grep -v "\<Fn@" <uj.edn >ujx.edn
+	$_exe -e 2>gv.edn
+	grep -v "\<Fn@" <gv.edn >gvx.edn
+	diff ujx.edn gvx.edn
+	rm -f uj.edn ujx.edn gv.edn gvx.edn
+}
+
+do_install() {
+	vbin zprintl-${version} zprint
+	vlicense LICENSE
+}
