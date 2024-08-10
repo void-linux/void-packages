@@ -1,0 +1,182 @@
+From 6fbc64043fccf9b2b880904bc3511e0428046026 Mon Sep 17 00:00:00 2001
+From: Foxinatel <nathanielma5on@yahoo.com>
+Date: Fri, 9 Aug 2024 17:53:06 +0100
+Subject: [PATCH 1/3] Fix compile-time errors with --no-default-features
+
+---
+ src/main.rs | 37 ++++++++++++++++---------------------
+ 1 file changed, 16 insertions(+), 21 deletions(-)
+
+diff --git a/src/main.rs b/src/main.rs
+index 6f64eb1..bf6e2e8 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -21,6 +21,7 @@ use cosmic_notifications_util::{DAEMON_NOTIFICATIONS_FD, PANEL_NOTIFICATIONS_FD}
+ use futures_util::StreamExt;
+ use launch_pad::{process::Process, ProcessManager};
+ use service::SessionRequest;
++#[cfg(feature = "systemd")]
+ use systemd::{is_systemd_used, spawn_scope};
+ use tokio::{
+ 	net::UnixStream,
+@@ -58,10 +59,9 @@ async fn main() -> Result<()> {
+ 	let session_tx_clone = session_tx.clone();
+ 	let _conn = ConnectionBuilder::session()?
+ 		.name("com.system76.CosmicSession")?
+-		.serve_at(
+-			"/com/system76/CosmicSession",
+-			service::SessionService { session_tx },
+-		)?
++		.serve_at("/com/system76/CosmicSession", service::SessionService {
++			session_tx,
++		})?
+ 		.build()
+ 		.await?;
+ 
+@@ -135,8 +135,8 @@ async fn start(
+ 		.await
+ 		.expect("failed to start settings daemon");
+ 
+-	// notifying the user service manager that we've reached the graphical-session.target,
+-	// which should only happen after:
++	// notifying the user service manager that we've reached the
++	// graphical-session.target, which should only happen after:
+ 	// - cosmic-comp is ready
+ 	// - we've set any related variables
+ 	// - cosmic-settings-daemon is ready
+@@ -379,22 +379,17 @@ async fn start_component(
+ 					}
+ 					.instrument(stderr_span)
+ 				})
+-				.with_on_start(move |pman, pkey, _will_restart| {
++				.with_on_start(move |pman, pkey, _will_restart| async move {
+ 					#[cfg(feature = "systemd")]
+-					{
+-						async move {
+-							if *is_systemd_used() {
+-								if let Ok((innr_cmd, Some(pid))) = pman.get_exe_and_pid(pkey).await
+-								{
+-									if let Err(err) = spawn_scope(innr_cmd.clone(), vec![pid]).await
+-									{
+-										warn!(
+-													"Failed to spawn scope for {}. Creating transient unit failed with {}",
+-													innr_cmd, err
+-												);
+-									};
+-								}
+-							}
++					if *is_systemd_used() {
++						if let Ok((innr_cmd, Some(pid))) = pman.get_exe_and_pid(pkey).await {
++							if let Err(err) = spawn_scope(innr_cmd.clone(), vec![pid]).await {
++								warn!(
++									"Failed to spawn scope for {}. Creating transient unit failed \
++									 with {}",
++									innr_cmd, err
++								);
++							};
+ 						}
+ 					}
+ 				})
+
+From 054dc5ebfb0a5ed352c8e8f495a8b192e6042434 Mon Sep 17 00:00:00 2001
+From: Foxinatel <nathanielma5on@yahoo.com>
+Date: Fri, 9 Aug 2024 17:58:14 +0100
+Subject: [PATCH 2/3] Builds without systemd should no longer hard depend on
+ journald
+
+---
+ Cargo.toml  | 4 ++--
+ src/main.rs | 6 ++++--
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index b7015dd..c0c7a68 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -39,11 +39,11 @@ zbus_systemd = { version = "0.25600.0", optional = true, features = [
+ ] }
+ tokio-util = "0.7"
+ tracing = "0.1"
+-tracing-journald = "0.3"
++tracing-journald = { version = "0.3", optional = true }
+ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ zbus = { version = "4.3.0", default-features = false, features = ["tokio"] }
+ cosmic-notifications-util = { git = "https://github.com/pop-os/cosmic-notifications" }
+ 
+ [features]
+-systemd = ["dep:zbus_systemd"]
++systemd = ["dep:zbus_systemd", "dep:tracing-journald"]
+ default = ["systemd"]
+diff --git a/src/main.rs b/src/main.rs
+index bf6e2e8..11fe0db 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -43,8 +43,10 @@ const XDP_COSMIC: Option<&'static str> = option_env!("XDP_COSMIC");
+ async fn main() -> Result<()> {
+ 	color_eyre::install().wrap_err("failed to install color_eyre error handler")?;
+ 
+-	tracing_subscriber::registry()
+-		.with(tracing_journald::layer().wrap_err("failed to connect to journald")?)
++	let trace = tracing_subscriber::registry();
++	#[cfg(feature = "systemd")]
++	let trace = trace.with(tracing_journald::layer().wrap_err("failed to connect to journald")?);
++	trace
+ 		.with(fmt::layer())
+ 		.with(
+ 			EnvFilter::builder()
+
+From 357379d116501a337e4dc1f3375f2f71e74f1f31 Mon Sep 17 00:00:00 2001
+From: Foxinatel <nathanielma5on@yahoo.com>
+Date: Fri, 9 Aug 2024 21:35:13 +0100
+Subject: [PATCH 3/3] Make failure to connect to journald a warning, not a hard
+ error
+
+---
+ src/main.rs | 29 +++++++++++++++++++++++------
+ 1 file changed, 23 insertions(+), 6 deletions(-)
+
+diff --git a/src/main.rs b/src/main.rs
+index 11fe0db..636d88b 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -44,17 +44,34 @@ async fn main() -> Result<()> {
+ 	color_eyre::install().wrap_err("failed to install color_eyre error handler")?;
+ 
+ 	let trace = tracing_subscriber::registry();
++	let env_filter = EnvFilter::builder()
++		.with_default_directive(LevelFilter::INFO.into())
++		.from_env_lossy();
++
+ 	#[cfg(feature = "systemd")]
+-	let trace = trace.with(tracing_journald::layer().wrap_err("failed to connect to journald")?);
++	if let Ok(journald) = tracing_journald::layer() {
++		trace
++			.with(journald)
++			.with(fmt::layer())
++			.with(env_filter)
++			.try_init()
++			.wrap_err("failed to initialize logger")?;
++	} else {
++		trace
++			.with(fmt::layer())
++			.with(env_filter)
++			.try_init()
++			.wrap_err("failed to initialize logger")?;
++		warn!("failed to connect to journald")
++	}
++
++	#[cfg(not(feature = "systemd"))]
+ 	trace
+ 		.with(fmt::layer())
+-		.with(
+-			EnvFilter::builder()
+-				.with_default_directive(LevelFilter::INFO.into())
+-				.from_env_lossy(),
+-		)
++		.with(env_filter)
+ 		.try_init()
+ 		.wrap_err("failed to initialize logger")?;
++
+ 	log_panics::init();
+ 
+ 	let (session_tx, mut session_rx) = tokio::sync::mpsc::channel(10);
