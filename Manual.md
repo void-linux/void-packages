@@ -1254,7 +1254,7 @@ package accordingly. Additionally, the following functions are available:
 
 - *vopt_feature()* `vopt_feature <option> <property>`
 
-  Same as `vopt_bool`, but uses `-D<property=enabled` and
+  Same as `vopt_bool`, but uses `-D<property>=enabled` and
 	`-D<property>=disabled` respectively.
 
 The following example shows how to change a source package that uses GNU
