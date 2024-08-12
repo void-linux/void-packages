@@ -1,8 +1,9 @@
-# Template file for 'systemd-boot-efistub'
-pkgname=systemd-boot-efistub
-version=256
+# Template file for 'systemd-boot'
+pkgname=systemd-boot
+version=256.6
 revision=1
 build_style=meson
+conf_files="/etc/default/systemd-boot"
 configure_args="-Defi=true -Dman=enabled -Dbootloader=enabled
  -Dsbat-distro=void -Dsbat-distro-summary=Void -Dsbat-distro-pkgname=${pkgname}
  -Dsbat-distro-version="${version}_${revision}"
@@ -28,16 +29,20 @@ configure_args="-Defi=true -Dman=enabled -Dbootloader=enabled
 # most of these aren't needed for what we're building but it's easier than patching
 hostmakedepends="pkg-config gperf python3-Jinja2 python3-pyelftools libxslt docbook-xsl"
 makedepends="libcap-devel libmount-devel"
-short_desc="UEFI stub loader from systemd-boot"
-maintainer="classabbyamp <void@placeviolette.net>"
+depends="systemd-boot-efistub>=${version}_${revision} ukify>=${version}_${revision}"
+short_desc="Simple UEFI boot manager from systemd"
+maintainer="Daniel Martinez <danielmartinez@cock.li>"
 license="LGPL-2.1-or-later"
 homepage="https://www.freedesktop.org/wiki/Software/systemd/systemd-boot/"
-distfiles="https://github.com/systemd/systemd-stable/archive/refs/tags/v${version}.tar.gz"
-checksum=ca40487e044c9d6b7ad214d453b1cab696e5ccbd5244eca78460972cb0589a17
-make_check=no  # missing printf.h
+distfiles="https://github.com/systemd/systemd/archive/refs/tags/v${version}.tar.gz"
+checksum=c085f162dec001407dd32f00abbf20b7e6ed7043dcfaf8ed954787d86707f409
+make_check=no  # tests a bunch of stuff we aren't using
 
 if [ "${XBPS_TARGET_LIBC}" = glibc ]; then
 	makedepends+=" libxcrypt-devel"
+else
+	# see src/basic/linux/if_ether.h
+	export CFLAGS="-D__UAPI_DEF_ETHHDR=0 -Wno-error=incompatible-pointer-types"
 fi
 
 case "${XBPS_TARGET_MACHINE}" in
@@ -49,10 +54,22 @@ case "${XBPS_TARGET_MACHINE}" in
 	*) broken="unknown efi architecture" ;;
 esac
 
-_bins=(ukify)
-_mans=(man/ukify.1 man/systemd-stub.7)
-_efis=("src/boot/efi/linux${_efi_arch}.efi.stub")
-make_build_target="${_bins[*]} ${_mans[*]} ${_efis[*]}"
+_bins=(ukify bootctl)
+_mans=(man/ukify.1 man/systemd-stub.7
+ man/sd-boot.7 man/systemd-boot.7 man/bootctl.1)
+_efis=("src/boot/efi/linux${_efi_arch}.efi.stub"
+ "src/boot/efi/systemd-boot${_efi_arch}.efi")
+_libexecs=(systemd-bless-boot)
+make_build_target="${_bins[*]} ${_mans[*]} ${_efis[*]} ${_libexecs[*]}"
+
+post_patch() {
+	if [ "${XBPS_TARGET_LIBC}" = musl ]; then
+		for x in ${FILESDIR}/patches/musl/*.patch; do
+			msg_normal "Applying patch $x\n"
+			patch -sNp1 -i ${x}
+		done
+	fi
+}
 
 do_install() {
 	for b in "${_bins[@]}"; do
@@ -66,6 +83,17 @@ do_install() {
 	for e in "${_efis[@]}"; do
 		vinstall "build/$e" 644 usr/lib/systemd/boot/efi
 	done
+
+	for l in "${_libexecs[@]}"; do
+		vinstall "build/$l" 644 usr/lib/systemd
+	done
+
+	vinstall ${FILESDIR}/kernel.d/systemd-boot.post-install 744 \
+		etc/kernel.d/post-install 50-systemd-boot
+	vinstall ${FILESDIR}/kernel.d/systemd-boot.post-remove 744 \
+		etc/kernel.d/post-remove 50-systemd-boot
+	vinstall ${FILESDIR}/kernel.d/systemd-boot.conf 644 \
+		etc/default systemd-boot
 }
 
 ukify_package() {
@@ -74,5 +102,15 @@ ukify_package() {
 	pkg_install() {
 		vmove usr/bin/ukify
 		vmove usr/share/man/man1/ukify.1
+	}
+}
+
+systemd-boot-efistub_package() {
+	short_desc="UEFI stub loader from systemd-boot"
+	pkg_install() {
+		vmove "usr/lib/systemd/boot/efi/linux*.efi.stub"
+		vmove "usr/share/man/man7/linux*.efi.*"
+		vmove usr/share/man/man7/sd-stub.7
+		vmove usr/share/man/man7/systemd-stub.7
 	}
 }
