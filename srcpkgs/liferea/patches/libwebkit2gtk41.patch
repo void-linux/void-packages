@@ -1,0 +1,1186 @@
+From 49da4bcc7385cc46b26d1923444ce5645bc132cc Mon Sep 17 00:00:00 2001
+From: Lars Windolf <lars.windolf@gmx.de>
+Date: Thu, 30 Mar 2023 22:12:56 +0200
+Subject: [PATCH 01/20] Upgrade to libsoup3
+
+---
+ configure.ac             |   4 +-
+ src/conf.c               |  56 +------
+ src/net.c                | 319 +++++++++++++++------------------------
+ src/net.h                |  11 +-
+ src/ui/liferea_browser.c |   8 +-
+ src/webkit/webkit.c      |  45 +-----
+ src/webkit/webkit.h      |   2 +-
+ 7 files changed, 133 insertions(+), 312 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 4efea1777..015dd1ceb 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -38,8 +38,8 @@ pkg_modules="	gtk+-3.0 >= 3.22.0
+ 		sqlite3 >= 3.7.0
+ 		gmodule-2.0 >= 2.0.0
+ 		gthread-2.0
+-		libsoup-2.4 >= 2.42
+-		webkit2gtk-4.0
++		libsoup-3.0 >= 3.2
++		webkit2gtk-4.1
+ 		json-glib-1.0
+ 		gobject-introspection-1.0
+ 		gsettings-desktop-schemas
+diff --git a/src/conf.c b/src/conf.c
+index ccb3658a0..b295652ef 100644
+--- a/src/conf.c
++++ b/src/conf.c
+@@ -126,60 +126,10 @@ conf_proxy_reset_settings_cb (GSettings *settings,
+                               gchar *key,
+                               gpointer user_data)
+ {
+-	gchar		*proxyname, *proxyusername, *proxypassword;
+-	gint		proxyport;
+-	gint		proxydetectmode;
+-	gboolean	proxyuseauth;
+-
+-	proxyname = NULL;
+-	proxyport = 0;
+-	proxyusername = NULL;
+-	proxypassword = NULL;
+-	conf_get_int_value (PROXY_DETECT_MODE, &proxydetectmode);
+-
+-#if !WEBKIT_CHECK_VERSION (2, 15, 3)
+-	if (proxydetectmode != PROXY_DETECT_MODE_AUTO)
+-	{
+-		GtkWidget *dialog = gtk_message_dialog_new (NULL,
+-			0,
+-			GTK_MESSAGE_INFO,
+-			GTK_BUTTONS_CLOSE,
+-			_("Your version of WebKitGTK+ doesn't support changing the proxy settings from Liferea. The system's default proxy settings will be used."));
+-		gtk_dialog_run (GTK_DIALOG (dialog));
+-		gtk_widget_destroy (dialog);
+-
+-		conf_set_int_value (PROXY_DETECT_MODE, PROXY_DETECT_MODE_AUTO);
+-		return;
+-	}
+-#endif
+-	switch (proxydetectmode) {
+-		default:
+-		case 0:
+-			debug0 (DEBUG_CONF, "proxy auto detect is configured");
+-			/* nothing to do, all done by libproxy inside libsoup */
+-			break;
+-		case 1:
+-			debug0 (DEBUG_CONF, "proxy is disabled by user");
+-			/* nothing to do */
+-			break;
+-		case 2:
+-			debug0 (DEBUG_CONF, "manual proxy is configured");
+-
+-			conf_get_str_value (PROXY_HOST, &proxyname);
+-			conf_get_int_value (PROXY_PORT, &proxyport);
+-			conf_get_bool_value (PROXY_USEAUTH, &proxyuseauth);
+-			if (proxyuseauth) {
+-				conf_get_str_value (PROXY_USER, &proxyusername);
+-				conf_get_str_value (PROXY_PASSWD, &proxypassword);
+-			}
+-			break;
+-	}
+-	debug4 (DEBUG_CONF, "Manual proxy settings are now %s:%d %s:%s",
+-	                    proxyname != NULL ? proxyname : "NULL", proxyport,
+-	                    proxyusername != NULL ? proxyusername : "NULL",
+-	                    proxypassword != NULL ? proxypassword : "NULL");
++	gint	mode;
+ 
+-	network_set_proxy (proxydetectmode, proxyname, proxyport, proxyusername, proxypassword);
++	conf_get_int_value (PROXY_DETECT_MODE, &mode);
++	network_set_proxy (mode);
+ }
+ 
+ /*----------------------------------------------------------------------*/
+diff --git a/src/net.c b/src/net.c
+index 8cabd778a..64e8eb732 100644
+--- a/src/net.c
++++ b/src/net.c
+@@ -1,7 +1,7 @@
+ /**
+  * @file net.c  HTTP network access using libsoup
+  *
+- * Copyright (C) 2007-2021 Lars Windolf <lars.windolf@gmx.de>
++ * Copyright (C) 2007-2023 Lars Windolf <lars.windolf@gmx.de>
+  * Copyright (C) 2009 Emilio Pozuelo Monfort <pochu27@gmail.com>
+  * Copyright (C) 2021 Lorenzo L. Ancora <admin@lorenzoancora.info>
+  *
+@@ -37,80 +37,79 @@
+ 
+ #define HOMEPAGE	"https://lzone.de/liferea/"
+ 
++static GCancellable *cancellable = NULL;	/* GCancellable for all request handling */
+ static SoupSession *session = NULL;	/* Session configured for preferences */
+ static SoupSession *session2 = NULL;	/* Session for "Don't use proxy feature" */
+ 
+ static ProxyDetectMode proxymode = PROXY_DETECT_MODE_AUTO;
+-static gchar	*proxyname = NULL;
+-static gchar	*proxyusername = NULL;
+-static gchar	*proxypassword = NULL;
+-static int	proxyport = 0;
+-
+ 
+ static void
+ network_process_redirect_callback (SoupMessage *msg, gpointer user_data)
+ {
+ 	updateJobPtr	job = (updateJobPtr)user_data;
+ 	const gchar	*location = NULL;
+-	SoupURI		*newuri;
+-
+-	if (301 == msg->status_code || 308 == msg->status_code)
+-	{
+-		location = soup_message_headers_get_one (msg->response_headers, "Location");
+-		newuri = soup_uri_new (location);
+-
+-		if (SOUP_URI_IS_VALID (newuri) && ! soup_uri_equal (newuri, soup_message_get_uri (msg))) {
+-			debug2 (DEBUG_NET, "\"%s\" permanently redirects to new location \"%s\"", soup_uri_to_string (soup_message_get_uri (msg), FALSE),
+-							            soup_uri_to_string (newuri, FALSE));
+-			job->result->httpstatus = msg->status_code;
+-			job->result->source = soup_uri_to_string (newuri, FALSE);
++	GUri		*newuri;
++	SoupStatus	status = soup_message_get_status (msg);
++
++	if (SOUP_STATUS_MOVED_PERMANENTLY == status || SOUP_STATUS_PERMANENT_REDIRECT == status) {
++		if (g_uri_is_valid (location, SOUP_HTTP_URI_FLAGS | G_URI_FLAGS_PARSE_RELAXED, NULL)) {
++			location = soup_message_headers_get_one (soup_message_get_response_headers (msg), "Location");
++			newuri = g_uri_parse (location, SOUP_HTTP_URI_FLAGS | G_URI_FLAGS_PARSE_RELAXED, NULL);
++
++			if (!soup_uri_equal (newuri, soup_message_get_uri (msg))) {
++				job->result->httpstatus = status;
++				job->result->source = g_uri_to_string_partial (newuri, 0);
++				debug2 (DEBUG_NET, "\"%s\" permanently redirects to new location \"%s\"",
++				        job->request->source, job->result->source);
++			}
+ 		}
+ 	}
+ }
+ 
+ static void
+-network_process_callback (SoupSession *session, SoupMessage *msg, gpointer user_data)
++network_process_callback (GInputStream *stream, SoupMessage *msg, updateJobPtr job)
+ {
+-	updateJobPtr	job = (updateJobPtr)user_data;
+-	SoupDate	*last_modified;
+-	const gchar	*tmp = NULL;
+-	GHashTable	*params;
+-	gboolean	revalidated = FALSE;
+-	gint		maxage;
+-	gint		age;
++	g_autoptr(GBytes)	body = NULL;
++	GDateTime		*last_modified;
++	const gchar		*tmp = NULL;
++	GHashTable		*params;
++	gboolean		revalidated = FALSE;
++	gint			maxage;
++	gint			age;
+ 
+-	job->result->source = soup_uri_to_string (soup_message_get_uri(msg), FALSE);
+-	job->result->httpstatus = msg->status_code;
++	job->result->source = g_uri_to_string_partial (soup_message_get_uri (msg), 0);
++	job->result->httpstatus = soup_message_get_status (msg);
+ 
+ 	/* keep some request headers for revalidated responses */
+ 	revalidated = (304 == job->result->httpstatus);
+ 
+-	debug1 (DEBUG_NET, "download status code: %d", msg->status_code);
++	debug1 (DEBUG_NET, "download status code: %d", job->result->httpstatus);
+ 	debug1 (DEBUG_NET, "source after download: >>>%s<<<", job->result->source);
+ 
++	body = g_input_stream_read_bytes (stream, G_MAXSSIZE, cancellable, NULL);
++
+ #ifdef HAVE_G_MEMDUP2
+-	job->result->data = g_memdup2 (msg->response_body->data, msg->response_body->length+1);
++	job->result->data = g_memdup2 (g_bytes_get_data (body, &job->result->size), g_bytes_get_size (body));
+ #else
+-	job->result->data = g_memdup (msg->response_body->data, msg->response_body->length+1);
++	job->result->data = g_memdup (g_bytes_get_data (body, &job->result->size), g_bytes_get_size (body));
+ #endif
+ 
+-	job->result->size = (size_t)msg->response_body->length;
+ 	debug1 (DEBUG_NET, "%d bytes downloaded", job->result->size);
+ 
+-	job->result->contentType = g_strdup (soup_message_headers_get_content_type (msg->response_headers, NULL));
++	job->result->contentType = g_strdup (soup_message_headers_get_content_type (soup_message_get_response_headers (msg), NULL));
+ 
+ 	/* Update last-modified date */
+ 	if (revalidated) {
+ 		 job->result->updateState->lastModified = update_state_get_lastmodified (job->request->updateState);
+ 	} else {
+-		tmp = soup_message_headers_get_one (msg->response_headers, "Last-Modified");
++		tmp = soup_message_headers_get_one (soup_message_get_response_headers (msg), "Last-Modified");
+ 		if (tmp) {
+ 			/* The string may be badly formatted, which will make
+ 			* soup_date_new_from_string() return NULL */
+-			last_modified = soup_date_new_from_string (tmp);
++			last_modified = soup_date_time_new_from_http_string (tmp);
+ 			if (last_modified) {
+-				job->result->updateState->lastModified = soup_date_to_time_t (last_modified);
+-				soup_date_free (last_modified);
++				job->result->updateState->lastModified = g_date_time_to_unix (last_modified);
++				g_free (last_modified);
+ 			}
+ 		}
+ 	}
+@@ -119,14 +118,14 @@ network_process_callback (SoupSession *session, SoupMessage *msg, gpointer user_
+ 	if (revalidated) {
+ 		job->result->updateState->etag = g_strdup (update_state_get_etag (job->request->updateState));
+ 	} else {
+-		tmp = soup_message_headers_get_one (msg->response_headers, "ETag");
++		tmp = soup_message_headers_get_one (soup_message_get_response_headers (msg), "ETag");
+ 		if (tmp) {
+ 			job->result->updateState->etag = g_strdup (tmp);
+ 		}
+ 	}
+ 
+ 	/* Update cache max-age  */
+-	tmp = soup_message_headers_get_list (msg->response_headers, "Cache-Control");
++	tmp = soup_message_headers_get_list (soup_message_get_response_headers (msg), "Cache-Control");
+ 	if (tmp) {
+ 		params = soup_header_parse_param_list (tmp);
+ 		if (params) {
+@@ -135,7 +134,7 @@ network_process_callback (SoupSession *session, SoupMessage *msg, gpointer user_
+ 				maxage = atoi (tmp);
+ 				if (0 < maxage) {
+ 					/* subtract Age from max-age */
+-					tmp = soup_message_headers_get_one (msg->response_headers, "Age");
++					tmp = soup_message_headers_get_one (soup_message_get_response_headers (msg), "Age");
+ 					if (tmp) {
+ 						age = atoi (tmp);
+ 						if (0 < age) {
+@@ -154,19 +153,21 @@ network_process_callback (SoupSession *session, SoupMessage *msg, gpointer user_
+ 	update_process_finished_job (job);
+ }
+ 
+-/* Downloads a feed specified in the request structure, returns
++/* Downloads a URL specified in the request structure, returns
+    the downloaded data or NULL in the request structure.
+    If the webserver reports a permanent redirection, the
+-   feed url will be modified and the old URL 'll be freed. The
++   URL will be modified and the old URL 'll be freed. The
+    request structure will also contain the HTTP status and the
+    last modified string.
+  */
+ void
+ network_process_request (const updateJobPtr job)
+ {
+-	SoupMessage	*msg;
+-	SoupDate	*date;
+-	gboolean	do_not_track = FALSE;
++	g_autoptr(GInputStream)	stream;
++	g_autoptr(SoupMessage)	msg = NULL;
++	SoupMessageHeaders	*request_headers;
++	g_autoptr(GUri)		sourceUri;
++	gboolean		do_not_track = FALSE;
+ 
+ 	g_assert (NULL != job->request);
+ 	debug1 (DEBUG_NET, "downloading %s", job->request->source);
+@@ -174,39 +175,50 @@ network_process_request (const updateJobPtr job)
+ 		debug1 (DEBUG_NET, "   postdata=>>>%s<<<", job->request->postdata);
+ 
+ 	/* Prepare the SoupMessage */
+-	msg = soup_message_new (job->request->postdata ? SOUP_METHOD_POST : SOUP_METHOD_GET,
+-				job->request->source);
+-
++	sourceUri = g_uri_build_with_user (
++		SOUP_HTTP_URI_FLAGS | G_URI_FLAGS_PARSE_RELAXED,
++		g_uri_peek_scheme (job->request->source),
++		(!job->request->authValue && job->request->options && job->request->options->username)?job->request->options->username:NULL,
++		(!job->request->authValue && job->request->options && job->request->options->password)?job->request->options->password:NULL,
++		NULL,	/* auth_params */
++		NULL,	/* host */
++		-1,	/* port */
++		job->request->source,
++		NULL,	/* query */
++		NULL	/* fragment */
++	);
++	if (sourceUri)
++		msg = soup_message_new_from_uri (job->request->postdata?"POST":"GET", sourceUri);
+ 	if (!msg) {
+ 		g_warning ("The request for %s could not be parsed!", job->request->source);
+ 		return;
+ 	}
+ 
++	request_headers = soup_message_get_request_headers (msg);
++
+ 	/* Set the postdata for the request */
+ 	if (job->request->postdata) {
+-		soup_message_set_request (msg,
+-					  "application/x-www-form-urlencoded",
+-					  SOUP_MEMORY_STATIC, /* libsoup won't free the postdata */
+-					  job->request->postdata,
+-					  strlen (job->request->postdata));
++		g_autoptr(GBytes) postdata = g_bytes_new (job->request->postdata, strlen (job->request->postdata));
++		soup_message_set_request_body_from_bytes (msg,
++		                                          "application/x-www-form-urlencoded",
++		                                          postdata);
+ 	}
+ 
+ 	/* Set the If-Modified-Since: header */
+ 	if (job->request->updateState && update_state_get_lastmodified (job->request->updateState)) {
+-		gchar *datestr;
++		g_autofree gchar *datestr;
++		g_autoptr(GDateTime) date;
+ 
+-		date = soup_date_new_from_time_t (update_state_get_lastmodified (job->request->updateState));
+-		datestr = soup_date_to_string (date, SOUP_DATE_HTTP);
+-		soup_message_headers_append (msg->request_headers,
++		date = g_date_time_new_from_unix_utc (update_state_get_lastmodified (job->request->updateState));
++		datestr = soup_date_time_to_string (date, SOUP_DATE_HTTP);
++		soup_message_headers_append (request_headers,
+ 					     "If-Modified-Since",
+ 					     datestr);
+-		g_free (datestr);
+-		soup_date_free (date);
+ 	}
+ 
+ 	/* Set the If-None-Match header */
+ 	if (job->request->updateState && update_state_get_etag (job->request->updateState)) {
+-		soup_message_headers_append(msg->request_headers,
++		soup_message_headers_append(request_headers,
+ 					    "If-None-Match",
+ 					    update_state_get_etag (job->request->updateState));
+ 	}
+@@ -215,33 +227,23 @@ network_process_request (const updateJobPtr job)
+ 	if (job->request->updateState &&
+ 	    (update_state_get_lastmodified (job->request->updateState) ||
+ 	     update_state_get_etag (job->request->updateState))) {
+-		soup_message_headers_append(msg->request_headers,
++		soup_message_headers_append(request_headers,
+ 					    "A-IM",
+ 					    "feed");
+ 	}
+ 
+ 	/* Support HTTP content negotiation */
+-	soup_message_headers_append(msg->request_headers, "Accept", "application/atom+xml,application/xml;q=0.9,text/xml;q=0.8,*/*;q=0.7");
+-
+-	/* Set the authentication */
+-	if (!job->request->authValue &&
+-	    job->request->options &&
+-	    job->request->options->username &&
+-	    job->request->options->password) {
+-		SoupURI *uri = soup_message_get_uri (msg);
+-
+-		soup_uri_set_user (uri, job->request->options->username);
+-		soup_uri_set_password (uri, job->request->options->password);
+-	}
++	soup_message_headers_append (request_headers, "Accept", "application/atom+xml,application/xml;q=0.9,text/xml;q=0.8,*/*;q=0.7");
+ 
++	/* Add Authorization header */
+ 	if (job->request->authValue) {
+-		soup_message_headers_append (msg->request_headers, "Authorization",
++		soup_message_headers_append (request_headers, "Authorization",
+ 					     job->request->authValue);
+ 	}
+ 
+ 	/* Add requested cookies */
+ 	if (job->request->updateState && job->request->updateState->cookies) {
+-		soup_message_headers_append (msg->request_headers, "Cookie",
++		soup_message_headers_append (request_headers, "Cookie",
+ 		                             job->request->updateState->cookies);
+ 		soup_message_disable_feature (msg, SOUP_TYPE_COOKIE_JAR);
+ 	}
+@@ -257,7 +259,7 @@ network_process_request (const updateJobPtr job)
+ 	/* Add Do Not Track header according to settings */
+ 	conf_get_bool_value (DO_NOT_TRACK, &do_not_track);
+ 	if (do_not_track)
+-		soup_message_headers_append (msg->request_headers, "DNT", "1");
++		soup_message_headers_append (request_headers, "DNT", "1");
+ 
+ 	/* Process permanent redirects (update feed location) */
+ 	soup_message_add_status_code_handler (msg, "got_body", 301, (GCallback) network_process_redirect_callback, job);
+@@ -265,60 +267,27 @@ network_process_request (const updateJobPtr job)
+ 
+ 	/* If the feed has "dont use a proxy" selected, use 'session2' which is non-proxy */
+ 	if (job->request->options && job->request->options->dontUseProxy)
+-		soup_session_queue_message (session2, msg, network_process_callback, job);
++		stream = soup_session_send (session2, msg, cancellable, NULL);
+ 	else
+-		soup_session_queue_message (session, msg, network_process_callback, job);
+-}
++		stream = soup_session_send (session, msg, cancellable, NULL);
+ 
+-static void
+-network_authenticate (
+-	SoupSession *session,
+-	SoupMessage *msg,
+-        SoupAuth *auth,
+-	gboolean retrying,
+-	gpointer data)
+-{
+-	if (!retrying && msg->status_code == SOUP_STATUS_PROXY_UNAUTHORIZED) {
+-		soup_auth_authenticate (auth, g_strdup (proxyusername), g_strdup (proxypassword));
+-	}
+-
+-	// FIXME: Handle HTTP 401 too
++	if (stream)
++		network_process_callback (stream, msg, job);
+ }
+ 
+ static void
+-network_set_soup_session_proxy (SoupSession *session, ProxyDetectMode mode, const gchar *host, guint port, const gchar *user, const gchar *password)
++network_set_soup_session_proxy (SoupSession *session, ProxyDetectMode mode)
+ {
+-	SoupURI *uri = NULL;
+-
+ 	switch (mode) {
++		case PROXY_DETECT_MODE_MANUAL:
++			/* Manual mode is not supported anymore, so we fall through to AUTO */
+ 		case PROXY_DETECT_MODE_AUTO:
+-			/* Sets proxy-resolver to the default resolver, this unsets proxy-uri. */
+-			g_object_set (G_OBJECT (session),
+-				SOUP_SESSION_PROXY_RESOLVER, g_proxy_resolver_get_default (),
+-				NULL);
++			debug0 (DEBUG_CONF, "proxy auto detect is configured");
++			soup_session_set_proxy_resolver (session, g_object_ref (g_proxy_resolver_get_default ()));
+ 			break;
+ 		case PROXY_DETECT_MODE_NONE:
+-			/* Sets proxy-resolver to NULL, this unsets proxy-uri. */
+-			g_object_set (G_OBJECT (session),
+-				SOUP_SESSION_PROXY_RESOLVER, NULL,
+-				NULL);
+-			break;
+-		case PROXY_DETECT_MODE_MANUAL:
+-			uri = soup_uri_new (NULL);
+-			soup_uri_set_scheme (uri, SOUP_URI_SCHEME_HTTP);
+-			soup_uri_set_host (uri, host);
+-			soup_uri_set_port (uri, port);
+-			soup_uri_set_user (uri, user);
+-			soup_uri_set_password (uri, password);
+-			soup_uri_set_path (uri, "/");
+-
+-			if (SOUP_URI_IS_VALID (uri)) {
+-				/* Sets proxy-uri, this unsets proxy-resolver. */
+-				g_object_set (G_OBJECT (session),
+-					SOUP_SESSION_PROXY_URI, uri,
+-					NULL);
+-			}
+-			soup_uri_free (uri);
++			debug0 (DEBUG_CONF, "proxy is disabled by user");
++			soup_session_set_proxy_resolver (session, NULL);
+ 			break;
+ 	}
+ }
+@@ -350,6 +319,19 @@ network_get_user_agent (void)
+ 	return useragent;
+ }
+ 
++void
++network_deinit (void)
++{
++	g_cancellable_cancel (cancellable);
++	g_free (cancellable);
++
++	soup_session_abort (session);
++	soup_session_abort (session2);
++
++	g_free (session);
++	g_free (session2);
++}
++
+ void
+ network_init (void)
+ {
+@@ -358,6 +340,8 @@ network_init (void)
+ 	gchar		*filename;
+ 	SoupLogger	*logger;
+ 
++	cancellable = g_cancellable_new ();
++
+ 	useragent = network_get_user_agent ();
+ 	debug1 (DEBUG_NET, "user-agent set to \"%s\"", useragent);
+ 
+@@ -367,95 +351,48 @@ network_init (void)
+ 	g_free (filename);
+ 
+ 	/* Initialize libsoup */
+-	session = soup_session_new_with_options (SOUP_SESSION_USER_AGENT, useragent,
+-						 SOUP_SESSION_TIMEOUT, 120,
+-						 SOUP_SESSION_IDLE_TIMEOUT, 30,
+-						 SOUP_SESSION_ADD_FEATURE, cookies,
++	session = soup_session_new_with_options ("user-agent", useragent,
++						 "timeout", 120,
++						 "idle-timeout", 30,
+ 						 NULL);
+-	session2 = soup_session_new_with_options (SOUP_SESSION_USER_AGENT, useragent,
+-						  SOUP_SESSION_TIMEOUT, 120,
+-						  SOUP_SESSION_IDLE_TIMEOUT, 30,
+-						  SOUP_SESSION_ADD_FEATURE, cookies,
+-						  SOUP_SESSION_PROXY_URI, NULL,
+-						  SOUP_SESSION_PROXY_RESOLVER, NULL,
++	session2 = soup_session_new_with_options ("user-agent", useragent,
++						  "timeout", 120,
++						  "idle-timeout", 30,
+ 						  NULL);
+ 
+-	/* Only 'session' gets proxy, 'session2' is for non-proxy requests */
+-	network_set_soup_session_proxy (session, network_get_proxy_detect_mode(),
+-		network_get_proxy_host (),
+-		network_get_proxy_port (),
+-		network_get_proxy_username (),
+-		network_get_proxy_password ());
++	soup_session_add_feature (session, SOUP_SESSION_FEATURE (cookies));
++	soup_session_add_feature (session2, SOUP_SESSION_FEATURE (cookies));
+ 
+-	g_signal_connect (session, "authenticate", G_CALLBACK (network_authenticate), NULL);
++	/* Only 'session' gets proxy, 'session2' is for non-proxy requests */
++	soup_session_set_proxy_resolver (session2, NULL);
++	network_set_soup_session_proxy (session, network_get_proxy_detect_mode());
+ 
+ 	/* Soup debugging */
+ 	if (debug_level & DEBUG_NET) {
+-		logger = soup_logger_new (SOUP_LOGGER_LOG_HEADERS, -1);
++		logger = soup_logger_new (SOUP_LOGGER_LOG_HEADERS);
+ 		soup_session_add_feature (session, SOUP_SESSION_FEATURE (logger));
+ 	}
+ 
+ 	g_free (useragent);
+ }
+ 
+-void
+-network_deinit (void)
+-{
+-	g_free (proxyname);
+-	g_free (proxyusername);
+-	g_free (proxypassword);
+-}
+-
+ ProxyDetectMode
+ network_get_proxy_detect_mode (void)
+ {
+ 	return proxymode;
+ }
+ 
+-const gchar *
+-network_get_proxy_host (void)
+-{
+-	return proxyname;
+-}
+-
+-guint
+-network_get_proxy_port (void)
+-{
+-	return proxyport;
+-}
+-
+-const gchar *
+-network_get_proxy_username (void)
+-{
+-	return proxyusername;
+-}
+-
+-const gchar *
+-network_get_proxy_password (void)
+-{
+-	return proxypassword;
+-}
+-
+ extern void network_monitor_proxy_changed (void);
+ 
+ void
+-network_set_proxy (ProxyDetectMode mode, gchar *host, guint port, gchar *user, gchar *password)
++network_set_proxy (ProxyDetectMode mode)
+ {
+-	g_free (proxyname);
+-	g_free (proxyusername);
+-	g_free (proxypassword);
+ 	proxymode = mode;
+-	proxyname = host;
+-	proxyport = port;
+-	proxyusername = user;
+-	proxypassword = password;
+ 
+ 	/* session will be NULL if we were called from conf_init() as that's called
+ 	 * before net_init() */
+ 	if (session)
+-		network_set_soup_session_proxy (session, mode, host, port, user, password);
+-
+-	debug4 (DEBUG_NET, "proxy set to http://%s:%s@%s:%d", user, password, host, port);
++		network_set_soup_session_proxy (session, mode);
+ 
+ 	network_monitor_proxy_changed ();
+ }
+@@ -468,11 +405,6 @@ network_strerror (gint status)
+ 	switch (status) {
+ 		/* Some libsoup transport errors */
+ 		case SOUP_STATUS_NONE:			tmp = _("The update request was cancelled"); break;
+-		case SOUP_STATUS_CANT_RESOLVE:		tmp = _("Unable to resolve destination host name"); break;
+-		case SOUP_STATUS_CANT_RESOLVE_PROXY:	tmp = _("Unable to resolve proxy host name"); break;
+-		case SOUP_STATUS_CANT_CONNECT:		tmp = _("Unable to connect to remote host"); break;
+-		case SOUP_STATUS_CANT_CONNECT_PROXY:	tmp = _("Unable to connect to proxy"); break;
+-		case SOUP_STATUS_SSL_FAILED:		tmp = _("SSL/TLS negotiation failed. Possible outdated or unsupported encryption algorithm. Check your operating system settings."); break;
+ 
+ 		/* http 3xx redirection */
+ 		case SOUP_STATUS_MOVED_PERMANENTLY:	tmp = _("The resource moved permanently to a new location"); break;
+@@ -498,19 +430,8 @@ network_strerror (gint status)
+ 		case SOUP_STATUS_HTTP_VERSION_NOT_SUPPORTED: tmp = _("HTTP Version Not Supported"); break;
+ 	}
+ 
+-	if (!tmp) {
+-		if (SOUP_STATUS_IS_TRANSPORT_ERROR (status)) {
+-			tmp = _("There was an internal error in the update process");
+-		} else if (SOUP_STATUS_IS_REDIRECTION (status)) {
+-			tmp = _("Feed not available: Server requested unsupported redirection!");
+-		} else if (SOUP_STATUS_IS_CLIENT_ERROR (status)) {
+-			tmp = _("Client Error");
+-		} else if (SOUP_STATUS_IS_SERVER_ERROR (status)) {
+-			tmp = _("Server Error");
+-		} else {
+-			tmp = _("An unknown networking error happened!");
+-		}
+-	}
++	if (!tmp)
++		tmp = _("An unknown networking error happened!");
+ 
+ 	g_assert (tmp);
+ 
+diff --git a/src/net.h b/src/net.h
+index a0f0951fd..84651c0e1 100644
+--- a/src/net.h
++++ b/src/net.h
+@@ -54,16 +54,11 @@ typedef enum {
+ 
+ /**
+  * Configures the network client to use the given proxy
+- * settings. If the host name is NULL then no proxy will
+- * be used.
++ * settings.
+  *
+- * @param mode		indicate whether to use the system setting, no proxy or the following parameters.
+- * @param host		the new proxy host
+- * @param port		the new proxy port
+- * @param user		the new proxy username or NULL
+- * @param password	the new proxy password or NULL
++ * @param mode		indicate whether to use the system setting or no proxy
+  */
+-void network_set_proxy (ProxyDetectMode mode, gchar *host, guint port, gchar *user, gchar *password);
++void network_set_proxy (ProxyDetectMode mode);
+ 
+ /**
+  * Returns the proxy detect mode.
+diff --git a/src/ui/liferea_browser.c b/src/ui/liferea_browser.c
+index 51d2bc741..93a7c7ab3 100644
+--- a/src/ui/liferea_browser.c
++++ b/src/ui/liferea_browser.c
+@@ -289,13 +289,7 @@ liferea_browser_online_status_changed (NetworkMonitor *nm, gboolean online, gpoi
+ static void
+ liferea_browser_proxy_changed (NetworkMonitor *nm, gpointer userdata)
+ {
+-	liferea_webkit_set_proxy (
+-		network_get_proxy_detect_mode (),
+-		network_get_proxy_host (),
+-		network_get_proxy_port (),
+-		network_get_proxy_username (),
+-		network_get_proxy_password ()
+-	);
++	liferea_webkit_set_proxy (network_get_proxy_detect_mode ());
+ }
+ 
+ LifereaBrowser *
+diff --git a/src/webkit/webkit.c b/src/webkit/webkit.c
+index 892deb277..b77d7dced 100644
+--- a/src/webkit/webkit.c
++++ b/src/webkit/webkit.c
+@@ -617,14 +617,12 @@ liferea_webkit_scroll_pagedown (GtkWidget *webview)
+ }
+ 
+ void
+-liferea_webkit_set_proxy (ProxyDetectMode mode, const gchar *host, guint port, const gchar *user, const gchar *pwd)
++liferea_webkit_set_proxy (ProxyDetectMode mode)
+ {
+ #if WEBKIT_CHECK_VERSION (2, 15, 3)
+-	WebKitNetworkProxySettings *proxy_settings = NULL;
+-	gchar *proxy_uri = NULL;
+-	gchar *user_pass = NULL, *host_port = NULL;
+-
+ 	switch (mode) {
++		default:
++		case PROXY_DETECT_MODE_MANUAL:
+ 		case PROXY_DETECT_MODE_AUTO:
+ 			webkit_website_data_manager_set_network_proxy_settings
+ 			    (webkit_web_context_get_website_data_manager (webkit_web_context_get_default ()),
+@@ -637,43 +635,6 @@ liferea_webkit_set_proxy (ProxyDetectMode mode, const gchar *host, guint port, c
+ 			     WEBKIT_NETWORK_PROXY_MODE_NO_PROXY,
+ 			     NULL);
+ 			break;
+-		case PROXY_DETECT_MODE_MANUAL:
+-			/* Construct user:password part of the URI if specified. */
+-			if (user) {
+-				user_pass = g_uri_escape_string (user, NULL, TRUE);
+-				if (pwd) {
+-					gchar *enc_user = user_pass;
+-					gchar *enc_pass = g_uri_escape_string (pwd, NULL, TRUE);
+-					user_pass = g_strdup_printf ("%s:%s", enc_user, enc_pass);
+-					g_free (enc_user);
+-					g_free (enc_pass);
+-				}
+-			}
+-
+-			/* Construct the host:port part of the URI. */
+-			if (port) {
+-				host_port = g_strdup_printf ("%s:%d", host, port);
+-			} else {
+-				host_port = g_strdup (host);
+-			}
+-
+-			/* Construct proxy URI. */
+-			if (user) {
+-				proxy_uri = g_strdup_printf("http://%s@%s", user_pass, host_port);
+-			} else {
+-				proxy_uri = g_strdup_printf("http://%s", host_port);
+-			}
+-
+-			g_free (user_pass);
+-			g_free (host_port);
+-			proxy_settings = webkit_network_proxy_settings_new (proxy_uri, NULL);
+-			g_free (proxy_uri);
+-			webkit_website_data_manager_set_network_proxy_settings
+-			    (webkit_web_context_get_website_data_manager (webkit_web_context_get_default ()),
+-			     WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
+-			     proxy_settings);
+-			webkit_network_proxy_settings_free (proxy_settings);
+-			break;
+ 	}
+ #endif
+ }
+diff --git a/src/webkit/webkit.h b/src/webkit/webkit.h
+index b91651b8f..dfa095497 100644
+--- a/src/webkit/webkit.h
++++ b/src/webkit/webkit.h
+@@ -98,7 +98,7 @@ void liferea_webkit_scroll_pagedown (GtkWidget *webview);
+ /**
+  * liferea_webkit_set_proxy: (skip)
+  */
+-void liferea_webkit_set_proxy (ProxyDetectMode mode, const gchar *host, guint port, const gchar *user, const gchar *pwd);
++void liferea_webkit_set_proxy (ProxyDetectMode mode);
+ 
+ /**
+  * liferea_webkit_reload_style:
+
+From 2f998930d43bf397f4209c1341714548228db98e Mon Sep 17 00:00:00 2001
+From: Lars Windolf <lars.windolf@gmx.de>
+Date: Fri, 31 Mar 2023 10:18:38 +0200
+Subject: [PATCH 02/20] Fixes webkit2gtk-web-extension version
+
+---
+ configure.ac | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/configure.ac b/configure.ac
+index 015dd1ceb..6d309050c 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -59,7 +59,7 @@ AC_SUBST(PACKAGE_LIBS)
+ 
+ 
+ PKG_CHECK_MODULES([WEB_EXTENSION], [
+-                  webkit2gtk-web-extension-4.0
++                  webkit2gtk-web-extension-4.1
+                   ])
+ AC_SUBST([WEB_EXTENSION_CFLAGS])
+ AC_SUBST([WEB_EXTENSION_LIBS])
+
+From 3b2534eb686a0cd44be98f597ed21b0ab25a94d4 Mon Sep 17 00:00:00 2001
+From: Lars Windolf <lars.windolf@gmx.de>
+Date: Sat, 1 Apr 2023 15:42:19 +0200
+Subject: [PATCH 11/20] Fix crash on autoptr free
+
+---
+ src/net.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/net.c b/src/net.c
+index 64e8eb732..82108ac9c 100644
+--- a/src/net.c
++++ b/src/net.c
+@@ -151,6 +151,7 @@ network_process_callback (GInputStream *stream, SoupMessage *msg, updateJobPtr j
+ 	}
+ 
+ 	update_process_finished_job (job);
++	g_object_unref (stream);
+ }
+ 
+ /* Downloads a URL specified in the request structure, returns
+@@ -163,7 +164,7 @@ network_process_callback (GInputStream *stream, SoupMessage *msg, updateJobPtr j
+ void
+ network_process_request (const updateJobPtr job)
+ {
+-	g_autoptr(GInputStream)	stream;
++	GInputStream		*stream;
+ 	g_autoptr(SoupMessage)	msg = NULL;
+ 	SoupMessageHeaders	*request_headers;
+ 	g_autoptr(GUri)		sourceUri;
+
+From 5df4424ac873a6a79474c05388773413ac287528 Mon Sep 17 00:00:00 2001
+From: Lars Windolf <lars.windolf@gmx.de>
+Date: Sat, 1 Apr 2023 15:44:17 +0200
+Subject: [PATCH 12/20] Bump glib dependency for g_memdup2()
+
+---
+ configure.ac | 2 +-
+ src/net.c    | 5 -----
+ 2 files changed, 1 insertion(+), 6 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 6d309050c..efd3d0c24 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -30,7 +30,7 @@ PKG_PROG_PKG_CONFIG()
+ # Mandatory library dependencies
+ 
+ pkg_modules="	gtk+-3.0 >= 3.22.0
+-		glib-2.0 >= 2.50.0
++		glib-2.0 >= 2.68.0
+ 		gio-2.0 >= 2.50.0
+ 		pango >= 1.4.0 
+ 		libxml-2.0 >= 2.6.27
+diff --git a/src/net.c b/src/net.c
+index 82108ac9c..e7a82eae6 100644
+--- a/src/net.c
++++ b/src/net.c
+@@ -87,12 +87,7 @@ network_process_callback (GInputStream *stream, SoupMessage *msg, updateJobPtr j
+ 	debug1 (DEBUG_NET, "source after download: >>>%s<<<", job->result->source);
+ 
+ 	body = g_input_stream_read_bytes (stream, G_MAXSSIZE, cancellable, NULL);
+-
+-#ifdef HAVE_G_MEMDUP2
+ 	job->result->data = g_memdup2 (g_bytes_get_data (body, &job->result->size), g_bytes_get_size (body));
+-#else
+-	job->result->data = g_memdup (g_bytes_get_data (body, &job->result->size), g_bytes_get_size (body));
+-#endif
+ 
+ 	debug1 (DEBUG_NET, "%d bytes downloaded", job->result->size);
+ 
+
+From 87cba0ba9a5d03ec6a5cc5f8659042f129b29e76 Mon Sep 17 00:00:00 2001
+From: Lars Windolf <lars.windolf@gmx.de>
+Date: Sat, 1 Apr 2023 16:28:39 +0200
+Subject: [PATCH 13/20] Make downloading work.
+
+---
+ src/net.c | 62 ++++++++++++++++++++++++++++++++++---------------------
+ 1 file changed, 39 insertions(+), 23 deletions(-)
+
+diff --git a/src/net.c b/src/net.c
+index e7a82eae6..95ed8c522 100644
+--- a/src/net.c
++++ b/src/net.c
+@@ -52,9 +52,9 @@ network_process_redirect_callback (SoupMessage *msg, gpointer user_data)
+ 	SoupStatus	status = soup_message_get_status (msg);
+ 
+ 	if (SOUP_STATUS_MOVED_PERMANENTLY == status || SOUP_STATUS_PERMANENT_REDIRECT == status) {
+-		if (g_uri_is_valid (location, SOUP_HTTP_URI_FLAGS | G_URI_FLAGS_PARSE_RELAXED, NULL)) {
++		if (g_uri_is_valid (location, G_URI_FLAGS_PARSE_RELAXED, NULL)) {
+ 			location = soup_message_headers_get_one (soup_message_get_response_headers (msg), "Location");
+-			newuri = g_uri_parse (location, SOUP_HTTP_URI_FLAGS | G_URI_FLAGS_PARSE_RELAXED, NULL);
++			newuri = g_uri_parse (location, G_URI_FLAGS_PARSE_RELAXED, NULL);
+ 
+ 			if (!soup_uri_equal (newuri, soup_message_get_uri (msg))) {
+ 				job->result->httpstatus = status;
+@@ -67,28 +67,31 @@ network_process_redirect_callback (SoupMessage *msg, gpointer user_data)
+ }
+ 
+ static void
+-network_process_callback (GInputStream *stream, SoupMessage *msg, updateJobPtr job)
++network_process_callback (GObject *obj, GAsyncResult *res, gpointer user_data)
+ {
+-	g_autoptr(GBytes)	body = NULL;
++	SoupSession		*session = SOUP_SESSION (obj);
++	SoupMessage		*msg;
++	updateJobPtr		job = (updateJobPtr)user_data;
+ 	GDateTime		*last_modified;
+ 	const gchar		*tmp = NULL;
+ 	GHashTable		*params;
+ 	gboolean		revalidated = FALSE;
+ 	gint			maxage;
+ 	gint			age;
++	g_autoptr(GBytes)	body;
++
++	msg = soup_session_get_async_result_message (session, res);
++	body = soup_session_send_and_read_finish (session, res, NULL);	// FIXME: handle errors!
+ 
+ 	job->result->source = g_uri_to_string_partial (soup_message_get_uri (msg), 0);
+ 	job->result->httpstatus = soup_message_get_status (msg);
++	job->result->data = g_memdup2 (g_bytes_get_data (body, &job->result->size), g_bytes_get_size (body));
+ 
+ 	/* keep some request headers for revalidated responses */
+ 	revalidated = (304 == job->result->httpstatus);
+ 
+ 	debug1 (DEBUG_NET, "download status code: %d", job->result->httpstatus);
+ 	debug1 (DEBUG_NET, "source after download: >>>%s<<<", job->result->source);
+-
+-	body = g_input_stream_read_bytes (stream, G_MAXSSIZE, cancellable, NULL);
+-	job->result->data = g_memdup2 (g_bytes_get_data (body, &job->result->size), g_bytes_get_size (body));
+-
+ 	debug1 (DEBUG_NET, "%d bytes downloaded", job->result->size);
+ 
+ 	job->result->contentType = g_strdup (soup_message_headers_get_content_type (soup_message_get_response_headers (msg), NULL));
+@@ -104,7 +107,7 @@ network_process_callback (GInputStream *stream, SoupMessage *msg, updateJobPtr j
+ 			last_modified = soup_date_time_new_from_http_string (tmp);
+ 			if (last_modified) {
+ 				job->result->updateState->lastModified = g_date_time_to_unix (last_modified);
+-				g_free (last_modified);
++				g_date_time_unref (last_modified);
+ 			}
+ 		}
+ 	}
+@@ -146,7 +149,7 @@ network_process_callback (GInputStream *stream, SoupMessage *msg, updateJobPtr j
+ 	}
+ 
+ 	update_process_finished_job (job);
+-	g_object_unref (stream);
++	g_bytes_unref (body);
+ }
+ 
+ /* Downloads a URL specified in the request structure, returns
+@@ -159,30 +162,46 @@ network_process_callback (GInputStream *stream, SoupMessage *msg, updateJobPtr j
+ void
+ network_process_request (const updateJobPtr job)
+ {
+-	GInputStream		*stream;
+ 	g_autoptr(SoupMessage)	msg = NULL;
+ 	SoupMessageHeaders	*request_headers;
+ 	g_autoptr(GUri)		sourceUri;
+ 	gboolean		do_not_track = FALSE;
++	g_autofree gchar	*scheme = NULL, *user = NULL, *password = NULL, *auth_params = NULL, *host = NULL, *path = NULL, *query = NULL, *fragment = NULL;
++	gint			port;
+ 
+ 	g_assert (NULL != job->request);
+ 	debug1 (DEBUG_NET, "downloading %s", job->request->source);
+ 	if (job->request->postdata && (debug_level & DEBUG_VERBOSE) && (debug_level & DEBUG_NET))
+ 		debug1 (DEBUG_NET, "   postdata=>>>%s<<<", job->request->postdata);
+ 
++	g_uri_split_with_user (job->request->source,
++	                       G_URI_FLAGS_ENCODED,
++			       &scheme,
++			       &user,
++			       &password,
++			       &auth_params,
++			       &host,
++			       &port,
++			       &path,
++			       &query,
++			       &fragment,
++			       NULL);
++
+ 	/* Prepare the SoupMessage */
+ 	sourceUri = g_uri_build_with_user (
+ 		SOUP_HTTP_URI_FLAGS | G_URI_FLAGS_PARSE_RELAXED,
+-		g_uri_peek_scheme (job->request->source),
++		scheme,
++		// FIXME: allow passing user/password from above?
+ 		(!job->request->authValue && job->request->options && job->request->options->username)?job->request->options->username:NULL,
+ 		(!job->request->authValue && job->request->options && job->request->options->password)?job->request->options->password:NULL,
+-		NULL,	/* auth_params */
+-		NULL,	/* host */
+-		-1,	/* port */
+-		job->request->source,
+-		NULL,	/* query */
+-		NULL	/* fragment */
++		auth_params,
++		host,
++		port,
++		path,
++		query,
++		fragment
+ 	);
++
+ 	if (sourceUri)
+ 		msg = soup_message_new_from_uri (job->request->postdata?"POST":"GET", sourceUri);
+ 	if (!msg) {
+@@ -263,12 +282,9 @@ network_process_request (const updateJobPtr job)
+ 
+ 	/* If the feed has "dont use a proxy" selected, use 'session2' which is non-proxy */
+ 	if (job->request->options && job->request->options->dontUseProxy)
+-		stream = soup_session_send (session2, msg, cancellable, NULL);
++		soup_session_send_and_read_async (session2, msg, 0 /* IO priority */, cancellable, network_process_callback, job);
+ 	else
+-		stream = soup_session_send (session, msg, cancellable, NULL);
+-
+-	if (stream)
+-		network_process_callback (stream, msg, job);
++		soup_session_send_and_read_async (session, msg, 0 /* IO priority */, cancellable, network_process_callback, job);
+ }
+ 
+ static void
+
+From 700ec2f4ba5ae525f94c5526f8c3cce9a64e95ef Mon Sep 17 00:00:00 2001
+From: Lars Windolf <lars.windolf@gmx.de>
+Date: Fri, 15 Sep 2023 22:54:17 +0200
+Subject: [PATCH] Fixes #1297: auto disable webkit-settings plugin.
+
+---
+ src/plugins_engine.c | 134 ++++++++++++++++++++++++-------------------
+ 1 file changed, 76 insertions(+), 58 deletions(-)
+
+diff --git a/src/plugins_engine.c b/src/plugins_engine.c
+index 1afd2b9aa..63919ef3a 100644
+--- a/src/plugins_engine.c
++++ b/src/plugins_engine.c
+@@ -47,64 +47,82 @@ LifereaPluginsEngine *default_engine = NULL;
+ static void
+ liferea_plugins_engine_init (LifereaPluginsEngine * engine)
+ {
+-  gchar *typelib_dir;
+-  GError *error = NULL;
+-  PeasPluginInfo *plugin_installer_plugin_info = NULL;
+-
+-  engine->priv = liferea_plugins_engine_get_instance_private (engine);
+-
+-  peas_engine_enable_loader (PEAS_ENGINE (engine), "python3");
+-
+-  engine->priv->plugin_settings = g_settings_new ("net.sf.liferea.plugins");
+-
+-  /* Require Lifereas's typelib. */
+-  typelib_dir = g_build_filename (PACKAGE_LIB_DIR,
+-                                  "girepository-1.0", NULL);
+-
+-  if (!g_irepository_require_private (g_irepository_get_default (),
+-	  typelib_dir, "Liferea", "3.0", 0, &error))
+-    {
+-      g_warning ("Could not load Liferea repository: %s", error->message);
+-      g_error_free (error);
+-      error = NULL;
+-    }
+-
+-  g_free (typelib_dir);
+-
+-  /* This should be moved to libpeas */
+-  if (!g_irepository_require (g_irepository_get_default (),
+-                              "Peas", "1.0", 0, &error))
+-    {
+-      g_warning ("Could not load Peas repository: %s", error->message);
+-      g_error_free (error);
+-      error = NULL;
+-    }
+-
+-  if (!g_irepository_require (g_irepository_get_default (),
+-                              "PeasGtk", "1.0", 0, &error))
+-    {
+-      g_warning ("Could not load PeasGtk repository: %s", error->message);
+-      g_error_free (error);
+-      error = NULL;
+-    }
+-
+-  peas_engine_add_search_path (PEAS_ENGINE (engine),
+-                               g_build_filename (g_get_user_data_dir (), "liferea", "plugins", NULL),
+-                               g_build_filename (g_get_user_data_dir (), "liferea", "plugins", NULL));
+-
+-  peas_engine_add_search_path (PEAS_ENGINE (engine),
+-                               g_build_filename (PACKAGE_LIB_DIR,  "plugins", NULL),
+-                               g_build_filename (PACKAGE_DATA_DIR, "plugins", NULL));
+-
+-  g_settings_bind (engine->priv->plugin_settings,
+-                   "active-plugins",
+-                   engine, "loaded-plugins", G_SETTINGS_BIND_DEFAULT);
+-
+-  plugin_installer_plugin_info = peas_engine_get_plugin_info (PEAS_ENGINE (engine), "plugin-installer");
+-  if (plugin_installer_plugin_info)
+-	peas_engine_load_plugin (PEAS_ENGINE (engine), plugin_installer_plugin_info);
+-  else
+-	g_warning ("The plugin-installer plugin was not found.");
++	gchar	*typelib_dir;
++	const gchar **names;
++	gsize	length;
++	GError *error = NULL;
++	GVariant *list;
++	PeasPluginInfo *plugin_installer_plugin_info = NULL;
++
++	engine->priv = liferea_plugins_engine_get_instance_private (engine);
++
++	peas_engine_enable_loader (PEAS_ENGINE (engine), "python3");
++
++	engine->priv->plugin_settings = g_settings_new ("net.sf.liferea.plugins");
++
++	/* Disable incompatible webkit-settings plugin */
++	list = g_settings_get_value (engine->priv->plugin_settings, "active-plugins");
++	names = g_variant_get_strv (list, &length);
++	if (g_strv_contains (names, "webkit-settings")) {
++		GVariantBuilder b;
++		guint i;
++
++		g_variant_builder_init (&b, G_VARIANT_TYPE_ARRAY);
++		for (i = 0; i < length; i++) {
++			if (!g_str_equal (names[i], "webkit-settings"))
++				g_variant_builder_add_parsed (&b, "%s", names[i]);
++		}
++		g_free (list);
++		list = g_variant_builder_end (&b);
++		g_settings_set_value (engine->priv->plugin_settings, "active-plugins", list);
++	}
++	g_free (names);
++
++	/* Require Lifereas's typelib. */
++	typelib_dir = g_build_filename (PACKAGE_LIB_DIR,
++					"girepository-1.0", NULL);
++
++	if (!g_irepository_require_private (g_irepository_get_default (),
++		typelib_dir, "Liferea", "3.0", 0, &error)) {
++		g_warning ("Could not load Liferea repository: %s", error->message);
++		g_error_free (error);
++		error = NULL;
++	}
++
++	g_free (typelib_dir);
++
++	/* This should be moved to libpeas */
++	if (!g_irepository_require (g_irepository_get_default (),
++				"Peas", "1.0", 0, &error)) {
++		g_warning ("Could not load Peas repository: %s", error->message);
++		g_error_free (error);
++		error = NULL;
++	}
++
++	if (!g_irepository_require (g_irepository_get_default (),
++				"PeasGtk", "1.0", 0, &error)) {
++		g_warning ("Could not load PeasGtk repository: %s", error->message);
++		g_error_free (error);
++		error = NULL;
++	}
++
++	peas_engine_add_search_path (PEAS_ENGINE (engine),
++		g_build_filename (g_get_user_data_dir (), "liferea", "plugins", NULL),
++		g_build_filename (g_get_user_data_dir (), "liferea", "plugins", NULL));
++
++	peas_engine_add_search_path (PEAS_ENGINE (engine),
++		g_build_filename (PACKAGE_LIB_DIR,  "plugins", NULL),
++		g_build_filename (PACKAGE_DATA_DIR, "plugins", NULL));
++
++	g_settings_bind (engine->priv->plugin_settings,
++			"active-plugins",
++			engine, "loaded-plugins", G_SETTINGS_BIND_DEFAULT);
++
++	plugin_installer_plugin_info = peas_engine_get_plugin_info (PEAS_ENGINE (engine), "plugin-installer");
++	if (plugin_installer_plugin_info)
++		peas_engine_load_plugin (PEAS_ENGINE (engine), plugin_installer_plugin_info);
++	else
++		g_warning ("The plugin-installer plugin was not found.");
+ }
+ 
+ /* Provide default signal handlers */
+diff --git a/src/plugins_engine.c b/src/plugins_engine.c
+index 63919ef3a..1083eef02 100644
+--- a/src/plugins_engine.c
++++ b/src/plugins_engine.c
+@@ -55,9 +55,6 @@ liferea_plugins_engine_init (LifereaPluginsEngine * engine)
+ 	PeasPluginInfo *plugin_installer_plugin_info = NULL;
+ 
+ 	engine->priv = liferea_plugins_engine_get_instance_private (engine);
+-
+-	peas_engine_enable_loader (PEAS_ENGINE (engine), "python3");
+-
+ 	engine->priv->plugin_settings = g_settings_new ("net.sf.liferea.plugins");
+ 
+ 	/* Disable incompatible webkit-settings plugin */
+@@ -78,6 +75,8 @@ liferea_plugins_engine_init (LifereaPluginsEngine * engine)
+ 	}
+ 	g_free (names);
+ 
++	peas_engine_enable_loader (PEAS_ENGINE (engine), "python3");
++
+ 	/* Require Lifereas's typelib. */
+ 	typelib_dir = g_build_filename (PACKAGE_LIB_DIR,
+ 					"girepository-1.0", NULL);

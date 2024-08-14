@@ -119,9 +119,15 @@ _EOF
 	#
 	# Handle binfmts trigger
 	#
-	if [ -n "${binfmts}" ]; then
+	if [ -n "${binfmts}" ] || [ -d "${PKGDESTDIR}/usr/share/binfmts" ]; then
 		_add_trigger binfmts
+	fi
+	if [ -n "${binfmts}" ]; then
 		echo "export binfmts=\"${binfmts}\"" >> $tmpf
+	fi
+	if [ -d "${PKGDESTDIR}/usr/share/binfmts" ]; then
+		_import_binfmts="$(find "${PKGDESTDIR}/usr/share/binfmts" -type f -printf '%f\n')"
+		echo "export import_binfmts=\"${_import_binfmts}\"" >> $tmpf
 	fi
 	#
 	# Handle GNU Info files.

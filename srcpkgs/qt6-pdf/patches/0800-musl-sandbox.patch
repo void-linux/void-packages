@@ -1,0 +1,121 @@
+Source: https://git.alpinelinux.org/aports/tree/community/chromium/musl-sandbox.patch
+musl uses different syscalls from glibc for some functions,
+so the sandbox has to account for that
+--- a/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
++++ b/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
+@@ -132,6 +132,7 @@ namespace sandbox {
+ ResultExpr RestrictCloneToThreadsAndEPERMFork() {
+   const Arg<unsigned long> flags(0);
+ 
++#ifdef __GLIBC__
+   // TODO(mdempsky): Extend DSL to support (flags & ~mask1) == mask2.
+   const uint64_t kAndroidCloneMask = CLONE_VM | CLONE_FS | CLONE_FILES |
+                                      CLONE_SIGHAND | CLONE_THREAD |
+@@ -146,6 +147,13 @@ ResultExpr RestrictCloneToThreadsAndEPER
+   const BoolExpr android_test =
+       AnyOf(flags == kAndroidCloneMask, flags == kObsoleteAndroidCloneMask,
+             flags == kGlibcPthreadFlags);
++#else
++  const int required = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
++                       CLONE_THREAD | CLONE_SYSVSEM;
++  const int safe = CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID |
++                   CLONE_DETACHED;
++  const BoolExpr thread_clone_ok = (flags&~safe)==required;
++#endif
+ 
+   // The following two flags are the two important flags in any vfork-emulating
+   // clone call. EPERM any clone call that contains both of them.
+@@ -155,7 +163,11 @@ ResultExpr RestrictCloneToThreadsAndEPER
+       AnyOf((flags & (CLONE_VM | CLONE_THREAD)) == 0,
+             (flags & kImportantCloneVforkFlags) == kImportantCloneVforkFlags);
+ 
++#ifdef __GLIBC__
+   return If(IsAndroid() ? android_test : glibc_test, Allow())
++#else
++  return If(thread_clone_ok, Allow())
++#endif
+       .ElseIf(is_fork_or_clone_vfork, Error(EPERM))
+       .Else(CrashSIGSYSClone());
+ }
+--- a/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
++++ b/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+@@ -439,6 +439,9 @@ bool SyscallSets::IsAllowedProcessStartO
+ #if defined(__i386__)
+     case __NR_waitpid:
+ #endif
++#if !defined(__GLIBC__)
++    case __NR_set_tid_address:
++#endif
+       return true;
+     case __NR_clone:  // Should be parameter-restricted.
+     case __NR_setns:  // Privileged.
+@@ -451,7 +454,9 @@ bool SyscallSets::IsAllowedProcessStartO
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__)
+     case __NR_set_thread_area:
+ #endif
++#if defined(__GLIBC__)
+     case __NR_set_tid_address:
++#endif
+     case __NR_unshare:
+ #if !defined(__mips__) && !defined(__aarch64__)
+     case __NR_vfork:
+@@ -549,6 +554,10 @@ bool SyscallSets::IsAllowedAddressSpaceA
+     case __NR_mlock:
+     case __NR_munlock:
+     case __NR_munmap:
++#ifndef __GLIBC__
++    case __NR_mremap:
++    case __NR_membarrier:
++#endif
+       return true;
+     case __NR_madvise:
+     case __NR_mincore:
+@@ -566,7 +575,9 @@ bool SyscallSets::IsAllowedAddressSpaceA
+     case __NR_modify_ldt:
+ #endif
+     case __NR_mprotect:
++#ifdef __GLIBC__
+     case __NR_mremap:
++#endif
+     case __NR_msync:
+     case __NR_munlockall:
+     case __NR_readahead:
+--- a/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
++++ b/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+@@ -225,12 +225,26 @@ ResultExpr EvaluateSyscallImpl(int fs_de
+   if (sysno == __NR_getpriority || sysno ==__NR_setpriority)
+     return RestrictGetSetpriority(current_pid);
+ 
++#ifndef __GLIBC__
++  // XXX: hacks for musl sandbox, calls needed?
++  if (sysno == __NR_sched_getparam || sysno == __NR_sched_getscheduler ||
++      sysno == __NR_sched_setscheduler) {
++    return Allow();
++  }
++#endif
++
+   // The scheduling syscalls are used in threading libraries and also heavily in
+   // abseil. See for example https://crbug.com/1370394.
++#ifdef __GLIBC__
+   if (sysno == __NR_sched_getaffinity || sysno == __NR_sched_getparam ||
+       sysno == __NR_sched_getscheduler || sysno == __NR_sched_setscheduler) {
+     return RestrictSchedTarget(current_pid, sysno);
+   }
++#else
++  if (sysno == __NR_sched_getaffinity) {
++    return RestrictSchedTarget(current_pid, sysno);
++  }
++#endif
+ 
+   if (sysno == __NR_getrandom) {
+     return RestrictGetRandom();
+--- a/src/3rdparty/chromium/sandbox/linux/system_headers/linux_syscalls.h
++++ b/src/3rdparty/chromium/sandbox/linux/system_headers/linux_syscalls.h
+@@ -10,6 +10,7 @@
+ #define SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_SYSCALLS_H_
+ 
+ #include "build/build_config.h"
++#include <sys/syscall.h>
+ 
+ #if defined(__x86_64__)
+ #include "sandbox/linux/system_headers/x86_64_linux_syscalls.h"

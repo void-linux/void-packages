@@ -1,0 +1,54 @@
+From 3ec05c63ec38d19773c074f60eb2f9406e298b47 Mon Sep 17 00:00:00 2001
+From: Carlos Garcia Campos <cgarcia@igalia.com>
+Date: Fri, 14 Jun 2024 09:56:54 +0200
+Subject: [PATCH] REGRESSION(273818@main): [GTK] Eclipse crashes when rendering
+ tooltips: gdk_window_create_gl_context: assertion 'GDK_IS_WINDOW (window)'
+ failed in WebKit::AcceleratedBackingStoreDMABuf::ensureGLContext
+ https://bugs.webkit.org/show_bug.cgi?id=271477
+
+Reviewed by NOBODY (OOPS!).
+
+Update the buffer contents on prepareForRendering to make sure the view
+is already realized, which is required to create the gl context.
+
+* Source/WebKit/UIProcess/gtk/AcceleratedBackingStoreDMABuf.cpp:
+(WebKit::AcceleratedBackingStoreDMABuf::frame):
+(WebKit::AcceleratedBackingStoreDMABuf::prepareForRendering):
+---
+ .../gtk/AcceleratedBackingStoreDMABuf.cpp         | 15 ++++++---------
+ 1 file changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/Source/WebKit/UIProcess/gtk/AcceleratedBackingStoreDMABuf.cpp b/Source/WebKit/UIProcess/gtk/AcceleratedBackingStoreDMABuf.cpp
+index b71fb0a8ac06..66d8a4801aba 100644
+--- a/Source/WebKit/UIProcess/gtk/AcceleratedBackingStoreDMABuf.cpp
++++ b/Source/WebKit/UIProcess/gtk/AcceleratedBackingStoreDMABuf.cpp
+@@ -544,12 +544,6 @@ void AcceleratedBackingStoreDMABuf::frame(uint64_t bufferID)
+         return;
+     }
+ 
+-    if (buffer->type() == Buffer::Type::EglImage) {
+-        ensureGLContext();
+-        gdk_gl_context_make_current(m_gdkGLContext.get());
+-    }
+-    buffer->didUpdateContents();
+-
+     m_pendingBuffer = buffer;
+     gtk_widget_queue_draw(m_webPage.viewWidget());
+ }
+@@ -613,10 +607,13 @@ void AcceleratedBackingStoreDMABuf::update(const LayerTreeContext& context)
+ 
+ bool AcceleratedBackingStoreDMABuf::prepareForRendering()
+ {
+-    if (m_gdkGLContext)
+-        gdk_gl_context_make_current(m_gdkGLContext.get());
+-
+     if (m_pendingBuffer) {
++        if (m_pendingBuffer->type() == Buffer::Type::EglImage) {
++            ensureGLContext();
++            gdk_gl_context_make_current(m_gdkGLContext.get());
++        }
++        m_pendingBuffer->didUpdateContents();
++
+         if (m_committedBuffer)
+             m_webPage.legacyMainFrameProcess().send(Messages::AcceleratedSurfaceDMABuf::ReleaseBuffer(m_committedBuffer->id()), m_surfaceID);
+         m_committedBuffer = WTFMove(m_pendingBuffer);

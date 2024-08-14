@@ -1,0 +1,72 @@
+From e9777a0a979b4a760ca253cdb6ff1af9589d9e05 Mon Sep 17 00:00:00 2001
+From: Peter Hutterer <peter.hutterer@who-t.net>
+Date: Mon, 17 Jun 2024 13:55:35 +1000
+Subject: [PATCH] Don't create a default match for fallback devices (#723)
+
+If we end up using a fallback device, creating a default match triggers
+two complaints: an assert in bus_to_str() for the WBUSTYPE_UNKNOWN
+and one in libwacom_set_default_match() because the match we compose
+based on bustype/vid/pid does doesn't exist in the list of the generic
+device's matches.
+
+Closes #721, #722
+---
+ libwacom/libwacom.c   |  7 +++----
+ test/test_libwacom.py | 22 ++++++++++++++++++++++
+ 2 files changed, 25 insertions(+), 4 deletions(-)
+
+diff --git a/libwacom/libwacom.c b/libwacom/libwacom.c
+index 6170e6fc..ed738970 100644
+--- a/libwacom/libwacom.c
++++ b/libwacom/libwacom.c
+@@ -740,7 +740,6 @@ libwacom_new_from_builder(const WacomDeviceDatabase *db, const WacomBuilder *bui
+ 		char *name, *uniq;
+ 		const char *used_match_name = NULL;
+ 		const char *used_match_uniq = NULL;
+-		WacomMatch *used_match;
+ 
+ 		vendor_id = builder->vendor_id;
+ 		product_id = builder->product_id;
+@@ -786,9 +785,9 @@ libwacom_new_from_builder(const WacomDeviceDatabase *db, const WacomBuilder *bui
+ 			bus++;
+ 		}
+ 		ret = fallback_or_device(db, device, builder->device_name, fallback);
+-		if (ret) {
+-			/* for multiple-match devices, set to the one we requested */
+-			used_match = libwacom_match_new(used_match_name, used_match_uniq, *bus, vendor_id, product_id);
++		if (ret && device != NULL) {
++			/* If this isn't the fallback device: for multiple-match devices, set to the one we requested */
++			WacomMatch *used_match = libwacom_match_new(used_match_name, used_match_uniq, *bus, vendor_id, product_id);
+ 			libwacom_set_default_match(ret, used_match);
+ 			libwacom_match_unref(used_match);
+ 		}
+diff --git a/test/test_libwacom.py b/test/test_libwacom.py
+index 861e067e..385b4a97 100644
+--- a/test/test_libwacom.py
++++ b/test/test_libwacom.py
+@@ -377,3 +377,25 @@ def test_dont_ignore_exact_matches(custom_datadir):
+     builder = WacomBuilder.create(usbid=USBID, uniq="whatever", match_name=NAME)
+     device = db.new_from_builder(builder)
+     assert device is None
++
++
++# Emulates the behavior of new_from_path for an unknown device
++@pytest.mark.parametrize("fallback", (WacomDatabase.Fallback.NONE, WacomDatabase.Fallback.GENERIC))
++@pytest.mark.parametrize("bustype", (WacomBustype.USB, WacomBustype.BLUETOOTH))
++def test_new_unknown_device_with_fallback(custom_datadir, fallback, bustype):
++    USBID = (0x1234, 0x5678)
++    NAME = "nameval"
++    db = WacomDatabase(path=custom_datadir)
++    builder = WacomBuilder.create(usbid=USBID, bus=bustype, match_name=NAME)
++
++    device = db.new_from_builder(builder, fallback=fallback)
++    if fallback:
++        assert device is not None
++        match = device.match
++        assert match.decode("utf-8") == "generic"
++        # Generic device always has 0, 0, 0 triple for bus/vid/pid
++        assert device.bustype == WacomBustype.UNKNOWN
++        assert device.vendor_id == 0
++        assert device.product_id == 0
++    else:
++        assert device is None
