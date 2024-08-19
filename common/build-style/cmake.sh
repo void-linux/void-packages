@@ -72,6 +72,9 @@ _EOF
 
 	cmake_args+=" -DCMAKE_INSTALL_SBINDIR:PATH=bin"
 
+	# https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-Wno-dev
+	cmake_args+=" -Wno-dev"
+
 	export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Ninja}"
 	# Remove -pipe: https://gitlab.kitware.com/cmake/cmake/issues/19590
 	CFLAGS="-DNDEBUG ${CFLAGS/ -pipe / }" CXXFLAGS="-DNDEBUG ${CXXFLAGS/ -pipe / }" \
