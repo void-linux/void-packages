@@ -1,23 +1,17 @@
-From afa206dc466066c3d273dfc879103700505b3d7b Mon Sep 17 00:00:00 2001
-From: Joshua Strobl <joshua@streambits.io>
-Date: Sun, 22 Aug 2021 14:02:05 +0300
-Subject: [PATCH 1/1] Disable crash reporter since Microsoft refuses to fix
- this upstream.
-
-Unfortunately a PR submitted by a third-party was rejected by Microsoft, which would change the default for crash reporting from true to false and move the telemetry configuration to ensure crash reporting was not being forced on, placed in the argv.json, and cause a crash when improperly set.
-
-So, disable it entirely. No cookies for you, Visual Studio Code team.
----
- src/bootstrap-fork.js            |  3 ---
- src/main.js                      | 16 ----------------
- src/vs/code/electron-main/app.ts |  2 +-
- 3 files changed, 1 insertion(+), 20 deletions(-)
-
-diff --git a/src/main.js b/src/main.js
-index f7e6e49a967..88513af6dec 100644
---- a/src/main.js
-+++ b/src/main.js
-@@ -46,21 +46,6 @@ const argvConfig = configureCommandlineSwitchesSync(args);
+diff --git a/src/main.ts b/src/main.ts
+index ff9a5e89296..13bd078db46 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -10,7 +10,7 @@ import { performance } from 'perf_hooks';
+ import { configurePortable } from './bootstrap-node.js';
+ import { bootstrapESM } from './bootstrap-esm.js';
+ import { fileURLToPath } from 'url';
+-import { app, protocol, crashReporter, Menu, contentTracing } from 'electron';
++import { app, protocol, Menu, contentTracing } from 'electron';
+ import minimist from 'minimist';
+ import { product } from './bootstrap-meta.js';
+ import { parse } from './vs/base/common/jsonc.js';
+@@ -72,21 +72,6 @@ const codeCachePath = getCodeCachePath();
  // Disable default menu (https://github.com/electron/electron/issues/35512)
  Menu.setApplicationMenu(null);
  
@@ -39,3 +33,101 @@ index f7e6e49a967..88513af6dec 100644
  // Set logs path before app 'ready' event if running portable
  // to ensure that no 'logs' folder is created on disk at a
  // location outside of the portable directory
+@@ -391,97 +376,6 @@ function getArgvConfigPath(): string {
+ 	return path.join(os.homedir(), dataFolderName!, 'argv.json');
+ }
+ 
+-function configureCrashReporter(): void {
+-	let crashReporterDirectory = args['crash-reporter-directory'];
+-	let submitURL = '';
+-	if (crashReporterDirectory) {
+-		crashReporterDirectory = path.normalize(crashReporterDirectory);
+-
+-		if (!path.isAbsolute(crashReporterDirectory)) {
+-			console.error(`The path '${crashReporterDirectory}' specified for --crash-reporter-directory must be absolute.`);
+-			app.exit(1);
+-		}
+-
+-		if (!fs.existsSync(crashReporterDirectory)) {
+-			try {
+-				fs.mkdirSync(crashReporterDirectory, { recursive: true });
+-			} catch (error) {
+-				console.error(`The path '${crashReporterDirectory}' specified for --crash-reporter-directory does not seem to exist or cannot be created.`);
+-				app.exit(1);
+-			}
+-		}
+-
+-		// Crashes are stored in the crashDumps directory by default, so we
+-		// need to change that directory to the provided one
+-		console.log(`Found --crash-reporter-directory argument. Setting crashDumps directory to be '${crashReporterDirectory}'`);
+-		app.setPath('crashDumps', crashReporterDirectory);
+-	}
+-
+-	// Otherwise we configure the crash reporter from product.json
+-	else {
+-		const appCenter = product.appCenter;
+-		if (appCenter) {
+-			const isWindows = (process.platform === 'win32');
+-			const isLinux = (process.platform === 'linux');
+-			const isDarwin = (process.platform === 'darwin');
+-			const crashReporterId = argvConfig['crash-reporter-id'];
+-			const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+-			if (crashReporterId && uuidPattern.test(crashReporterId)) {
+-				if (isWindows) {
+-					switch (process.arch) {
+-						case 'x64':
+-							submitURL = appCenter['win32-x64'];
+-							break;
+-						case 'arm64':
+-							submitURL = appCenter['win32-arm64'];
+-							break;
+-					}
+-				} else if (isDarwin) {
+-					if (product.darwinUniversalAssetId) {
+-						submitURL = appCenter['darwin-universal'];
+-					} else {
+-						switch (process.arch) {
+-							case 'x64':
+-								submitURL = appCenter['darwin'];
+-								break;
+-							case 'arm64':
+-								submitURL = appCenter['darwin-arm64'];
+-								break;
+-						}
+-					}
+-				} else if (isLinux) {
+-					submitURL = appCenter['linux-x64'];
+-				}
+-				submitURL = submitURL.concat('&uid=', crashReporterId, '&iid=', crashReporterId, '&sid=', crashReporterId);
+-				// Send the id for child node process that are explicitly starting crash reporter.
+-				// For vscode this is ExtensionHost process currently.
+-				const argv = process.argv;
+-				const endOfArgsMarkerIndex = argv.indexOf('--');
+-				if (endOfArgsMarkerIndex === -1) {
+-					argv.push('--crash-reporter-id', crashReporterId);
+-				} else {
+-					// if the we have an argument "--" (end of argument marker)
+-					// we cannot add arguments at the end. rather, we add
+-					// arguments before the "--" marker.
+-					argv.splice(endOfArgsMarkerIndex, 0, '--crash-reporter-id', crashReporterId);
+-				}
+-			}
+-		}
+-	}
+-
+-	// Start crash reporter for all processes
+-	const productName = (product.crashReporter ? product.crashReporter.productName : undefined) || product.nameShort;
+-	const companyName = (product.crashReporter ? product.crashReporter.companyName : undefined) || 'Microsoft';
+-	const uploadToServer = Boolean(!process.env['VSCODE_DEV'] && submitURL && !crashReporterDirectory);
+-	crashReporter.start({
+-		companyName,
+-		productName: process.env['VSCODE_DEV'] ? `${productName} Dev` : productName,
+-		submitURL,
+-		uploadToServer,
+-		compress: true
+-	});
+-}
+-
+ function getJSFlags(cliArgs: NativeParsedArgs): string | null {
+ 	const jsFlags: string[] = [];
+ 
