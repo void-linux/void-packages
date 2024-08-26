@@ -1,0 +1,66 @@
+# Template file for 'libusbsio'
+pkgname=libusbsio
+version=2.1.11
+revision=1
+build_style=gnu-makefile
+hostmakedepends="pkg-config python3-setuptools python3-installer python3-wheel python3-build tar"
+makedepends="eudev-libudev-devel hidapi-devel libusb-devel"
+short_desc="Library for USB-HID communication over SPI, I2C or GPIO"
+maintainer="Mateusz Sylwestrzak <slymattz@gmail.com>"
+license="BSD-3-Clause"
+homepage="https://www.nxp.com/design/software/development-software/library-for-windows-macos-and-ubuntu-linux:LIBUSBSIO"
+distfiles="https://www.nxp.com/downloads/en/libraries/libusbsio-${version}-src.zip"
+checksum=b854d4ecbaab19c33cb1e77f59eec2442f67acc8911705ccaf838f7547449dae
+
+post_extract() {
+	# remove precompiled binaries
+	rm -r bin/*
+	# extract the python tarball
+	cd "python/dist"
+	tar xvzf "libusbsio-${version}.tar.gz"
+	# remove prebuilt shared libs
+	rm -r libusbsio-${version}/libusbsio/bin/*
+
+	if [ "$CROSS_BUILD" ]; then
+		vsed -i -e "s/gcc/$CC/" -e "s/g++/$CXX/" \
+			"${wrksrc}/makefile"
+	fi
+}
+
+post_patch() {
+	# fix Exception encountered: LIBUSBSIO_Exception("LIBUSBSIO: DLL path invalid './libusbsio.so'.")
+	vsed -i -e 's|dfltdir = "linux_" + platform.machine()|dfltdir = "/usr/lib"|g' \
+		"python/dist/libusbsio-${version}/libusbsio/libusbsio.py"
+}
+
+do_build() {
+	make # libusbsio
+
+	# build python bindings
+	cd "python/dist/libusbsio-${version}"
+
+	python3 -m build --no-isolation --wheel \
+		${make_build_args} ${make_build_target}
+}
+
+do_install() {
+	local _architecture="${XBPS_MACHINE%%-*}"
+	vmkdir "usr/lib"
+	vinstall "bin/linux_${_architecture}/libusbsio.so" 755 "usr/lib/" # install the freshly compiled library
+
+	# install python bindings
+	python3 -m installer --destdir ${DESTDIR} \
+		${make_install_args} "python/dist/libusbsio-${version}/dist/libusbsio-$version-py3-none-any.whl"
+}
+
+post_install() {
+	vlicense LICENSE.txt
+}
+
+libusbsio-python3_package() {
+	short_desc+=" - Python3 bindings"
+	depends="python3 libusbsio"
+	pkg_install() {
+		vmove usr/lib/python3*
+	}
+}
