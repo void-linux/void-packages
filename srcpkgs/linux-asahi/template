@@ -1,28 +1,33 @@
 # Template file for 'linux-asahi'
 pkgname=linux-asahi
-_asahiver=6.10.6
-_asahirel=1
-_tag=asahi-${_asahiver}-${_asahirel}
-version=6.10.6
+version=6.12.4p1
 revision=1
-_upstreamver=6.10.6
-_kernver="${_upstreamver}-${_tag}_${revision}"
-archs="aarch64*"
-hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
- openssl-devel perl uboot-mkimage cpio pahole python3
- rust cargo rust-bindgen rust-src libclang"
 short_desc="Linux kernel and modules for Apple Silicon"
 maintainer="Will Springer <skirmisher@protonmail.com>, dkwo <npiazza@disroot.org>"
+_majver=${version%p*}
+_asahiver=${_majver%.0}
+_asahirel=${version#*p}
+_tag=asahi-${_asahiver}-${_asahirel}
 license="GPL-2.0-only"
 homepage="https://asahilinux.org"
 distfiles="https://github.com/AsahiLinux/linux/archive/${_tag}.tar.gz"
-checksum=1664d1e753ee83ab3bf4e9f77e4ee59a75e9ba7940abc2e95e4ffe7f507c840d
+checksum=6543a6aa3fadb65fa24d5b7d4ae2143054229a94bc309512ce7c436104048e2f
+
 python_version=3
+
+archs="aarch64*"
+
 nodebug=yes  # -dbg package is generated below manually
 nostrip=yes
 noverifyrdeps=yes
 noshlibprovides=yes
 preserve=yes
+
+hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
+ pkg-config openssl-devel perl uboot-mkimage cpio pahole python3 zstd
+ rust cargo rust-bindgen rust-src libclang"
+
+_kernver=${_majver}-${_tag}_${revision}
 triggers="kernel-hooks"
 kernel_hooks_version="${_kernver}"
 
@@ -49,7 +54,20 @@ if [ "$CROSS_BUILD" ]; then
 fi
 
 pre_patch() {
-	xzcat $XBPS_SRCDISTDIR/$pkgname-$version/patch-${version}.xz | patch -Np1
+	if [ ! -f $XBPS_SRCDISTDIR/$pkgname-$version/patch-${version}.xz ]; then
+		return
+	fi
+	xzcat $XBPS_SRCDISTDIR/$pkgname-$version/patch-${version}.xz |
+		patch -sNp1 -F0
+}
+
+post_patch() {
+	# avoid the strip wrapper, its used to copy the objects to a new location
+	# and required to avoid absolute relocations.
+	vsed -e "s|\$(STRIP) \(--strip-debug -o \$@ \$<;\)|/usr/bin/${STRIP} \1|" -i drivers/firmware/efi/libstub/Makefile
+
+	# parallel pahole crashes on i686, do one job for now
+	vsed -i "s/\(\$(pahole-flags-y)\)/\1 --jobs=1/" -i scripts/Makefile.btf
 }
 
 do_configure() {
@@ -67,6 +85,7 @@ do_configure() {
 		ppc64*) arch=powerpc; subarch=ppc64;;
 		ppc*) arch=powerpc; subarch=ppc;;
 		mips*) arch=mips;;
+		riscv64*) arch=riscv;;
 	esac
 
 	if [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom ]; then
@@ -78,10 +97,9 @@ do_configure() {
 		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig .config
 		make ${makejobs} ARCH=$arch ${_cross} oldconfig
 	fi
+
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"-${_asahiver}-${_asahirel}_${revision}\"|" .config
-
-	rm -f localversion-next
 }
 
 do_build() {
@@ -94,6 +112,7 @@ do_build() {
 		aarch64*) _args="Image modules dtbs"; arch=arm64;;
 		ppc*) _args="zImage modules"; arch=powerpc;;
 		mips*) _args="uImage modules dtbs"; arch=mips;;
+		riscv64*) _args="Image modules dtbs"; arch=riscv;;
 	esac
 	export LDFLAGS=
 	make ARCH=$arch ${_cross} ${makejobs} prepare
@@ -110,10 +129,13 @@ do_install() {
 		aarch64*) arch=arm64;;
 		ppc*) arch=powerpc;;
 		mips*) arch=mips;;
+		riscv*) arch=riscv;;
 	esac
 
 	# Run depmod after compressing modules - makes depmod.sh a noop
 	sed -i '2iexit 0' scripts/depmod.sh
+	vmkdir usr/lib
+	ln -s usr/lib/ ${DESTDIR}
 
 	# Install kernel, firmware and modules
 	make ${makejobs} ARCH=${subarch:-$arch} INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
@@ -145,11 +167,14 @@ do_install() {
 			vinstall arch/mips/boot/uImage.bin 644 boot uImage-${_kernver}
 			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
 			;;
+		riscv)
+			vinstall arch/riscv/boot/Image 644 boot vmlinux-${_kernver}
+			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
+			;;
 	esac
 
 	# Switch to /usr.
 	vmkdir usr
-	mv ${DESTDIR}/lib ${DESTDIR}/usr
 
 	cd ${DESTDIR}/usr/lib/modules/${_kernver}
 	rm -f source build
@@ -158,6 +183,7 @@ do_install() {
 	cd ${wrksrc}
 	# Install required headers to build external modules
 	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 Kbuild ${hdrdest}/Kbuild
 	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
 	install -Dm644 .config ${hdrdest}/.config
 	for file in $(find . -name Kconfig\*); do
@@ -183,6 +209,9 @@ do_install() {
 	mkdir -p ${hdrdest}/arch/${arch}
 	cp -a arch/${arch}/include ${hdrdest}/arch/${arch}
 
+	# needed for mv-debug
+	cp scripts/sign-file "${XBPS_WRAPPERDIR}"
+
 	# Remove helper binaries built for host,
 	# if generated files from the scripts/ directory need to be included,
 	# they need to be copied to ${hdrdest} before this step
@@ -199,6 +228,13 @@ do_install() {
 	cp -a security/selinux/include ${hdrdest}/security/selinux
 	mkdir -p ${hdrdest}/tools/include
 	cp -a tools/include/tools ${hdrdest}/tools/include
+	if [ -d "arch/${arch}/tools" ]; then
+		cp -a "arch/${arch}/tools" "${hdrdest}/arch/${arch}"
+	fi
+	cp -a kernel/time/timeconst.bc "${hdrdest}/kernel/time"
+	cp -a kernel/bounds.c "${hdrdest}/kernel"
+	mkdir -p "${hdrdest}/arch/x86/entry/syscalls"
+	cp -a arch/x86/entry/syscalls/syscall_32.tbl "${hdrdest}/arch/x86/entry/syscalls"
 
 	mkdir -p ${hdrdest}/arch/${arch}/kernel
 	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
@@ -211,6 +247,7 @@ do_install() {
 		cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
 	elif [ "$arch" = "arm64" ]; then
 		mkdir -p ${hdrdest}/arch/arm64/kernel
+		cp arch/arm64/kernel/asm-offsets.s ${hdrdest}/arch/arm64/kernel
 		cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
 	fi
 
@@ -272,32 +309,19 @@ do_install() {
 			;;
 	esac
 
-	# Remove unneeded architectures
-	case "$arch" in
-		i386|x86_64) _args="arm* m* p*";;
-		arm|arm64) _args="x86* m* p*";;
-		powerpc) _args="arm* m* x86* parisc";;
-		mips) _args="arm* x86* p*";;
-	esac
-	for arch in alpha avr32 blackfin cris frv h8300 \
-		ia64 s* um v850 xtensa ${_args}; do
-		rm -rf ${hdrdest}/arch/${arch}
-	done
-	# Keep arch/x86/ras/Kconfig as it is needed by drivers/ras/Kconfig
-	mkdir -p ${hdrdest}/arch/x86/ras
-	cp -a arch/x86/ras/Kconfig ${hdrdest}/arch/x86/ras/Kconfig
-
 	# Extract debugging symbols and compress modules
 	msg_normal "$pkgver: extracting debug info and compressing modules, please wait...\n"
 	install -Dm644 vmlinux ${DESTDIR}/usr/lib/debug/boot/vmlinux-${_kernver}
 	(
 	cd ${DESTDIR}
 	export DESTDIR
+	export SIGN_FILE="${XBPS_WRAPPERDIR}/sign-file sha512 ${wrksrc}/certs/signing_key.pem ${wrksrc}/certs/signing_key.x509"
 	find ./ -name '*.ko' -print0 | \
 		xargs -0r -n1 -P ${XBPS_MAKEJOBS} ${FILESDIR}/mv-debug
 	)
 	# ... and run depmod again.
 	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+	rm -f ${DESTDIR}/lib
 }
 
 linux-asahi-headers_package() {
