@@ -5,7 +5,8 @@
 do_build() {
 	: ${make_cmd:=cargo auditable}
 
-	${make_cmd} build --release --locked --target ${RUST_TARGET} ${configure_args}
+	${make_cmd} build --release --locked --target ${RUST_TARGET} \
+ 		${configure_args} ${make_build_args}
 }
 
 do_check() {
