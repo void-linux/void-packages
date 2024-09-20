@@ -1,0 +1,563 @@
+From 46aaa3f1bb103cea0cc8da7c9b1b8715f0f2971a Mon Sep 17 00:00:00 2001
+From: Xiao-Long Chen <chenxiaolong@cxl.epac.to>
+Date: Mon, 29 Sep 2014 14:49:09 -0400
+Subject: [PATCH 5/6] Remove xpathselect dependency
+
+---
+ CMakeLists.txt                        |   1 -
+ plugins/unityshell/src/unityshell.cpp |   1 -
+ plugins/unityshell/src/unityshell.h   |   2 -
+ unity-shared/CMakeLists.txt           |   1 -
+ unity-shared/DebugDBusInterface.cpp   | 431 ----------------------------------
+ unity-shared/DebugDBusInterface.h     |  45 ----
+ 6 files changed, 481 deletions(-)
+ delete mode 100644 unity-shared/DebugDBusInterface.cpp
+ delete mode 100644 unity-shared/DebugDBusInterface.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4358c3f..7c8fa85 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -250,7 +250,6 @@ set(UNITY_PLUGIN_SHARED_DEPS
+     nux-4.0>=4.0.5
+     sigc++-2.0>=2.4.0
+     unity-misc>=0.4.0
+-    xpathselect=1.4
+     zeitgeist-2.0
+ )
+ 
+diff --git a/plugins/unityshell/src/unityshell.cpp b/plugins/unityshell/src/unityshell.cpp
+index ca920df..ff3b476 100644
+--- a/plugins/unityshell/src/unityshell.cpp
++++ b/plugins/unityshell/src/unityshell.cpp
+@@ -196,7 +196,6 @@
+   , WM(PluginAdapter::Initialize(screen))
+   , menus_(std::make_shared<menu::Manager>(std::make_shared<indicator::DBusIndicators>(), std::make_shared<key::GnomeGrabber>()))
+   , deco_manager_(std::make_shared<decoration::Manager>(menus_))
+-  , debugger_(this)
+   , session_(std::make_shared<session::GnomeManager>())
+   , needsRelayout(false)
+   , super_keypressed_(false)
+diff --git a/plugins/unityshell/src/unityshell.h b/plugins/unityshell/src/unityshell.h
+index 43df66e..03a8675 100644
+--- a/plugins/unityshell/src/unityshell.h
++++ b/plugins/unityshell/src/unityshell.h
+@@ -64,7 +64,6 @@
+ #include "PanelController.h"
+ #include "PanelStyle.h"
+ #include "UScreen.h"
+-#include "DebugDBusInterface.h"
+ #include "ScreenIntrospection.h"
+ #include "ScreenSaverDBusManager.h"
+ #include "SwitcherController.h"
+@@ -340,7 +339,6 @@ private:
+   lockscreen::DBusManager::Ptr screensaver_dbus_manager_;
+   lockscreen::Controller::Ptr lockscreen_controller_;
+   ui::EdgeBarrierController::Ptr edge_barriers_;
+-  debug::DebugDBusInterface debugger_;
+   std::unique_ptr<BGHash>   bghash_;
+   spread::Widgets::Ptr      spread_widgets_;
+ 
+diff --git a/unity-shared/CMakeLists.txt b/unity-shared/CMakeLists.txt
+index b0ac7b1..2b61100 100644
+--- a/unity-shared/CMakeLists.txt
++++ b/unity-shared/CMakeLists.txt
+@@ -23,7 +23,6 @@ set (UNITY_SHARED_SOURCES
+      CoverArt.cpp
+      BackgroundEffectHelper.cpp
+      DashStyle.cpp
+-     DebugDBusInterface.cpp
+      DecorationStyle.cpp
+      DefaultThumbnailProvider.cpp
+      DeltaRestrainment.cpp
+diff --git a/unity-shared/DebugDBusInterface.cpp b/unity-shared/DebugDBusInterface.cpp
+deleted file mode 100644
+index 73bea0d..0000000
+--- a/unity-shared/DebugDBusInterface.cpp
++++ /dev/null
+@@ -1,431 +0,0 @@
+-// -*- Mode: C++; indent-tabs-mode: nil; tab-width: 2 -*-
+-/*
+- * Copyright (C) 2010-2013 Canonical Ltd
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License version 3 as
+- * published by the Free Software Foundation.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+- *
+- * Authored by: Alex Launi <alex.launi@canonical.com>
+- *              Thomi Richards <thomi.richards@canonical.com>
+- *              Marco Trevisan <marco.trevisan@canonical.com>
+- */
+-
+-#include <fstream>
+-#include <iostream>
+-#include <sstream>
+-#include <boost/algorithm/string.hpp>
+-#include <NuxCore/Logger.h>
+-#include <NuxCore/LoggingWriter.h>
+-#include <UnityCore/GLibDBusServer.h>
+-#include <UnityCore/Variant.h>
+-#include <xpathselect/xpathselect.h>
+-#include <dlfcn.h>
+-
+-#include "DebugDBusInterface.h"
+-#include "Introspectable.h"
+-
+-namespace unity
+-{
+-namespace debug
+-{
+-namespace
+-{
+-
+-DECLARE_LOGGER(logger, "unity.debug.interface");
+-
+-namespace local
+-{
+-  const std::string PROTOCOL_VERSION = "1.4";
+-  const std::string XPATH_SELECT_LIB = "libxpathselect.so.1.4";
+-
+-  class IntrospectableAdapter : public std::enable_shared_from_this<IntrospectableAdapter>, public xpathselect::Node
+-  {
+-  public:
+-    typedef std::shared_ptr<IntrospectableAdapter const> Ptr;
+-    IntrospectableAdapter(Introspectable* node, IntrospectableAdapter::Ptr const& parent = nullptr)
+-      : node_(node)
+-      , parent_(parent)
+-      , full_path_((parent_ ? parent_->GetPath() : "") + "/" + GetName())
+-    {}
+-
+-    int32_t GetId() const
+-    {
+-      return node_->GetIntrospectionId();
+-    }
+-
+-    std::string GetName() const
+-    {
+-      return node_->GetName();
+-    }
+-
+-    std::string GetPath() const
+-    {
+-      return full_path_;
+-    }
+-
+-    Node::Ptr GetParent() const
+-    {
+-      return parent_;
+-    }
+-
+-    bool MatchStringProperty(std::string const& name, std::string const& value) const
+-    {
+-      auto const& prop_value = GetPropertyValue(name);
+-
+-      if (prop_value)
+-      {
+-        if (!g_variant_is_of_type(prop_value, G_VARIANT_TYPE_STRING))
+-        {
+-          LOG_WARNING(logger) << "Unable to match '"<< name << "', '" <<
+-                                  prop_value << "' is not a string property.";
+-          return false;
+-        }
+-
+-        return (prop_value.GetString() == value);
+-      }
+-
+-      return false;
+-    }
+-
+-    bool MatchBooleanProperty(std::string const& name, bool value) const
+-    {
+-      auto const& prop_value = GetPropertyValue(name);
+-
+-      if (prop_value)
+-      {
+-        if (!g_variant_is_of_type(prop_value, G_VARIANT_TYPE_BOOLEAN))
+-        {
+-          LOG_WARNING(logger) << "Unable to match '"<< name << "', '" <<
+-                                  prop_value << "' is not a boolean property.";
+-          return false;
+-        }
+-
+-        return (prop_value.GetBool() == value);
+-      }
+-
+-      return false;
+-    }
+-
+-    bool MatchIntegerProperty(std::string const& name, int32_t value) const
+-    {
+-      auto const& prop_value = GetPropertyValue(name);
+-
+-      if (prop_value)
+-      {
+-        GVariantClass prop_val_type = g_variant_classify(prop_value);
+-        // it'd be nice to be able to do all this with one method.
+-        // I can't figure out how to group all the integer types together
+-        switch (prop_val_type)
+-        {
+-          case G_VARIANT_CLASS_BYTE:
+-            return static_cast<unsigned char>(value) == prop_value.GetByte();
+-          case G_VARIANT_CLASS_INT16:
+-            return value == prop_value.GetInt16();
+-          case G_VARIANT_CLASS_UINT16:
+-            return static_cast<uint16_t>(value) == prop_value.GetUInt16();
+-          case G_VARIANT_CLASS_INT32:
+-            return value == prop_value.GetInt32();
+-          case G_VARIANT_CLASS_UINT32:
+-            return static_cast<uint32_t>(value) == prop_value.GetUInt32();
+-          case G_VARIANT_CLASS_INT64:
+-            return value == prop_value.GetInt64();
+-          case G_VARIANT_CLASS_UINT64:
+-            return static_cast<uint64_t>(value) == prop_value.GetUInt64();
+-        default:
+-          LOG_WARNING(logger) << "Unable to match '"<< name << "', '" <<
+-                                  prop_value << "' is not a known integer property.";
+-        };
+-      }
+-
+-      return false;
+-    }
+-
+-    glib::Variant GetPropertyValue(std::string const& name) const
+-    {
+-      if (name == "id")
+-        return glib::Variant(GetId());
+-
+-      IntrospectionData introspection;
+-      node_->AddProperties(introspection);
+-
+-      glib::Variant value(g_variant_lookup_value(glib::Variant(introspection.Get()), name.c_str(), nullptr), glib::StealRef());
+-
+-      if (!value)
+-        return nullptr;
+-
+-      if (!g_variant_is_of_type(value, G_VARIANT_TYPE_ARRAY) || g_variant_n_children(value) != 2)
+-      {
+-        LOG_ERROR(logger) << "Property value for '"<< name << "' should be a 2-sized array, got instead '" << value << "'";
+-        return nullptr;
+-      }
+-
+-      glib::Variant child(g_variant_get_child_value(value, 1), glib::StealRef());
+-
+-      if (g_variant_is_of_type(child, G_VARIANT_TYPE_VARIANT))
+-        return child.GetVariant();
+-
+-      return child;
+-    }
+-
+-    std::vector<xpathselect::Node::Ptr> Children() const
+-    {
+-      std::vector<xpathselect::Node::Ptr> children;
+-      auto const& this_ptr = shared_from_this();
+-
+-      for (auto* child : node_->GetIntrospectableChildren())
+-      {
+-        if (!child)
+-          continue;
+-
+-        children.push_back(std::make_shared<IntrospectableAdapter>(child, this_ptr));
+-      }
+-
+-      return children;
+-    }
+-
+-    Introspectable* Node() const
+-    {
+-      return node_;
+-    }
+-
+-  private:
+-    Introspectable* node_;
+-    IntrospectableAdapter::Ptr parent_;
+-    std::string full_path_;
+-  };
+-
+-  namespace xpathselect
+-  {
+-
+-  struct NodeSelector
+-  {
+-    NodeSelector()
+-      : driver_(dlopen(XPATH_SELECT_LIB.c_str(), RTLD_LAZY))
+-      , node_selector_(driver_ ? reinterpret_cast<select_nodes_t>(dlsym(driver_, "SelectNodes")) : nullptr)
+-    {
+-      if (const char* err = dlerror())
+-      {
+-        LOG_WARNING(logger) << "Unable to load entry point in libxpathselect: " << err
+-                            << " -- full D-Bus introspection will not be available";
+-        Close();
+-      }
+-    }
+-
+-    ~NodeSelector() { Close(); }
+-    bool IsAvailable() const { return driver_; }
+-    operator bool() const { return IsAvailable(); }
+-
+-    ::xpathselect::NodeVector SelectNodes(::xpathselect::Node::Ptr const& root, std::string const& query)
+-    {
+-      if (!IsAvailable())
+-        return ::xpathselect::NodeVector();
+-
+-      return node_selector_(root, query);
+-    }
+-
+-    private:
+-      void Close()
+-      {
+-        if (driver_)
+-        {
+-          dlclose(driver_);
+-          driver_ = nullptr;
+-        }
+-      }
+-
+-      void* driver_;
+-      typedef decltype(&::xpathselect::SelectNodes) select_nodes_t;
+-      select_nodes_t node_selector_;
+-  };
+-
+-  } // xpathselect namespace
+-
+-} // local namespace
+-} // anonymous namespace
+-
+-namespace dbus
+-{
+-const std::string BUS_NAME = "com.canonical.Unity";
+-const std::string OBJECT_PATH = "/com/canonical/Unity/Debug";
+-
+-const std::string INTROSPECTION_XML =
+-  " <node>"
+-  "   <interface name='com.canonical.Autopilot.Introspection'>"
+-  ""
+-  "     <method name='GetState'>"
+-  "       <arg type='s' name='piece' direction='in' />"
+-  "       <arg type='a(sv)' name='state' direction='out' />"
+-  "     </method>"
+-  ""
+-  "     <method name='GetVersion'>"
+-  "       <arg type='s' name='version' direction='out' />"
+-  "     </method>"
+-  ""
+-  "   </interface>"
+-  ""
+-  "   <interface name='com.canonical.Unity.Debug.Logging'>"
+-  ""
+-  "     <method name='StartLogToFile'>"
+-  "       <arg type='s' name='file_path' direction='in' />"
+-  "     </method>"
+-  ""
+-  "     <method name='ResetLogging'>"
+-  "     </method>"
+-  ""
+-  "     <method name='SetLogSeverity'>"
+-  "       <arg type='s' name='log_component' direction='in' />"
+-  "       <arg type='s' name='severity' direction='in' />"
+-  "     </method>"
+-  ""
+-  "     <method name='LogMessage'>"
+-  "       <arg type='s' name='severity' direction='in' />"
+-  "       <arg type='s' name='message' direction='in' />"
+-  "     </method>"
+-  ""
+-  "   </interface>"
+-  " </node>";
+-}
+-
+-struct DebugDBusInterface::Impl
+-{
+-  Impl(Introspectable*);
+-
+-  GVariant* HandleDBusMethodCall(std::string const&, GVariant*);
+-  GVariant* GetState(std::string const&);
+-
+-  void StartLogToFile(std::string const&);
+-  void ResetLogging();
+-  void SetLogSeverity(std::string const& log_component, std::string const& severity);
+-  void LogMessage(std::string const& severity, std::string const& message);
+-
+-  Introspectable* introspection_root_;
+-  local::xpathselect::NodeSelector xns_;
+-  glib::DBusServer::Ptr server_;
+-  std::ofstream output_file_;
+-};
+-
+-DebugDBusInterface::DebugDBusInterface(Introspectable* root)
+-  : impl_(new DebugDBusInterface::Impl(root))
+-{}
+-
+-DebugDBusInterface::~DebugDBusInterface()
+-{}
+-
+-DebugDBusInterface::Impl::Impl(Introspectable* root)
+-  : introspection_root_(root)
+-  , server_((introspection_root_ && xns_) ? std::make_shared<glib::DBusServer>(dbus::BUS_NAME) : nullptr)
+-{
+-  if (server_)
+-  {
+-    server_->AddObjects(dbus::INTROSPECTION_XML, dbus::OBJECT_PATH);
+-
+-    for (auto const& obj : server_->GetObjects())
+-      obj->SetMethodsCallsHandler(sigc::mem_fun(this, &Impl::HandleDBusMethodCall));
+-  }
+-}
+-
+-GVariant* DebugDBusInterface::Impl::HandleDBusMethodCall(std::string const& method, GVariant* parameters)
+-{
+-  if (method == "GetState")
+-  {
+-    const gchar* input;
+-    g_variant_get(parameters, "(&s)", &input);
+-
+-    return GetState(input);
+-  }
+-  else if (method == "GetVersion")
+-  {
+-    return g_variant_new("(s)", local::PROTOCOL_VERSION.c_str());
+-  }
+-  else if (method == "StartLogToFile")
+-  {
+-    const gchar* log_path;
+-    g_variant_get(parameters, "(&s)", &log_path);
+-
+-    StartLogToFile(log_path);
+-  }
+-  else if (method == "ResetLogging")
+-  {
+-    ResetLogging();
+-  }
+-  else if (method == "SetLogSeverity")
+-  {
+-    const gchar* component;
+-    const gchar* severity;
+-    g_variant_get(parameters, "(&s&s)", &component, &severity);
+-
+-    SetLogSeverity(component, severity);
+-  }
+-  else if (method == "LogMessage")
+-  {
+-    const gchar* severity;
+-    const gchar* message;
+-    g_variant_get(parameters, "(&s&s)", &severity, &message);
+-
+-    LogMessage(severity, message);
+-  }
+-
+-  return nullptr;
+-}
+-
+-GVariant* DebugDBusInterface::Impl::GetState(std::string const& query)
+-{
+-  GVariantBuilder builder;
+-  g_variant_builder_init(&builder, G_VARIANT_TYPE("a(sv)"));
+-
+-  auto root_node = std::make_shared<local::IntrospectableAdapter>(introspection_root_);
+-  for (auto const& n : xns_.SelectNodes(root_node, query))
+-  {
+-    auto p = std::static_pointer_cast<local::IntrospectableAdapter const>(n);
+-    if (p)
+-      g_variant_builder_add(&builder, "(sv)", p->GetPath().c_str(), p->Node()->Introspect());
+-  }
+-
+-  return g_variant_new("(a(sv))", &builder);
+-}
+-
+-void DebugDBusInterface::Impl::StartLogToFile(std::string const& file_path)
+-{
+-  if (output_file_.is_open())
+-    output_file_.close();
+-
+-  output_file_.open(file_path);
+-  nux::logging::Writer::Instance().SetOutputStream(output_file_);
+-}
+-
+-void DebugDBusInterface::Impl::ResetLogging()
+-{
+-  if (output_file_.is_open())
+-    output_file_.close();
+-
+-  nux::logging::Writer::Instance().SetOutputStream(std::cout);
+-  nux::logging::reset_logging();
+-}
+-
+-void DebugDBusInterface::Impl::SetLogSeverity(std::string const& log_component, std::string const& severity)
+-{
+-  nux::logging::Logger(log_component).SetLogLevel(nux::logging::get_logging_level(severity));
+-}
+-
+-void DebugDBusInterface::Impl::LogMessage(std::string const& severity, std::string const& message)
+-{
+-  nux::logging::Level level = nux::logging::get_logging_level(severity);
+-  nux::logging::Logger const& log_ref = Unwrap(logger);
+-  if (log_ref.GetEffectiveLogLevel() <= level)
+-  {
+-    nux::logging::LogStream(level, log_ref.module(), __FILE__, __LINE__).stream()
+-      << message;
+-  }
+-}
+-
+-} // debug namepsace
+-} // unity namespace
+diff --git a/unity-shared/DebugDBusInterface.h b/unity-shared/DebugDBusInterface.h
+deleted file mode 100644
+index 4083a61..0000000
+--- a/unity-shared/DebugDBusInterface.h
++++ /dev/null
+@@ -1,45 +0,0 @@
+-// -*- Mode: C++; indent-tabs-mode: nil; tab-width: 2 -*-
+-/*
+- * Copyright (C) 2010-2013 Canonical Ltd
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License version 3 as
+- * published by the Free Software Foundation.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+- *
+- * Authored by: Alex Launi <alex.launi@canonical.com>
+- *              Marco Trevisan <marco.trevisan@canonical.com>
+- */
+-
+-#ifndef UNITY_DEBUG_DBUS_INTERFACE_H
+-#define UNITY_DEBUG_DBUS_INTERFACE_H
+-
+-#include <memory>
+-
+-namespace unity
+-{
+-namespace debug
+-{
+-class Introspectable;
+-
+-class DebugDBusInterface
+-{
+-public:
+-  DebugDBusInterface(Introspectable* root);
+-  ~DebugDBusInterface();
+-
+-private:
+-  struct Impl;
+-  std::unique_ptr<Impl> impl_;
+-};
+-}
+-}
+-
+-#endif /* _DEBUG_DBUS_INTERFACE_H */
+-- 
+2.10.2
+
