@@ -36,6 +36,7 @@ do_build() {
 		--global-cache-dir /host/zig \
 		--libc xbps_zig_libc.txt \
 		--release=safe \
+		--verbose \
 		-Dtarget="${zig_target}" -Dcpu="${zig_cpu}" \
 		install \
 		${configure_args}
