@@ -1,0 +1,102 @@
+From c481817c5ea763d4d388d2ab1b1ab7736f1ff2e0 Mon Sep 17 00:00:00 2001
+From: Foxinatel <nathanielma5on@yahoo.com>
+Date: Sat, 10 Aug 2024 10:04:17 +0100
+Subject: [PATCH 1/2] Add a defaulted systemd feature to include and use
+ tracing_journald
+
+---
+ Cargo.toml  | 6 +++++-
+ src/main.rs | 6 ++++--
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index f4e1900..2e37ce5 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -27,7 +27,7 @@ tracing = "0.1"
+ nix = "0.26.2"
+ once_cell = "1.17"
+ tracing-subscriber = "0.3.17"
+-tracing-journald = "0.3.0"
++tracing-journald = { version = "0.3.0", optional = true }
+ rust-embed = "8.4.0"
+ serde = { version = "1.0.152", features = ["derive"] }
+ ron = "0.8"
+@@ -53,6 +53,10 @@ log-panics = { version = "2", features = ["with-backtrace"] }
+ # cosmic-config = { git = "https://github.com/pop-os/libcosmic//" }
+ # libcosmic = { git = "https://github.com/pop-os/libcosmic//" }
+ 
++[features]
++systemd = ["dep:tracing-journald"]
++default = ["systemd"]
++
+ [workspace]
+ members = ["cosmic-notifications-util", "cosmic-notifications-config"]
+ 
+diff --git a/src/main.rs b/src/main.rs
+index 88d360e..ba9f241 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -12,8 +12,10 @@ use localize::localize;
+ use crate::config::VERSION;
+ 
+ fn main() -> anyhow::Result<()> {
+-    tracing_subscriber::registry()
+-        .with(tracing_journald::layer()?)
++    let trace = tracing_subscriber::registry();
++    #[cfg(feature = "systemd")]
++    let trace = trace.with(tracing_journald::layer()?);
++    trace
+         .with(fmt::layer())
+         .with(
+             EnvFilter::builder()
+
+From dcc0461d2d77f9c89679a2741a30319dc73593b2 Mon Sep 17 00:00:00 2001
+From: Foxinatel <nathanielma5on@yahoo.com>
+Date: Sat, 10 Aug 2024 10:10:29 +0100
+Subject: [PATCH 2/2] Make failure to connect to journald a warning, not a hard
+ error
+
+---
+ src/main.rs | 27 ++++++++++++++++++---------
+ 1 file changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/src/main.rs b/src/main.rs
+index ba9f241..b8531b6 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -13,16 +13,25 @@ use crate::config::VERSION;
+ 
+ fn main() -> anyhow::Result<()> {
+     let trace = tracing_subscriber::registry();
++
++    let env_filter = EnvFilter::builder()
++        .with_default_directive(LevelFilter::WARN.into())
++        .from_env_lossy();
+     #[cfg(feature = "systemd")]
+-    let trace = trace.with(tracing_journald::layer()?);
+-    trace
+-        .with(fmt::layer())
+-        .with(
+-            EnvFilter::builder()
+-                .with_default_directive(LevelFilter::WARN.into())
+-                .from_env_lossy(),
+-        )
+-        .try_init()?;
++    if let Ok(journald) = tracing_journald::layer() {
++        trace
++            .with(journald)
++            .with(fmt::layer())
++            .with(env_filter)
++            .try_init()?;
++    } else {
++        trace.with(fmt::layer()).with(env_filter).try_init()?;
++        tracing::warn!("Failed to connect to journald")
++    }
++
++    #[cfg(not(feature = "systemd"))]
++    trace.with(fmt::layer()).with(env_filter).try_init()?;
++
+     log_panics::init();
+ 
+     info!("cosmic-notifications ({})", APP_ID);
