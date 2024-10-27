@@ -29,7 +29,7 @@ do_build() {
 		fi
 	done
 
-	go_package=${go_package:-$go_import_path}
+	: ${go_package:=$go_import_path}
 	# Build using Go modules if there's a go.mod file
 	if [ "${go_mod_mode}" != "off" ] && [ -f go.mod ]; then
 
@@ -58,6 +58,12 @@ do_build() {
 		# Otherwise, build using GOPATH
 		go install -p "$XBPS_MAKEJOBS" -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
 	fi
+}
+
+do_check() {
+	: ${make_check_target:=./...}
+
+	${make_check_pre} go test -p "$XBPS_MAKEJOBS" -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${make_check_args} ${make_check_target}
 }
 
 do_install() {
