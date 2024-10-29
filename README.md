@@ -365,6 +365,10 @@ the package from the desired repository.
 Setup the workers (machines that will compile the code):
 
     # xbps-install -Sy distcc
+    
+Update distcc compiler whitelist
+
+    # update-distcc-symlinks
 
 Modify the configuration to allow your local network machines to use distcc (e.g. `192.168.2.0/24`):
 

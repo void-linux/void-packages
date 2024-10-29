@@ -1,64 +1,59 @@
 # Template file for 'tigervnc'
 pkgname=tigervnc
-version=1.13.1
+version=1.14.0
 revision=1
-_xorg_version=1.20.0
-create_wrksrc=yes
+_xorg_version=21.1.13
+_xorg_dist="xorg-server-${_xorg_version}.tar.gz"
 build_style=cmake
-hostmakedepends="automake gettext xorg-util-macros font-util pkg-config libtool xtrans"
+hostmakedepends="automake gettext xorg-util-macros font-util pkg-config
+ libtool xtrans"
 makedepends="fltk-devel zlib-devel libXtst-devel libjpeg-turbo-devel pixman-devel
  xorgproto libxkbfile-devel libXrandr-devel libXfont2-devel gnutls-devel
- libdrm-devel libxshmfence-devel pam-devel"
+ libdrm-devel libxshmfence-devel pam-devel xkbcomp libxcvt-devel nettle-devel"
 depends="perl xauth xkeyboard-config"
 short_desc="High performance, multi-platform VNC client and server"
-maintainer="Evan Deaubl <evan@deaubl.name>"
+maintainer="Orphaned <orphan@voidlinux.org>"
 license="GPL-2.0-or-later"
 homepage="https://www.tigervnc.org"
 distfiles="https://github.com/TigerVNC/tigervnc/archive/v${version}.tar.gz
- ${XORG_SITE}/xserver/xorg-server-${_xorg_version}.tar.bz2"
-checksum="b7c5b8ed9e4e2c2f48c7b2c9f21927db345e542243b4be88e066b2daa3d1ae25
- 9d967d185f05709274ee0c4f861a4672463986e550ca05725ce27974f550d3e6"
+ ${XORG_SITE}/xserver/${_xorg_dist}"
+checksum="5700f9919802a2f0529cc058b8caded03281cdbf0335581f2dcc7df03f783419
+ 2864b6a5359ab41c5a6132c69b5d0c9af6eb85ad26d433edb012c914029de752"
 conflicts="turbovnc>=0"
-skip_extraction="xorg-server-${_xorg_version}.tar.gz"
+skip_extraction="${_xorg_dist}"
 conf_files="/etc/tigervnc/*"
 
 post_extract() {
-	mv tigervnc-${version}/* .
-	cp -R xorg-server-${_xorg_version}/* unix/xserver
+	bsdtar -x --strip-components 1 -C unix/xserver \
+		-f "${XBPS_SRCDISTDIR}/${pkgname}-${version}/${_xorg_dist}"
 }
 
 post_patch() {
 	cd unix/xserver
-	_xorg_version=${_xorg_version%.*}
-	_xorg_version=${_xorg_version/./}
-	patch -p1 <../xserver${_xorg_version}.patch
-	# glvnd changed versioning
-	vsed -i configure.ac -e '/LIBGL/s/[79]\..\.0/1.2/'
+	patch -p1 < "../xserver${_xorg_version%%.*}.patch"
 }
 
 post_configure() {
 	cd unix/xserver
 	autoreconf -fi
+
+	LDFLAGS="${LDFLAGS} -Wl,-z,lazy" \
+	CFLAGS="${CFLAGS} -I${XBPS_CROSS_BASE}/usr/include/libdrm" \
 	./configure --host=${XBPS_CROSS_TRIPLET} --prefix=/usr \
-		--with-pic --without-dtrace --disable-static \
-		--disable-xvfb --disable-xnest --disable-xorg --disable-dmx \
-		--disable-xwin --disable-xwayland --disable-xephyr \
+		--with-pic --without-dtrace --disable-static --disable-xvfb \
+		--disable-xnest --disable-xorg --disable-xwin --disable-xephyr \
 		--disable-kdrive --disable-config-hal --disable-config-udev \
 		--disable-dri --enable-dri2 --enable-dri3 --enable-glx \
-		--disable-unit-tests --disable-devel-docs --disable-selective-werror \
-		CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include/libdrm"
-
-	# Hardcodes TIGERVNC_BUILDDIR which we have to set later on because
-	# we do out of source builds
-	vsed -i hw/vnc/Makefile -e "s/TIGERVNC_BUILDDIR =/TIGERVNC_BUILDDIR :=/"
+		--disable-unit-tests --disable-devel-docs --disable-selective-werror
 }
 
 post_build() {
-	cd ${wrksrc}/unix/xserver
-	make TIGERVNC_BUILDDIR=${wrksrc}/build
+	# The trailing slash is significant:
+	# https://github.com/TigerVNC/tigervnc/issues/1691
+	make -C unix/xserver TIGERVNC_BUILDDIR="${wrksrc}/build/"
 }
 
 post_install() {
-	cd ${wrksrc}/unix/xserver/hw/vnc
-	make TIGERVNC_BUILDDIR=${wrksrc}/build DESTDIR=${DESTDIR} install
+	make -C unix/xserver/hw/vnc DESTDIR=${DESTDIR} \
+		TIGERVNC_BUILDDIR="${wrksrc}/build/" install
 }

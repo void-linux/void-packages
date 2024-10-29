@@ -1,0 +1,114 @@
+From: Patrick Steinhardt <ps@pks.im>
+Subject: [PATCH v3] builtin/gc: fix crash when running `git maintenance start`
+
+It was reported on the mailing list that running `git maintenance start`
+immediately segfaults starting with b6c3f8e12c (builtin/maintenance: fix
+leak in `get_schedule_cmd()`, 2024-09-26). And indeed, this segfault is
+trivial to reproduce up to a point where one is scratching their head
+why we didn't catch this regression in our test suite.
+
+The root cause of this error is `get_schedule_cmd()`, which does not
+populate the `out` parameter in all cases anymore starting with the
+mentioned commit. Callers do assume it to always be populated though and
+will e.g. call `strvec_split()` on the returned value, which will of
+course segfault when the variable is uninitialized.
+
+So why didn't we catch this trivial regression? The reason is that our
+tests always set up the "GIT_TEST_MAINT_SCHEDULER" environment variable
+via "t/test-lib.sh", which allows us to override the scheduler command
+with a custom one so that we don't accidentally modify the developer's
+system. But the faulty code where we don't set the `out` parameter will
+only get hit in case that environment variable is _not_ set, which is
+never the case when executing our tests.
+
+Fix the regression by again unconditionally allocating the value in the
+`out` parameter, if provided. Add a test that unsets the environment
+variable to catch future regressions in this area.
+
+Reported-by: Shubham Kanodia <shubham.kanodia10@gmail.com>
+Signed-off-by: Patrick Steinhardt <ps@pks.im>
+---
+
+ builtin/gc.c           |  7 +++++--
+ t/t7900-maintenance.sh | 16 ++++++++++++++++
+ 2 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/builtin/gc.c b/builtin/gc.c
+index 6a7a2da006..d52735354c 100644
+--- a/builtin/gc.c
++++ b/builtin/gc.c
+@@ -1832,7 +1832,7 @@ static const char *get_extra_launchctl_strings(void) {
+  *     | Input |                     Output                      |
+  *     | *cmd  | return code |       *out        | *is_available |
+  *     +-------+-------------+-------------------+---------------+
+- *     | "foo" |    false    | NULL              |  (unchanged)  |
++ *     | "foo" |    false    | "foo" (allocated) |  (unchanged)  |
+  *     +-------+-------------+-------------------+---------------+
+  *
+  *   GIT_TEST_MAINT_SCHEDULER set to “foo:./mock_foo.sh,bar:./mock_bar.sh”
+@@ -1850,8 +1850,11 @@ static int get_schedule_cmd(const char *cmd, int *is_available, char **out)
+ 	struct string_list_item *item;
+ 	struct string_list list = STRING_LIST_INIT_NODUP;
+ 
+-	if (!testing)
++	if (!testing) {
++		if (out)
++			*out = xstrdup(cmd);
+ 		return 0;
++	}
+ 
+ 	if (is_available)
+ 		*is_available = 0;
+diff --git a/t/t7900-maintenance.sh b/t/t7900-maintenance.sh
+index a66d0e089d..c224c8450c 100755
+--- a/t/t7900-maintenance.sh
++++ b/t/t7900-maintenance.sh
+@@ -646,6 +646,22 @@ test_expect_success !MINGW 'register and unregister with regex metacharacters' '
+ 		maintenance.repo "$(pwd)/$META"
+ '
+ 
++test_expect_success 'start without GIT_TEST_MAINT_SCHEDULER' '
++	test_when_finished "rm -rf systemctl.log script repo" &&
++	mkdir script &&
++	write_script script/systemctl <<-\EOF &&
++	echo "$*" >>../systemctl.log
++	EOF
++	git init repo &&
++	(
++		cd repo &&
++		sane_unset GIT_TEST_MAINT_SCHEDULER &&
++		PATH="$PWD/../script:$PATH" git maintenance start --scheduler=systemd
++	) &&
++	test_grep -- "--user list-timers" systemctl.log &&
++	test_grep -- "enable --now git-maintenance@" systemctl.log
++'
++
+ test_expect_success 'start --scheduler=<scheduler>' '
+ 	test_expect_code 129 git maintenance start --scheduler=foo 2>err &&
+ 	test_grep "unrecognized --scheduler argument" err &&
+
+Range-diff against v2:
+1:  5798c31e1e ! 1:  a5b1433abf builtin/gc: fix crash when running `git maintenance start`
+    @@ t/t7900-maintenance.sh: test_expect_success !MINGW 'register and unregister with
+     +test_expect_success 'start without GIT_TEST_MAINT_SCHEDULER' '
+     +	test_when_finished "rm -rf systemctl.log script repo" &&
+     +	mkdir script &&
+    -+	write_script script/systemctl <<-EOF &&
+    -+	echo "\$*" >>"$(pwd)"/systemctl.log
+    ++	write_script script/systemctl <<-\EOF &&
+    ++	echo "$*" >>../systemctl.log
+     +	EOF
+     +	git init repo &&
+     +	(
+     +		cd repo &&
+     +		sane_unset GIT_TEST_MAINT_SCHEDULER &&
+    -+		PATH="$(pwd)/../script:$PATH" git maintenance start --scheduler=systemd
+    ++		PATH="$PWD/../script:$PATH" git maintenance start --scheduler=systemd
+     +	) &&
+     +	test_grep -- "--user list-timers" systemctl.log &&
+     +	test_grep -- "enable --now git-maintenance@" systemctl.log
+-- 
+2.47.0.dirty
+
+
+

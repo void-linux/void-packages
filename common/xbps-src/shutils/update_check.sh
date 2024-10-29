@@ -158,7 +158,7 @@ update_check() {
                 rx='\Q'"$pkgname"'\E-\K((([4-9]|([1-9][0-9]+))\.[0-9]*[02468]\.[0-9.]*[0-9])|([0-3]\.[0-9.]*))(?=.tar)'
                 url="https://archive.xfce.org/feeds/project/$pkgname" ;;
             *kernel.org/pub/linux/kernel/*)
-                rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
+                rx=linux-'\K'${version%.*}'\.[\d.]+(?=\.tar\.xz)';;
             *cran.r-project.org/src/contrib*)
                 rx='\b\Q'"${pkgname#R-cran-}"'\E_\K\d+(\.\d+)*(-\d+)?(?=\.tar)';;
             *rubygems.org*)

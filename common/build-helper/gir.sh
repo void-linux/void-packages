@@ -17,7 +17,7 @@ if [ "$build_option_gir" ] || [[ $build_options != *"gir"* ]]; then
 	if [ "$CROSS_BUILD" ]; then
 		# Required for running binaries produced from g-ir-compiler
 		# via g-ir-scanner-qemuwrapper
-		hostmakedepends+=" qemu-user-static"
+		hostmakedepends+=" qemu-user-${XBPS_TARGET_QEMU_MACHINE/x86_64/amd64}"
 
 		# Required for running the g-ir-scanner-lddwrapper
 		hostmakedepends+=" prelink-cross"
