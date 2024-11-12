@@ -1,0 +1,81 @@
+From 30992cb5e9d713ab0f4135dd8776a201f7a53f24 Mon Sep 17 00:00:00 2001
+From: Yangyu Chen <cyy@cyyself.name>
+Date: Tue, 25 Feb 2025 01:12:19 +0800
+Subject: [PATCH] RISC-V: Fix IFUNC resolver cannot access gp pointer
+
+In some cases, an IFUNC resolver may need to access the gp pointer to
+access global variables. Such an object may have l_relocated == 0 at
+this time. In this case, an IFUNC resolver will fail to access a global
+variable and cause a SIGSEGV.
+
+This patch fixes this issue by relaxing the check of l_relocated in
+elf_machine_runtime_setup, but added a check for SHARED case to avoid
+using this code in static-linked executables. Such object have already
+set up the gp pointer in load_gp function and l->l_scope will be NULL if
+it is a pie object. So if we use these code to set up the gp pointer
+again for static-pie, it will causing a SIGSEGV in glibc as original bug
+on BZ #31317.
+
+I have also reproduced and checked BZ #31317 using the mold commit
+bed5b1731b ("illumos: Treat absolute symbols specially"), this patch can
+fix the issue.
+
+Also, we used the wrong gp pointer previously because ref->st_value is
+not the relocated address but just the offset from the base address of
+ELF. An edge case may happen if we reference gp pointer in a IFUNC
+resolver in a PIE object, but it will not happen in compiler-generated
+codes since -pie will disable relax to gp. In this case, the GP will be
+initialized incorrectly since the ref->st_value is not the address after
+relocation. This patch fixes this issue by adding the l->l_addr to
+ref->st_value to get the relocated address for the gp pointer. We don't
+use SYMBOL_ADDRESS macro here because __global_pointer$ is a special
+symbol that has SHN_ABS type, but it will use PC-relative addressing in
+the load_gp function using lla.
+
+Closes: BZ #32269
+Fixes: 96d1b9ac23 ("RISC-V: Fix the static-PIE non-relocated object check")
+
+Co-authored-by: Vivian Wang <dramforever@live.com>
+Signed-off-by: Yangyu Chen <cyy@cyyself.name>
+(cherry picked from commit 3fd2ff7685e3ee85c8cd2896f28ad62f67d7c483)
+---
+ NEWS                       |  1 +
+ sysdeps/riscv/dl-machine.h | 17 +++++++++++------
+ 2 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/sysdeps/riscv/dl-machine.h b/sysdeps/riscv/dl-machine.h
+index a30892f080..dcc3e0883b 100644
+--- a/sysdeps/riscv/dl-machine.h
++++ b/sysdeps/riscv/dl-machine.h
+@@ -348,7 +348,8 @@ elf_machine_runtime_setup (struct link_map *l, struct r_scope_elem *scope[],
+       gotplt[1] = (ElfW(Addr)) l;
+     }
+ 
+-  if (l->l_type == lt_executable && l->l_relocated)
++#ifdef SHARED
++  if (l->l_type == lt_executable)
+     {
+       /* The __global_pointer$ may not be defined by the linker if the
+ 	 $gp register does not be used to access the global variable
+@@ -362,12 +363,16 @@ elf_machine_runtime_setup (struct link_map *l, struct r_scope_elem *scope[],
+       _dl_lookup_symbol_x ("__global_pointer$", l, &ref,
+ 			   l->l_scope, NULL, 0, 0, NULL);
+       if (ref)
+-        asm (
+-          "mv gp, %0\n"
+-          :
+-          : "r" (ref->st_value)
+-        );
++	asm (
++	  "mv gp, %0\n"
++	  :
++	  : "r" (ref->st_value + l->l_addr)
++	  /* Don't use SYMBOL_ADDRESS here since __global_pointer$
++	     can be SHN_ABS type, but we need the address relative to
++	     PC, not the absolute address.  */
++	);
+     }
++#endif
+ #endif
+   return lazy;
+ }

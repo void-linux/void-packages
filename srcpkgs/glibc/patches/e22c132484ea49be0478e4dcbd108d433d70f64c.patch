@@ -1,0 +1,58 @@
+From e22c132484ea49be0478e4dcbd108d433d70f64c Mon Sep 17 00:00:00 2001
+From: Michael Jeanson <mjeanson@efficios.com>
+Date: Fri, 14 Feb 2025 13:54:22 -0500
+Subject: [PATCH] nptl: clear the whole rseq area before registration
+
+Due to the extensible nature of the rseq area we can't explictly
+initialize fields that are not part of the ABI yet. It was agreed with
+upstream that all new fields will be documented as zero initialized by
+userspace. Future kernels configured with CONFIG_DEBUG_RSEQ will
+validate the content of all fields during registration.
+
+Replace the explicit field initialization with a memset of the whole
+rseq area which will cover fields as they are added to future kernels.
+
+Signed-off-by: Michael Jeanson <mjeanson@efficios.com>
+Reviewed-by: Florian Weimer <fweimer@redhat.com>
+(cherry picked from commit 689a62a4217fae78b9ce0db781dc2a421f2b1ab4)
+---
+ sysdeps/nptl/dl-tls_init_tp.c           |  1 +
+ sysdeps/unix/sysv/linux/rseq-internal.h | 11 +++++------
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/sysdeps/nptl/dl-tls_init_tp.c b/sysdeps/nptl/dl-tls_init_tp.c
+index f487bfb66e7..8629b5d41b0 100644
+--- a/sysdeps/nptl/dl-tls_init_tp.c
++++ b/sysdeps/nptl/dl-tls_init_tp.c
+@@ -23,6 +23,7 @@
+ #include <tls.h>
+ #include <rseq-internal.h>
+ #include <thread_pointer.h>
++#include <dl-symbol-redir-ifunc.h>
+ 
+ #define TUNABLE_NAMESPACE pthread
+ #include <dl-tunables.h>
+diff --git a/sysdeps/unix/sysv/linux/rseq-internal.h b/sysdeps/unix/sysv/linux/rseq-internal.h
+index f89e7842431..d2ab4cb829b 100644
+--- a/sysdeps/unix/sysv/linux/rseq-internal.h
++++ b/sysdeps/unix/sysv/linux/rseq-internal.h
+@@ -108,13 +108,12 @@ rseq_register_current_thread (struct pthread *self, bool do_rseq)
+       if (size < RSEQ_AREA_SIZE_INITIAL)
+         size = RSEQ_AREA_SIZE_INITIAL;
+ 
+-      /* Initialize the rseq fields that are read by the kernel on
+-         registration, there is no guarantee that struct pthread is
+-         cleared on all architectures.  */
++      /* Initialize the whole rseq area to zero prior to registration.  */
++      memset (RSEQ_SELF (), 0, size);
++
++      /* Set the cpu_id field to RSEQ_CPU_ID_UNINITIALIZED, this is checked by
++         the kernel at registration when CONFIG_DEBUG_RSEQ is enabled.  */
+       RSEQ_SETMEM (cpu_id, RSEQ_CPU_ID_UNINITIALIZED);
+-      RSEQ_SETMEM (cpu_id_start, 0);
+-      RSEQ_SETMEM (rseq_cs, 0);
+-      RSEQ_SETMEM (flags, 0);
+ 
+       int ret = INTERNAL_SYSCALL_CALL (rseq, RSEQ_SELF (), size, 0, RSEQ_SIG);
+       if (!INTERNAL_SYSCALL_ERROR_P (ret))
+

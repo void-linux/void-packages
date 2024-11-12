@@ -1,0 +1,61 @@
+From 746ef8e93964a99db3e3fa4b8a7aba179185ef0a Mon Sep 17 00:00:00 2001
+From: "H.J. Lu" <hjl.tools@gmail.com>
+Date: Wed, 5 Mar 2025 10:19:59 +0800
+Subject: [PATCH] static-pie: Skip the empty PT_LOAD segment at offset 0 [BZ
+ #32763]
+
+As shown in
+
+https://sourceware.org/bugzilla/show_bug.cgi?id=25237
+
+linker may generate an empty PT_LOAD segments at offset 0:
+
+Elf file type is EXEC (Executable file)
+Entry point 0x4000e8
+There are 3 program headers, starting at offset 64
+
+Program Headers:
+  Type           Offset             VirtAddr           PhysAddr
+                 FileSiz            MemSiz              Flags  Align
+  LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                 0x00000000000000f0 0x00000000000000f0  R E    0x1000
+  LOAD           0x0000000000000000 0x0000000000410000 0x0000000000410000
+                 0x0000000000000000 0x0000000000b5dce8  RW     0x10000
+  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
+                 0x0000000000000000 0x0000000000000000  RW     0x10
+
+ Section to Segment mapping:
+  Segment Sections...
+   00     .text
+   01     .bss
+   02
+
+Skip the empty PT_LOAD segment at offset 0 to support such binaries.
+This fixes BZ #32763.
+
+Signed-off-by: H.J. Lu <hjl.tools@gmail.com>
+Reviewed-by: Sam James <sam@gentoo.org>
+(cherry picked from commit 596130591ae4b058a529cc1318b95e624559054c)
+---
+ elf/Makefile              |  5 +++++
+ elf/dl-reloc-static-pie.c |  3 ++-
+ elf/tst-pie-bss-static.c  | 19 +++++++++++++++++++
+ elf/tst-pie-bss.c         | 30 ++++++++++++++++++++++++++++++
+ 4 files changed, 56 insertions(+), 1 deletion(-)
+ create mode 100644 elf/tst-pie-bss-static.c
+ create mode 100644 elf/tst-pie-bss.c
+
+diff --git a/elf/dl-reloc-static-pie.c b/elf/dl-reloc-static-pie.c
+index e34bf5f7ce..758bf9893e 100644
+--- a/elf/dl-reloc-static-pie.c
++++ b/elf/dl-reloc-static-pie.c
+@@ -51,7 +51,8 @@ _dl_relocate_static_pie (void)
+     switch (ph->p_type)
+       {
+       case PT_LOAD:
+-	if (ph->p_offset == 0)
++	/* Skip the empty PT_LOAD segment at offset 0.  */
++	if (ph->p_filesz != 0 && ph->p_offset == 0)
+ 	  file_p_vaddr = ph->p_vaddr;
+ 	break;
+       case PT_DYNAMIC:
