@@ -1,7 +1,7 @@
 # Template file for 'llvm19'
 pkgname=llvm19
 version=19.1.3
-revision=1
+revision=2
 build_wrksrc=llvm
 build_style=cmake
 _llvm_prefix=lib/llvm/19
@@ -78,8 +78,11 @@ fi
 
 build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt
  openmp libc libcxx libunwind offload llvm_spirv lto graphviz full_debug"
-build_options_default="clang clang_tools_extra lld mlir libclc polly lldb
+build_options_default="clang clang_tools_extra lld libclc polly lldb
  libcxx libunwind"
+
+# mlir disabled to save space on builders
+# build_options_default+=" mlir"
 
 # fails to build with libquadmth on musl
 case "$XBPS_TARGET_MACHINE" in
@@ -89,6 +92,8 @@ esac
 case "$XBPS_TARGET_MACHINE" in
 	x86_64*|aarch64*|riscv64*)
 		build_options_default+=" bolt"
+		# flang disabled to save space on buildders
+		# build_options_default+=" flang"
 		if [ -z "$CROSS_BUILD" ]; then
 			build_options_default+=" offload"
 		fi
@@ -175,20 +180,21 @@ if [ "$CROSS_BUILD" ]; then
 	configure_args+=" -DMLIR_PDLL_TABLEGEN=/${_llvm_bindir}/mlir-pdll"
 	configure_args+=" -DMLIR_LINALG_ODS_YAML_GEN=/${_llvm_bindir}/mlir-linalg-ods-yaml-gen"
 	configure_args+=" -DMLIR_CONFIG_SRC_SHARDER_TABLEGEN_EXE=/${_llvm_bindir}/mlir-src-sharder"
-	configure_args+=" -DLIBOMP_FORTRAN_MODULES_COMPILER=/${_llvm_bindir}/flang-new"
 	configure_args+=" -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=/${_llvm_bindir}/clang-tidy-confusable-chars-gen"
 	configure_args+=" -DCLANG_PSEUDO_GEN=/${_llvm_bindir}/clang-pseudo-gen"
 	configure_args+=" -DLLVM_CONFIG_PATH=/${_llvm_bindir}/llvm-config"
 	configure_args+=" -DLLDB_TABLEGEN_EXE=/${_llvm_bindir}/lldb-tblgen"
 
 	configure_args+=" -DLIBOMP_OMPD_GDB_SUPPORT=NO"
+
+	if [ "$build_option_flang" ]; then
+		configure_args+=" -DLIBOMP_FORTRAN_MODULES_COMPILER=/${_llvm_bindir}/flang-new"
+	fi
 fi
 
 # For OCaml bindings and lldb lua scripting
 if [ -z "$CROSS_BUILD" ]; then
-	if [ "$build_option_clang_tools_extra" ] && [ "$build_option_lldb" ] && [ "$build_option_flang" ] && [ "$build_option_mlir" ]; then
-		subpackages="llvm19-cross-tools ${subpackages}"
-	fi
+	subpackages="llvm19-cross-tools ${subpackages}"
 	# OCaml cross build is broken
 	hostmakedepends+=" ocaml ocaml-findlib "
 	# lldb cross build fails with lua
@@ -1077,15 +1083,29 @@ llvm19-devel_package() {
 llvm19-cross-tools_package() {
 	conflicts="llvm18-cross-tools>=0 llvm17-cross-tools>=0"
 	short_desc+=" - build tools for cross compiling LLVM"
-	depends="lldb19-devel>=${version}_${revision} llvm19-devel>=${version}_${revision}
-	 lld19-devel>=${version}_${revision} flang19-devel>=${version}_${revision}"
+	depends="llvm19-devel>=${version}_${revision}"
+	if [ "$build_option_lldb" ]; then
+		depends+=" lldb19-devel>=${version}_${revision}"
+	fi
+	if [ "$build_option_lld" ]; then
+		depends+=" lld19-devel>=${version}_${revision}"
+	fi
+	if [ "$build_option_flang" ]; then
+		depends+=" flang19-devel>=${version}_${revision}"
+	fi
 	pkg_install() {
 		# Binaries ONLY used during the process of building llvm, and aren't usually installed
 		vmkdir ${_llvm_bindir}
-		vcopy build/bin/lldb-tblgen ${_llvm_bindir}
 		vcopy build/bin/clang-tidy-confusable-chars-gen ${_llvm_bindir}
 		vcopy build/bin/clang-pseudo-gen ${_llvm_bindir}
-		vcopy build/bin/mlir-src-sharder ${_llvm_bindir}
+
+		if [ "$build_option_lldb" ]; then
+			vcopy build/bin/lldb-tblgen ${_llvm_bindir}
+		fi
+
+		if [ "$build_option_mlir" ]; then
+			vcopy build/bin/mlir-src-sharder ${_llvm_bindir}
+		fi
 
 		if [ "$build_option_llvm_spirv" ]; then
 			patchelf --add-rpath '$ORIGIN/../lib' ${DESTDIR}/${_llvm_bindir}/llvm-spirv
