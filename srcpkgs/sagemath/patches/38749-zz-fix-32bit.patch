@@ -1,0 +1,335 @@
+From afe12d293e94c8d94c42845094fcf44ccca389ba Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Wed, 6 Nov 2024 20:23:24 -0300
+Subject: [PATCH] Fix doctests for pari 2.17 on 32-bit
+
+---
+ src/sage/calculus/calculus.py          |  3 +-
+ src/sage/doctest/sources.py            |  4 +--
+ src/sage/interfaces/gp.py              | 42 +++++++++-----------------
+ src/sage/interfaces/interface.py       |  3 +-
+ src/sage/interfaces/mathematica.py     |  3 +-
+ src/sage/interfaces/mathics.py         |  3 +-
+ src/sage/interfaces/maxima_abstract.py |  3 +-
+ src/sage/libs/pari/__init__.py         |  5 ++-
+ src/sage/libs/pari/tests.py            | 11 +++----
+ src/sage/symbolic/constants.py         |  9 ++----
+ src/sage/symbolic/expression.pyx       |  3 +-
+ 11 files changed, 31 insertions(+), 58 deletions(-)
+
+diff --git a/src/sage/calculus/calculus.py b/src/sage/calculus/calculus.py
+index 65a075a2e1f..604df3efe11 100644
+--- a/src/sage/calculus/calculus.py
++++ b/src/sage/calculus/calculus.py
+@@ -792,8 +792,7 @@ def nintegral(ex, x, a, b,
+     to high precision::
+ 
+         sage: gp.eval('intnum(x=17,42,exp(-x^2)*log(x))')
+-        '2.565728500561051474934096410 E-127'            # 32-bit
+-        '2.5657285005610514829176211363206621657 E-127'  # 64-bit
++        '2.5657285005610514829176211363206621657 E-127'
+         sage: old_prec = gp.set_real_precision(50)
+         sage: gp.eval('intnum(x=17,42,exp(-x^2)*log(x))')
+         '2.5657285005610514829173563961304957417746108003917 E-127'
+diff --git a/src/sage/doctest/sources.py b/src/sage/doctest/sources.py
+index 68d95d1cf26..56a29e73050 100644
+--- a/src/sage/doctest/sources.py
++++ b/src/sage/doctest/sources.py
+@@ -766,11 +766,11 @@ def create_doctests(self, namespace):
+ 
+             sage: import sys
+             sage: bitness = '64' if sys.maxsize > (1 << 32) else '32'
+-            sage: gp.get_precision() == 38                                              # needs sage.libs.pari
++            sage: sys.maxsize == 2^63 - 1
+             False # 32-bit
+             True  # 64-bit
+             sage: ex = doctests[20].examples[11]
+-            sage: ((bitness == '64' and ex.want == 'True  \n')                          # needs sage.libs.pari
++            sage: ((bitness == '64' and ex.want == 'True  \n')
+             ....:  or (bitness == '32' and ex.want == 'False \n'))
+             True
+ 
+diff --git a/src/sage/interfaces/gp.py b/src/sage/interfaces/gp.py
+index b98c050d889..712a37a6dc6 100644
+--- a/src/sage/interfaces/gp.py
++++ b/src/sage/interfaces/gp.py
+@@ -48,11 +48,9 @@
+ ::
+ 
+     sage: gp("a = intnum(x=0,6,sin(x))")
+-    0.03982971334963397945434770208               # 32-bit
+-    0.039829713349633979454347702077075594548     # 64-bit
++    0.039829713349633979454347702077075594548
+     sage: gp("a")
+-    0.03982971334963397945434770208               # 32-bit
+-    0.039829713349633979454347702077075594548     # 64-bit
++    0.039829713349633979454347702077075594548
+     sage: gp.kill("a")
+     sage: gp("a")
+     a
+@@ -375,8 +373,7 @@ def get_precision(self):
+         EXAMPLES::
+ 
+             sage: gp.get_precision()
+-            28              # 32-bit
+-            38              # 64-bit
++            38
+         """
+         return self.get_default('realprecision')
+ 
+@@ -396,15 +393,13 @@ def set_precision(self, prec):
+         EXAMPLES::
+ 
+             sage: old_prec = gp.set_precision(53); old_prec
+-            28              # 32-bit
+-            38              # 64-bit
++            38
+             sage: gp.get_precision()
+             57
+             sage: gp.set_precision(old_prec)
+             57
+             sage: gp.get_precision()
+-            28              # 32-bit
+-            38              # 64-bit
++            38
+         """
+         return self.set_default('realprecision', prec)
+ 
+@@ -520,8 +515,7 @@ def set_default(self, var, value):
+             sage: gp.set_default('realprecision', old_prec)
+             115
+             sage: gp.get_default('realprecision')
+-            28              # 32-bit
+-            38              # 64-bit
++            38
+         """
+         old = self.get_default(var)
+         self._eval_line('default(%s,%s)' % (var, value))
+@@ -547,8 +541,7 @@ def get_default(self, var):
+             sage: gp.get_default('seriesprecision')
+             16
+             sage: gp.get_default('realprecision')
+-            28              # 32-bit
+-            38              # 64-bit
++            38
+         """
+         return eval(self._eval_line('default(%s)' % var))
+ 
+@@ -773,8 +766,7 @@ def _exponent_symbol(self):
+         ::
+ 
+             sage: repr(gp(10.^80)).replace(gp._exponent_symbol(), 'e')
+-            '1.0000000000000000000000000000000000000e80'    # 64-bit
+-            '1.000000000000000000000000000e80'              # 32-bit
++            '1.0000000000000000000000000000000000000e80'
+         """
+         return ' E'
+ 
+@@ -800,18 +792,15 @@ def new_with_bits_prec(self, s, precision=0):
+ 
+             sage: # needs sage.symbolic
+             sage: pi_def = gp(pi); pi_def
+-            3.141592653589793238462643383                  # 32-bit
+-            3.1415926535897932384626433832795028842        # 64-bit
++            3.1415926535897932384626433832795028842
+             sage: pi_def.precision()
+-            28                                             # 32-bit
+-            38                                             # 64-bit
++            38
+             sage: pi_150 = gp.new_with_bits_prec(pi, 150)
+             sage: new_prec = pi_150.precision(); new_prec
+             48                                             # 32-bit
+             57                                             # 64-bit
+             sage: old_prec = gp.set_precision(new_prec); old_prec
+-            28                                             # 32-bit
+-            38                                             # 64-bit
++            38
+             sage: pi_150
+             3.14159265358979323846264338327950288419716939938  # 32-bit
+             3.14159265358979323846264338327950288419716939937510582098  # 64-bit
+@@ -819,8 +808,7 @@ def new_with_bits_prec(self, s, precision=0):
+             48                                             # 32-bit
+             57                                             # 64-bit
+             sage: gp.get_precision()
+-            28                                             # 32-bit
+-            38                                             # 64-bit
++            38
+         """
+         if precision:
+             old_prec = self.get_real_precision()
+@@ -856,11 +844,9 @@ class GpElement(ExpectElement, sage.interfaces.abc.GpElement):
+         sage: loads(dumps(x)) == x
+         False
+         sage: x
+-        1.047197551196597746154214461            # 32-bit
+-        1.0471975511965977461542144610931676281  # 64-bit
++        1.0471975511965977461542144610931676281
+         sage: loads(dumps(x))
+-        1.047197551196597746154214461            # 32-bit
+-        1.0471975511965977461542144610931676281  # 64-bit
++        1.0471975511965977461542144610931676281
+ 
+     The two elliptic curves look the same, but internally the floating
+     point numbers are slightly different.
+diff --git a/src/sage/interfaces/interface.py b/src/sage/interfaces/interface.py
+index c15f0342de4..2d52f1b942c 100644
+--- a/src/sage/interfaces/interface.py
++++ b/src/sage/interfaces/interface.py
+@@ -1042,8 +1042,7 @@ def _sage_repr(self):
+         ::
+ 
+             sage: gp(10.^80)._sage_repr()
+-            '1.0000000000000000000000000000000000000e80'    # 64-bit
+-            '1.000000000000000000000000000e80'              # 32-bit
++            '1.0000000000000000000000000000000000000e80'
+             sage: mathematica('10.^80')._sage_repr()  # optional - mathematica
+             '1.e80'
+ 
+diff --git a/src/sage/interfaces/mathematica.py b/src/sage/interfaces/mathematica.py
+index 71f233746e7..bee91601ae0 100644
+--- a/src/sage/interfaces/mathematica.py
++++ b/src/sage/interfaces/mathematica.py
+@@ -187,8 +187,7 @@
+ Note that this agrees with what the PARI interpreter gp produces::
+ 
+     sage: gp('solve(x=1,2,exp(x)-3*x)')
+-    1.512134551657842473896739678              # 32-bit
+-    1.5121345516578424738967396780720387046    # 64-bit
++    1.5121345516578424738967396780720387046
+ 
+ Next we find the minimum of a polynomial using the two different
+ ways of accessing Mathematica::
+diff --git a/src/sage/interfaces/mathics.py b/src/sage/interfaces/mathics.py
+index 3104fefe665..504ae9056cd 100644
+--- a/src/sage/interfaces/mathics.py
++++ b/src/sage/interfaces/mathics.py
+@@ -196,8 +196,7 @@
+ Note that this agrees with what the PARI interpreter gp produces::
+ 
+     sage: gp('solve(x=1,2,exp(x)-3*x)')
+-    1.512134551657842473896739678              # 32-bit
+-    1.5121345516578424738967396780720387046    # 64-bit
++    1.5121345516578424738967396780720387046
+ 
+ Next we find the minimum of a polynomial using the two different
+ ways of accessing Mathics::
+diff --git a/src/sage/interfaces/maxima_abstract.py b/src/sage/interfaces/maxima_abstract.py
+index b8df280857c..234e9373fca 100644
+--- a/src/sage/interfaces/maxima_abstract.py
++++ b/src/sage/interfaces/maxima_abstract.py
+@@ -1489,8 +1489,7 @@ def nintegral(self, var='x', a=0, b=1,
+         high precision very quickly::
+ 
+             sage: gp('intnum(x=0,1,exp(-sqrt(x)))')
+-            0.5284822353142307136179049194             # 32-bit
+-            0.52848223531423071361790491935415653022   # 64-bit
++            0.52848223531423071361790491935415653022
+             sage: _ = gp.set_precision(80)
+             sage: gp('intnum(x=0,1,exp(-sqrt(x)))')
+             0.52848223531423071361790491935415653021675547587292866196865279321015401702040079
+diff --git a/src/sage/libs/pari/__init__.py b/src/sage/libs/pari/__init__.py
+index ccb18792918..c0f6515685a 100644
+--- a/src/sage/libs/pari/__init__.py
++++ b/src/sage/libs/pari/__init__.py
+@@ -165,12 +165,11 @@
+     sage: e = pari([0,0,0,-82,0]).ellinit()
+     sage: eta1 = e.elleta(precision=50)[0]
+     sage: eta1.sage()
+-    3.6054636014326520859158205642077267748 # 64-bit
+-    3.605463601432652085915820564           # 32-bit
++    3.6054636014326520859158205642077267748
+     sage: eta1 = e.elleta(precision=150)[0]
+     sage: eta1.sage()
+     3.605463601432652085915820564207726774810268996598024745444380641429820491740 # 64-bit
+-    3.60546360143265208591582056420772677481026899659802474544                    # 32-bit
++    3.605463601432652085915820564207726774810268996598024745444380641430          # 32-bit
+ """
+ 
+ def _get_pari_instance():
+diff --git a/src/sage/libs/pari/tests.py b/src/sage/libs/pari/tests.py
+index bd8dc9641d2..38fee89202b 100644
+--- a/src/sage/libs/pari/tests.py
++++ b/src/sage/libs/pari/tests.py
+@@ -94,8 +94,7 @@
+     [4, 2]
+ 
+     sage: int(pari(RealField(63)(2^63 - 1)))                                            # needs sage.rings.real_mpfr
+-    9223372036854775807   # 32-bit
+-    9223372036854775807   # 64-bit
++    9223372036854775807
+     sage: int(pari(RealField(63)(2^63 + 2)))                                            # needs sage.rings.real_mpfr
+     9223372036854775810
+ 
+@@ -1231,8 +1230,7 @@
+     sage: e.ellheight([1,0])
+     0.476711659343740
+     sage: e.ellheight([1,0], precision=128).sage()
+-    0.47671165934373953737948605888465305945902294218            # 32-bit
+-    0.476711659343739537379486058884653059459022942211150879336  # 64-bit
++    0.476711659343739537379486058884653059459022942211150879336
+     sage: e.ellheight([1, 0], [-1, 1])
+     0.418188984498861
+ 
+@@ -1806,12 +1804,11 @@
+     sage: e = pari([0,0,0,-82,0]).ellinit()
+     sage: eta1 = e.elleta(precision=50)[0]
+     sage: eta1.sage()
+-    3.6054636014326520859158205642077267748 # 64-bit
+-    3.605463601432652085915820564           # 32-bit
++    3.6054636014326520859158205642077267748
+     sage: eta1 = e.elleta(precision=150)[0]
+     sage: eta1.sage()
+     3.605463601432652085915820564207726774810268996598024745444380641429820491740 # 64-bit
+-    3.60546360143265208591582056420772677481026899659802474544                    # 32-bit
++    3.605463601432652085915820564207726774810268996598024745444380641430          # 32-bit
+     sage: from cypari2 import Pari
+     sage: pari = Pari()
+ 
+diff --git a/src/sage/symbolic/constants.py b/src/sage/symbolic/constants.py
+index f7177a24994..005db61a9ab 100644
+--- a/src/sage/symbolic/constants.py
++++ b/src/sage/symbolic/constants.py
+@@ -38,8 +38,7 @@
+     sage: gap(pi)
+     pi
+     sage: gp(pi)
+-    3.141592653589793238462643383     # 32-bit
+-    3.1415926535897932384626433832795028842   # 64-bit
++    3.1415926535897932384626433832795028842
+     sage: pari(pi)
+     3.14159265358979
+     sage: kash(pi)                    # optional - kash
+@@ -63,8 +62,7 @@
+     sage: RealField(15)(a)           # 15 *bits* of precision
+     5.316
+     sage: gp(a)
+-    5.316218116357029426750873360              # 32-bit
+-    5.3162181163570294267508733603616328824    # 64-bit
++    5.3162181163570294267508733603616328824
+     sage: print(mathematica(a))                  # optional - mathematica
+      4 E
+      --- + Pi
+@@ -882,8 +880,7 @@ class Log2(Constant):
+         sage: maxima(log2).float()
+         0.6931471805599453
+         sage: gp(log2)
+-        0.6931471805599453094172321215             # 32-bit
+-        0.69314718055994530941723212145817656807   # 64-bit
++        0.69314718055994530941723212145817656807
+         sage: RealField(150)(2).log()
+         0.69314718055994530941723212145817656807550013
+     """
+diff --git a/src/sage/symbolic/expression.pyx b/src/sage/symbolic/expression.pyx
+index ca523ee9a95..890a41d5ae7 100644
+--- a/src/sage/symbolic/expression.pyx
++++ b/src/sage/symbolic/expression.pyx
+@@ -9798,8 +9798,7 @@ cdef class Expression(Expression_abc):
+         ::
+ 
+             sage: gp('gamma(1+I)')
+-            0.4980156681183560427136911175 - 0.1549498283018106851249551305*I # 32-bit
+-            0.49801566811835604271369111746219809195 - 0.15494982830181068512495513048388660520*I # 64-bit
++            0.49801566811835604271369111746219809195 - 0.15494982830181068512495513048388660520*I
+ 
+         We plot the familiar plot of this log-convex function::
+ 
