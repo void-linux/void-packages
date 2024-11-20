@@ -41,7 +41,12 @@ hook() {
     for _shlib in $_list; do
         msg_normal "${pkgver}: requires PRIVATE_API from $_shlib\n"
     done
-    _version=$(printf '%s\n' $_list | sed 's/^libQt\([0-9]*\).*/\1/' | grep -v '^5$' | uniq)
+    _version=$(printf '%s\n' $_list |
+    sed -E '
+        s/^libQt([0-9]*)3D.*/\1/
+        s/^libQt([0-9]*).*/\1/
+    ' | grep -v '^5$' | uniq
+    )
     for _v in $_version; do
         _ok=
         for _md in ${makedepends}; do
