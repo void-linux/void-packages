@@ -69,13 +69,13 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	g-ir-scanner = '${XBPS_CROSS_BASE}/usr/bin/g-ir-scanner'
 	g-ir-compiler = '${XBPS_CROSS_BASE}/usr/bin/g-ir-compiler'
 	g-ir-generate = '${XBPS_CROSS_BASE}/usr/bin/g-ir-generate'
-	llvm-config = '/usr/bin/llvm-config'
+	llvm-config = 'llvm-config-qemu'
 	cups-config = '${XBPS_CROSS_BASE}/usr/bin/cups-config'
-	
+
 	[properties]
 	needs_exe_wrapper = true
 	bindgen_clang_arguments = ['-target', '${XBPS_CROSS_TRIPLET}']
-	
+
 	[host_machine]
 	system = 'linux'
 	cpu_family = '${_MESON_CPU_FAMILY}'
