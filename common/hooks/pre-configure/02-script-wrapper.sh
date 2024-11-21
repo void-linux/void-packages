@@ -50,6 +50,19 @@ generic_wrapper3() {
 	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
 
+qemu_wrapper() {
+	local wrapper="$1"
+	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
+	[ -x ${XBPS_WRAPPERDIR}/${wrapper}-qemu ] && return 0
+
+cat >>${XBPS_WRAPPERDIR}/${wrapper}-qemu<<_EOF
+#!/bin/sh
+export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
+exec qemu-${XBPS_TARGET_QEMU_MACHINE} ${XBPS_CROSS_BASE}/usr/bin/${wrapper} "\$@"
+_EOF
+	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}-qemu
+}
+
 apr_apu_wrapper() {
 	local wrapper="$1"
 
@@ -240,4 +253,5 @@ hook() {
 	python_wrapper python-config 2.7
 	python_wrapper python3-config 3.12
 	apr_apu_wrapper apu-1-config
+	qemu_wrapper llvm-config
 }
