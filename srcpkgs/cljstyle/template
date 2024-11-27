@@ -1,0 +1,66 @@
+# Template file for 'cljstyle'
+pkgname=cljstyle
+version=0.16.626
+revision=1
+hostmakedepends="clojure mandrel"
+makedepends="zlib-devel"
+short_desc="Tool for formatting Clojure code"
+maintainer="Andy Weidenbaum <atweiden@tutanota.de>"
+license="EPL-1.0"
+homepage="https://github.com/greglook/cljstyle"
+changelog="https://github.com/greglook/cljstyle/raw/main/CHANGELOG.md"
+distfiles="https://github.com/greglook/cljstyle/archive/${version}.tar.gz"
+checksum=5b62022e0875b8726d9998f3d0950fbe603bd05b63817b09273c7e1bdde76116
+nocross="mandrel"
+
+export JAVA_HOME=/usr/lib/jvm/mandrel21
+export GRAALVM_HOME=/usr/lib/jvm/mandrel21
+export PATH="${PATH}:${GRAALVM_HOME}/bin"
+
+do_build() {
+	local _args
+
+	clojure -T:build fetch-deps
+	clojure -T:build graal-uberjar
+
+	export GRAAL_STATIC=true
+	_args+=" --static"
+	# necessary for compatibility with older machines, e.g. see:
+	# https://github.com/borkdude/deps.clj/actions/runs/6337277754/job/17212028399
+	_args+=" -march=compatibility"
+	_args+=" -O1"
+
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		_args+=" --libc=musl"
+		# see: https://github.com/oracle/graal/issues/3398
+		_args+=" -H:CCompilerOption=-Wl,-z,stack-size=2097152"
+	else
+		# see: https://github.com/oracle/graal/issues/3737
+		_args+=" -H:+StaticExecutableWithDynamicLibC"
+	fi
+
+	LC_ALL=C.UTF-8 \
+		${GRAALVM_HOME}/bin/native-image \
+		-J-Xss$(ulimit -s)K \
+		-J-Xmx3G \
+		-J-Xms2G \
+		-jar target/graal/uber.jar \
+		-o target/graal/cljstyle \
+		$_args \
+		-H:+UnlockExperimentalVMOptions \
+		-H:IncludeResources=^META-INF/MANIFEST.MF$ \
+		-H:+ReportExceptionStackTraces \
+		--features=clj_easy.graal_build_time.InitClojureClasses \
+		--report-unsupported-elements-at-runtime \
+		--enable-preview \
+		--no-fallback
+}
+
+do_check() {
+	clojure -M:check
+}
+
+do_install() {
+	vbin target/graal/cljstyle
+	vlicense LICENSE.txt
+}
