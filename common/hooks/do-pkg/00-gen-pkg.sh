@@ -40,6 +40,9 @@ genpkg() {
 	if [ -s ${XBPS_STATEDIR}/${pkgname}${suffix}-shlib-provides ]; then
 		_shprovides="$(<${XBPS_STATEDIR}/${pkgname}${suffix}-shlib-provides)"
 	fi
+	if [ -s ${XBPS_STATEDIR}/${pkgname}${suffix}-provides ]; then
+		_provides="$(<${XBPS_STATEDIR}/${pkgname}${suffix}-provides)"
+	fi
 	if [ -s ${XBPS_STATEDIR}/${pkgname}${suffix}-shlib-requires ]; then
 		_shrequires="$(<${XBPS_STATEDIR}/${pkgname}${suffix}-shlib-requires)"
 	fi
@@ -48,7 +51,6 @@ genpkg() {
 	fi
 
 	# Stripping whitespaces
-	local _provides="$(echo $provides)"
 	local _conflicts="$(echo $conflicts)"
 	local _replaces="$(echo $replaces)"
 	local _reverts="$(echo $reverts)"
