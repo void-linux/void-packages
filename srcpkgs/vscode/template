@@ -1,18 +1,18 @@
 # Template file for 'vscode'
 pkgname=vscode
-version=1.91.1
+version=1.95.0
 revision=1
-_electronver=24.3.0
-_npmver=8.6.0
-hostmakedepends="pkg-config python3 python3-setuptools nodejs yarn tar git ripgrep"
-makedepends="libxkbfile-devel libsecret-devel libxml2-devel mit-krb5-devel ncurses-devel electron24"
-depends="libXtst ncurses nss xdg-utils ripgrep electron24"
+_electronver=33.0.2
+_npmver=10.8.3
+hostmakedepends="pkg-config python3 python3-setuptools nodejs tar git ripgrep"
+makedepends="libxkbfile-devel libsecret-devel libxml2-devel mit-krb5-devel nodejs-devel ncurses-devel electron33-devel"
+depends="libXtst ncurses nss xdg-utils ripgrep electron33"
 short_desc="Microsoft Code for Linux"
 maintainer="shizonic <realtiaz@gmail.com>, Alex Lohr <alexthkloss@web.de>"
 license="MIT"
 homepage="https://code.visualstudio.com/"
 distfiles="https://github.com/microsoft/vscode/archive/refs/tags/${version}.tar.gz"
-checksum=d2ed726dd34d2e8e71d40b09c0ea648bf9b37b15982b39dddcb70d0cbfcdb45e
+checksum=559e3181db15fb1b463a8a386a7b3a82315642b40e6f49565c74c4697ef22457
 nocross=yes # x64 build does not cut it, it contains native code
 
 if [ "$XBPS_TARGET_WORDSIZE" = "32" ]; then
@@ -24,7 +24,7 @@ fi
 export ELECTRON_SKIP_BINARY_DOWNLOAD=1
 
 do_configure() {
-	# Use yarn to install dependencies
+	# Use npm to install dependencies
 	echo "" > build/npm/preinstall.js
 
 	# redirect telemetry urls to 0.0.0.0
@@ -34,17 +34,25 @@ do_configure() {
 	grep -rl --exclude-dir=.git -E $_TELEMETRY_URLS | xargs sed -i -E $_REPLACEMENT
 
 	# set used electron version
-	vsed -e "s/^target .*/target \"${_electronver}\"/" -i .yarnrc
+	vsed -e "s/^target=\".*\"/target=\"${_electronver}\"/" -i .npmrc
 
 	# @vscode/ripgrep attempts to install an own version of ripgrep and provides a path
 	# we want to use our own version instead, so all we need is the fixed path (/bin/rg)
 	# remove @vscode/ripgrep from all package.json files it is in:
 	_PACKAGE_PATTERN="\"@vscode.ripgrep\":"
 	grep -rl --exclude-dir=.git -E $_PACKAGE_PATTERN | xargs sed -i -E "/${_PACKAGE_PATTERN}/d"
+	# replace require with fixed path
+	_REQUIRE_PATTERN="require..@vscode.ripgrep.."
+	_REQUIRE_REPLACEMENT="s/${_REQUIRE_PATTERN}/{ rgPath: '\/bin\/rg' }/"
+	grep -rl --exclude-dir=.git -E "$_REQUIRE_PATTERN" | xargs sed -i -E "$_REQUIRE_REPLACEMENT"
 	# replace path import with fixed path:
 	_IMPORT_PATTERN="import.*from '@vscode.ripgrep';"
 	_IMPORT_REPLACEMENT="s/${_IMPORT_PATTERN}/const rgPath = '\/bin\/rg';/"
 	grep -rl --exclude-dir=.git -E "$_IMPORT_PATTERN" | xargs sed -i -E "$_IMPORT_REPLACEMENT"
+	# replace await import with fixed path:
+	_AWAIT_IMPORT_PATTERN="await import.'@vscode.ripgrep'."
+	_AWAIT_IMPORT_REPLACEMENT="s/${_AWAIT_IMPORT_PATTERN}/{ rgPath: '\/bin\/rg' }/"
+	grep -rl --exclude-dir=.git -E "$_AWAIT_IMPORT_PATTERN" | xargs sed -i -E "$_AWAIT_IMPORT_REPLACEMENT"
 }
 
 do_build() {
@@ -58,26 +66,26 @@ do_build() {
 
 	export NODE_OPTIONS="${_mem_limit}"
 
-	/usr/lib/node_modules/npm/bin/node-gyp-bin/node-gyp install \
-	--target=$_electronver \
-	--tarball=/usr/include/electron${_electronver%%.*}/node_headers.tar.gz
-
 	# ignore nodejs version checks, we can not pass it as an argument to
-	# yarn install because it doesn't inherit properly
-	echo "ignore-engines true" >> .yarnrc
+	# npm install because it doesn't inherit properly
+	echo "ignore-engines=true" >> .npmrc
 
-	yarn install --frozen-lockfile --arch=x64
+	# add missing dependencies that were left over in the pre-release version of TS used here
+	npm install --save-dev @bazel/bazelisk@1.22.0 @bazel/concatjs@5.8.1 karma-chrome-launcher@3.2.0 karma-firefox-launcher@2.1.3 karma-jasmine@5.1.0 karma-junit-reporter@2.0.1 karma-requirejs@1.1.0 karma-sourcemap-loader@0.4.0 karma@6.4.4 requirejs@2.3.7
 
-  # patch node fs with graceful-fs to avoid using too many file descriptors
-	yarn add --dev graceful-fs@4.2.11
-	echo "require('graceful-fs').gracefulify(require('fs'));" > ${wrksrc}/use-graceful-fs.js
-	export NODE_OPTIONS="${_mem_limit} --require ${wrksrc}/use-graceful-fs.js"
+	# update a broken ts dependency to one that is supposed to work
+	npm install --save-dev typescript@5.7.0-beta
+
+	npm ci
 
 	# do not checksum electron, since we're using our own build
 	vsed -e "s/validateChecksum: true/validateChecksum: false/g" -i build/lib/electron.*s
 
+	# npm ls --all throws ELSPROBLEMS, but we can make do w/o --all
+	vsed -e "s/npm ls --all/npm ls/g" -i build/lib/dependencies.*s
+
 	export CFLAGS="$CFLAGS -I/usr/include/node"
-	yarn run gulp vscode-linux-x64-min
+	npm run gulp vscode-linux-x64-min
 }
 
 do_install() {
