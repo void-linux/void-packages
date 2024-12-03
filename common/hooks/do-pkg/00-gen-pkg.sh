@@ -37,6 +37,9 @@ genpkg() {
 	if [ -s ${XBPS_STATEDIR}/${pkgname}-rdeps ]; then
 		_deps="$(<${XBPS_STATEDIR}/${pkgname}-rdeps)"
 	fi
+	if [ -s ${XBPS_STATEDIR}/${pkgname}-provides ]; then
+		_provides="$(<${XBPS_STATEDIR}/${pkgname}-provides)"
+	fi
 	if [ -s ${XBPS_STATEDIR}/${pkgname}-shlib-provides ]; then
 		_shprovides="$(<${XBPS_STATEDIR}/${pkgname}-shlib-provides)"
 	fi
@@ -48,7 +51,6 @@ genpkg() {
 	fi
 
 	# Stripping whitespaces
-	local _provides="$(echo $provides)"
 	local _conflicts="$(echo $conflicts)"
 	local _replaces="$(echo $replaces)"
 	local _reverts="$(echo $reverts)"
