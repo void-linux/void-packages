@@ -881,7 +881,7 @@ package shouldn't be added as a build time dependency.
 The global repository takes the name of
 the current branch, except if the name of the branch is master. Then the resulting
 repository will be at the global scope. The usage scenario is that the user can
-update multiple packages in a second branch without polluting his local repository.
+update multiple packages in a second branch without polluting their local repository.
 
 <a id="pkg_defined_repo"></a>
 #### Package defined Repositories
