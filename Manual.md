@@ -1639,6 +1639,13 @@ written in Python) or just single Python file ones that live in `/usr/bin`.
 If `python_version` is set to `ignore`, python-containing shebangs will not be rewritten.
 Use this only if a package should not be using a system version of python.
 
+- `python_extras`: Python module extras to consider when verifying Python module dependencies.
+Can be used to ensure additional dependency sets are checked. Example: `python_extras="all"`.
+
+- `nopyprovides`: if set, don't create `provides` entries for Python modules in the package.
+
+- `nopyverifydeps`: if set, don't verify Python module dependencies.
+
 Also, a set of useful variables are defined to use in the templates:
 
 | Variable    | Value                            |
