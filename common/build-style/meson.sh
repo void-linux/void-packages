@@ -39,6 +39,7 @@ do_configure() {
 		--wrap-mode=nodownload \
 		-Db_lto=true -Db_ndebug=true \
 		-Db_staticpic=true \
+		-Dpkgconfig.relocatable=false \
 		${configure_args} . ${meson_builddir}
 }
 
