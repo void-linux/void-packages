@@ -34,14 +34,14 @@ genpkg() {
 	cd $pkgdir
 
 	_preserve=${preserve:+-p}
-	if [ -s ${PKGDESTDIR}/rdeps ]; then
-		_deps="$(<${PKGDESTDIR}/rdeps)"
+	if [ -s ${XBPS_STATEDIR}/${pkgname}-rdeps ]; then
+		_deps="$(<${XBPS_STATEDIR}/${pkgname}-rdeps)"
 	fi
-	if [ -s ${PKGDESTDIR}/shlib-provides ]; then
-		_shprovides="$(<${PKGDESTDIR}/shlib-provides)"
+	if [ -s ${XBPS_STATEDIR}/${pkgname}-shlib-provides ]; then
+		_shprovides="$(<${XBPS_STATEDIR}/${pkgname}-shlib-provides)"
 	fi
-	if [ -s ${PKGDESTDIR}/shlib-requires ]; then
-		_shrequires="$(<${PKGDESTDIR}/shlib-requires)"
+	if [ -s ${XBPS_STATEDIR}/${pkgname}-shlib-requires ]; then
+		_shrequires="$(<${XBPS_STATEDIR}/${pkgname}-shlib-requires)"
 	fi
 	if [ -s ${XBPS_STATEDIR}/gitrev ]; then
 		_gitrevs="$(<${XBPS_STATEDIR}/gitrev)"
