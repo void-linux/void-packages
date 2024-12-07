@@ -19,13 +19,13 @@ hook() {
 	# 32bit dependencies.
 	trap - ERR
 
-	: > ${destdir32}/rdeps
+	: > ${XBPS_STATEDIR}/${pkgname}-32bit-rdeps
 
-	if [ -s "$PKGDESTDIR/rdeps" ]; then
+	if [ -s "${XBPS_STATEDIR}/${pkgname}-rdeps" ]; then
 		if [ -n "$lib32depends" ]; then
 			_deps="${lib32depends}"
 		else
-			_deps="$(<${PKGDESTDIR}/rdeps)"
+			_deps="$(<${XBPS_STATEDIR}/${pkgname}-rdeps)"
 		fi
 		for f in ${_deps}; do
 			unset found pkgn pkgv _shprovides
@@ -43,7 +43,7 @@ hook() {
 			# If dependency is a development pkg switch it to 32bit.
 			if [[ $pkgn == *-devel ]]; then
 				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (development)"
-				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
+				printf "${pkgn}-32bit${pkgv} " >> ${XBPS_STATEDIR}/${pkgname}-32bit-rdeps
 				continue
 			fi
 			# If dependency does not have "shlib-provides" do not
@@ -60,20 +60,20 @@ hook() {
 				_shprovides="$($XBPS_QUERY_CMD -R --property=shlib-provides "$pkgn")"
 				if [ -n "${_shprovides}" ]; then
 					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (shlib-provides)"
-					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
+					printf "${pkgn}-32bit${pkgv} " >> ${XBPS_STATEDIR}/${pkgname}-32bit-rdeps
 				else
 					echo "   RDEP: $f -> ${pkgn}${pkgv} (no shlib-provides)"
-					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
+					printf "${pkgn}${pkgv} " >> ${XBPS_STATEDIR}/${pkgname}-32bit-rdeps
 				fi
 			else
-				if [ -s ${XBPS_DESTDIR}/${pkgn}-${version}/shlib-provides ]; then
+				if [ -s "${XBPS_STATEDIR}/${pkgn}-shlib-provides" ]; then
 					# Dependency is a subpkg; check if it provides any shlib
 					# and convert to 32bit if true.
 					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (subpkg, shlib-provides)"
-					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
+					printf "${pkgn}-32bit${pkgv} " >> ${XBPS_STATEDIR}/${pkgname}-32bit-rdeps
 				else
 					echo "   RDEP: $f -> ${pkgn}${pkgv} (subpkg, no shlib-provides)"
-					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
+					printf "${pkgn}${pkgv} " >> ${XBPS_STATEDIR}/${pkgname}-32bit-rdeps
 				fi
 			fi
 		done
@@ -81,7 +81,7 @@ hook() {
 	# If it's a development pkg add a dependency to the 64bit pkg.
 	if [[ $pkgn == *-devel ]]; then
 		echo "   RDEP: ${pkgver}"
-		printf "${pkgver} " >> ${destdir32}/rdeps
+		printf "${pkgver} " >> ${XBPS_STATEDIR}/${pkgname}-32bit-rdeps
 	fi
-	printf "\n" >> ${destdir32}/rdeps
+	printf "\n" >> ${XBPS_STATEDIR}/${pkgname}-32bit-rdeps
 }
