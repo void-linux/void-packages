@@ -50,8 +50,8 @@ collect_sonames() {
 		echo "$f" >> ${_tmpfile}
 	done
 	if [ -s "${_tmpfile}" ]; then
-		tr '\n' ' ' < "${_tmpfile}" > ${_destdir}/shlib-provides
-		echo >> ${_destdir}/shlib-provides
+		tr '\n' ' ' < "${_tmpfile}" > "${XBPS_STATEDIR}/${pkgname}-shlib-provides"
+		echo >> "${XBPS_STATEDIR}/${pkgname}-shlib-provides"
 		if [ "$_mainpkg" ]; then
 			cp "${_tmpfile}" "${_shlib_dir}/${pkgname}.soname"
 		fi
