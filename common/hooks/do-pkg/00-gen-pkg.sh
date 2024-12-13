@@ -1,7 +1,7 @@
 # This hook generates a XBPS binary package from an installed package in destdir.
 
 genpkg() {
-	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5"
+	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5" suffix="${6:-}"
 	local _preserve _deps _shprovides _shrequires _gitrevs _provides _conflicts
 	local _replaces _reverts _mutable_files _conf_files f
 	local _pkglock="$pkgdir/${binpkg}.lock"
@@ -34,14 +34,14 @@ genpkg() {
 	cd $pkgdir
 
 	_preserve=${preserve:+-p}
-	if [ -s ${XBPS_STATEDIR}/${pkgname}-rdeps ]; then
-		_deps="$(<${XBPS_STATEDIR}/${pkgname}-rdeps)"
+	if [ -s ${XBPS_STATEDIR}/${pkgname}${suffix}-rdeps ]; then
+		_deps="$(<${XBPS_STATEDIR}/${pkgname}${suffix}-rdeps)"
 	fi
-	if [ -s ${XBPS_STATEDIR}/${pkgname}-shlib-provides ]; then
-		_shprovides="$(<${XBPS_STATEDIR}/${pkgname}-shlib-provides)"
+	if [ -s ${XBPS_STATEDIR}/${pkgname}${suffix}-shlib-provides ]; then
+		_shprovides="$(<${XBPS_STATEDIR}/${pkgname}${suffix}-shlib-provides)"
 	fi
-	if [ -s ${XBPS_STATEDIR}/${pkgname}-shlib-requires ]; then
-		_shrequires="$(<${XBPS_STATEDIR}/${pkgname}-shlib-requires)"
+	if [ -s ${XBPS_STATEDIR}/${pkgname}${suffix}-shlib-requires ]; then
+		_shrequires="$(<${XBPS_STATEDIR}/${pkgname}${suffix}-shlib-requires)"
 	fi
 	if [ -s ${XBPS_STATEDIR}/gitrev ]; then
 		_gitrevs="$(<${XBPS_STATEDIR}/gitrev)"
@@ -142,7 +142,7 @@ hook() {
 		_desc="${short_desc} (debug files)"
 		binpkg=${_pkgver}.${arch}.xbps
 		PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}"
-		genpkg ${repo} ${arch} "${_desc}" ${_pkgver} ${binpkg}
+		genpkg ${repo} ${arch} "${_desc}" ${_pkgver} ${binpkg} -dbg
 	fi
 	# Generate 32bit pkg.
 	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
@@ -161,6 +161,6 @@ hook() {
 		PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}-32bit-${version}"
 		[ -n "${_provides}" ] && export provides="${_provides}"
 		[ -n "${_replaces}" ] && export replaces="${_replaces}"
-		genpkg ${repo} x86_64 "${_desc}" ${_pkgver} ${binpkg}
+		genpkg ${repo} x86_64 "${_desc}" ${_pkgver} ${binpkg} -32bit
 	fi
 }
