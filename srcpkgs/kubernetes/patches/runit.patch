@@ -1,0 +1,85 @@
+--- a/cmd/kubeadm/app/util/initsystem/initsystem_unix.go
++++ b/cmd/kubeadm/app/util/initsystem/initsystem_unix.go
+@@ -21,6 +21,7 @@ package initsystem
+ import (
+ 	"fmt"
+ 	"os/exec"
++	"os"
+ 	"strings"
+ )
+ 
+@@ -146,6 +147,63 @@ func (sysd SystemdInitSystem) ServiceIsActive(service string) bool {
+ 	return false
+ }
+ 
++// RunitInitSystem defines runit
++type RunitInitSystem struct{}
++
++// EnableCommand return a string describing how to enable a service
++func (runit RunitInitSystem) EnableCommand(service string) string {
++	return fmt.Sprintf("ln -s /etc/sv/%[1]s /var/service/%[1]s", service)
++}
++
++// ServiceExists ensures the service is defined for this init system.
++func (runit RunitInitSystem) ServiceExists(service string) bool {
++	servicePath := string(fmt.Sprintf("/etc/sv/%s/run", service))
++	info, err := os.Stat(servicePath)
++	if os.IsNotExist(err) {
++		return false
++	}
++	return !info.IsDir()
++}
++
++// ServiceIsActive ensures the service is running, or attempting to run. (crash looping in the case of kubelet)
++func (runit RunitInitSystem) ServiceIsActive(service string) bool {
++	args := []string{"status", fmt.Sprintf("/var/service/%s", service)}
++	outBytes, _ := exec.Command("sv", args...).CombinedOutput()
++	outStr := string(outBytes)
++	return strings.HasPrefix(outStr, "run:")
++}
++
++// ServiceIsEnabled ensures the service is enabled to start on each boot.
++func (runit RunitInitSystem) ServiceIsEnabled(service string) bool {
++	servicePath := string(fmt.Sprintf("/var/service/%s/run", service))
++	info, err := os.Stat(servicePath)
++	if os.IsNotExist(err) {
++		return false
++	}
++	return !info.IsDir()
++}
++
++// ServiceRestart tries to reload the environment and restart the specific service
++func (runit RunitInitSystem) ServiceRestart(service string) error {
++	servicePath := string(fmt.Sprintf("/var/service/%s", service))
++	args := []string{"restart", servicePath}
++	return exec.Command("sv", args...).Run()
++}
++
++// ServiceStart tries to start a specific service
++func (runit RunitInitSystem) ServiceStart(service string) error {
++	servicePath := string(fmt.Sprintf("/var/service/%s", service))
++	args := []string{"start", servicePath}
++	return exec.Command("sv", args...).Run()
++}
++
++// ServiceStop tries to stop a specific service
++func (runit RunitInitSystem) ServiceStop(service string) error {
++	servicePath := string(fmt.Sprintf("/var/service/%s", service))
++	args := []string{"stop", servicePath}
++	return exec.Command("sv", args...).Run()
++}
++
+ // GetInitSystem returns an InitSystem for the current system, or nil
+ // if we cannot detect a supported init system.
+ // This indicates we will skip init system checks, not an error.
+@@ -159,6 +217,10 @@ func GetInitSystem() (InitSystem, error) {
+ 	if err == nil {
+ 		return &OpenRCInitSystem{}, nil
+ 	}
++	_, err = exec.LookPath("runit")
++	if err == nil {
++		return &RunitInitSystem{}, nil
++	}
+ 
+ 	return nil, fmt.Errorf("no supported init system detected, skipping checking for services")
+ }

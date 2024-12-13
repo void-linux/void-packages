@@ -1,9 +1,10 @@
 # Template file for 'kubernetes'
 pkgname=kubernetes
 version=1.32.1
-revision=1
+revision=2
 archs="aarch64* x86_64* ppc64le*"
 build_style=go
+build_helper=qemu
 go_import_path="github.com/kubernetes/kubernetes"
 hostmakedepends="rsync git go-bindata which curl tar"
 depends="kubectl conntrack-tools"
@@ -13,18 +14,35 @@ license="Apache-2.0"
 homepage="http://kubernetes.io"
 distfiles="https://$go_import_path/archive/v$version.tar.gz"
 checksum=9724c849c524c2e69a0a0da4f1a3b0335d7d544eeaa9fc22cb5b87d7c0c52c9d
-nocross=yes
 system_accounts="kube"
 make_dirs="/var/lib/kubelet 0755 kube kube"
 conf_files="/etc/kubernetes/*"
+make_check=no # Too many tests
+
+# Cross builds fail with -fuse-ld=gold
+LDFLAGS="-fuse-ld=bfd"
 
 do_build() {
-	make
-	hack/generate-docs.sh
+	KUBE_BUILD_PLATFORMS=linux/${GOARCH} make
+
+	# Build the man pages on the host machine
+	# Run in a subshell to keep variables isolated
+	(
+		# Set GO variables based on host
+		case "$XBPS_MACHINE" in
+		        aarch64*) export GOARCH=arm64;;
+		        x86_64*) export GOARCH=amd64;;
+		esac
+		CGO_CFLAGS=${CFLAGS_host} CC=${GCC_host} CC_target=${GCC_host} \
+			GCC=${GCC_host} GCC_target=${GCC_host} \
+			PATH=$PATH:_output/local/go/bin/linux_${GOARCH} \
+			hack/update-generated-docs.sh
+	)
+
 	find "_output/local/bin/linux/" -type f -executable | grep "kubectl$" | egrep -v "gen|test" | while read line
 	do
-		$line completion bash > completion.bash
-		$line completion zsh > completion.zsh
+		vtargetrun $line completion bash > completion.bash
+		vtargetrun $line completion zsh > completion.zsh
 		break
 	done
 }
@@ -53,8 +71,18 @@ kubectl_package() {
 	short_desc="Controls the Kubernetes cluster manager"
 	pkg_install() {
 		vmove usr/bin/kubectl
+		vmove usr/bin/kubectl-convert
 		vmove usr/share/man/man1/kubectl*
 		vcompletion completion.bash bash
 		vcompletion completion.zsh zsh
+	}
+}
+
+kubeadm_package() {
+	short_desc="Tool built for creating Kubernetes clusters"
+	pkg_install() {
+		vmove usr/bin/kubeadm
+		vmove usr/share/man/man1/kubeadm*
+		vmkdir etc/kubernetes/manifests
 	}
 }
