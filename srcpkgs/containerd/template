@@ -1,12 +1,10 @@
 # Template file for 'containerd'
 pkgname=containerd
-version=1.7.17
-revision=2
+version=2.0.0
+revision=1
 build_style=go
-go_import_path=github.com/containerd/containerd
+go_import_path=github.com/containerd/containerd/v2
 go_package="${go_import_path}/cmd/containerd
- ${go_import_path}/cmd/containerd-shim
- ${go_import_path}/cmd/containerd-shim-runc-v1
  ${go_import_path}/cmd/containerd-shim-runc-v2
  ${go_import_path}/cmd/ctr"
 go_ldflags="-X ${go_import_path}/version.Version=${version}
@@ -15,16 +13,42 @@ go_build_tags="seccomp apparmor"
 hostmakedepends="pkg-config go-md2man"
 makedepends="libbtrfs-devel libseccomp-devel"
 depends="runc"
+checkdepends="procps-ng"
 short_desc="Open and reliable container runtime"
 maintainer="Orphan <orphan@voidlinux.org>"
 license="Apache-2.0"
 homepage="https://github.com/containerd/containerd"
 distfiles="https://github.com/containerd/containerd/archive/v${version}.tar.gz"
-checksum=fa16a85b3759a716728c00dda2fff8484b3811f62250724b77d05c115c4522a7
+checksum=346d644e1b96e1f4a39bfe9d1eb0eb01ca676f806c12d95e5dbe35325bbc1780
 make_dirs="/var/lib/containerd 0755 root root"
 
+# Cross builds fail with -fuse-ld=gold
+LDFLAGS="-fuse-ld=bfd"
+
 post_build() {
-	# Build the man pages
+	# Set GO variables based on host
+	case "$XBPS_MACHINE" in
+	        aarch64*) export GOARCH=arm64;;
+	        armv5*) export GOARCH=arm; export GOARM=5;;
+	        armv6*) export GOARCH=arm; export GOARM=6;;
+	        armv7*) export GOARCH=arm; export GOARM=7;;
+	        i686*) export GOARCH=386;;
+	        x86_64*) export GOARCH=amd64;;
+	        ppc64le*) export GOARCH=ppc64le;;
+	        ppc64*) export GOARCH=ppc64;;
+	        ppc*) export GOARCH=ppc;;
+	        mipsel*) export GOARCH=mipsle;;
+	        mips*) export GOARCH=mips;;
+	        riscv64*) export GOARCH=riscv64;;
+	esac
+
+	# Build the man pages on the host machine
+	CGO_CFLAGS=${CFLAGS_host} CC=${GCC_host} CC_target=${GCC_host} \
+		GCC=${GCC_host} GCC_target=${GCC_host} \
+		go build -o bin/gen-manpages  ./cmd/gen-manpages
+	bin/gen-manpages containerd.8 man
+	bin/gen-manpages ctr.8 man
+
 	for _i in containerd-config.toml.5 containerd-config.8 ; do
 		go-md2man -in "docs/man/$_i.md" -out "docs/man/$_i"
 	done
@@ -36,4 +60,11 @@ post_install() {
 	for _i in containerd-config.toml.5 containerd-config.8 ; do
 		vman docs/man/$_i
 	done
+	for _i in containerd.8 ctr.8 ; do
+		vman man/$_i
+	done
+}
+
+do_check() {
+	make test
 }
