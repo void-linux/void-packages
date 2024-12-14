@@ -21,12 +21,18 @@ generate_python_provides() {
     fi
 }
 
+generate_pkgconfig_provides() {
+    find "${PKGDESTDIR}/usr/lib/pkgconfig" "${PKGDESTDIR}/usr/share/pkgconfig" -name '*.pc' -type f \
+        -exec pkg-config --print-provides {} \; 2>/dev/null | sed 's/^/pc:/; s/ = /-/' | sort -u
+}
+
 hook() {
     local -a _provides
 
     mapfile -t _provides < <(
         get_explicit_provides
         generate_python_provides
+        generate_pkgconfig_provides
     )
 
     if [ "${#_provides[@]}" -gt 0 ]; then
