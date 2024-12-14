@@ -26,6 +26,38 @@ generate_pkgconfig_provides() {
         -exec pkg-config --print-provides {} \; 2>/dev/null | sed 's/^/pc:/; s/ = /-/' | sort -u
 }
 
+generate_cmd_provides() {
+    find "${PKGDESTDIR}/usr/bin" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null \
+        | sed 's/^.*$/cmd:&-'"${version}_${revision}"'/' | sort -u
+}
+
+generate_alt_cmd_provides() {
+    local _alt _group _symlink _target _path
+    for _alt in $alternatives; do
+        IFS=':' read -r _group _symlink _target <<< "$_alt"
+        case "$_symlink" in
+            /usr/bin/*)
+                echo "${_symlink##*/}"
+                ;;
+            /*)
+                # skip all other absolute paths
+                ;;
+            */*)
+                # relative path, resolve
+                _path="$(realpath -m "$_target/./$_symlink")"
+                if [ "${_path%/*}" = /usr/bin ]; then
+                    echo "${_path##*/}"
+                fi
+                ;;
+            *)
+                if [ "${_target%/*}" = /usr/bin ]; then
+                    echo "${_symlink}"
+                fi
+                ;;
+        esac
+    done | sed 's/^/cmd:/'
+}
+
 hook() {
     local -a _provides
 
@@ -33,6 +65,8 @@ hook() {
         get_explicit_provides
         generate_python_provides
         generate_pkgconfig_provides
+        generate_cmd_provides
+        generate_alt_cmd_provides
     )
 
     if [ "${#_provides[@]}" -gt 0 ]; then
