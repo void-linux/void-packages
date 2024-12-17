@@ -1644,7 +1644,7 @@ Can be used to ensure additional dependency sets are checked. Example: `python_e
 
 - `nopyprovides`: if set, don't create `provides` entries for Python modules in the package.
 
-- `nopyverifydeps`: if set, don't verify Python module dependencies.
+- `noverifypydeps`: if set, don't verify Python module dependencies.
 
 Also, a set of useful variables are defined to use in the templates:
 
