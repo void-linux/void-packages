@@ -1,0 +1,67 @@
+# Copyright (C) 2012,2021 Red Hat, Inc. All rights reserved.
+#
+# This file is part of LVM.
+#
+# This rule requires blkid to be called on block devices before so only devices
+# used as LVM PVs are processed (ID_FS_TYPE="LVM2_member").
+
+SUBSYSTEM!="block", GOTO="lvm_end"
+
+
+ENV{DM_UDEV_DISABLE_OTHER_RULES_FLAG}=="1", GOTO="lvm_end"
+
+# Ignore PVs on LVs.
+# This is usually a case of an LV being used for a guest VM
+# image, where the guest is using lvm.  The host should
+# ignore lvm data from the guest and not attempt to scan or
+# activate guest PVs/LVs.  (To enable functions in this file
+# for PVs layered on LVs, set LVM_PVSCAN_ON_LVS="1" from a
+# custom udev rule.)
+ENV{ID_FS_TYPE}=="LVM2_member", ENV{DM_UUID}=="LVM-?*", ENV{LVM_PVSCAN_ON_LVS}!="1", GOTO="lvm_end"
+
+# Only process devices already marked as a PV - this requires blkid to be called before.
+ENV{ID_FS_TYPE}!="LVM2_member", GOTO="lvm_end"
+ENV{DM_MULTIPATH_DEVICE_PATH}=="1", GOTO="lvm_end"
+ACTION=="remove", GOTO="lvm_end"
+
+# Create /dev/disk/by-id/lvm-pv-uuid-<PV_UUID> symlink for each PV
+ENV{ID_FS_UUID_ENC}=="?*", SYMLINK+="disk/by-id/lvm-pv-uuid-$env{ID_FS_UUID_ENC}"
+
+# If the PV is a special device listed below, scan only if the device is
+# properly activated. These devices are not usable after an ADD event,
+# but they require an extra setup and they are ready after a CHANGE event.
+# Also support coldplugging with ADD event but only if the device is already
+# properly activated.
+# This logic should be eventually moved to rules where those particular
+# devices are processed primarily (MD and loop).
+
+# DM device:
+KERNEL!="dm-[0-9]*", GOTO="next"
+ENV{DM_UDEV_PRIMARY_SOURCE_FLAG}=="1", ENV{DM_ACTIVATION}=="1", GOTO="lvm_scan"
+GOTO="lvm_end"
+
+# MD device:
+LABEL="next"
+KERNEL!="md[0-9]*", GOTO="next"
+IMPORT{db}="LVM_MD_PV_ACTIVATED"
+ACTION=="add", ENV{LVM_MD_PV_ACTIVATED}=="1", GOTO="lvm_scan"
+ACTION=="change", ENV{LVM_MD_PV_ACTIVATED}!="1", TEST=="md/array_state", ENV{LVM_MD_PV_ACTIVATED}="1", GOTO="lvm_scan"
+ACTION=="add", KERNEL=="md[0-9]*p[0-9]*", GOTO="lvm_scan"
+GOTO="lvm_end"
+
+# Loop device:
+LABEL="next"
+KERNEL!="loop[0-9]*", GOTO="next"
+ACTION=="add", ENV{LVM_LOOP_PV_ACTIVATED}=="1", GOTO="lvm_scan"
+ACTION=="change", ENV{LVM_LOOP_PV_ACTIVATED}!="1", TEST=="loop/backing_file", ENV{LVM_LOOP_PV_ACTIVATED}="1", GOTO="lvm_scan"
+GOTO="lvm_end"
+
+LABEL="next"
+ACTION!="add", GOTO="lvm_end"
+
+LABEL="lvm_scan"
+
+RUN+="/usr/bin/lvm pvscan --background --cache --activate ay --major $major --minor $minor", ENV{LVM_SCANNED}="1"
+GOTO="lvm_end"
+
+LABEL="lvm_end"
