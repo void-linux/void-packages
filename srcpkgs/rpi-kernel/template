@@ -11,43 +11,38 @@
 # [1] https://github.com/raspberrypi/linux/tags
 #
 # Upstream documentation: https://www.raspberrypi.com/documentation/computers/linux_kernel.html
+#
+# XXX: KEEP IN SYNC WITH rpi5-kernel
 pkgname=rpi-kernel
-version=6.6.42
+version=6.6.67
 revision=1
-_githash=bfbd468e81defa70d4356a1a3e467cc5d67ca89b
+_githash=730a6e5cb8cd195e8dd2bb1406af277621831583
 archs="aarch64* armv6l* armv7l*"
-build_wrksrc="build-rpi"
-hostmakedepends="perl kmod uboot-mkimage openssl-devel bc bison flex xz"
+hostmakedepends="perl kmod uboot-mkimage openssl-devel bc bison flex xz pahole
+ python3 elfutils-devel cpio tar zstd"
 makedepends="ncurses-devel"
 short_desc="Linux kernel for Raspberry Pi (${version%.*} series)"
 maintainer="classabbyamp <void@placeviolette.net>"
 license="GPL-2.0-only"
 homepage="http://www.kernel.org"
 distfiles="https://github.com/raspberrypi/linux/archive/${_githash}.tar.gz"
-checksum=cc626cbd0306adcb881892e32a5cbe31b02f58f5f95535f549860d1f5751418a
+checksum=df7e50191f8f4bbaabebf33902f7b776b446757e9617258b71fc5af7374934b4
 python_version=3
-provides="rpi-kernel-${version}_${revision}"
-replaces="rpi5-kernel>=0"
 
 _kernver="${version}_${revision}"
+triggers="kernel-hooks"
+kernel_hooks_version="${_kernver}"
 
-nodebug=yes
+nodebug=yes # generated manually
 nostrip=yes
 noverifyrdeps=yes
 noshlibprovides=yes
 
-build_options="rpi5"
-desc_option_rpi5="build large page-size rpi5-kernel"
-
-if [[ "$XBPS_TARGET_MACHINE" = aarch64* ]]; then
-	build_options_default+=" rpi5"
-elif [ "$build_option_rpi5" ]; then
-	broken="rpi5 build option only works on aarch64*"
-fi
-
-triggers="kernel-hooks"
 # These files could be modified when an external module is built.
 mutable_files="
+ /usr/lib/modules/${_kernver}/modules.builtin.bin
+ /usr/lib/modules/${_kernver}/modules.builtin.alias.bin
+ /usr/lib/modules/${_kernver}/modules.softdep
  /usr/lib/modules/${_kernver}/modules.dep
  /usr/lib/modules/${_kernver}/modules.dep.bin
  /usr/lib/modules/${_kernver}/modules.symbols
@@ -56,326 +51,279 @@ mutable_files="
  /usr/lib/modules/${_kernver}/modules.alias.bin
  /usr/lib/modules/${_kernver}/modules.devname"
 
-case "$XBPS_TARGET_MACHINE" in
-	armv6l*) _arch=arm; _image_target=zImage; _image_name=kernel.img ;;
-	armv7l*) _arch=arm; _image_target=zImage; _image_name=kernel7.img ;;
-	aarch64*) _arch=arm64; _image_target=Image.gz; _image_name=kernel8.img ;;
-	*) broken="No Raspberry Pi exists for this arch" ;;
-esac
-
-make_build_args=("-j$XBPS_MAKEJOBS" "ARCH=$_arch")
-make_install_args=("-j$XBPS_MAKEJOBS" "ARCH=$_arch")
+# reproducible build
+export KBUILD_BUILD_TIMESTAMP=$(LC_ALL=C date -ud @${SOURCE_DATE_EPOCH:-0})
+export KBUILD_BUILD_USER=voidlinux
+export KBUILD_BUILD_HOST=voidlinux
 
 if [ "$CROSS_BUILD" ]; then
-	make_build_args+=("CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-")
-	make_install_args+=("CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-")
+	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 fi
 
-post_extract() {
-	mkdir build-rpi
-	mv * build-rpi || true
-	if [ "$build_option_rpi5" ]; then
-		cp -a build-rpi build-rpi5
+case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		provides="rpi-kernel-${version}_${revision}"
+		replaces="rpi5-kernel>=0"
+		;;
+	armv[67]*)
+		;;
+	*)
+		broken="No Raspberry Pi exists for this arch"
+		;;
+esac
+
+do_configure() {
+	# If there's a file called <arch>-dotconfig, use it to
+	# configure the kernel; otherwise use board defaults.
+	local arch defconfig
+
+	case "$XBPS_TARGET_MACHINE" in
+		armv6*) arch=arm defconfig=bcmrpi_defconfig ;;
+		armv7*) arch=arm defconfig=bcm2709_defconfig ;;
+		aarch64*) arch=arm64; defconfig=bcm2711_defconfig ;;
+	esac
+
+	if [ -f "${FILESDIR}/${arch}-dotconfig-custom" ]; then
+		msg_normal "Detected a custom .config file for your arch, using it.\n"
+		cp -f "${FILESDIR}/${arch}-dotconfig-custom" .config
+		make ${makejobs} ARCH=$arch ${_cross} oldconfig
+	elif [ -f "${FILESDIR}/${arch}-dotconfig" ]; then
+		msg_normal "Detected a .config file for your arch, using it.\n"
+		cp -f "${FILESDIR}/${arch}-dotconfig" .config
+		make ${makejobs} ARCH=$arch ${_cross} oldconfig
+	else
+		msg_normal "Using default configuration for your arch.\n"
+		cp -f "arch/${arch}/configs/${defconfig}" .config
+		make ${makejobs} ARCH=$arch ${_cross} olddefconfig
 	fi
+
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 
-_configure() {
-	local target="$1" defconfig
+do_build() {
+	local arch tgt
 
-	msg_normal "configuring for ${target} in ${PWD##*/}\n"
-
-	defconfig="arch/${_arch}/configs/${target}"
-	cp "$defconfig" .config
-
-	cat <<-! > void.config
-	CONFIG_CONNECTOR=y
-	CONFIG_HID_STEAM=y
-	CONFIG_PROC_EVENTS=y
-	CONFIG_GCC_PLUGINS=n
-	CONFIG_BRIDGE_VLAN_FILTERING=y
-	CONFIG_FUNCTION_TRACER=n
-	CONFIG_STACK_TRACER=n
-	CONFIG_ATM=n
-	CONFIG_SLAB_FREELIST_RANDOM=y
-	CONFIG_CGROUP_PIDS=y
-	CONFIG_SLAB_FREELIST_HARDENED=y
-	CONFIG_PACKET=m
-	CONFIG_NF_CT_PROTO_DCCP=y
-	CONFIG_NF_CT_PROTO_SCTP=y
-	CONFIG_NF_CT_PROTO_UDPLITE=y
-	CONFIG_BATMAN_ADV=n
-	CONFIG_INPUT_LEDS=m
-	CONFIG_SQUASHFS_LZ4=y
-	CONFIG_STRICT_DEVMEM=y
-	CONFIG_IO_STRICT_DEVMEM=y
-	CONFIG_ENCRYPTED_KEYS=m
-	CONFIG_KEY_DH_OPERATIONS=y
-	CONFIG_HARDENED_USERCOPY=y
-	CONFIG_LOCALVERSION="_${revision}"
-	CONFIG_IP_PNP=n
-	CONFIG_USB_DWC2=m
-	CONFIG_USB_ETH=m
-	CONFIG_RTC_HCTOSYS=y
-	CONFIG_RTC_HCTOSYS_DEVICE="rtc0"
-	CONFIG_RTC_DRV_DS1307=y
-	CONFIG_I2C_BCM2835=y
-	CONFIG_MEMCG=y
-	CONFIG_CGROUP_PIDS=y
-	CONFIG_CGROUP_DEVICE=y
-	CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
-	CONFIG_PSI=y
-	CONFIG_ZSTD_COMPRESS=y
-	CONFIG_LZ4_COMPRESS=y
-	CONFIG_CRYPTO_RNG=y
-	CONFIG_CRYPTO_RNG_DEFAULT=y
-	CONFIG_BTRFS_FS=y
-	CONFIG_BTRFS_POSIX_ACL=y
-	CONFIG_IKCONFIG=y
-	CONFIG_IKCONFIG_PROC=y
-	CONFIG_LEDS_TRIGGER_ACTIVITY=m
-	CONFIG_MACVTAP=m
-	CONFIG_IPV6=y
-	CONFIG_XFS_FS=y
-	CONFIG_F2FS_CHECK_FS=y
-	CONFIG_F2FS_FS_COMPRESSION=y
-	CONFIG_F2FS_UNFAIR_RWSEM=y
-	!
-
-	while read -r line; do
-		local option="" str="" cmd=""
-		# skip comments
-		case "$line" in
-			"#"*) continue;;
-		esac
-		option="${line%%=*}"
-		cmd="$(echo "$line" | cut -d= -f2)"
-		case "$cmd" in
-			y) cmd="enable";;
-			n) cmd="disable";;
-			m) cmd="module";;
-			'"'*) cmd="set-str"; str="${line#*=}";;
-			[0-9]*) cmd="set-val"; str="${line#*=}";;
-			'') continue ;;
-			*) msg_error "Command $cmd not accepted\n" ;;
-		esac
-		msg_normal "config: $cmd: $option $str\n"
-		./scripts/config \
-			--file .config \
-			"--$cmd" "$option" "${str//\"/}"
-	done < void.config
-
-	make "${make_build_args[@]}" olddefconfig
+	case "$XBPS_TARGET_MACHINE" in
+		armv[67]*) arch=arm; tgt=zImage ;;
+		aarch64*) arch=arm64; tgt=Image.gz ;;
+	esac
+	export LDFLAGS=
+	make ARCH=$arch ${_cross} ${makejobs} prepare
+	make ARCH=$arch ${_cross} ${makejobs} ${tgt} modules dtbs
 }
 
-_build() {
-	msg_normal "building in ${PWD##*/}\n"
-	make "${make_build_args[@]}" prepare
-	make "${make_build_args[@]}" "${_image_target}" modules dtbs
-}
+do_install() {
+	local arch hdrdest
 
-_install() {
-	local _pkg="$1" _destdir="$2"
-	local hdrdest="usr/src/${_pkg}-headers-${_kernver}"
+	case "$XBPS_TARGET_MACHINE" in
+		armv[67]*) arch=arm ;;
+		aarch64*) arch=arm64 ;;
+	esac
 
-	msg_normal "installing ${_pkg} from ${PWD##*/} into ${_destdir}\n"
-
-	# Run depmod after compressing modules.
-	vsed -i -e '2iexit 0' scripts/depmod.sh
+	# Run depmod after compressing modules - makes depmod.sh a noop
+	sed -i '2iexit 0' scripts/depmod.sh
+	vmkdir usr/lib
+	ln -s usr/lib/ ${DESTDIR}
 
 	# Install kernel, firmware and modules
-	make "${make_install_args[@]}" INSTALL_MOD_PATH="${_destdir}" modules_install
+	make ${makejobs} ARCH=${arch} INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
+
+	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
+
+	vinstall .config 644 boot config-${_kernver}
+	vinstall System.map 644 boot System.map-${_kernver}
+
+	case "$XBPS_TARGET_MACHINE" in
+		armv6*) vinstall arch/${arch}/boot/zImage 644 boot kernel.img ;;
+		armv7*) vinstall arch/${arch}/boot/zImage 644 boot kernel7.img ;;
+		aarch64*) vinstall arch/${arch}/boot/Image.gz 644 boot kernel8.img ;;
+	esac
 
 	# Install device tree blobs
-	make "${make_install_args[@]}" INSTALL_DTBS_PATH="${_destdir}/boot" dtbs_install
+	make ${makejobs} ARCH=${arch} INSTALL_DTBS_PATH="${DESTDIR}/boot" dtbs_install
 
 	# move dtbs that ended up in /boot/broadcom
-	if [ -d "${_destdir}/boot/broadcom" ]; then
-		mv "${_destdir}"/boot/broadcom/*dtb "${_destdir}/boot"
+	if [ -d "${DESTDIR}/boot/broadcom" ]; then
+		mv "${DESTDIR}"/boot/broadcom/*dtb "${DESTDIR}/boot"
 	fi
-
-	# Install kernel image
-	vinstall "arch/${_arch}/boot/${_image_target}" 644 boot "${_image_name}"
 
 	# Switch to /usr.
 	vmkdir usr
-	mv "${_destdir}/lib" "${_destdir}/usr"
 
-	pushd "${_destdir}/usr/lib/modules/${_kernver}"
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
 	rm -f source build
-	ln -sf "../../../src/${_pkg}-headers-${_kernver}" build
-	popd
+	ln -sf ../../../src/kernel-headers-${_kernver} build
 
+	cd ${wrksrc}
 	# Install required headers to build external modules
-	vinstall Makefile 644 "${hdrdest}"
-	vinstall Kbuild 644 "${hdrdest}"
-	vinstall kernel/Makefile 644 "${hdrdest}/kernel"
-	vinstall .config 644 "${hdrdest}"
-	find . -name 'Kconfig*' | \
-		while read -r file; do
-		vinstall "$file" 644 "${hdrdest}/$(dirname "$file")"
+	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 Kbuild ${hdrdest}/Kbuild
+	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
+	install -Dm644 .config ${hdrdest}/.config
+	for file in $(find . -name Kconfig\*); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
 	done
-	find "arch/${_arch}" scripts -name module.lds -o -name Kbuild.platforms -o -name Platform | \
-		while read -r file; do
-		vinstall "$file" 644 "${hdrdest}/$(dirname "$file")"
+	for file in $(find arch/${arch} scripts -name module.lds -o -name Kbuild.platforms -o -name Platform); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
 	done
-	vmkdir "${hdrdest}/include"
-
+	mkdir -p ${hdrdest}/include
 	# Remove firmware stuff provided by the "linux-firmware" pkg.
-	rm -rf "${_destdir}/usr/lib/firmware"
+	rm -rf ${DESTDIR}/usr/lib/firmware
 
-	for d in acpi asm-generic clocksource config crypto drm dt-bindings generated linux \
-		math-emu media net pcmcia scsi sound trace uapi vdso video xen; do
-		[ -d include/$d ] && vcopy "include/$d" "${hdrdest}/include"
+	for i in acpi asm-generic clocksource config crypto drm generated linux vdso \
+		math-emu media net pcmcia scsi sound trace uapi video xen dt-bindings; do
+		if [ -d include/$i ]; then
+			cp -a include/$i ${hdrdest}/include
+		fi
 	done
+
+	cd ${wrksrc}
+	mkdir -p ${hdrdest}/arch/${arch}
+	cp -a arch/${arch}/include ${hdrdest}/arch/${arch}
+
+	# needed for mv-debug
+	cp scripts/sign-file "${XBPS_WRAPPERDIR}"
 
 	# Remove helper binaries built for host,
 	# if generated files from the scripts/ directory need to be included,
 	# they need to be copied to ${hdrdest} before this step
 	if [ "$CROSS_BUILD" ]; then
-		make "${make_install_args[@]}" _mrproper_scripts
+		make ${makejobs} ARCH=${arch} ${_cross} _mrproper_scripts
 		# remove host specific objects as well
 		find scripts -name '*.o' -delete
 	fi
 
-	# Copy files necessary for later builds.
-	vinstall Module.symvers 644 "${hdrdest}"
-	vcopy scripts "${hdrdest}"
-	vmkdir "${hdrdest}/security/selinux"
-	vcopy security/selinux/include "${hdrdest}/security/selinux"
-	vmkdir "${hdrdest}/tools/include"
-	vcopy tools/include/tools "${hdrdest}/tools/include"
-	if [ -d "arch/${_arch}/tools" ]; then
-		vcopy "arch/${_arch}/tools" "${hdrdest}/arch/${_arch}"
+	# Copy files necessary for later builds, like nvidia and vmware
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+	mkdir -p ${hdrdest}/security/selinux
+	cp -a security/selinux/include ${hdrdest}/security/selinux
+	mkdir -p ${hdrdest}/tools/include
+	cp -a tools/include/tools ${hdrdest}/tools/include
+	if [ -d "arch/${arch}/tools" ]; then
+		cp -a "arch/${arch}/tools" "${hdrdest}/arch/${arch}"
 	fi
-	vinstall kernel/time/timeconst.bc 644 "${hdrdest}/kernel/time"
-	vinstall kernel/bounds.c 644 "${hdrdest}/kernel"
-	vinstall arch/x86/entry/syscalls/syscall_32.tbl 644 "${hdrdest}/arch/x86/entry/syscalls"
+	cp -a kernel/time/timeconst.bc "${hdrdest}/kernel/time"
+	cp -a kernel/bounds.c "${hdrdest}/kernel"
+	mkdir -p "${hdrdest}/arch/x86/entry/syscalls"
+	cp -a arch/x86/entry/syscalls/syscall_32.tbl "${hdrdest}/arch/x86/entry/syscalls"
 
-	# copy arch includes for external modules
-	vmkdir "${hdrdest}/arch/${_arch}"
-	vcopy "arch/${_arch}/include" "${hdrdest}/arch/${_arch}"
-
-	mkdir -p "${hdrdest}/arch/${_arch}/kernel"
-	vinstall "arch/${_arch}/Makefile" 644 "${hdrdest}/arch/${_arch}"
-	vinstall "arch/${_arch}/kernel/asm-offsets.s" 644 "${hdrdest}/arch/${_arch}/kernel"
-	if [ "$_arch" = "arm64" ] ; then
-		vcopy "arch/${_arch}/kernel/vdso" "${hdrdest}/arch/${_arch}/kernel/"
+	mkdir -p ${hdrdest}/arch/${arch}/kernel
+	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
+	if [ "$arch" = "arm64" ]; then
+		mkdir -p ${hdrdest}/arch/arm64/kernel
+		cp arch/arm64/kernel/asm-offsets.s ${hdrdest}/arch/arm64/kernel
+		cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
 	fi
+
+	# add headers for lirc package
+	# pci
+	for i in bt8xx cx88 saa7134; do
+		mkdir -p ${hdrdest}/drivers/media/pci/${i}
+		cp -a drivers/media/pci/${i}/*.h ${hdrdest}/drivers/media/pci/${i}
+	done
+	# usb
+	for i in em28xx pwc; do
+		mkdir -p ${hdrdest}/drivers/media/usb/${i}
+		cp -a drivers/media/usb/${i}/*.h ${hdrdest}/drivers/media/usb/${i}
+	done
+	# i2c
+	mkdir -p ${hdrdest}/drivers/media/i2c
+	cp drivers/media/i2c/*.h ${hdrdest}/drivers/media/i2c
+	for i in cx25840; do
+		mkdir -p ${hdrdest}/drivers/media/i2c/${i}
+		cp -a drivers/media/i2c/${i}/*.h ${hdrdest}/drivers/media/i2c/${i}
+	done
 
 	# Add md headers
-	vmkdir "${hdrdest}/drivers/md"
-	vcopy drivers/md/*.h "${hdrdest}/drivers/md"
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
 
 	# Add inotify.h
-	vinstall include/linux/inotify.h 644 "${hdrdest}/include/linux"
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
 
 	# Add wireless headers
-	vmkdir "${hdrdest}/net/mac80211/"
-	vcopy net/mac80211/*.h "${hdrdest}/net/mac80211"
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
 
-	# Compress all modules with xz to save a few MBs.
-	msg_normal "$_pkg-$version: compressing kernel modules with gzip, please wait...\n"
-	find "${_destdir}" -name '*.ko' | xargs -n1 -P0 gzip -9
+	# add dvb headers for http://mcentral.de/hg/~mrec/em28xx-new
+	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
+	cp drivers/media/dvb-frontends/lgdt330x.h \
+		${hdrdest}/drivers/media/dvb-frontends/
+	cp drivers/media/i2c/msp3400-driver.h ${hdrdest}/drivers/media/i2c/
 
+	# add dvb headers
+	mkdir -p ${hdrdest}/drivers/media/usb/dvb-usb
+	cp drivers/media/usb/dvb-usb/*.h ${hdrdest}/drivers/media/usb/dvb-usb/
+	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
+	cp drivers/media/dvb-frontends/*.h ${hdrdest}/drivers/media/dvb-frontends/
+	mkdir -p ${hdrdest}/drivers/media/tuners
+	cp drivers/media/tuners/*.h ${hdrdest}/drivers/media/tuners/
+
+	# Add xfs and shmem for aufs building
+	mkdir -p ${hdrdest}/fs/xfs/libxfs
+	mkdir -p ${hdrdest}/mm
+	cp fs/xfs/libxfs/xfs_sb.h ${hdrdest}/fs/xfs/libxfs/xfs_sb.h
+
+	# Extract debugging symbols and compress modules
+	msg_normal "$pkgver: extracting debug info and compressing modules, please wait...\n"
+	install -Dm644 vmlinux ${DESTDIR}/usr/lib/debug/boot/vmlinux-${_kernver}
+	(
+	cd ${DESTDIR}
+	export DESTDIR
+	export SIGN_FILE="${XBPS_WRAPPERDIR}/sign-file sha512 ${wrksrc}/certs/signing_key.pem ${wrksrc}/certs/signing_key.x509"
+	find ./ -name '*.ko' -print0 | \
+		xargs -0r -n1 -P ${XBPS_MAKEJOBS} ${FILESDIR}/mv-debug
+	)
 	# ... and run depmod again.
-	depmod -b "${_destdir}/usr" -F System.map "${_kernver}"
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+	rm -f ${DESTDIR}/lib
 }
 
-do_configure() {
-	local target
-
-	case "$XBPS_TARGET_MACHINE" in
-		# for zero, 1
-		armv6l*) target=bcmrpi_defconfig ;;
-		# for 2
-		armv7l*) target=bcm2709_defconfig ;;
-		# for 3, 4, zero 2, 5
-		aarch64*) target=bcm2711_defconfig ;;
-	esac
-
-	_configure "$target"
-
-	if [ "$build_option_rpi5" ]; then
-		cd "$wrksrc"/build-rpi5
-		_configure "bcm2712_defconfig"
-	fi
-}
-
-do_build() {
-	_build
-
-	if [ "$build_option_rpi5" ]; then
-		cd "$wrksrc"/build-rpi5
-		_build
-	fi
-}
-
-do_install() {
-	_install "$pkgname" "$DESTDIR"
-}
-
-subpackages="rpi-kernel-headers"
+subpackages="rpi-kernel-headers rpi-kernel-dbg"
 
 case "$XBPS_TARGET_MACHINE" in
 	armv7l*) subpackages+=" rpi2-kernel rpi2-kernel-headers" ;;
 	aarch64*) subpackages+=" rpi3-kernel rpi3-kernel-headers rpi4-kernel rpi4-kernel-headers" ;;
 esac
 
-if [ "$build_option_rpi5" ]; then
-	subpackages+=" rpi5-kernel rpi5-kernel-headers"
-fi
-
 rpi-kernel-headers_package() {
 	nostrip=yes
 	noverifyrdeps=yes
 	noshlibprovides=yes
-	short_desc="${short_desc/kernel/kernel headers}"
-	provides="rpi-kernel-headers-${version}_${revision}"
-	replaces="rpi5-kernel-headers>=0"
+	short_desc+=" - source headers for 3rd party modules"
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*)
+			provides="rpi-kernel-headers-${version}_${revision}"
+			replaces="rpi5-kernel-headers>=0"
+			;;
+	esac
 	pkg_install() {
 		vmove usr/src
 		vmove "usr/lib/modules/${_kernver}/build"
 	}
 }
 
-_rpi5_short_desc="Linux kernel for Raspberry Pi 5 (${version%.*} series)"
-
-rpi5-kernel_package() {
-	nodebug=yes
+rpi-kernel-dbg_package() {
+	preserve=yes
 	nostrip=yes
 	noverifyrdeps=yes
 	noshlibprovides=yes
-	python_version=3
-	triggers="kernel-hooks"
-	# These files could be modified when an external module is built.
-	mutable_files="
-	 /usr/lib/modules/${_kernver}/modules.dep
-	 /usr/lib/modules/${_kernver}/modules.dep.bin
-	 /usr/lib/modules/${_kernver}/modules.symbols
-	 /usr/lib/modules/${_kernver}/modules.symbols.bin
-	 /usr/lib/modules/${_kernver}/modules.alias
-	 /usr/lib/modules/${_kernver}/modules.alias.bin
-	 /usr/lib/modules/${_kernver}/modules.devname"
-	short_desc="$_rpi5_short_desc"
-	provides="rpi-kernel-${version}_${revision}"
-	replaces="rpi-kernel>=0"
+	repository=debug
+	short_desc+=" - debugging symbols"
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*)
+			provides="rpi-kernel-dbg-${version}_${revision}"
+			replaces="rpi5-kernel-dbg>=0"
+			;;
+	esac
 	pkg_install() {
-		cd "$wrksrc"/build-rpi5
-		_install "rpi5-kernel" "$PKGDESTDIR"
-	}
-}
-
-rpi5-kernel-headers_package() {
-	nostrip=yes
-	noverifyrdeps=yes
-	noshlibprovides=yes
-	short_desc="${_rpi5_short_desc/kernel/kernel headers}"
-	provides="rpi-kernel-headers-${version}_${revision}"
-	replaces="rpi-kernel-headers>=0"
-	pkg_install() {
-		mv "${PKGDESTDIR}/../rpi5-kernel-${version}/usr/src" "${PKGDESTDIR}"/usr/src
-		vmkdir "usr/lib/modules/${_kernver}"
-		mv "${PKGDESTDIR}/../rpi5-kernel-${version}/usr/lib/modules/${_kernver}/build" "${PKGDESTDIR}/usr/lib/modules/${_kernver}/build"
+		vmove usr/lib/debug
+		vmove "boot/System.map-${_kernver}"
 	}
 }
 
