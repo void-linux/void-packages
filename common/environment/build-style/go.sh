@@ -4,7 +4,6 @@ if [ -z "$hostmakedepends" -o "${hostmakedepends##*gcc-go-tools*}" ]; then
 		archs="aarch64* armv[567]* i686* x86_64* ppc64le* riscv64*"
 	fi
 	hostmakedepends+=" go"
-	nopie=yes
 else
 	# gccgo compiler
 	if [ -z "$archs" ]; then
