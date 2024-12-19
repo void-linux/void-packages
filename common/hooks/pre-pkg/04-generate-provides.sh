@@ -1,4 +1,4 @@
-# vim: set ts=4 sw=4 et:
+# vim: set ts=4 sw=4 ft=bash et:
 #
 # This hook executes the following tasks:
 #	- Generates provides file with provides entries for xbps-create(1)
@@ -14,13 +14,11 @@ generate_python_provides() {
 }
 
 hook() {
-    local -a _provides=()
-
     # include explicit values from the template
-    read -r -a _provides <<< "$provides"
+    local -a _provides=($provides)
 
     # get the canonical python package names for each python module
-    mapfile -t _provides -O "${#_provides[@]}" < <( generate_python_provides )
+    mapfile -t -O "${#_provides[@]}" _provides < <( generate_python_provides )
 
     if [ "${#_provides[@]}" -gt 0 ]; then
         echo "   ${_provides[*]}"
