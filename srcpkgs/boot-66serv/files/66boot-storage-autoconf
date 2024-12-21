@@ -1,0 +1,154 @@
+#!/bin/sh
+
+# Copyright 2021 mobinmob <mobinmob@disroot.org>
+# Use of this source code is governed by the 2-Clause BSD License
+# that can be found in the LICENSE file at the root project directory.
+# SPDX short identifier: BSD-2-Clause
+
+# This script determines if the system has dmraid, luks, zfs, btrfs,
+# volumes, a swap partition or swapfile and configures the environment
+# file of the boot@system service accordingly.
+# Excluding the common posix userland commands, the script needs 66-which and 66-yeller
+# (from 66-tools), 66-env (from 66) and blkid (from util-linux).
+
+# Variables for 66-yeller
+export PROG="66boot-storage-autoconf"
+export COLOR_ENABLED="1"
+export CLOCK_ENABLED="0"
+
+# Script must run as root.
+user=$(id -u)
+[ "$user" != "0" ] && 66-yeller -F %r You need to run this script as root! %n  && exit 1
+
+# blkid(8) from util-linux should be available for the script to function.
+[ "$(blkid -v | grep util-linux -c)" != "1" ] && \
+66-yeller -F %r You need blkid from util-linux to run this program! %n  && exit 1
+
+detect_fs() {
+        # Uses blkid to detect partition TYPEs. The result is the number
+        # of detected partitions. TYPEs are available with `blkid -k`.
+        export "${1}"_detected="$(blkid -c /dev/null --match-token=TYPE="${1}" | wc -l )"
+}
+
+detect_swapfile() {
+        # Finds swap references in /etc/fstab.
+        swapfile_detected="$(awk '!/^(#)/' /etc/fstab | awk '$3=="swap" ' | wc -l )"
+        export swapfile_detected
+}
+
+detect_util() {
+        # Uses 66-which to determine if a utility exists.
+        # Output is $fs_util_exitst=0 (or 1)
+        # ${1} is the variable for the utility, in the form of "$fs_util"
+        # ${2} is the name of the executable
+        export "${1}"_exists="$(66-which "${2}" | wc -l)"
+}
+
+check_and_apply_conf() {
+        # Checks for partition types and the existance of the relevant utilities.
+        # Outputs user information
+        # ${1} is in the form of $fs_detected
+        # ${2} is in the form of $fs_name_exists
+        # ${3} is the name of the configuration variable
+        # ${4} is the user-friendly name for the configuration option
+        # ${5} name of the utility needed for the block device type
+        # ${6} is the name of the package that contains the program
+        # ${6} is **distribution-dependent**
+        if [ "${1}" != "0" ] && [ "${2}" = "1" ] 
+        then 
+                66-env -t boot -r "${3}"=!yes boot@system 
+                66-yeller %g "${4} detected and enabled!" %n
+        elif [ "${1}" != "0" ] && [ "${2}" = "0" ]
+        then
+                66-env -t boot -r "${3}"=!no boot@system
+                66-yeller -W %y "${4} detected but cannot be enabled,\n because the ${5} program is not installed. Please install the ${6} \n package and run this script again!" %n
+        elif [ "${1}" = "0" ] 
+        then
+                66-env -t boot -r "${3}"=!no boot@system
+                66-yeller %b "${4} not detected!" %n
+        fi
+
+}
+
+check_and_apply_conf_zpool() {
+        # Checks for the zfs pool import method if ZFS is enabled.
+        # Outputs user information
+        # ${1} is in the form of $fs_detected
+        # ${2} is in the form of $fs_name_exists
+        if [ "${1}" != "0" ] && [ "${2}" = "1" ] 
+        then 
+                66-env -t boot -r "ZFS"=!yes boot@system 
+                if [ -e /etc/zfs/zpool.cache ]
+                then
+                        66-env -t boot -r ZFS_IMPORT=!zpoolcache boot@system
+                        66-yeller %g "ZFS import method configured as zpoolcache." %n
+                else
+                        66-env -t boot -r ZFS_IMPORT=!scan boot@system
+                        66-yeller %g "ZFS import method configured as scan." %n
+                fi
+        fi
+
+}
+
+# devices_to_detect is a list of some device TYPEs we want to detect
+devices_to_detect="btrfs zfs_member crypto_LUKS linux_raid_member LVM2_member swap" 
+
+# Use detect fs for all members of devices_to_detect we want
+for key in $devices_to_detect; do detect_fs "$key" ; done 
+
+# dmraid supports multiple TYPEs of *-raid-member devices.
+# find them first and add the sum of the *_detected values to
+# dmraid_detected.
+
+# dmraid_TYPEs holds the device TYPEs dmraid handles
+dmraid_TYPEs="ddf_raid_member isw_raid_member lsi_mega_raid_member \
+via_raid_member silicon_medley_raid_member nvidia_raid_member \
+promise_fasttrack_raid_member hpt45x_raid_member hpt37x_raid_member \
+adaptec_raid_member jmicron_raid_member"
+
+for TYPE in $dmraid_TYPEs; do detect_fs "$TYPE" ; done
+
+# shellcheck disable=SC2154
+dmraid_detected=$((ddf_raid_member_detected+isw_raid_member_detected\
++lsi_mega_raid_member_detected+via_raid_member_detected\
++silicon_medley_raid_member_detected+nvidia_raid_member_detected\
++promise_fasttrack_raid_member_detected+hpt37x_raid_member_detecter\
++hpt45x_raid_member_detected+adaptec_raid_member_detected\
++jmicron_raid_member_detected))
+
+# swap can be detected by blkid if it is a partition or it can be a swapfile
+# declared in fstab
+detect_swapfile
+swap_detected=$((swap_detected+swapfile_detected))
+
+# Use detect_util for all utilities
+detect_util btrfs_util btrfs
+detect_util zfs_util zfs
+detect_util luks_util cryptsetup
+detect_util lvm_util lvchange
+detect_util dmraid_util dmraid
+detect_util swap_util swapon
+detect_util mdraid_util mdadm
+
+# Finally detect and apply the configuration
+# shellcheck disable=SC2154
+check_and_apply_conf "$btrfs_detected" "$btrfs_util_exists" BTRFS BTRFS btrfs "[btrfs_progs]"
+# shellcheck disable=SC2154
+check_and_apply_conf "$zfs_member_detected" "$zfs_util_exists" ZFS ZFS zfs "[zfs]"
+# shellcheck disable=SC2154
+check_and_apply_conf_zpool "$zfs_member_detected" "$zfs_util_exists" ZFS
+# shellcheck disable=SC2154
+check_and_apply_conf "$crypto_LUKS_detected" "$luks_util_exists" CRYPTTAB LUKS cryptsetup "[cryptsetup]"
+# shellcheck disable=SC2154
+check_and_apply_conf "$LVM2_member_detected" "$lvm_util_exists" LVM LVM lvchange "[lvm2]"
+# shellcheck disable=SC2154
+check_and_apply_conf "$dmraid_detected" "$dmraid_util_exists" DMRAID DMRAID dmraid "[dmraid]"
+# shellcheck disable=SC2154
+check_and_apply_conf "$swap_detected" "$swap_util_exists" SWAP SWAP swapon "[util-linux]"
+# shellcheck disable=SC2154
+check_and_apply_conf "$linux_raid_member_detected" "$mdraid_util_exists" MDRAID MDRAID mdadm "[mdadm]"
+
+
+66-yeller %g "Please re-enable the boot@system service
+for the changes to take effect by running (as root):
+'66-enable -F -t boot boot@system'" %n
