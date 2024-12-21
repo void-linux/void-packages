@@ -1,4 +1,4 @@
-# Template file for 'rpi-kernel'
+# Template file for 'rpi5-kernel'
 #
 # We track the latest Raspberry Pi LTS kernel as that is what is used in the
 # official Raspberry Pi OS distribution. This is currently 6.6:
@@ -11,15 +11,17 @@
 # [1] https://github.com/raspberrypi/linux/tags
 #
 # Upstream documentation: https://www.raspberrypi.com/documentation/computers/linux_kernel.html
-pkgname=rpi-kernel
+#
+# XXX: KEEP IN SYNC WITH rpi-kernel
+pkgname=rpi5-kernel
 version=6.6.66
 revision=1
 _githash=77c09f18a827480837fc57679f9c5e5ddf4a6476
-archs="aarch64* armv6l* armv7l*"
+archs="aarch64*"
 hostmakedepends="perl kmod uboot-mkimage openssl-devel bc bison flex xz pahole
  python3 elfutils-devel cpio tar zstd"
 makedepends="ncurses-devel"
-short_desc="Linux kernel for Raspberry Pi (${version%.*} series)"
+short_desc="Linux kernel for Raspberry Pi 5 (${version%.*} series)"
 maintainer="classabbyamp <void@placeviolette.net>"
 license="GPL-2.0-only"
 homepage="http://www.kernel.org"
@@ -58,67 +60,49 @@ if [ "$CROSS_BUILD" ]; then
 	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 fi
 
-case "$XBPS_TARGET_MACHINE" in
-	aarch64*)
-		provides="rpi-kernel-${version}_${revision}"
-		replaces="rpi5-kernel>=0"
-		;;
-	armv[67]*)
-		;;
-	*)
-		broken="No Raspberry Pi exists for this arch"
-		;;
-esac
+provides="rpi-kernel-${version}_${revision}"
+replaces="rpi-kernel>=0"
 
 do_configure() {
+	local cfg overlay tgt="oldconfig"
+
 	# If there's a file called <arch>-dotconfig, use it to
 	# configure the kernel; otherwise use board defaults.
-	local arch subarch defconfig
-
-	case "$XBPS_TARGET_MACHINE" in
-		arm6*) arch=arm; subarch=arm6; defconfig=bcmrpi_defconfig ;;
-		arm7*) arch=arm; subarch=arm7; defconfig=bcm2709_defconfig ;;
-		aarch64*) arch=arm64; defconfig=bcm2711_defconfig ;;
-	esac
-
-	if [ -f "${FILESDIR}/${subarch:-$arch}-dotconfig-custom" ]; then
+	if [ -f "${FILESDIR}/arm64-dotconfig-custom" ]; then
 		msg_normal "Detected a custom .config file for your arch, using it.\n"
-		cp -f "${FILESDIR}/${subarch:-$arch}-dotconfig-custom" .config
-		make ${makejobs} ARCH=$arch ${_cross} oldconfig
-	elif [ -f "${FILESDIR}/${subarch:-$arch}-dotconfig" ]; then
+		cfg="${FILESDIR}/arm64-dotconfig-custom"
+	elif [ -f "${FILESDIR}/arm64-dotconfig" ]; then
 		msg_normal "Detected a .config file for your arch, using it.\n"
-		cp -f "${FILESDIR}/${subarch:-$arch}-dotconfig" .config
-		make ${makejobs} ARCH=$arch ${_cross} oldconfig
+		cfg="${FILESDIR}/arm64-dotconfig"
 	else
 		msg_normal "Using default configuration for your arch.\n"
-		cp -f "arch/${arch}/configs/${defconfig}" .config
-		make ${makejobs} ARCH=$arch ${_cross} olddefconfig
+		cfg=arch/arm64/configs/bcm2712_defconfig
+		tgt=olddefconfig
 	fi
+
+	# apply custom settings for the pi5 kernel (mostly just page size)
+	if [ -f "${FILESDIR}/rpi5-config-overlay-custom" ]; then
+		overlay="${FILESDIR}/rpi5-config-overlay-custom"
+	elif [ -f "${FILESDIR}/rpi5-config-overlay" ]; then
+		overlay="${FILESDIR}/rpi5-config-overlay"
+	fi
+
+	cp -f "$cfg" .config
+	scripts/kconfig/merge_config.sh -m .config "$overlay"
+	make ${makejobs} ARCH=arm64 ${_cross} ${tgt}
 
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 
 do_build() {
-	local arch tgt
-
-	case "$XBPS_TARGET_MACHINE" in
-		arm*) arch=arm; tgt=zImage ;;
-		aarch64*) arch=arm64; tgt=Image.gz ;;
-	esac
 	export LDFLAGS=
-	make ARCH=$arch ${_cross} ${makejobs} prepare
-	make ARCH=$arch ${_cross} ${makejobs} ${tgt} modules dtbs
+	make ARCH=arm64 ${_cross} ${makejobs} prepare
+	make ARCH=arm64 ${_cross} ${makejobs} Image.gz modules dtbs
 }
 
 do_install() {
-	local arch hdrdest
-
-	case "$XBPS_TARGET_MACHINE" in
-		armv6*) arch=arm ;;
-		armv7*) arch=arm ;;
-		aarch64*) arch=arm64 ;;
-	esac
+	local arch=arm64 hdrdest
 
 	# Run depmod after compressing modules - makes depmod.sh a noop
 	sed -i '2iexit 0' scripts/depmod.sh
@@ -126,7 +110,7 @@ do_install() {
 	ln -s usr/lib/ ${DESTDIR}
 
 	# Install kernel, firmware and modules
-	make ${makejobs} ARCH=${arch} INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
+	make ${makejobs} ARCH=arm64 INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
 
 	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
 
@@ -134,13 +118,13 @@ do_install() {
 	vinstall System.map 644 boot System.map-${_kernver}
 
 	case "$XBPS_TARGET_MACHINE" in
-		armv6*) vinstall arch/${arch}/boot/zImage 644 boot kernel.img ;;
-		armv6*) vinstall arch/${arch}/boot/zImage 644 boot kernel7.img ;;
-		aarch64*) vinstall arch/${arch}/boot/Image.gz 644 boot kernel8.img ;;
+		armv6*) vinstall arch/arm64/boot/zImage 644 boot kernel.img ;;
+		armv6*) vinstall arch/arm64/boot/zImage 644 boot kernel7.img ;;
+		aarch64*) vinstall arch/arm64/boot/Image.gz 644 boot kernel8.img ;;
 	esac
 
 	# Install device tree blobs
-	make ${makejobs} ARCH=${arch} INSTALL_DTBS_PATH="${DESTDIR}/boot" dtbs_install
+	make ${makejobs} ARCH=arm64 INSTALL_DTBS_PATH="${DESTDIR}/boot" dtbs_install
 
 	# move dtbs that ended up in /boot/broadcom
 	if [ -d "${DESTDIR}/boot/broadcom" ]; then
@@ -164,7 +148,7 @@ do_install() {
 		mkdir -p ${hdrdest}/$(dirname $file)
 		install -Dm644 $file ${hdrdest}/${file}
 	done
-	for file in $(find arch/${arch} scripts -name module.lds -o -name Kbuild.platforms -o -name Platform); do
+	for file in $(find arch/arm64 scripts -name module.lds -o -name Kbuild.platforms -o -name Platform); do
 		mkdir -p ${hdrdest}/$(dirname $file)
 		install -Dm644 $file ${hdrdest}/${file}
 	done
@@ -180,8 +164,8 @@ do_install() {
 	done
 
 	cd ${wrksrc}
-	mkdir -p ${hdrdest}/arch/${arch}
-	cp -a arch/${arch}/include ${hdrdest}/arch/${arch}
+	mkdir -p ${hdrdest}/arch/arm64
+	cp -a arch/arm64/include ${hdrdest}/arch/arm64
 
 	# needed for mv-debug
 	cp scripts/sign-file "${XBPS_WRAPPERDIR}"
@@ -190,7 +174,7 @@ do_install() {
 	# if generated files from the scripts/ directory need to be included,
 	# they need to be copied to ${hdrdest} before this step
 	if [ "$CROSS_BUILD" ]; then
-		make ${makejobs} ARCH=${arch} ${_cross} _mrproper_scripts
+		make ${makejobs} ARCH=arm64 ${_cross} _mrproper_scripts
 		# remove host specific objects as well
 		find scripts -name '*.o' -delete
 	fi
@@ -202,21 +186,19 @@ do_install() {
 	cp -a security/selinux/include ${hdrdest}/security/selinux
 	mkdir -p ${hdrdest}/tools/include
 	cp -a tools/include/tools ${hdrdest}/tools/include
-	if [ -d "arch/${arch}/tools" ]; then
-		cp -a "arch/${arch}/tools" "${hdrdest}/arch/${arch}"
+	if [ -d "arch/arm64/tools" ]; then
+		cp -a "arch/arm64/tools" "${hdrdest}/arch/arm64"
 	fi
 	cp -a kernel/time/timeconst.bc "${hdrdest}/kernel/time"
 	cp -a kernel/bounds.c "${hdrdest}/kernel"
 	mkdir -p "${hdrdest}/arch/x86/entry/syscalls"
 	cp -a arch/x86/entry/syscalls/syscall_32.tbl "${hdrdest}/arch/x86/entry/syscalls"
 
-	mkdir -p ${hdrdest}/arch/${arch}/kernel
-	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
-	if [ "$arch" = "arm64" ]; then
-		mkdir -p ${hdrdest}/arch/arm64/kernel
-		cp arch/arm64/kernel/asm-offsets.s ${hdrdest}/arch/arm64/kernel
-		cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
-	fi
+	mkdir -p ${hdrdest}/arch/arm64/kernel
+	cp arch/arm64/Makefile ${hdrdest}/arch/arm64
+	mkdir -p ${hdrdest}/arch/arm64/kernel
+	cp arch/arm64/kernel/asm-offsets.s ${hdrdest}/arch/arm64/kernel
+	cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
 
 	# add headers for lirc package
 	# pci
@@ -283,83 +265,30 @@ do_install() {
 	rm -f ${DESTDIR}/lib
 }
 
-subpackages="rpi-kernel-headers rpi-kernel-dbg"
-
-case "$XBPS_TARGET_MACHINE" in
-	armv7l*) subpackages+=" rpi2-kernel rpi2-kernel-headers" ;;
-	aarch64*) subpackages+=" rpi3-kernel rpi3-kernel-headers rpi4-kernel rpi4-kernel-headers" ;;
-esac
-
-rpi-kernel-headers_package() {
+rpi5-kernel-headers_package() {
 	nostrip=yes
 	noverifyrdeps=yes
 	noshlibprovides=yes
 	short_desc+=" - source headers for 3rd party modules"
-	case "$XBPS_TARGET_MACHINE" in
-		aarch64*)
-			provides="rpi-kernel-headers-${version}_${revision}"
-			replaces="rpi5-kernel-headers>=0"
-			;;
-	esac
+	provides="rpi-kernel-headers-${version}_${revision}"
+	replaces="rpi-kernel-headers>=0"
 	pkg_install() {
 		vmove usr/src
 		vmove "usr/lib/modules/${_kernver}/build"
 	}
 }
 
-rpi-kernel-dbg_package() {
+rpi5-kernel-dbg_package() {
 	preserve=yes
 	nostrip=yes
 	noverifyrdeps=yes
 	noshlibprovides=yes
 	repository=debug
 	short_desc+=" - debugging symbols"
-	case "$XBPS_TARGET_MACHINE" in
-		aarch64*)
-			provides="rpi-kernel-dbg-${version}_${revision}"
-			replaces="rpi5-kernel-dbg>=0"
-			;;
-	esac
+	provides="rpi-kernel-dbg-${version}_${revision}"
+	replaces="rpi-kernel-dbg>=0"
 	pkg_install() {
 		vmove usr/lib/debug
 		vmove "boot/System.map-${_kernver}"
 	}
-}
-
-# hard-code the minimum version to prevent possible issues with partial upgrades
-# of legacy (split) systems
-rpi2-kernel_package() {
-	build_style=meta
-	short_desc+=" (transitional dummy package)"
-	depends="rpi-kernel>=5.15.68_1"
-}
-
-rpi2-kernel-headers_package() {
-	build_style=meta
-	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
-	depends="rpi-kernel-headers>=5.15.68_1"
-}
-
-rpi3-kernel_package() {
-	build_style=meta
-	short_desc+=" (transitional dummy package)"
-	depends="rpi-kernel>=5.15.68_1"
-}
-
-rpi3-kernel-headers_package() {
-	build_style=meta
-	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
-	depends="rpi-kernel-headers>=5.15.68_1"
-}
-
-rpi4-kernel_package() {
-	build_style=meta
-	short_desc+=" (transitional dummy package)"
-	depends="rpi-kernel>=5.15.68_1"
-}
-
-rpi4-kernel-headers_package() {
-	build_style=meta
-	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
-	depends="rpi-kernel-headers>=5.15.68_1"
 }
