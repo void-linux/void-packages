@@ -1,16 +1,12 @@
 # Template file for 'linux-asahi'
 pkgname=linux-asahi
-version=6.12.4p1
+version=6.12.4+1
 revision=1
 short_desc="Linux kernel and modules for Apple Silicon"
 maintainer="Will Springer <skirmisher@protonmail.com>, dkwo <npiazza@disroot.org>"
-_majver=${version%p*}
-_asahiver=${_majver%.0}
-_asahirel=${version#*p}
-_tag=asahi-${_asahiver}-${_asahirel}
 license="GPL-2.0-only"
 homepage="https://asahilinux.org"
-distfiles="https://github.com/AsahiLinux/linux/archive/${_tag}.tar.gz"
+distfiles="https://github.com/AsahiLinux/linux/archive/asahi-${version/+/-}.tar.gz"
 checksum=6543a6aa3fadb65fa24d5b7d4ae2143054229a94bc309512ce7c436104048e2f
 
 python_version=3
@@ -27,7 +23,7 @@ hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
  pkg-config openssl-devel perl uboot-mkimage cpio pahole python3 zstd
  rust cargo rust-bindgen rust-src libclang"
 
-_kernver=${_majver}-${_tag}_${revision}
+_kernver=${version%+*}-asahi_${revision}
 triggers="kernel-hooks"
 kernel_hooks_version="${_kernver}"
 
@@ -53,21 +49,10 @@ if [ "$CROSS_BUILD" ]; then
 	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 fi
 
-pre_patch() {
-	if [ ! -f $XBPS_SRCDISTDIR/$pkgname-$version/patch-${version}.xz ]; then
-		return
-	fi
-	xzcat $XBPS_SRCDISTDIR/$pkgname-$version/patch-${version}.xz |
-		patch -sNp1 -F0
-}
-
 post_patch() {
 	# avoid the strip wrapper, its used to copy the objects to a new location
 	# and required to avoid absolute relocations.
 	vsed -e "s|\$(STRIP) \(--strip-debug -o \$@ \$<;\)|/usr/bin/${STRIP} \1|" -i drivers/firmware/efi/libstub/Makefile
-
-	# parallel pahole crashes on i686, do one job for now
-	vsed -i "s/\(\$(pahole-flags-y)\)/\1 --jobs=1/" -i scripts/Makefile.btf
 }
 
 do_configure() {
@@ -75,18 +60,7 @@ do_configure() {
 	# configure the kernel; otherwise use arch defaults and all stuff
 	# as modules (allmodconfig).
 	local arch subarch
-
-	case "$XBPS_TARGET_MACHINE" in
-		i686*) arch=i386;;
-		x86_64*) arch=x86_64;;
-		arm*) arch=arm;;
-		aarch64*) arch=arm64;;
-		ppc64le*) arch=powerpc; subarch=ppc64le;;
-		ppc64*) arch=powerpc; subarch=ppc64;;
-		ppc*) arch=powerpc; subarch=ppc;;
-		mips*) arch=mips;;
-		riscv64*) arch=riscv;;
-	esac
+	arch=arm64
 
 	if [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom ]; then
 		msg_normal "Detected a custom .config file for your arch, using it.\n"
@@ -99,21 +73,13 @@ do_configure() {
 	fi
 
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
-	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"-${_asahiver}-${_asahirel}_${revision}\"|" .config
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 
 do_build() {
 	local arch _args
+	_args="Image modules dtbs"; arch=arm64
 
-	case "$XBPS_TARGET_MACHINE" in
-		i686*) _args="bzImage modules"; arch=i386;;
-		x86_64*) _args="bzImage modules"; arch=x86_64;;
-		arm*) _args="zImage modules dtbs"; arch=arm;;
-		aarch64*) _args="Image modules dtbs"; arch=arm64;;
-		ppc*) _args="zImage modules"; arch=powerpc;;
-		mips*) _args="uImage modules dtbs"; arch=mips;;
-		riscv64*) _args="Image modules dtbs"; arch=riscv;;
-	esac
 	export LDFLAGS=
 	make ARCH=$arch ${_cross} ${makejobs} prepare
 	make ARCH=$arch ${_cross} ${makejobs} ${_args}
@@ -121,16 +87,7 @@ do_build() {
 
 do_install() {
 	local arch subarch _args hdrdest
-
-	case "$XBPS_TARGET_MACHINE" in
-		i686*) arch=x86; subarch=i386;;
-		x86_64*) arch=x86; subarch=x86_64;;
-		arm*) arch=arm;;
-		aarch64*) arch=arm64;;
-		ppc*) arch=powerpc;;
-		mips*) arch=mips;;
-		riscv*) arch=riscv;;
-	esac
+	arch=arm64
 
 	# Run depmod after compressing modules - makes depmod.sh a noop
 	sed -i '2iexit 0' scripts/depmod.sh
@@ -145,33 +102,8 @@ do_install() {
 	vinstall .config 644 boot config-${_kernver}
 	vinstall System.map 644 boot System.map-${_kernver}
 
-	case "$arch" in
-		x86)
-			vinstall arch/x86/boot/bzImage 644 boot vmlinuz-${_kernver}
-			;;
-		arm)
-			vinstall arch/arm/boot/zImage 644 boot
-			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
-			;;
-		arm64)
-			vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
-			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
-			;;
-		powerpc)
-			# zImage on powerpc is useless as it won't load initramfs
-			# raw vmlinux is huge, and this is nostrip, so do it manually
-			vinstall vmlinux 644 boot vmlinux-${_kernver}
-			/usr/bin/$STRIP ${DESTDIR}/boot/vmlinux-${_kernver}
-			;;
-		mips)
-			vinstall arch/mips/boot/uImage.bin 644 boot uImage-${_kernver}
-			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
-			;;
-		riscv)
-			vinstall arch/riscv/boot/Image 644 boot vmlinux-${_kernver}
-			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
-			;;
-	esac
+	vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
+	make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
 
 	# Switch to /usr.
 	vmkdir usr
@@ -238,18 +170,10 @@ do_install() {
 
 	mkdir -p ${hdrdest}/arch/${arch}/kernel
 	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
-	if [ "$subarch" = "i386" ]; then
-		mkdir -p ${hdrdest}/arch/x86
-		cp arch/x86/Makefile_32.cpu ${hdrdest}/arch/x86
-	fi
-	if [ "$arch" = "x86" ]; then
-		mkdir -p ${hdrdest}/arch/x86/kernel
-		cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
-	elif [ "$arch" = "arm64" ]; then
-		mkdir -p ${hdrdest}/arch/arm64/kernel
-		cp arch/arm64/kernel/asm-offsets.s ${hdrdest}/arch/arm64/kernel
-		cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
-	fi
+
+	mkdir -p ${hdrdest}/arch/arm64/kernel
+	cp arch/arm64/kernel/asm-offsets.s ${hdrdest}/arch/arm64/kernel
+	cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
 
 	# add headers for lirc package
 	# pci
@@ -300,14 +224,6 @@ do_install() {
 	mkdir -p ${hdrdest}/fs/xfs/libxfs
 	mkdir -p ${hdrdest}/mm
 	cp fs/xfs/libxfs/xfs_sb.h ${hdrdest}/fs/xfs/libxfs/xfs_sb.h
-
-	# Add objtool binary, needed to build external modules with dkms
-	case "$XBPS_TARGET_MACHINE" in
-		x86_64*)
-			mkdir -p ${hdrdest}/tools/objtool
-			cp tools/objtool/objtool ${hdrdest}/tools/objtool
-			;;
-	esac
 
 	# Extract debugging symbols and compress modules
 	msg_normal "$pkgver: extracting debug info and compressing modules, please wait...\n"
