@@ -32,6 +32,9 @@ if TYPE_CHECKING:
     from packaging.requirements import Requirement
     from packaging.utils import canonicalize_name
 
+# packages to always ignore
+global_ignore = ["tzdata"]
+
 
 def msg_err(msg: str, *, nocolor: bool = False, strict: bool = False):
     if nocolor:
@@ -149,6 +152,8 @@ def parse_depends(args):
             pkgname = vpkgs[k]
             if pkgname in rdeps:
                 print(f"   PYTHON: {k} <-> {pkgname}", flush=True)
+            elif pkgname in global_ignore:
+                print(f"   PYTHON: {k} <-> {pkgname} (ignored)", flush=True)
             else:
                 msg_err(f"   PYTHON: {k} <-> {pkgname} NOT IN depends PLEASE FIX!",
                         nocolor=args.nocolor, strict=args.strict)
