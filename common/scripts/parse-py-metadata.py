@@ -79,7 +79,7 @@ def match_markers(req: "Requirement", extras: set[str]) -> bool:
 
     # check the requirement for each extra we want and without any extras
     if extras:
-        return req.marker.evaluate() and any(req.marker.evaluate({"extra": e}) for e in extras)
+        return req.marker.evaluate() or any(req.marker.evaluate({"extra": e}) for e in extras)
 
     return req.marker.evaluate()
 
