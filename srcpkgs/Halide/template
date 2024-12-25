@@ -1,0 +1,82 @@
+# Template file for 'Halide'
+pkgname=Halide
+version=19.0.0
+revision=1
+_llvm_ver=19
+build_style=cmake
+build_helper=qemu
+configure_args="-DCMAKE_PREFIX_PATH=${XBPS_CROSS_BASE}/usr/lib/llvm/${_llvm_ver}
+ -DWITH_SERIALIZATION=ON -DWITH_PYTHON_BINDINGS=ON -DWITH_DOCS=ON
+ -DHalide_INSTALL_PYTHONDIR=lib/python${py3_ver}/site-packages/halide
+ -DWITH_TEST_ERROR=OFF" #error tests require assertions (we build with -DNDEBUG)
+hostmakedepends="git python3-packaging-bootstrap doxygen"
+makedepends="llvm${_llvm_ver}-devel lld${_llvm_ver}-devel zlib-devel
+ elfutils-devel libffi-devel libedit-devel libxml2-devel python3-devel
+ libjpeg-turbo-devel libpng-devel eigen SPIRV-Headers libgomp-devel"
+checkdepends="python3-imageio python3-numpy"
+short_desc="Language for fast, portable data-parallel computation"
+maintainer="Daniel Martinez <danielmartinez@cock.li>"
+license="MIT AND BSD-3-Clause AND Apache-2.0"
+homepage="https://halide-lang.org/"
+distfiles="https://github.com/halide/Halide/archive/refs/tags/v${version}.tar.gz"
+checksum=83bae1f0e24dc44d9d85014d5cd0474df2dd03975680894ce3fafd6e97dffee2
+python_version=3
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	case "$XBPS_TARGET_MACHINE" in
+		arm*) broken="needs libucontext >= 1.3" ;;
+	esac
+	makedepends+=" libucontext-devel"
+	configure_args+=" -DCMAKE_CXX_STANDARD_LIBRARIES=-lucontext"
+fi
+
+if [ "$CROSS_BUILD" ]; then
+	configure_args+=" -DWITH_TESTS=OFF"
+
+	case "$XBPS_TARGET_MACHINE" in
+		# The Halide runtime queries vector width at runtime. If a CPU
+		# is not set, then the vector width is reported as zero, and the
+		# program fails. The CPU chosen here doesn't really matter.
+		aarch64*) export QEMU_CPU="cortex-a76" ;;
+	esac
+fi
+
+do_install() {
+	# Need to use cmake instead of calling ninja directly, since there
+	# is some funny business going on with the prefix
+	cmake --install build --prefix "${DESTDIR}/usr"
+}
+
+post_install() {
+	vlicense LICENSE.txt
+
+	# Mangle CPython extension names in CMake like xbps-src will do
+	vsed -e 's,\(halide.*\)\.cpython-.*\.so,\1.so,' \
+		-i "${DESTDIR}/usr/lib/cmake/Halide_Python/Halide_Python-targets-none.cmake"
+}
+
+Halide-doc_package() {
+	short_desc+=" - documentation"
+	pkg_install() {
+		vmove usr/share/doc
+	}
+}
+
+Halide-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/cmake
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+	}
+}
+
+python3-Halide_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - python bindings"
+	pkg_install() {
+		vmove usr/lib/python${py3_ver}
+	}
+}
