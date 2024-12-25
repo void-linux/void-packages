@@ -1136,8 +1136,9 @@ This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 - `qmake6` is like `qmake` but for Qt6.
 
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
-for compiling cargo -sys crates. This helper is added by default for packages that use the
-`cargo` build style.
+for compiling cargo -sys crates.
+It also adds a `cargo` wrapper that detects and passes builds through `cargo-auditable`.
+This helper is added by default for packages that use the `cargo` build style.
 
 <a id="functions"></a>
 ### Functions
@@ -1638,6 +1639,13 @@ applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
 If `python_version` is set to `ignore`, python-containing shebangs will not be rewritten.
 Use this only if a package should not be using a system version of python.
+
+- `python_extras`: Python module extras to consider when verifying Python module dependencies.
+Can be used to ensure additional dependency sets are checked. Example: `python_extras="all"`.
+
+- `nopyprovides`: if set, don't create `provides` entries for Python modules in the package.
+
+- `noverifypydeps`: if set, don't verify Python module dependencies.
 
 Also, a set of useful variables are defined to use in the templates:
 
