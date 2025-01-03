@@ -1,0 +1,153 @@
+# Template file for 'llvm-amd'
+pkgname=llvm-amd
+version=6.3.0
+revision=1
+_rocm_prefix=usr/lib/rocm
+_llvm_root="${XBPS_BUILDDIR}/${pkgname}-${version}"
+_device_libs="${_llvm_root}/amd/device-libs"
+_comgr="${_llvm_root}/amd/comgr"
+_hipcc="${_llvm_root}/amd/hipcc"
+build_wrksrc=llvm
+build_style=cmake
+configure_args=" -DCMAKE_BUILD_TYPE=Release
+ -DCMAKE_PREFIX_PATH=${XBPS_CROSS_BASE}/${_rocm_prefix}
+ -DCMAKE_INSTALL_PREFIX=/${_rocm_prefix}/lib/llvm
+ -DLLVM_ENABLE_PROJECTS=llvm;clang;lld
+ -DLLVM_ENABLE_BINDINGS=OFF
+ -DLLVM_INCLUDE_BENCHMARKS=OFF
+ -DLLVM_BUILD_LLVM_DYLIB=OFF
+ -DLLVM_LINK_LLVM_DYLIB=OFF
+ -DCLANG_LINK_CLANG_DYLIB=OFF
+ -DLIBCLANG_BUILD_STATIC=ON
+ -DENABLE_SHARED=OFF
+ -DBUILD_TESTING=OFF
+"
+hostmakedepends="pkg-config git python3 ROCm-cmake"
+makedepends="libffi-devel ncurses-libtinfo-devel zlib-devel libxml2-devel libzstd-devel libedit-devel"
+short_desc="LLVM Project for ROCm"
+maintainer="Daniel Martinez <danielmartinez@cock.li>"
+license="Apache-2.0 AND NCSA AND MIT AND custom:Apache-2.0-with-llvm-exception"
+homepage="https://github.com/RadeonOpenCompute/llvm-project"
+distfiles="https://github.com/ROCm/llvm-project/archive/refs/tags/rocm-${version}.tar.gz"
+checksum=79580508b039ca6c50dfdfd7c4f6fbcf489fe1931037ca51324818851eea0c1c
+python_version=3
+nocross="Fixable, but a PITA. aarch64 devices with AMDGPU are not widely available"
+
+if [ ${XBPS_TARGET_WORDSIZE} != 64 ]; then
+	broken="error: token \"=\" is not valid in preprocessor expressions"
+fi
+
+
+pre_configure() {
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _arch="X86";;
+		x86_64*) _arch="X86";;
+		armv5*) _arch="Armv5te";;
+		armv6*) _arch="Armv6";;
+		armv7*) _arch="Armv7";;
+		aarch64*) _arch="AArch64";;
+		mips*) _arch="Mips";;
+		ppc*) _arch="PowerPC";;
+		riscv64*) _arch="RISCV64";;
+	esac
+
+	local _triplet=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}
+
+	configure_args+=" -DLLVM_TARGET_ARCH=${_arch}"
+	configure_args+=" -DLLVM_HOST_TRIPLE=${_triplet}"
+	configure_args+=" -DLLVM_DEFAULT_TARGET_TRIPLE=${_triplet}"
+	echo $configure_args
+}
+
+post_build() {
+
+	local _prefix_path="${XBPS_CROSS_BASE}/${_rocm_prefix};${_llvm_root}/llvm/build"
+
+	mkdir "${_device_libs}/build"
+	cd "${_device_libs}/build"
+
+	cmake -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX="/${_rocm_prefix}" \
+		-DCMAKE_PREFIX_PATH="${_prefix_path}" \
+		-G Ninja \
+		..
+
+	ninja ${makejobs}
+
+	_prefix_path+=";${_device_libs}/build"
+	mkdir "${_comgr}/build"
+	cd "${_comgr}/build"
+
+	cmake -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX="/${_rocm_prefix}" \
+		-DCMAKE_PREFIX_PATH="${_prefix_path}" \
+		-DBUILD_TESTING=OFF \
+		-G Ninja \
+		..
+
+	ninja ${makejobs}
+
+	_prefix_path+=";${_comgr}/build"
+	mkdir "${_hipcc}/build"
+	cd "${_hipcc}/build"
+
+	cmake -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX="/${_rocm_prefix}" \
+		-DCMAKE_PREFIX_PATH="${_prefix_path}" \
+		-G Ninja \
+		..
+
+	ninja ${makejobs}
+}
+
+post_install() {
+	ln -s lib/llvm $DESTDIR/${_rocm_prefix}/
+	vlicense LICENSE.TXT
+}
+
+llvm-amd-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove ${_rocm_prefix}/lib/llvm/lib/cmake
+		vmove ${_rocm_prefix}/lib/llvm/include
+		vmove "${_rocm_prefix}/lib/llvm/lib/*.a"
+		vmove "${_rocm_prefix}/lib/llvm/lib/*.so"
+	}
+}
+
+comgr_package() {
+	short_desc="ROCm Code Object Manager"
+	pkg_install() {
+		cd "${_comgr}/build"
+		DESTDIR=${PKGDESTDIR} ninja install
+
+		for _f in ${PKGDESTDIR}/${_rocm_prefix}/lib64/lib*; do
+			local _base=$(basename "${_f}")
+			ln -s "rocm/lib64/${_base}" "${PKGDESTDIR}/usr/lib"
+		done
+	}
+}
+
+hipcc_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc="ROCm HIP Compiler Driver"
+	pkg_install() {
+		cd "${_hipcc}/build"
+		DESTDIR=${PKGDESTDIR} ninja install
+		vmkdir "usr/bin"
+		for _f in ${PKGDESTDIR}/${_rocm_prefix}/bin/*; do
+			local _base=$(basename "${_f}")
+			ln -s "../lib/rocm/bin/${_base}" "${PKGDESTDIR}/usr/bin"
+		done
+	}
+}
+
+ROCm-Device-Libs_package() {
+	short_desc="ROCm Device Bitcode Libraries"
+	pkg_install() {
+		cd "${_device_libs}/build"
+		DESTDIR=${PKGDESTDIR} ninja install
+		ln -s lib/rocm/amdgcn ${PKGDESTDIR}/usr/
+	}
+}
