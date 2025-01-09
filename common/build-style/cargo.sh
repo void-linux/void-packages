@@ -3,21 +3,21 @@
 #
 
 do_build() {
-	: ${make_cmd:=cargo auditable}
+	: ${make_cmd:=cargo}
 
 	${make_cmd} build --release --locked --target ${RUST_TARGET} \
  		${configure_args} ${make_build_args}
 }
 
 do_check() {
-	: ${make_cmd:=cargo auditable}
+	: ${make_cmd:=cargo}
 
 	${make_check_pre} ${make_cmd} test --release --locked --target ${RUST_TARGET} \
 		${configure_args} ${make_check_args}
 }
 
 do_install() {
-	: ${make_cmd:=cargo auditable}
+	: ${make_cmd:=cargo}
 	: ${make_install_args:=--path .}
 
 	${make_cmd} install --target ${RUST_TARGET} --root="${DESTDIR}/usr" \
