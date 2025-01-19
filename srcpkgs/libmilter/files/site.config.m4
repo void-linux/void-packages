@@ -1,3 +1,0 @@
-APPENDDEF(`conf_libmilter_ENVDEF',`-D_FFR_WORKERS_POOL=1 -DMIN_WORKERS=4')
-APPENDDEF(`conf_libmilter_ENVDEF',`-DSM_CONF_POLL=1')
-APPENDDEF(`conf_libmilter_ENVDEF',`-fPIC')
