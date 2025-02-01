@@ -10,13 +10,15 @@ short_desc="Mozilla Firefox web browser"
 maintainer="Duncaen <duncaen@voidlinux.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.mozilla.org/firefox/"
+changelog="https://www.mozilla.org/en-US/firefox/${version}/releasenotes/"
 distfiles="${MOZILLA_SITE}/firefox/releases/${version/beta/b}/source/firefox-${version/beta/b}.source.tar.xz"
 checksum=ca88068bd72784c10de16df62359b2dc354672a1a427b4fd6a5fcdb34c06457e
 
 lib32disabled=yes
-_llvmver=19
+_llvmver=19 # needs to match rust
 hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust
- cargo llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which tar"
+ cargo llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which tar
+ $(vopt_if pgo 'xvfb-run dbus')"
 makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
  pixman-devel libevent-devel libnotify-devel libvpx-devel libwebp-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
@@ -27,10 +29,11 @@ makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
 depends="nss>=3.72 nspr>=4.32 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox-esr>=0"
 
-build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland lto clang"
+build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland lto pgo clang"
 build_options_default="alsa jack dbus pulseaudio xscreensaver sndio wayland clang"
 
 desc_option_lto="Enable Link Time Optimization"
+desc_option_pgo="Enable Profile-guided Optimization"
 desc_option_clang="Build with clang"
 
 case $XBPS_TARGET_MACHINE in
@@ -225,6 +228,36 @@ do_build() {
 	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
 
 	rm -f old-configure
+
+	if [ "$build_option_pgo" ]; then
+		cp .mozconfig{,.orig}
+		echo "ac_add_options --enable-profile-generate=cross" >> .mozconfig
+
+		./mach build
+		./mach package
+		LLVM_PROFDATA=llvm-profdata JARLOG_FILE="$PWD/jarlog" \
+			dbus-run-session \
+			xvfb-run -s "-screen 0 1920x1080x24 -nolisten local" \
+			./mach python build/pgo/profileserver.py
+
+
+		stat -c "Profile data found (%s bytes)" merged.profdata
+		test -s merged.profdata
+
+		stat -c "Jar log found (%s bytes)" jarlog
+		test -s jarlog
+
+		./mach clobber objdir
+
+		cp .mozconfig{.orig,}
+		cat <<-! >>.mozconfig
+		ac_add_options --enable-lto=cross,full
+		ac_add_options --enable-profile-use=cross
+		ac_add_options --with-pgo-profile-path=${PWD@Q}/merged.profdata
+		ac_add_options --with-pgo-jarlog=${PWD@Q}/jarlog
+		!
+	fi
+
 	./mach build
 }
 
