@@ -1,0 +1,1850 @@
+From fd57e39ac0214f0009998329f81abf843f3efb82 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Tue, 17 May 2022 17:18:33 +0300
+Subject: [PATCH 01/24] service/system/devices/devices-*: first pass at
+ improving user warnings and general behavior. More information on the
+ [PR](https://framagit.org/pkg/obmods/boot-66serv/-/merge_requests/16)
+
+---
+ .../service/system/devices/devices-btrfs      | 18 +++++++-------
+ .../service/system/devices/devices-crypttab   | 17 ++++++++-----
+ .../boot@/service/system/devices/devices-lvm  | 24 ++++++++-----------
+ .../boot@/service/system/devices/devices-zfs  | 15 +++++++-----
+ 4 files changed, 40 insertions(+), 34 deletions(-)
+
+diff --git a/module/boot@/service/system/devices/devices-btrfs b/module/boot@/service/system/devices/devices-btrfs
+index dc46638..987d29c 100644
+--- a/module/boot@/service/system/devices/devices-btrfs
++++ b/module/boot@/service/system/devices/devices-btrfs
+@@ -1,7 +1,7 @@
+ [main]
+ @type = oneshot
+ @version = @vers@
+-@description = "Active btrfs devices"
++@description = "Activate btrfs devices"
+ @user = ( root )
+ @depends = ( udevadm )
+ @options = ( !log )
+@@ -10,11 +10,13 @@
+ @execute =
+ (
+     if { 66-yeller -cdp devices-btrfs -1 /dev/console starts... }
+-    if -nt {
+-
+-        if { 66-which -q btrfs }
+-        btrfs device scan
+-
+-    }
+-    66-yeller -fcdp devices-btrfs -1 /dev/console crashed!
++    ifelse { blkid --match-token=TYPE="btrfs" }
++        { ifelse -n { 66-which -q btrfs }
++            { if { 66-yeller -cdp device-btrfs -1 /dev/console No btrfs program available, check your configuration! } exit 0 }
++        if -nt { 
++            btrfs device scan
++        }
++        66-yeller -fcdp devices-btrfs -1 /dev/console crashed! }
++    
++    66-yeller -cdp device-btrfs -1 /dev/console no btrfs volumes available!
+ )
+diff --git a/module/boot@/service/system/devices/devices-crypttab b/module/boot@/service/system/devices/devices-crypttab
+index fd491ef..b1c327b 100644
+--- a/module/boot@/service/system/devices/devices-crypttab
++++ b/module/boot@/service/system/devices/devices-crypttab
+@@ -10,13 +10,15 @@
+ @execute =
+ (
+     if { 66-yeller -cdp devices-crypttab -1 /dev/console starts... }
+-    if -nt {
++ ifelse { blkid --match-token=TYPE="crypto_LUKS" }
+ 
+-        execl-toc -e ${script_conf}
+-        if { execl-cmdline -s { 66-olexec awk -f ${script_file} ${script_conf} } }
+-
+-        foreground {
++    {  
++    ifelse { execl-toc -X -e ${script_conf} }
++        { if -nt { 
++            if { execl-cmdline -s { 66-olexec awk -f ${script_file} ${script_conf} } }
++            foreground {
+ 
++            if { blkid --match-token=TYPE="LVM2_member" }
+             if { 66-which -q vgchange }
+             if { 66-yeller -cdp devices-crypttab -1 /dev/console Activating LVM devices for dm-crypt... }
+             if -nt {
+@@ -26,7 +28,10 @@
+             66-yeller -cdp devices-crypttab -1 /dev/console unable to activate LVM devices
+         }
+     }
+-    66-yeller -fcdp devices-crypttab -1 /dev/console crashed!
++    66-yeller -fcdp devices-crypttab -1 /dev/console crashed! }
++     if { 66-yeller -cdp device-crypttab -1 /dev/console no ${script_conf} available, check your installation and configuration! } exit 0 }      
++        
++    66-yeller -cdp device-crypttab -1 /dev/console no encrypted volumes available!
+ )
+ 
+ [environment]
+diff --git a/module/boot@/service/system/devices/devices-lvm b/module/boot@/service/system/devices/devices-lvm
+index df1429e..3a5068d 100644
+--- a/module/boot@/service/system/devices/devices-lvm
++++ b/module/boot@/service/system/devices/devices-lvm
+@@ -1,7 +1,7 @@
+ [main]
+ @type = oneshot
+ @version = @vers@
+-@description = "Active lvm devices"
++@description = "Activate lvm devices"
+ @user = ( root )
+ @depends = ( udevadm )
+ @options = ( !log )
+@@ -9,18 +9,14 @@
+ [start]
+ @execute =
+ (
+-    if { 66-yeller -cdp devices-lvm -1 /dev/console starts... }
+-    if -nt {
+-
+-        if { 66-which -q lvmetad }
+-        execl-toc -d /run/lvm
+-        if { lvmetad -p /run/lvm/lvmetad.pid }
+-        if { 66-which -q vgchange }
+-        foreground {
+-            vgchange --sysinit -a ay
++if { 66-yeller -cdp devices-lvm -1 /dev/console starts... }
++    ifelse { blkid --match-token=TYPE="LVM2_member" }
++        { ifelse -n { 66-which -q vgchange }
++            { if { 66-yeller -cdp device-lvm -1 /dev/console No vgchange program available, check your configuration! } exit 0 }
++        if -nt { 
++           vgchange --sysinit -a ay
+         }
+-        pkill lvmetad
+-
+-    }
+-    66-yeller -fcdp devices-lvm -1 /dev/console crashed!
++        66-yeller -fcdp devices-lvm -1 /dev/console crashed! }
++    
++    66-yeller -cdp device-lvm -1 /dev/console no lvm volumes available!
+ )
+diff --git a/module/boot@/service/system/devices/devices-zfs b/module/boot@/service/system/devices/devices-zfs
+index c832647..fdfbe5f 100644
+--- a/module/boot@/service/system/devices/devices-zfs
++++ b/module/boot@/service/system/devices/devices-zfs
+@@ -10,14 +10,17 @@
+ @execute =
+ (
+     if { 66-yeller -cdp devices-zfs -1 /dev/console starts... }
+-    if -nt {
+-
+-        if { 66-which -q zfs }
+-        if { execl-cmdline -s { zfs mount ${mount_args} } }
++    ifelse { blkid --match-token=TYPE="zfs" }
++        { ifelse -n { 66-which -q zfs }
++            { if { 66-yeller -cdp device-zfs -1 /dev/console No zfs program available, check your configuration! } exit 0 }
++        if -nt { 
++           if { execl-cmdline -s { zfs mount ${mount_args} } }
+         execl-cmdline -s { zfs share ${share_args} }
++        }
++        66-yeller -fcdp devices-zfs -1 /dev/console crashed! }
++    
++    66-yeller -cdp device-zfs -1 /dev/console no zfs volumes available!!
+ 
+-    }
+-    66-yeller -fcdp devices-zfs -1 /dev/console crashed!
+ )
+ 
+ [environment]
+-- 
+2.39.2
+
+
+From cc9ac05ef06a8dcf871f950dd076ab536aa26a18 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sun, 10 Jul 2022 17:12:03 +0300
+Subject: [PATCH 02/24] configure/configure: add checks to make the process
+ more robust
+
+- check for the existence of necessary keys
+- check if keys have correct values
+- check if btrfs, zfs, luks, dmraid etc volumes exist, the relevant
+configuration options are valid and the utilities needed are present
+- enable tests if CHECK_CONFIGURATION=yes.
+---
+ module/boot@/configure/configure | 230 ++++++++++++++++++++++++++++++-
+ 1 file changed, 224 insertions(+), 6 deletions(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index e6fed96..bcf2fad 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -10,19 +10,96 @@ export COLOR_ENABLED="${MOD_COLOR}"
+ service_dir="${MOD_MODULE_DIR}/service"
+ SV_REAL=
+ 
++## sv_boolean_list contain keys that take yes or no as values
+ sv_boolean_list="CRYPTTAB SETUPCONSOLE FSTAB SWAP LVM \
+-DMRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER TMPFILE MODULE_KERNEL \
++DMRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER MODULE_KERNEL \
+ MODULE_SYSTEM RANDOMSEED MNT_PROC MNT_SYS MNT_DEV MNT_RUN MNT_TMP CGROUPS \
+ MNT_PTS MNT_SHM MNT_NETFS POPULATE_SYS POPULATE_DEV POPULATE_RUN POPULATE_TMP"
+-
++## sv_container_list contained keys for options that are disabled in a container
+ sv_container_list="HARDWARECLOCK SETUPCONSOLE CRYPTTAB SWAP LVM DMRAID BTRFS \
+ ZFS UDEV UDEV_ADM SYSCTL FORCECHCK CGROUPS MODULE_SYSTEM RANDOMSEED MNT_NETFS"
++## sv_container_list is used by the check funtions and has the same contents as the
++## sv_container_list, minus UDEV_ADM 
++sv_container_list_check="HARDWARECLOCK SETUPCONSOLE CRYPTTAB SWAP LVM DMRAID BTRFS \
++ZFS UDEV SYSCTL FORCECHCK CGROUPS MODULE_SYSTEM RANDOMSEED MNT_NETFS"
++## sv_extra_list_check is used by the check functions and contains keys that need
++## to be present but are not in the previous lists
++sv_extra_list_check="HOSTNAME TZ TTY KEYMAP FONT"
+ 
+ die(){
+-  66-yeller -f "${@}"
+-  exit 111
++    fatal_error_message="$( printf '%s' "${@}" )"
++    66-yeller -f "%r $fatal_error_message %n"
++    exit 111
++}
++
++warn() {
++    warn_message="$( printf '%s' "${@}" )"
++    66-yeller -W "%y $warn_message %n"
++}
++
++emit_trace() {
++    trace_message="$( printf '%s' "${@}" )"
++    66-yeller -t "%b $trace_message %n"
++}
++
++## Detect functions. They use blkid(8) from util-linux to detect volume types
++## and 66-which to detect the needed utilities for the volume types
++
++detect_fs() {
++        # Uses blkid to detect partition TYPEs. The result is the number
++        # of detected partitions.
++        export "${1}"_detected="$(blkid -c /dev/null --match-token=TYPE="${1}" | wc -l )"
++}
++detect_swapfile() {
++        # Finds swap references in /etc/fstab.
++        swapfile_detected="$(awk '!/^(#)/' /etc/fstab | awk '$3=="swap" ' | wc -l )"
++        export swapfile_detected
+ }
++detect_util() {
++        # Uses 66-which to determine if a utility exists.
++        # Output is $fs_util_exitst=0 (or 1)
++        # ${1} is the variable for the utility, in the form of "$fs_util"
++        # ${2} is the name of the executable
++        export "${1}"_exists="$(66-which "${2}" | wc -l)"
++}
++
++detect_fs btrfs
++detect_fs zfs
++detect_fs crypto_LUKS
++detect_fs LVM2_member
++# dmraid supports multiple TYPEs of *-raid-member devices.
++# find them first and add the sum of the *_detected values to
++# dmraid_detected.
++detect_fs ddf_raid_member
++detect_fs isw_raid_member
++detect_fs lsi_mega_raid_member
++detect_fs via_raid_member
++detect_fs silicon_medley_raid_member
++detect_fs nvidia_raid_member
++detect_fs promise_fasttrack_raid_member
++detect_fs hpt45x_raid_member
++detect_fs hpt37x_raid_member
++detect_fs adaptec_raid_member
++detect_fs jmicron_raid_member
++dmraid_detected=$((ddf_raid_member_detected+isw_raid_member_detected\
+++lsi_mega_raid_member_detected+via_raid_member_detected\
+++silicon_medley_raid_member_detected+nvidia_raid_member_detected\
+++promise_fasttrack_raid_member_detected+hpt37x_raid_member_detecter\
+++hpt45x_raid_member_detected+adaptec_raid_member_detected\
+++jmicron_raid_member_detected))
++# swap can be detected by blkid if it is a partition or it can be a swapfile
++# declared in fstab
++detect_fs swap
++detect_swapfile
++swap_detected=$((swap_detected+swapfile_detected))
++detect_util btrfs_util btrfs
++detect_util zfs_util zfs
++detect_util luks_util cryptsetup
++detect_util lvm_util lvchange
++detect_util dmraid_util dmraid
++detect_util swap_util swapon
+ 
++## Check functions.
+ check_empty_var(){
+     name="${1}" var_value="${2}"
+     if [ -z "${var_value}" ]; then
+@@ -30,7 +107,129 @@ check_empty_var(){
+     fi
+ }
+ 
++check_var_existance() {
++    # ${1} is a list with key names
++    for key in ${1}
++    do
++    eval key_value="\$${key}"
++    key_value="$key_value"
++        if [ -z  "$key_value" ]; then
++        die "$key is not present or misconfigured. The process cannot continue, 
++        please fix yout configuration and try again!"
++        fi
++    done
++}
++
++check_boolean_var_values() {
++    # ${1} is a list of key names
++    # ${2} and ${2} are valid values for these keys
++    for key in ${1}
++    do
++    eval key_value="\$${key}"
++    key_value="$key_value"
++    if [ "$key_value" = "${2}" ]; then
++        emit_trace "$key has a correct value of [$key_value]"
++    elif  [ "$key_value" = "${3}" ]; then
++        emit_trace "$key has a correct value of [$key_value]"
++    else
++        die " [${key_value}] is not a valid value for ${key}. The process cannot continue,
++please fix your configuration and try again!"
++    fi
++    done
++}
++    
++check_volume_sanity() {
++    # ${1} is the configuration key for the volume type
++    # ${2} is the value of the relevant detect_fs function
++    # ${3} is the value of the relevant detect_util_exists function
++    # ${4} is the name of the relevant utility
++    # Check if volumes of a certain type (${2}) exist, if the utility
++    # needed for the type exists and if that volume type is enabled
++    # in the environment file.
++    eval key_value="\$${1}"
++    key_value="$key_value"
++    [ "$key_value" = "yes" ] && [ "${2}" -gt 0 ] && [ "${3}" -eq 1 ] && \
++    emit_trace "${1} is enabled and configured correctly"
++    [ "${1}" = "yes" ] && [ "${2}" -eq 0 ] && warn "${1} is set to 
++    [ $key_value ] but there are no relevant volumes present. This is\
++ a non-fatal warning, you may want to check your configuration"
++    [ "$key_value" = "yes" ] && [ "${2}" -gt 0 ] && [ "${3}" -eq 0 ] && \
++    die "${1} is set to [$key_value], relevant volumes exist but [${4}] does not exist. \
++The process cannot continue, please check your configuration and try again"
++    [ "$key_value" = "no" ] && [ "${2}" -gt 0 ] && \
++    warn "${1} is set to [$key_value], but relevant volumes exist. \
++This is a non-fatal warning but you should check your configuration!"
++}
++
++check_tty_number() {
++    # TTY should between 1 and 11. Warn if it is 0, abort with an error
++    # if it is outside of this range.
++    key_value="$TTY"
++    if [ "${key_value}" -gt 11 ]; then
++        die "TTY should have a value between 1 and 11. The current value\
++ of [$key_value] is not valid. The process cannot  continue, please fix\
++ your configuration and try again"
++    elif [ "$key_value" -lt 0 ]; then 
++        die "TTY should have a value between 1 and 11. The process cannot\
++ continue, please fix your configuration and try again"
++    elif [ "$key_value" -eq 0 ]; then
++        warn "TTY has a value of [0]. That is valid, but means that the\
++ system will not have a configured tty."
++    else 
++        emit_trace "TTY has a valid value. [$key_value] ttys will be\
++ configured. "
++    fi
++}
++
++check_tz() {
++    # TZ should have a timezone that exists as a value
++    execl-toc -n -X -e /usr/share/zoneinfo/"$TZ" && die "[ ${TZ} ] is not \
++a valid value for TZ. The process cannot continue, please check your configuration and try again."
++    execl-toc -X -e /usr/share/zoneinfo/"$TZ" && emit_trace "TZ is correctly configured, with a\
++ value of [${TZ}]."
++}
++
++check_keymap() {
++    # KEYMAP value is checked against a generated list of keymaps in the system
++    keymap_list=""
++    keymap_list="$(find /usr/share/kbd/keymaps/ -type f -iname "*.map.gz" -printf "%f " | sed 's|.map.gz||g')"
++    keymap_exists=
++    for keymap in $keymap_list;
++        do 
++            [ "$keymap" = "${KEYMAP}" ] && export keymap_exists=1 ;
++        done
++    if [ "$keymap_exists" = "1" ] ;
++    then
++        emit_trace "KEYMAP is correctly configured with a value of [${KEYMAP}]."
++    else
++        die "[${KEYMAP}] is not a valid value for KEYMAP. The process cannot continue,\
++         please check your configuration and try again."
++    fi
++}
++check_consolefont() {
++    # FONT value is checked against a generated list of console fonts that
++    # exist in the system. Currently psf and psfu types are listed, compressed
++    # with gz. We will see if that is enough.
++    console_fontlist=""
++    console_fontlist="$(find /usr/share/kbd/consolefonts/ -type f -iname "*.psf.gz" -printf "%f " | sed 's|.psf.gz||g')"
++    console_fontlist="$console_fontlist $(find /usr/share/kbd/consolefonts/ -type f -iname "*.psfu.gz" -printf "%f " | sed 's|.psfu.gz||g')"
++    font_exists=
++    for font in $console_fontlist;
++        do 
++            [ "$font" = "${FONT}" ] && export font_exists=1 ;
++        done
++    if [ "$font_exists" = "1" ] ;
++        then
++        emit_trace "FONT is correctly configured with a value of [${FONT}]."
++    else
++        die " [${FONT}] is not a valid value for FONT. The process cannot continue,\
++         please check your configuration and try again."
++    fi
++}
++
+ retrieve_sv_name(){
++    # Matches the configuration key of the environment section/file to the name
++    # of the corresponding service frontend.
+     sv=${1}
+     case ${sv} in
+         HARDWARECLOCK) SV_REAL="system-hwclock" ;;
+@@ -46,7 +245,6 @@ retrieve_sv_name(){
+         SYSCTL) SV_REAL="system-sysctl" ;;
+         FORCECHCK) SV_REAL="system-fsck" ;;
+         LOCAL) SV_REAL="local-rc" ;;
+-        TMPFILE) SV_REAL="local-tmpfiles" ;;
+         MODULE_KERNEL) SV_REAL="modules-kernel" ;;
+         MODULE_SYSTEM) SV_REAL="modules-system" ;;
+         RANDOMSEED) SV_REAL="system-random" ;;
+@@ -127,6 +325,26 @@ sv_comment_real() {
+     fi
+ }
+ 
++
++# Check the configuration if CHECK_CONFIGURATION is set to "yes" in the
++# environment section/file
++if [ "${CHECK_CONFIGURATION}" = "yes" ]; then
++    check_var_existance "$sv_boolean_list"
++    check_var_existance "$sv_container_list_check"
++    check_var_existance "$sv_extra_list_check"
++    check_boolean_var_values "$sv_boolean_list" "yes" "no"
++    check_tty_number
++    check_tz
++    check_keymap
++    check_consolefont
++    check_volume_sanity BTRFS "$btrfs_detected" "$btrfs_util_exists" btrfs
++    check_volume_sanity ZFS "$zfs_detected" "$zfs_util_exists" zfs
++    check_volume_sanity CRYPTTAB "$crypto_LUKS_detected" "$luks_util_exists" cryptsetup
++    check_volume_sanity LVM "$LVM2_member_detected" "$lvm_util_exists" lvchange
++    check_volume_sanity DMRAID "$dmraid_detected" "$dmraid_util_exists" dmraid
++    check_volume_sanity SWAP "$swap_detected" "$swap_util_exists" swapon
++fi
++
+ 66-yeller %benable%n service: "tty-earlier@tty12"
+ touch "${service_dir}/tty-earlier@tty12" || die "unable to create ${service_dir}/tty-earlier@tty12"
+ 
+@@ -210,4 +428,4 @@ else
+     done
+ fi
+ 
+-66-yeller "%bsuccessfully%n configured"
++66-yeller "%bsuccessfully%n configured"
+\ No newline at end of file
+-- 
+2.39.2
+
+
+From b600e122710af5dc92e74988b68aa7583d922487 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sun, 10 Jul 2022 17:13:45 +0300
+Subject: [PATCH 03/24] service/system/devices/devices-* : add -c /dev/null to
+ the blkid command in order to avoid using a cachefile for the detection.
+
+---
+ module/boot@/service/system/devices/devices-btrfs    | 2 +-
+ module/boot@/service/system/devices/devices-crypttab | 2 +-
+ module/boot@/service/system/devices/devices-lvm      | 2 +-
+ module/boot@/service/system/devices/devices-zfs      | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/module/boot@/service/system/devices/devices-btrfs b/module/boot@/service/system/devices/devices-btrfs
+index 987d29c..3e5fcec 100644
+--- a/module/boot@/service/system/devices/devices-btrfs
++++ b/module/boot@/service/system/devices/devices-btrfs
+@@ -10,7 +10,7 @@
+ @execute =
+ (
+     if { 66-yeller -cdp devices-btrfs -1 /dev/console starts... }
+-    ifelse { blkid --match-token=TYPE="btrfs" }
++    ifelse { blkid -c /dev/null --match-token=TYPE="btrfs" }
+         { ifelse -n { 66-which -q btrfs }
+             { if { 66-yeller -cdp device-btrfs -1 /dev/console No btrfs program available, check your configuration! } exit 0 }
+         if -nt { 
+diff --git a/module/boot@/service/system/devices/devices-crypttab b/module/boot@/service/system/devices/devices-crypttab
+index b1c327b..07a0e36 100644
+--- a/module/boot@/service/system/devices/devices-crypttab
++++ b/module/boot@/service/system/devices/devices-crypttab
+@@ -10,7 +10,7 @@
+ @execute =
+ (
+     if { 66-yeller -cdp devices-crypttab -1 /dev/console starts... }
+- ifelse { blkid --match-token=TYPE="crypto_LUKS" }
++ ifelse { blkid -c /dev/null --match-token=TYPE="crypto_LUKS" }
+ 
+     {  
+     ifelse { execl-toc -X -e ${script_conf} }
+diff --git a/module/boot@/service/system/devices/devices-lvm b/module/boot@/service/system/devices/devices-lvm
+index 3a5068d..0da7390 100644
+--- a/module/boot@/service/system/devices/devices-lvm
++++ b/module/boot@/service/system/devices/devices-lvm
+@@ -10,7 +10,7 @@
+ @execute =
+ (
+ if { 66-yeller -cdp devices-lvm -1 /dev/console starts... }
+-    ifelse { blkid --match-token=TYPE="LVM2_member" }
++    ifelse { blkid -c /dev/null --match-token=TYPE="LVM2_member" }
+         { ifelse -n { 66-which -q vgchange }
+             { if { 66-yeller -cdp device-lvm -1 /dev/console No vgchange program available, check your configuration! } exit 0 }
+         if -nt { 
+diff --git a/module/boot@/service/system/devices/devices-zfs b/module/boot@/service/system/devices/devices-zfs
+index fdfbe5f..69c6b34 100644
+--- a/module/boot@/service/system/devices/devices-zfs
++++ b/module/boot@/service/system/devices/devices-zfs
+@@ -10,7 +10,7 @@
+ @execute =
+ (
+     if { 66-yeller -cdp devices-zfs -1 /dev/console starts... }
+-    ifelse { blkid --match-token=TYPE="zfs" }
++    ifelse { blkid -c /dev/null --match-token=TYPE="zfs" }
+         { ifelse -n { 66-which -q zfs }
+             { if { 66-yeller -cdp device-zfs -1 /dev/console No zfs program available, check your configuration! } exit 0 }
+         if -nt { 
+-- 
+2.39.2
+
+
+From 2c14f843c9de0405b5e6e959afc754c5c1b28842 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Wed, 28 Sep 2022 20:26:04 +0300
+Subject: [PATCH 04/24] module/boot@/configure/configure: add back tmpfile
+ configuration.
+
+---
+ module/boot@/configure/configure | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index bcf2fad..2cdef3f 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -12,7 +12,7 @@ SV_REAL=
+ 
+ ## sv_boolean_list contain keys that take yes or no as values
+ sv_boolean_list="CRYPTTAB SETUPCONSOLE FSTAB SWAP LVM \
+-DMRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER MODULE_KERNEL \
++DMRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER TMPFILE MODULE_KERNEL \
+ MODULE_SYSTEM RANDOMSEED MNT_PROC MNT_SYS MNT_DEV MNT_RUN MNT_TMP CGROUPS \
+ MNT_PTS MNT_SHM MNT_NETFS POPULATE_SYS POPULATE_DEV POPULATE_RUN POPULATE_TMP"
+ ## sv_container_list contained keys for options that are disabled in a container
+@@ -245,6 +245,7 @@ retrieve_sv_name(){
+         SYSCTL) SV_REAL="system-sysctl" ;;
+         FORCECHCK) SV_REAL="system-fsck" ;;
+         LOCAL) SV_REAL="local-rc" ;;
++        TMPFILE) SV_REAL="local-tmpfiles" ;;
+         MODULE_KERNEL) SV_REAL="modules-kernel" ;;
+         MODULE_SYSTEM) SV_REAL="modules-system" ;;
+         RANDOMSEED) SV_REAL="system-random" ;;
+-- 
+2.39.2
+
+
+From be5ea919956fe5e5a1913d8fd98c58577ae9ade6 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Wed, 28 Sep 2022 20:32:21 +0300
+Subject: [PATCH 05/24] configure/configure: fix zfs detection.
+
+---
+ module/boot@/configure/configure                | 2 +-
+ module/boot@/service/system/devices/devices-zfs | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index 2cdef3f..eca4903 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -64,7 +64,7 @@ detect_util() {
+ }
+ 
+ detect_fs btrfs
+-detect_fs zfs
++detect_fs zfs_member
+ detect_fs crypto_LUKS
+ detect_fs LVM2_member
+ # dmraid supports multiple TYPEs of *-raid-member devices.
+diff --git a/module/boot@/service/system/devices/devices-zfs b/module/boot@/service/system/devices/devices-zfs
+index 69c6b34..8968b04 100644
+--- a/module/boot@/service/system/devices/devices-zfs
++++ b/module/boot@/service/system/devices/devices-zfs
+@@ -10,7 +10,7 @@
+ @execute =
+ (
+     if { 66-yeller -cdp devices-zfs -1 /dev/console starts... }
+-    ifelse { blkid -c /dev/null --match-token=TYPE="zfs" }
++    ifelse { blkid -c /dev/null --match-token=TYPE="zfs_member" }
+         { ifelse -n { 66-which -q zfs }
+             { if { 66-yeller -cdp device-zfs -1 /dev/console No zfs program available, check your configuration! } exit 0 }
+         if -nt { 
+-- 
+2.39.2
+
+
+From e8c012d02d2ac37648420ad43eb8b44fdd071b03 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Wed, 28 Sep 2022 21:54:56 +0300
+Subject: [PATCH 06/24] devices/devices-dmraid: first pass at making the
+ service more robust.
+
+- make the check for the utility not fatal - exist with a warning
+- make the dmraid invocation more verbose (it not easy to add the same
+check as in other services)
+- make the crash message a warning.
+---
+ .../boot@/service/system/devices/devices-dmraid   | 15 +++++++--------
+ 1 file changed, 7 insertions(+), 8 deletions(-)
+
+diff --git a/module/boot@/service/system/devices/devices-dmraid b/module/boot@/service/system/devices/devices-dmraid
+index f1408ad..699fc5f 100644
+--- a/module/boot@/service/system/devices/devices-dmraid
++++ b/module/boot@/service/system/devices/devices-dmraid
+@@ -9,12 +9,11 @@
+ [start]
+ @execute =
+ (
+-    if { 66-yeller -cdp devices-dmraid -1 /dev/console starts... }
+-    if -nt {
+-
+-        if { 66-which -q dmraid }
+-        dmraid -i -ay
+-
+-    }
+-    66-yeller -fcdp devices-dmraid -1 /dev/console crashed!
++	if { 66-yeller -cdp devices-dmraid -1 /dev/console starts... }
++	ifelse -n { 66-which -q dmraid }
++		{ if { 66-yeller -cdp device-dmraid -1 /dev/console No dmraid program available, check your configuration! } exit 0 }
++		if -nt {
++			dmraid -vv -i -ay
++			}
++	66-yeller -Wcdp devices-dmraid -1 /dev/console crached - no raid volumes found!
+ )
+-- 
+2.39.2
+
+
+From d95f82e086a8b85c003b67c2d1c91740fc48c0ab Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Wed, 28 Sep 2022 22:15:50 +0300
+Subject: [PATCH 07/24] devices/devices-mdraid: first pass at adding mdraid
+ support. - add devices-mdraid frontend service file - add devices-mdraid in
+ the @depends array of devices-crypttab, devices-lvm and in the @contents
+ array of system-devices.
+
+---
+ .../service/system/devices/devices-crypttab   |  2 +-
+ .../boot@/service/system/devices/devices-lvm  |  2 +-
+ .../service/system/devices/devices-mdraid     | 22 +++++++++++++++++++
+ module/boot@/service/system/system-Devices    |  1 +
+ 4 files changed, 25 insertions(+), 2 deletions(-)
+ create mode 100644 module/boot@/service/system/devices/devices-mdraid
+
+diff --git a/module/boot@/service/system/devices/devices-crypttab b/module/boot@/service/system/devices/devices-crypttab
+index 07a0e36..68e882c 100644
+--- a/module/boot@/service/system/devices/devices-crypttab
++++ b/module/boot@/service/system/devices/devices-crypttab
+@@ -4,7 +4,7 @@
+ @description = "Activate encrypted devices"
+ @user = ( root )
+ @options = ( !log )
+-@depends = ( udevadm devices-dmraid devices-lvm )
++@depends = ( udevadm devices-dmraid devices-lvm devices-mdraid )
+ 
+ [start]
+ @execute =
+diff --git a/module/boot@/service/system/devices/devices-lvm b/module/boot@/service/system/devices/devices-lvm
+index 0da7390..ac75959 100644
+--- a/module/boot@/service/system/devices/devices-lvm
++++ b/module/boot@/service/system/devices/devices-lvm
+@@ -3,7 +3,7 @@
+ @version = @vers@
+ @description = "Activate lvm devices"
+ @user = ( root )
+-@depends = ( udevadm )
++@depends = ( udevadm devices-dmraid devices-mdraid )
+ @options = ( !log )
+ 
+ [start]
+diff --git a/module/boot@/service/system/devices/devices-mdraid b/module/boot@/service/system/devices/devices-mdraid
+new file mode 100644
+index 0000000..d331c52
+--- /dev/null
++++ b/module/boot@/service/system/devices/devices-mdraid
+@@ -0,0 +1,22 @@
++[main]
++@type = oneshot
++@version = @vers@
++@description = "Activate software raid devices"
++@user = ( root )
++@depends = ( udevadm )
++@options = ( !log )
++
++[start]
++@execute =
++(
++   if { 66-yeller -cdp devices-mdraid -1 /dev/console starts... }
++    ifelse { blkid -c /dev/null --match-token=TYPE="linux_raid_member" }
++        { ifelse -n { 66-which -q mdadm }
++            { if { 66-yeller -cdp device-mdraid -1 /dev/console No mdadm program available, check your configuration! } exit 0 }
++        if -nt { 
++            mdadm -As
++        }
++        66-yeller -fcdp devices-mdraid -1 /dev/console crashed! }
++    
++    66-yeller -cdp device-mdraid -1 /dev/console no mdraid volumes available!
++)
+diff --git a/module/boot@/service/system/system-Devices b/module/boot@/service/system/system-Devices
+index de8e5e8..de10e56 100644
+--- a/module/boot@/service/system/system-Devices
++++ b/module/boot@/service/system/system-Devices
+@@ -10,4 +10,5 @@ devices-btrfs
+ devices-crypttab
+ devices-lvm
+ devices-zfs
++devices-mdraid
+ )
+-- 
+2.39.2
+
+
+From 6d13228b4128900cb4c1ad00c67e2719616deae3 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Thu, 29 Sep 2022 19:48:32 +0300
+Subject: [PATCH 08/24] doc/boot@.md: update configuration to reflect changes
+
+---
+ doc/boot@.md | 22 ++++++++++++++++++----
+ 1 file changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/doc/boot@.md b/doc/boot@.md
+index 43f6480..02117bb 100644
+--- a/doc/boot@.md
++++ b/doc/boot@.md
+@@ -88,25 +88,32 @@ Two different kinds of variables are used:
+ 	
+ - **LVM**:
+ 	- type: boolean.
+-	- description: uses the `lvmetad` and `vgchange` program to activate LVM partitions. If these programs is not installed on your system, the boot process **fail** even if the enable process finish successfully.
++	- description: uses the `vgchange` program to activate LVM partitions and `cryptsetup` to open luks volumes in them.  If the programs are not installed in the system, or if lvm devices are not discovered, an warning is emmited.
+ 
+ - **DMRAID**:
+ 	- type: boolean.
+-	- description: uses the `dmraid` program to activate RAID partitions. If the program is not installed on your system, the boot process **fail** even if the enable process finish successfully.
++	- description: uses the `dmraid` program to activate RAID devices. If the program is not installed in the system, or if dmraid devices are not discovered, a warning is emmited.
++
++- **MDRAID**:
++	- type: boolean.
++	- description: uses the  `mdadm` program to activate software raid (mdraid) devices. If the program is not installed in the system, or if mdraid devices are not discovered, a warning is emmited.
+ 
+ - **BTRFS**:
+ 	- type: boolean.
+-	- description: uses the `btrfs` program to activate BTRFS partitions. If the program is not installed on your system, the boot process **fail** even if the enable process finish successfully.
++	- description: uses the `btrfs` program to activate BTRFS partitions. If the program is not installed in the system, or if btrfs devices are not discovered, a warning is emmited.
+ 	
+ - **ZFS**:
+ 	- type: boolean.
+-	- description: uses the `zfs` program to mount ZFS partitions. If the program is not installed on your system, the boot process **fail** even if the enable process finish successfully.
++	- description: uses the `zfs` program to mount ZFS partitions. If the program is not installed in the system, or if zfs devices are not discovered, a warning is emmited.
+ 
+ - **ZFS_IMPORT**:
+ 	- type: string.
+ 	- valid value: scan or zpoolcache.
+ 	- description: select the import method to use to detect the ZFS devices. This variable works in conjunction with the `ZFS` variable. In case the `ZFS` variable is set to no or commented, the `ZFS_IMPORT` variable has no effect.
+ 
++*LVM, DMRAID, MDRAID, BTRFS and ZFS rely on the `blkid` program from `util-linux` for device descovery.*
++ 
++
+ - **SETUPCONSOLE**:
+ 	- type: boolean.
+ 	- description: set it to no if you don't want to configure the console. In this case the `KEYMAP,FONT`, `FONT_MAP`, `FONT_UNIMAP` variable has no effect.
+@@ -156,6 +163,8 @@ Two different kinds of variables are used:
+ 	- type: boolean.
+ 	- description: use the file `/etc/crypttab` to decrypt an encrypted device. The file `/etc/crypttab` ***must*** exist on your system.
+ 
++*CRYPTTAB relies on the `blkid` program from `util-linux` for device descovery.*
++
+ - **FIREWALL**:
+ 	- type: string.
+ 	- valid value: iptables,ip6tables,nftables,ebtables,arptables.
+@@ -212,3 +221,8 @@ Two different kinds of variables are used:
+ - **POPULATE_TMP**:
+ 	- type: boolean
+ 	- description: create the `/tmp/.X11-unix` and `/tmp/.ICE-unix` directories.
++
++- **CHECK_CONFIGURATION**:
++	- type: boolean
++	- description: run configuration checks when enabling the boot@ service
++
+-- 
+2.39.2
+
+
+From 5ab2369393778db76a5d5e8aab439dc86af9f095 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Thu, 29 Sep 2022 19:49:14 +0300
+Subject: [PATCH 09/24] configure/configure: add support for mdraid, add some
+ comments.
+
+---
+ module/boot@/configure/configure | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index eca4903..bdbccf9 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -16,28 +16,35 @@ DMRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER TMPFILE MODULE_KERNEL \
+ MODULE_SYSTEM RANDOMSEED MNT_PROC MNT_SYS MNT_DEV MNT_RUN MNT_TMP CGROUPS \
+ MNT_PTS MNT_SHM MNT_NETFS POPULATE_SYS POPULATE_DEV POPULATE_RUN POPULATE_TMP"
+ ## sv_container_list contained keys for options that are disabled in a container
+-sv_container_list="HARDWARECLOCK SETUPCONSOLE CRYPTTAB SWAP LVM DMRAID BTRFS \
++sv_container_list="HARDWARECLOCK SETUPCONSOLE CRYPTTAB SWAP LVM DMRAID MDRAID BTRFS \
+ ZFS UDEV UDEV_ADM SYSCTL FORCECHCK CGROUPS MODULE_SYSTEM RANDOMSEED MNT_NETFS"
+ ## sv_container_list is used by the check funtions and has the same contents as the
+ ## sv_container_list, minus UDEV_ADM 
+-sv_container_list_check="HARDWARECLOCK SETUPCONSOLE CRYPTTAB SWAP LVM DMRAID BTRFS \
++sv_container_list_check="HARDWARECLOCK SETUPCONSOLE CRYPTTAB SWAP LVM DMRAID MDRAID BTRFS \
+ ZFS UDEV SYSCTL FORCECHCK CGROUPS MODULE_SYSTEM RANDOMSEED MNT_NETFS"
+ ## sv_extra_list_check is used by the check functions and contains keys that need
+ ## to be present but are not in the previous lists
+ sv_extra_list_check="HOSTNAME TZ TTY KEYMAP FONT"
+ 
++## Message functions. They use 66-yeller to provide three different levels of 
++## messages for the script.
++
+ die(){
++	# Prints a fatal error message, in red color and exits the script.
+     fatal_error_message="$( printf '%s' "${@}" )"
+     66-yeller -f "%r $fatal_error_message %n"
+     exit 111
+ }
+ 
+ warn() {
++	# Print a warning message, non-fatal, always visible in yellow color.
+     warn_message="$( printf '%s' "${@}" )"
+     66-yeller -W "%y $warn_message %n"
+ }
+ 
+ emit_trace() {
++	# Prints a tracing message in red, visible only when the 66-enable is
++	# invoced with a verbosity (-v) level of 3 or above.
+     trace_message="$( printf '%s' "${@}" )"
+     66-yeller -t "%b $trace_message %n"
+ }
+@@ -67,6 +74,7 @@ detect_fs btrfs
+ detect_fs zfs_member
+ detect_fs crypto_LUKS
+ detect_fs LVM2_member
++detect_fs linux_raid_member
+ # dmraid supports multiple TYPEs of *-raid-member devices.
+ # find them first and add the sum of the *_detected values to
+ # dmraid_detected.
+@@ -98,6 +106,7 @@ detect_util luks_util cryptsetup
+ detect_util lvm_util lvchange
+ detect_util dmraid_util dmraid
+ detect_util swap_util swapon
++detect_util mdraid_util mdadm
+ 
+ ## Check functions.
+ check_empty_var(){
+@@ -239,6 +248,7 @@ retrieve_sv_name(){
+         SWAP) SV_REAL="mount-swap" ;;
+         LVM) SV_REAL="devices-lvm" ;;
+         DMRAID) SV_REAL="devices-dmraid" ;;
++        MDRAID) SV_REAL="devices-mdraid" ;;
+         BTRFS) SV_REAL="devices-btrfs" ;;
+         ZFS) SV_REAL="devices-zfs" ;;
+         UDEV) SV_REAL="udevd" ;;
+@@ -344,6 +354,7 @@ if [ "${CHECK_CONFIGURATION}" = "yes" ]; then
+     check_volume_sanity LVM "$LVM2_member_detected" "$lvm_util_exists" lvchange
+     check_volume_sanity DMRAID "$dmraid_detected" "$dmraid_util_exists" dmraid
+     check_volume_sanity SWAP "$swap_detected" "$swap_util_exists" swapon
++    check_volume_sanity MDRAID "$mdraid_detected" "$mdraid_util_exists" mdadm
+ fi
+ 
+ 66-yeller %benable%n service: "tty-earlier@tty12"
+@@ -400,6 +411,7 @@ if [ "${LVM}" = "no" ] && \
+ [ "${DMRAID}" = "no" ] && \
+ [ "${BTRFS}" = "no" ] && \
+ [ "${ZFS}" = "no" ] && \
++[ "${MDRAID}" = "no" ] && \
+ [ "${CRYPTTAB}" = "no" ]; then
+     sv_comment_real "system-Devices"
+ fi
+-- 
+2.39.2
+
+
+From 4e50b48615b49cdd26fc3e6d35635e0a65f6ae49 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Thu, 29 Sep 2022 19:50:01 +0300
+Subject: [PATCH 10/24] service/boot@ : add MDRAID and CHECK_CONFIGURATION as
+ configuration keys in the [environment]
+
+---
+ service/boot@ | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/service/boot@ b/service/boot@
+index f08eac1..e4e2c7d 100644
+--- a/service/boot@
++++ b/service/boot@
+@@ -102,6 +102,10 @@
+ 
+ @ZFS_IMPORT@
+ 
++## Activate mdraid arrays
++
++@MDRAID@
++
+ #=======================================================================
+ #=================== Advanced user configuration =======================
+ #
+@@ -235,3 +239,10 @@
+ ## Create /tmp/{.X11-unix,.ICE-unix} files
+ 
+ @POPULATE_TMP@
++
++#========================== Configuration checks ==========================
++
++## Check the configuration for errors
++
++@CHECK_CONFIGURATION@
++
+-- 
+2.39.2
+
+
+From 814c7a07c564af50ccb52f0410d5d13d63b25206 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sat, 1 Oct 2022 12:27:55 +0300
+Subject: [PATCH 11/24] configure : more fixes...
+
+---
+ module/boot@/configure/configure | 22 ++++++++++++----------
+ 1 file changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index bdbccf9..2116070 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -27,7 +27,8 @@ ZFS UDEV SYSCTL FORCECHCK CGROUPS MODULE_SYSTEM RANDOMSEED MNT_NETFS"
+ sv_extra_list_check="HOSTNAME TZ TTY KEYMAP FONT"
+ 
+ ## Message functions. They use 66-yeller to provide three different levels of 
+-## messages for the script.
++## messages for the script. Colors are available if 66-enabled is invoked with
++## the -z option.
+ 
+ die(){
+ 	# Prints a fatal error message, in red color and exits the script.
+@@ -43,7 +44,7 @@ warn() {
+ }
+ 
+ emit_trace() {
+-	# Prints a tracing message in red, visible only when the 66-enable is
++	# Prints a tracing message in blue color, visible only when the 66-enable is
+ 	# invoced with a verbosity (-v) level of 3 or above.
+     trace_message="$( printf '%s' "${@}" )"
+     66-yeller -t "%b $trace_message %n"
+@@ -131,7 +132,7 @@ check_var_existance() {
+ 
+ check_boolean_var_values() {
+     # ${1} is a list of key names
+-    # ${2} and ${2} are valid values for these keys
++    # ${2} and ${3} are valid values for these keys
+     for key in ${1}
+     do
+     eval key_value="\$${key}"
+@@ -158,13 +159,14 @@ check_volume_sanity() {
+     eval key_value="\$${1}"
+     key_value="$key_value"
+     [ "$key_value" = "yes" ] && [ "${2}" -gt 0 ] && [ "${3}" -eq 1 ] && \
+-    emit_trace "${1} is enabled and configured correctly"
+-    [ "${1}" = "yes" ] && [ "${2}" -eq 0 ] && warn "${1} is set to 
++    emit_trace "${1} is enabled and configured correctly."
++    [ "$key_value" = "yes" ] && [ "${2}" -eq 0 ] && warn "${1} is set to 
+     [ $key_value ] but there are no relevant volumes present. This is\
+- a non-fatal warning, you may want to check your configuration"
++ a non-fatal warning, you may want to check your configuration!"
+     [ "$key_value" = "yes" ] && [ "${2}" -gt 0 ] && [ "${3}" -eq 0 ] && \
+-    die "${1} is set to [$key_value], relevant volumes exist but [${4}] does not exist. \
+-The process cannot continue, please check your configuration and try again"
++    die "${1} is set to [$key_value], relevant volumes exist but the [${4}] program is not
++     present in the system. \
++The process cannot continue, please check your configuration and try again."
+     [ "$key_value" = "no" ] && [ "${2}" -gt 0 ] && \
+     warn "${1} is set to [$key_value], but relevant volumes exist. \
+ This is a non-fatal warning but you should check your configuration!"
+@@ -349,12 +351,12 @@ if [ "${CHECK_CONFIGURATION}" = "yes" ]; then
+     check_keymap
+     check_consolefont
+     check_volume_sanity BTRFS "$btrfs_detected" "$btrfs_util_exists" btrfs
+-    check_volume_sanity ZFS "$zfs_detected" "$zfs_util_exists" zfs
++    check_volume_sanity ZFS "$zfs_member_detected" "$zfs_util_exists" zfs
+     check_volume_sanity CRYPTTAB "$crypto_LUKS_detected" "$luks_util_exists" cryptsetup
+     check_volume_sanity LVM "$LVM2_member_detected" "$lvm_util_exists" lvchange
+     check_volume_sanity DMRAID "$dmraid_detected" "$dmraid_util_exists" dmraid
+     check_volume_sanity SWAP "$swap_detected" "$swap_util_exists" swapon
+-    check_volume_sanity MDRAID "$mdraid_detected" "$mdraid_util_exists" mdadm
++    check_volume_sanity MDRAID "$linux_raid_member_detected" "$mdraid_util_exists" mdadm
+ fi
+ 
+ 66-yeller %benable%n service: "tty-earlier@tty12"
+-- 
+2.39.2
+
+
+From 6490c41a82ce3ddab0ec88a71a2556bbc17691e7 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sat, 1 Oct 2022 14:36:31 +0300
+Subject: [PATCH 12/24] configure: more changes...
+
+- remove check_empty_var() and replace with check_var_existance() for
+FIREWALL
+- add a check for the ZFS_IMPORT values
+---
+ module/boot@/configure/configure | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index 2116070..ca55e78 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -110,12 +110,6 @@ detect_util swap_util swapon
+ detect_util mdraid_util mdadm
+ 
+ ## Check functions.
+-check_empty_var(){
+-    name="${1}" var_value="${2}"
+-    if [ -z "${var_value}" ]; then
+-        die invalid value for variable: "${name}"
+-    fi
+-}
+ 
+ check_var_existance() {
+     # ${1} is a list with key names
+@@ -357,6 +351,9 @@ if [ "${CHECK_CONFIGURATION}" = "yes" ]; then
+     check_volume_sanity DMRAID "$dmraid_detected" "$dmraid_util_exists" dmraid
+     check_volume_sanity SWAP "$swap_detected" "$swap_util_exists" swapon
+     check_volume_sanity MDRAID "$linux_raid_member_detected" "$mdraid_util_exists" mdadm
++    if [ "${ZFS}" = "yes" ]; then
++		check_boolean_var_values "ZFS_IMPORT" zpoolcache devices-zfs-import-scan
++	fi
+ fi
+ 
+ 66-yeller %benable%n service: "tty-earlier@tty12"
+@@ -399,6 +396,8 @@ if [ "${CONTAINER}" = "yes" ]; then
+ fi
+ 
+ if [ "${ZFS}" = "yes" ]; then
++	
++	check_boolean_var_values "ZFS_IMPORT" zpoolcache devices-zfs-import-scan
+     if [ "${ZFS_IMPORT}" = "zpoolcache" ]; then
+         sv_comment_real "devices-zfs-import-scan"
+     else
+@@ -428,7 +427,7 @@ fi
+ 
+ if execl-toc -X -V FIREWALL; then
+ 
+-    check_empty_var "FIREWALL" "${FIREWALL}"
++    check_var_existance "FIREWALL"
+ 
+     for sv in "iptables" "ip6tables" "nftables" "ebtables" "arptables"; do
+         if [ "${FIREWALL}" = "${sv}" ]; then
+-- 
+2.39.2
+
+
+From 70b509e490ac28560cab383408cd9696c853ccc3 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sat, 1 Oct 2022 17:31:43 +0300
+Subject: [PATCH 13/24] configure: do the ZFS_IMPORT check only with
+ CHECK_CONFIGURATION=yes.
+
+---
+ module/boot@/configure/configure | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index ca55e78..942751a 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -397,7 +397,6 @@ fi
+ 
+ if [ "${ZFS}" = "yes" ]; then
+ 	
+-	check_boolean_var_values "ZFS_IMPORT" zpoolcache devices-zfs-import-scan
+     if [ "${ZFS_IMPORT}" = "zpoolcache" ]; then
+         sv_comment_real "devices-zfs-import-scan"
+     else
+-- 
+2.39.2
+
+
+From c81a6ff10bd598399c0d0fb1ef8aa31116f0c7dc Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sat, 1 Oct 2022 17:48:14 +0300
+Subject: [PATCH 14/24] doc/boot@.md and service/boot@ : try to have consistent
+ naming
+
+- use disks/devices/filesystems/volume groups consistently
+- naming is based on the output of the relevant commands and/or the
+manpages
+---
+ service/boot@ | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/service/boot@ b/service/boot@
+index e4e2c7d..856ef38 100644
+--- a/service/boot@
++++ b/service/boot@
+@@ -77,23 +77,23 @@
+ 
+ @FSTAB@
+ 
+-## Active swap [yes|no].
++## Activate swap [yes|no].
+ 
+ @SWAP@
+ 
+-## Active lvm devices [yes|no].
++## Activate lvm volume groups [yes|no].
+ 
+ @LVM@
+ 
+-## Active dmraid devices [yes|no].
++## Activate dmraid disks [yes|no].
+ 
+ @DMRAID@
+ 
+-## Active btrfs devices [yes|no].
++## Activate btrfs devices [yes|no].
+ 
+ @BTRFS@
+ 
+-## Mount zfs devices [yes|no].
++## Mount zfs filesystems [yes|no].
+ 
+ @ZFS@
+ 
+@@ -171,7 +171,7 @@
+ 
+ #========================== Security ===================================
+ 
+-## Active encrypted devices [yes|no].
++## Activate encrypted devices [yes|no].
+ 
+ @CRYPTTAB@
+ 
+-- 
+2.39.2
+
+
+From a622bbb11a5c2e8893cba71d037444997970ab69 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sun, 2 Oct 2022 10:56:29 +0300
+Subject: [PATCH 15/24] Makefile, configure: add code for MDRAID and
+ CHECK_CONFIGURATION.
+
+---
+ Makefile  |  4 +++-
+ configure | 12 ++++++++++--
+ 2 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index f137878..8303652 100644
+--- a/Makefile
++++ b/Makefile
+@@ -81,6 +81,7 @@ $(DESTDIR)$(service_directory)/%: service/%
+ 		-e "s,@SWAP@,$(SWAP)," \
+ 		-e "s,@LVM@,$(LVM)," \
+ 		-e "s,@DMRAID@,$(DMRAID)," \
++		-e "s,@MDRAID@,$(MDRAID)," \
+ 		-e "s,@BTRFS@,$(BTRFS)," \
+ 		-e "s,@ZFS@,$(ZFS)," \
+ 		-e "s,@ZFS_IMPORT@,$(ZFS_IMPORT)," \
+@@ -98,7 +99,8 @@ $(DESTDIR)$(service_directory)/%: service/%
+ 		-e "s,@POPULATE_SYS@,$(POPULATE_SYS)," \
+ 		-e "s,@POPULATE_DEV@,$(POPULATE_DEV)," \
+ 		-e "s,@POPULATE_RUN@,$(POPULATE_RUN)," \
+-		-e "s,@POPULATE_TMP@,$(POPULATE_TMP)," $@
++		-e "s,@POPULATE_TMP@,$(POPULATE_TMP)," \
++		-e "s,@CHECK_CONFIGURATION@,$(CHECK_CONFIGURATION)," $@
+ 
+ $(DESTDIR)$(datarootdir)/doc/$(package)/%.html: doc/html/%.html
+ 	$(INSTALL) -D -m 644 $< $@ && \
+diff --git a/configure b/configure
+index 9622be3..75494db 100755
+--- a/configure
++++ b/configure
+@@ -50,6 +50,7 @@ Fine tunning of boot configuration:
+   --SWAP=BOOLEAN                   mount swap [!no]
+   --LVM=BOOLEAN                    mount lvm devices [!no]
+   --DMRAID=BOOLEAN                 mount dmraid devices [!no]
++  --MDRAID=BOOLEAN                 mount mdraid devices [!no]
+   --BTRFS=BOOLEAN                  mount btrfs devices [!no]
+   --ZFS=BOOLEAN                    mount zfs devices [!no]
+   --ZFS_IMPORT=VALUE               use scan or zpoolcache method for zfs pools importation [!zpoolcache]
+@@ -68,6 +69,7 @@ Fine tunning of boot configuration:
+   --POPULATE_DEV=BOOLEAN           populate dev directory [!yes]
+   --POPULATE_RUN=BOOLEAN           populate run directory [!yes]
+   --POPULATE_TMP=BOOLEAN           populate tmp directory [!yes]
++  --CHECK_CONFIGURATION=BOOLEAN    enable checks on 66-enable [!yes]
+ 
+ 
+  Use yes or no with lowercase character to set BOOLEAN values.
+@@ -167,6 +169,7 @@ FSTAB='!yes'
+ SWAP='!no'
+ LVM='!no'
+ DMRAID='!no'
++MDRAID='!no'
+ BTRFS='!no'
+ ZFS='!no'
+ ZFS_IMPORT='!zpoolcache'
+@@ -185,6 +188,7 @@ POPULATE_SYS='!yes'
+ POPULATE_DEV='!yes'
+ POPULATE_RUN='!yes'
+ POPULATE_TMP='!yes'
++CHECK_CONFIGURATION='!yes'
+ 
+ 
+ for arg ; do
+@@ -226,6 +230,7 @@ for arg ; do
+     --SWAP=*) SWAP=${arg#*=} ;;
+     --LVM=*) LVM=${arg#*=} ;;
+     --DMRAID=*) DMRAID=${arg#*=} ;;
++    --MDRAID=*) MDRAID=${arg#*=} ;;
+     --BTRFS=*) BTRFS=${arg#*=} ;;
+     --ZFS=*) ZFS=${arg#*=} ;;
+     --ZFS_IMPORT=*) ZFS_IMPORT=${arg#*=} ;;
+@@ -244,6 +249,7 @@ for arg ; do
+     --POPULATE_DEV=*) POPULATE_DEV=${arg#*=} ;;
+     --POPULATE_RUN=*) POPULATE_RUN=${arg#*=} ;;
+     --POPULATE_TMP=*) POPULATE_TMP=${arg#*=} ;;
++    --CHECK_CONFIGURATION=*) CHECK_CONFIGURATION=${arg#*=} ;;
+     -* ) echo "$0: unknown option $arg" ;;
+     *=*) ;;
+     *) target=$arg ;;
+@@ -298,10 +304,10 @@ done
+ for i in HOSTNAME HARDWARECLOCK TZ SETUPCONSOLE TTY \
+         KEYMAP FONT FONT_MAP FONT_UNIMAP UDEV SYSCTL FORCECHCK LOCAL CONTAINER \
+         TMPFILE MODULE_KERNEL MODULE_SYSTEM RANDOMSEED \
+-        FSTAB SWAP LVM DMRAID BTRFS ZFS ZFS_IMPORT \
++        FSTAB SWAP LVM DMRAID MDRAID BTRFS ZFS ZFS_IMPORT \
+         CRYPTTAB FIREWALL \
+         CGROUPS MNT_PROC MNT_SYS MNT_DEV MNT_RUN MNT_TMP \
+-        MNT_PTS MNT_SHM MNT_NETFS POPULATE_SYS POPULATE_DEV POPULATE_RUN POPULATE_TMP ; do
++        MNT_PTS MNT_SHM MNT_NETFS POPULATE_SYS POPULATE_DEV POPULATE_RUN POPULATE_TMP CHECK_CONFIGURATION ; do
+   eval tmp=\${$i}
+   if testval $tmp; then
+     eval $i='${i}=\"\\#${i}=\"'
+@@ -372,6 +378,7 @@ $FSTAB
+ $SWAP
+ $LVM
+ $DMRAID
++$MDRAID
+ $BTRFS
+ $ZFS
+ $ZFS_IMPORT
+@@ -390,6 +397,7 @@ $POPULATE_SYS
+ $POPULATE_DEV
+ $POPULATE_RUN
+ $POPULATE_TMP
++$CHECK_CONFIGURATION
+ EOF
+ 
+ exec 1>&3 3>&-
+-- 
+2.39.2
+
+
+From 6f45c4d8008227a269db000be9751affb2980268 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sun, 2 Oct 2022 18:05:56 +0300
+Subject: [PATCH 16/24] service/mount/mount-swap: partially revert previous
+ change
+
+swapon does not fail when there is no swap partition/file, so it makes
+sense to have a stricter test.
+---
+ module/boot@/service/mount/mount-swap | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/module/boot@/service/mount/mount-swap b/module/boot@/service/mount/mount-swap
+index 3e8339a..e1d0663 100644
+--- a/module/boot@/service/mount/mount-swap
++++ b/module/boot@/service/mount/mount-swap
+@@ -16,7 +16,7 @@
+             swapon -a
+ 
+         }
+-        66-yeller -Wcdp mount-swap -1 /dev/console unable to activate the swap!
++        66-yeller -fcdp mount-swap -1 /dev/console unable to activate the swap!
+ 
+ )
+ 
+-- 
+2.39.2
+
+
+From ab8029ba09e645fcf5f7e5434cbb7fa92752c937 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sun, 2 Oct 2022 20:03:36 +0300
+Subject: [PATCH 17/24] configure/configure: properly disable devices-mdraid
+ when MDRAID=!no.
+
+Also fix language on system-Devices and devices-mdraid.
+---
+ module/boot@/configure/configure                   | 4 ++--
+ module/boot@/service/system/devices/devices-mdraid | 2 +-
+ module/boot@/service/system/system-Devices         | 2 +-
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index 942751a..7ec11bf 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -12,7 +12,7 @@ SV_REAL=
+ 
+ ## sv_boolean_list contain keys that take yes or no as values
+ sv_boolean_list="CRYPTTAB SETUPCONSOLE FSTAB SWAP LVM \
+-DMRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER TMPFILE MODULE_KERNEL \
++DMRAID MDRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER TMPFILE MODULE_KERNEL \
+ MODULE_SYSTEM RANDOMSEED MNT_PROC MNT_SYS MNT_DEV MNT_RUN MNT_TMP CGROUPS \
+ MNT_PTS MNT_SHM MNT_NETFS POPULATE_SYS POPULATE_DEV POPULATE_RUN POPULATE_TMP"
+ ## sv_container_list contained keys for options that are disabled in a container
+@@ -374,7 +374,7 @@ done
+ 
+ comment_udev() {
+     for sv in "udevd" "udevadm" "system-fontnkey" "devices-crypttab" \
+-            "devices-dmraid" "devices-btrfs" "devices-lvm" ; do
++            "devices-dmraid" "devices-mdraid" "devices-btrfs" "devices-lvm" ; do
+         sv_comment_real ${sv}
+     done
+ }
+diff --git a/module/boot@/service/system/devices/devices-mdraid b/module/boot@/service/system/devices/devices-mdraid
+index d331c52..09eeaba 100644
+--- a/module/boot@/service/system/devices/devices-mdraid
++++ b/module/boot@/service/system/devices/devices-mdraid
+@@ -18,5 +18,5 @@
+         }
+         66-yeller -fcdp devices-mdraid -1 /dev/console crashed! }
+     
+-    66-yeller -cdp device-mdraid -1 /dev/console no mdraid volumes available!
++    66-yeller -cdp device-mdraid -1 /dev/console no mdraid arrays available!
+ )
+diff --git a/module/boot@/service/system/system-Devices b/module/boot@/service/system/system-Devices
+index de10e56..5fd25ee 100644
+--- a/module/boot@/service/system/system-Devices
++++ b/module/boot@/service/system/system-Devices
+@@ -1,7 +1,7 @@
+ [main]
+ @type = bundle
+ @version = @vers@
+-@description = "Active specific devices"
++@description = "Activate specific devices"
+ @user = ( root )
+ @contents =
+ (
+-- 
+2.39.2
+
+
+From 089b28b9aa2af51a8bebdb642ceb43d23c416491 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Mon, 3 Oct 2022 20:59:16 +0300
+Subject: [PATCH 18/24] configure/configure: add a message and a small sleep to
+ give the user the opportunity to actually see the warnings.
+
+---
+ module/boot@/configure/configure | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index 7ec11bf..ffa965b 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -40,7 +40,7 @@ die(){
+ warn() {
+ 	# Print a warning message, non-fatal, always visible in yellow color.
+     warn_message="$( printf '%s' "${@}" )"
+-    66-yeller -W "%y $warn_message %n"
++    66-yeller -W "%y $warn_message %n" && warning_counter=$((warning_counter+1))
+ }
+ 
+ emit_trace() {
+@@ -336,6 +336,7 @@ sv_comment_real() {
+ # Check the configuration if CHECK_CONFIGURATION is set to "yes" in the
+ # environment section/file
+ if [ "${CHECK_CONFIGURATION}" = "yes" ]; then
++	warning_counter=0
+     check_var_existance "$sv_boolean_list"
+     check_var_existance "$sv_container_list_check"
+     check_var_existance "$sv_extra_list_check"
+@@ -354,6 +355,15 @@ if [ "${CHECK_CONFIGURATION}" = "yes" ]; then
+     if [ "${ZFS}" = "yes" ]; then
+ 		check_boolean_var_values "ZFS_IMPORT" zpoolcache devices-zfs-import-scan
+ 	fi
++	# If there are warnings, display a message and wait for a time relative
++	# to the number of warnings.
++	if [ $warning_counter -gt 0 ]; then
++	66-yeller %g ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ %n
++	66-yeller %g Please see above for warnings. The proccess will continue shortly... %n
++	66-yeller %g ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ %n
++	wait_timer=$((warning_counter*3))
++	sleep "$wait_timer"
++	fi
+ fi
+ 
+ 66-yeller %benable%n service: "tty-earlier@tty12"
+-- 
+2.39.2
+
+
+From 4a0710da34186c74e149938be32caf821766030e Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Mon, 3 Oct 2022 21:01:40 +0300
+Subject: [PATCH 19/24] doc/boot@.md: Add information abouts keys that do not
+ need to be present in the environment/configuration file. Also change the
+ devices naming.
+
+---
+ doc/boot@.md | 20 +++++++++++++-------
+ 1 file changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/doc/boot@.md b/doc/boot@.md
+index 02117bb..c26015d 100644
+--- a/doc/boot@.md
++++ b/doc/boot@.md
+@@ -46,6 +46,8 @@ Two different kinds of variables are used:
+ 
+ - string: depends on the variable and is defined in the following documentation.
+ 
++Variables need to be present in the environment section/file, unless otherwise noted below.
++
+ ---
+ 
+ - **HOSTNAME**:
+@@ -62,6 +64,7 @@ Two different kinds of variables are used:
+ 	- type: string.
+ 	- valid value: any valid name found at `/usr/share/kbd/keymaps` directory.
+ 	- description: uses the `loadkeys` program to set the keymap for the console to use. Usually a simple string like fr, us,...
++	- KEYMAP does not need to be present in the environment.
+ 	
+ - **FONT**:
+ 	- type: string.
+@@ -72,11 +75,13 @@ Two different kinds of variables are used:
+ 	- type: string.
+ 	- valid value: any valid name found at `/usr/share/kbd/consoletrans`.
+ 	- description: uses the `setfont` program to indicate the mapping to use. Usually a simple string like 8859-1, 8859-2,...
++	- FONT_MAP does not need to be present in the environment.
+ 
+ - **FONT_UNIMAP**:
+ 	- type: string.
+ 	- valid value: any valid name found at `/usr/share/kbd/unimaps`.
+ 	- description: uses the `setfont` program to indicate the unicode mapping table to use. Usually no mapping table is needed, and a Unicode mapping table is already contained in the font.
++	- FONT_UNIMAP does not need to be present in the environment.
+ 
+ - **FSTAB**:
+ 	- type: boolean.
+@@ -88,23 +93,23 @@ Two different kinds of variables are used:
+ 	
+ - **LVM**:
+ 	- type: boolean.
+-	- description: uses the `vgchange` program to activate LVM partitions and `cryptsetup` to open luks volumes in them.  If the programs are not installed in the system, or if lvm devices are not discovered, an warning is emmited.
++	- description: uses the `vgchange` program to activate LVM volume groups and `cryptsetup` to open luks volumes in them.  If the programs are not installed in the system, or if lvm devices are not discovered, a warning is emmited.
+ 
+ - **DMRAID**:
+ 	- type: boolean.
+-	- description: uses the `dmraid` program to activate RAID devices. If the program is not installed in the system, or if dmraid devices are not discovered, a warning is emmited.
++	- description: uses the `dmraid` program to activate dmraid disks. If the program is not installed in the system, or if dmraid devices are not discovered, a warning is emmited.
+ 
+ - **MDRAID**:
+ 	- type: boolean.
+-	- description: uses the  `mdadm` program to activate software raid (mdraid) devices. If the program is not installed in the system, or if mdraid devices are not discovered, a warning is emmited.
++	- description: uses the  `mdadm` program to activate software raid (mdraid) arrays. If the program is not installed in the system, or if mdraid devices are not discovered, a warning is emmited.
+ 
+ - **BTRFS**:
+ 	- type: boolean.
+-	- description: uses the `btrfs` program to activate BTRFS partitions. If the program is not installed in the system, or if btrfs devices are not discovered, a warning is emmited.
++	- description: uses the `btrfs` program to activate BTRFS devices. If the program is not installed in the system, or if btrfs devices are not discovered, a warning is emmited.
+ 	
+ - **ZFS**:
+ 	- type: boolean.
+-	- description: uses the `zfs` program to mount ZFS partitions. If the program is not installed in the system, or if zfs devices are not discovered, a warning is emmited.
++	- description: uses the `zfs` program to mount ZFS filesystems. If the program is not installed in the system, or if zfs devices are not discovered, a warning is emmited.
+ 
+ - **ZFS_IMPORT**:
+ 	- type: string.
+@@ -161,7 +166,7 @@ Two different kinds of variables are used:
+ 
+ - **CRYPTTAB**:
+ 	- type: boolean.
+-	- description: use the file `/etc/crypttab` to decrypt an encrypted device. The file `/etc/crypttab` ***must*** exist on your system.
++	- description: use the file `/etc/crypttab` to decrypt encrypted devices. The file `/etc/crypttab` ***must*** exist on your system.
+ 
+ *CRYPTTAB relies on the `blkid` program from `util-linux` for device descovery.*
+ 
+@@ -169,6 +174,7 @@ Two different kinds of variables are used:
+ 	- type: string.
+ 	- valid value: iptables,ip6tables,nftables,ebtables,arptables.
+ 	- description: use the given program to set a firewall applying the corresponding configuration files. In case of iptables and ip6tables the `/etc/<program>/<program>.rules` file ***must*** exist on your system. In other cases the `/etc/<program>.conf` ***must*** exist on your system.
++	- FIREWALL does not need to be present in the environment.
+ 
+ - **CGROUPS**:
+ 	- type: boolean.
+@@ -225,4 +231,4 @@ Two different kinds of variables are used:
+ - **CHECK_CONFIGURATION**:
+ 	- type: boolean
+ 	- description: run configuration checks when enabling the boot@ service
+-
++	- CHECK_CONFIGURATION does not need to present in the environment. If it is not, checks are disabled.
+\ No newline at end of file
+-- 
+2.39.2
+
+
+From a208ed0ce8d4a879adffcb7b1c8704e1586e2499 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sun, 2 Oct 2022 12:17:54 +0300
+Subject: [PATCH 20/24] system/modules/modules-system: use the void-runit
+ modules-load script.
+
+---
+ module/boot@/service/system/modules/modules-system | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/module/boot@/service/system/modules/modules-system b/module/boot@/service/system/modules/modules-system
+index f90abea..e69f788 100644
+--- a/module/boot@/service/system/modules/modules-system
++++ b/module/boot@/service/system/modules/modules-system
+@@ -12,11 +12,8 @@
+     if { 66-yeller -cdp modules-system -1 /dev/console starts... }
+     if -nt {
+ 
+-        ${SCRIPT_FILE}
++       modules-load -v
+ 
+     }
+-    66-yeller -fcdp modules-system -1 /dev/console crashed!
++    66-yeller -Wcdp modules-system -1 /dev/console crashed!
+ )
+-
+-[environment]
+-SCRIPT_FILE=!@modules@/modules.sh
+-- 
+2.39.2
+
+
+From 7e56c1e889665ea164cd5f6c31843ff75d1b9abb Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sun, 2 Oct 2022 12:22:12 +0300
+Subject: [PATCH 21/24] system/system-sysctl: use code from runit-void for
+ sysctl.
+
+---
+ module/boot@/service/system/system-sysctl | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/module/boot@/service/system/system-sysctl b/module/boot@/service/system/system-sysctl
+index cd4b48e..96de1f0 100644
+--- a/module/boot@/service/system/system-sysctl
++++ b/module/boot@/service/system/system-sysctl
+@@ -12,9 +12,8 @@
+     if { 66-yeller -cdp system-sysctl -1 /dev/console starts... }
+     if -nt {
+ 
+-        if { 66-which -q sysctl }
+-        sysctl --system
++       /usr/share/66/script/sysctl.sh
+ 
+     }
+-    66-yeller -fcdp system-sysctl -1 /dev/console crashed!
++    66-yeller -Wcdp system-sysctl -1 /dev/console crashed!
+ )
+-- 
+2.39.2
+
+
+From e1614cc94815e8ae24c43f0811218766b6bcbdda Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Sun, 2 Oct 2022 20:07:21 +0300
+Subject: [PATCH 22/24] populate-sys: mount efivarfs rw to follow voidlinux
+ policy.
+
+---
+ module/boot@/service/mount/populate/populate-sys | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/module/boot@/service/mount/populate/populate-sys b/module/boot@/service/mount/populate/populate-sys
+index c1a5ee8..2583644 100644
+--- a/module/boot@/service/mount/populate/populate-sys
++++ b/module/boot@/service/mount/populate/populate-sys
+@@ -14,7 +14,7 @@
+ 
+         foreground {
+             if -t { grep -Fq efivarfs /proc/filesystems }
+-            execl-toc -tX -m /sys/firmware/efi/efivars -o noatime,nodev,noexec,nosuid,ro -t efivarfs -d efivars
++            execl-toc -tX -m /sys/firmware/efi/efivars -o noatime,nodev,noexec,nosuid,rw -t efivarfs -d efivars
+         }
+ 
+         foreground {
+-- 
+2.39.2
+
+
+From 1bd9c340ff45b447b0fe2b150859fc9e322b430c Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Wed, 5 Oct 2022 17:57:12 +0300
+Subject: [PATCH 23/24] Remove tmpfiles support.
+
+---
+ Makefile                                  |  2 --
+ configure                                 |  7 +------
+ doc/boot@.md                              |  3 ---
+ module/boot@/configure/configure          |  3 +--
+ module/boot@/service/all-Local            |  1 -
+ module/boot@/service/local/local-dmesg    |  1 -
+ module/boot@/service/local/local-rc       |  3 +--
+ module/boot@/service/local/local-tmpfiles | 23 -----------------------
+ service/boot@                             |  3 ---
+ 9 files changed, 3 insertions(+), 43 deletions(-)
+ delete mode 100644 module/boot@/service/local/local-tmpfiles
+
+diff --git a/Makefile b/Makefile
+index 8303652..df010f8 100644
+--- a/Makefile
++++ b/Makefile
+@@ -56,7 +56,6 @@ $(DESTDIR)$(service_directory)/%: service/%
+ 		-e "s,@script_directory@,$(script_directory)," \
+ 		-e "s,@skel_directory@,$(skel_directory)," \
+ 		-e "s,@livedir@,$(livedir)," \
+-		-e "s,@tmpfiles_path@,$(tmpfiles)," \
+ 		-e "s,@modules_path@,$(modules)," \
+ 		-e "s,@VERSION@,$(version)," \
+ 		-e "s,@HOSTNAME@,$(HOSTNAME)," \
+@@ -73,7 +72,6 @@ $(DESTDIR)$(service_directory)/%: service/%
+ 		-e "s,@FORCECHCK@,$(FORCECHCK)," \
+ 		-e "s,@LOCAL@,$(LOCAL)," \
+ 		-e "s,@CONTAINER@,$(CONTAINER)," \
+-		-e "s,@TMPFILE@,$(TMPFILE)," \
+ 		-e "s,@MODULE_KERNEL@,$(MODULE_KERNEL)," \
+ 		-e "s,@MODULE_SYSTEM@,$(MODULE_SYSTEM)," \
+ 		-e "s,@RANDOMSEED@,$(RANDOMSEED)," \
+diff --git a/configure b/configure
+index 75494db..bc0145e 100755
+--- a/configure
++++ b/configure
+@@ -24,7 +24,6 @@ Fine tuning of the installation directories:
+   --with-system-script=DIR         66 script installation directory of scripts [DATAROOTDIR/$package_macro_dir/script]
+   --with-sysadmin-service-conf=DIR 66 sysadmin service configuration file directory [SYSDIR/$package_macro_dir/conf]
+   --with-skeleton=DIR              66 skeleton files directory installation [SYSDIR/$package_macro_dir]
+-  --opentmpfiles-script=DIR        absolute path of the opentmpfiles script [BINDIR]
+   --modules-script=DIR             absolute path of the modules script [BINDIR]
+ 
+ Fine tunning of boot configuration:
+@@ -42,7 +41,6 @@ Fine tunning of boot configuration:
+   --FORCECHCK=BOOLEAN              force a check of the filesystem [!no]
+   --LOCAL=BOOLEAN                  use rc.local scripts [!no]
+   --CONTAINER=BOOLEAN              boot inside a container [!no]
+-  --TMPFILE=BOOLEAN                use tmpfiles.d files [!yes]
+   --MODULE_KERNEL=BOOLEAN          load modules kernel [!yes]
+   --MODULE_SYSTEM=BOOLEAN          load modules from modules.d files [!yes]
+   --RANDOMSEED=BOOLEAN             set random seed [!yes]
+@@ -161,7 +159,6 @@ SYSCTL='!yes'
+ FORCECHCK='!no'
+ LOCAL='!no'
+ CONTAINER='!no'
+-TMPFILE='!yes'
+ MODULE_KERNEL='!yes'
+ MODULE_SYSTEM='!yes'
+ RANDOMSEED='!yes'
+@@ -222,7 +219,6 @@ for arg ; do
+     --FORCECHCK=*) FORCECHCK=${arg#*=} ;;
+     --LOCAL=*) LOCAL=${arg#*=} ;;
+     --CONTAINER=*) CONTAINER=${arg#*=} ;;
+-    --TMPFILE=*) TMPFILE=${arg#*=} ;;
+     --MODULE_KERNEL=*) MODULE_KERNEL=${arg#*=} ;;
+     --MODULE_SYSTEM=*) MODULE_SYSTEM=${arg#*=} ;;
+     --RANDOMSEED=*) RANDOMSEED=${arg#*=} ;;
+@@ -303,7 +299,7 @@ done
+ 
+ for i in HOSTNAME HARDWARECLOCK TZ SETUPCONSOLE TTY \
+         KEYMAP FONT FONT_MAP FONT_UNIMAP UDEV SYSCTL FORCECHCK LOCAL CONTAINER \
+-        TMPFILE MODULE_KERNEL MODULE_SYSTEM RANDOMSEED \
++        MODULE_KERNEL MODULE_SYSTEM RANDOMSEED \
+         FSTAB SWAP LVM DMRAID MDRAID BTRFS ZFS ZFS_IMPORT \
+         CRYPTTAB FIREWALL \
+         CGROUPS MNT_PROC MNT_SYS MNT_DEV MNT_RUN MNT_TMP \
+@@ -370,7 +366,6 @@ $SYSCTL
+ $FORCECHCK
+ $LOCAL
+ $CONTAINER
+-$TMPFILE
+ $MODULE_KERNEL
+ $MODULE_SYSTEM
+ $RANDOMSEED
+diff --git a/doc/boot@.md b/doc/boot@.md
+index c26015d..917096f 100644
+--- a/doc/boot@.md
++++ b/doc/boot@.md
+@@ -148,9 +148,6 @@ Variables need to be present in the environment section/file, unless otherwise n
+ 	- type: boolean.
+ 	- description: convenient variable used to boot inside a container. Some services will not work or be unnecessary when you boot inside a container. This variable provides you a safe default for this purpose. If set to yes the `HARDWARECLOCK`, `SETUPCONSOLE`, `KEYMAP`, `FONT`, `FONT_MAP`, `FONT_UNIMAP`, `CRYPTTAB`, `SWAP`, `LVM`, `DMRAID`, `BTRFS`, `ZFS`, `UDEV`, `SYSCTL`, `FORCECHCK`, `CGROUPS`, `MODULE_SYSTEM`, `RANDOMSEED`, `MNT_NETFS` variables have no effect.
+ 
+-- **TMPFILES**:
+-	- type: boolean.
+-	- description: read, parse and apply a systemd-style tmpfiles.d files usually found at `/usr/lib/tmpfiles.d` directory to handle volatile and temporary files.
+ 
+ - **MODULE_KERNEL**:
+ 	- type: boolean.
+diff --git a/module/boot@/configure/configure b/module/boot@/configure/configure
+index ffa965b..3293794 100755
+--- a/module/boot@/configure/configure
++++ b/module/boot@/configure/configure
+@@ -12,7 +12,7 @@ SV_REAL=
+ 
+ ## sv_boolean_list contain keys that take yes or no as values
+ sv_boolean_list="CRYPTTAB SETUPCONSOLE FSTAB SWAP LVM \
+-DMRAID MDRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER TMPFILE MODULE_KERNEL \
++DMRAID MDRAID BTRFS ZFS UDEV SYSCTL LOCAL CONTAINER MODULE_KERNEL \
+ MODULE_SYSTEM RANDOMSEED MNT_PROC MNT_SYS MNT_DEV MNT_RUN MNT_TMP CGROUPS \
+ MNT_PTS MNT_SHM MNT_NETFS POPULATE_SYS POPULATE_DEV POPULATE_RUN POPULATE_TMP"
+ ## sv_container_list contained keys for options that are disabled in a container
+@@ -251,7 +251,6 @@ retrieve_sv_name(){
+         SYSCTL) SV_REAL="system-sysctl" ;;
+         FORCECHCK) SV_REAL="system-fsck" ;;
+         LOCAL) SV_REAL="local-rc" ;;
+-        TMPFILE) SV_REAL="local-tmpfiles" ;;
+         MODULE_KERNEL) SV_REAL="modules-kernel" ;;
+         MODULE_SYSTEM) SV_REAL="modules-system" ;;
+         RANDOMSEED) SV_REAL="system-random" ;;
+diff --git a/module/boot@/service/all-Local b/module/boot@/service/all-Local
+index 95a2a1b..2e08187 100644
+--- a/module/boot@/service/all-Local
++++ b/module/boot@/service/all-Local
+@@ -17,7 +17,6 @@ local-loop
+ local-sethostname
+ local-time
+ local-authfiles
+-local-tmpfiles
+ local-rc
+ local-dmesg
+ )
+diff --git a/module/boot@/service/local/local-dmesg b/module/boot@/service/local/local-dmesg
+index fe38ef4..ed87f7e 100644
+--- a/module/boot@/service/local/local-dmesg
++++ b/module/boot@/service/local/local-dmesg
+@@ -13,7 +13,6 @@ local-arptables
+ local-loop
+ local-sethostname
+ local-time
+-local-tmpfiles
+ local-authfiles
+ local-rc )
+ @user = ( root )
+diff --git a/module/boot@/service/local/local-rc b/module/boot@/service/local/local-rc
+index 7890b73..254b0c1 100644
+--- a/module/boot@/service/local/local-rc
++++ b/module/boot@/service/local/local-rc
+@@ -13,8 +13,7 @@
+     local-arptables
+     local-loop
+     local-time
+-    local-authfiles
+-    local-tmpfiles )
++    local-authfiles )
+ 
+ [start]
+ @execute =
+diff --git a/module/boot@/service/local/local-tmpfiles b/module/boot@/service/local/local-tmpfiles
+deleted file mode 100644
+index 344e02d..0000000
+--- a/module/boot@/service/local/local-tmpfiles
++++ /dev/null
+@@ -1,23 +0,0 @@
+-[main]
+-@type = oneshot
+-@version = @vers@
+-@description = "Create temporary files"
+-@depends = ( mount-rw )
+-@user = ( root )
+-@options = ( !log )
+-
+-[start]
+-@execute =
+-(
+-    if { 66-yeller -cdp local-tmpfiles -1 /dev/console starts... }
+-    if -nt {
+-
+-        execl-cmdline -s { ${SCRIPT_FILE} ${SCRIPT_ARGS} }
+-
+-    }
+-    66-yeller -Fcdp local-tmpfiles -1 /dev/console something went wrong!
+-)
+-
+-[environment]
+-SCRIPT_FILE=!@tmpfiles@/opentmpfiles.sh
+-SCRIPT_ARGS=!--create --verbose --boot
+diff --git a/service/boot@ b/service/boot@
+index 856ef38..8222abb 100644
+--- a/service/boot@
++++ b/service/boot@
+@@ -153,9 +153,6 @@
+ 
+ @CONTAINER@
+ 
+-## Apply tmpfiles.d configuration file [yes|no].
+-
+-@TMPFILE@
+ 
+ ## Load kernel modules [yes|no].
+ 
+-- 
+2.39.2
+
+
+From 293672fbd073cea1ff8d1773c11ad722a9995d19 Mon Sep 17 00:00:00 2001
+From: mobinmob <mobinmob@disroot.org>
+Date: Fri, 17 Feb 2023 19:59:23 +0200
+Subject: [PATCH 24/24] system-fsck: replace s6-test with test
+
+s6-test was moved to execline and eltest, deprecated from s6-portable-
+utils and finally removed in v. 2.3.0.0. The service will fail with
+exit code 111 and the boot will hang without replacing it.
+---
+ module/boot@/service/system/system-fsck | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/module/boot@/service/system/system-fsck b/module/boot@/service/system/system-fsck
+index ee93e8a..b5a4a47 100644
+--- a/module/boot@/service/system/system-fsck
++++ b/module/boot@/service/system/system-fsck
+@@ -12,7 +12,7 @@
+     if { 66-yeller -cdp system-fsck -1 /dev/console starts... }
+ 
+     execl-envfile ${conf_file}
+-    ifelse -X { s6-test ${FORCECHCK} = yes }
++    ifelse -X { test ${FORCECHCK} = yes }
+     {
+         if { 66-yeller -cdp system-fsck -1 /dev/console FORCECHCK was asked... }
+         execl-cmdline -s {
+-- 
+2.39.2
+

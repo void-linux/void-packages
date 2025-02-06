@@ -1,0 +1,64 @@
+#!/bin/sh
+# Copyright 2021 mobinmob <mobinmob@disroot.org>
+# Use of this source code is governed by the 2-Clause BSD License
+# that can be found in the LICENSE file at the root project directory.
+# SPDX short identifier: BSD-2-Clause
+
+# This scripts create basic trees and enables services.
+# Excluding the common posix userland commands, the script needs 66-yeller
+# (from 66-tools), 66-env, 66-tree and 66-enable (from 66).
+
+# Variables for 66-yeller
+export PROG="66boot-initial-setup"
+export COLOR_ENABLED="1"
+export CLOCK_ENABLED="0"
+
+# Script must run as root, otherwise it creates trees
+# as the user.
+user=$(id -u)
+[ "$user" != "0" ] && 66-yeller -F %r You need to run this script as root! %n  && exit 1
+
+# Information for the user, in case of failure. 66 output is informative, this
+# is just a pointer to the docs.
+msg_trees() {
+	# ${1} is the name of the tree 
+	66-yeller -W %b "An action for the [${1}] tree failed.
+Check the output before this message for a possibe cause and consult
+the 66-tree documentation." %n
+}
+
+msg_services() {
+	# ${1} is the name of a service
+	66-yeller -F %r "Enabling the [${1}] service failed.
+Check the output before this message for a possibe cause and consult
+the 66-enable documentation." %n
+	exit 1
+}
+
+# Create the mandatory boot tree.
+66-tree -nz boot || msg_trees boot
+# Enable the boot@system service in the boot tree.
+66-enable -z -F -t boot boot@system || msg_services boot@system
+
+# Copy the default boot@conf so that it will survive updates and be accesible
+# though /etc/66rc.conf. Also, remove the warning in the first lines of the file.
+new_conf="/etc/66/conf/boot@system/version/boot@system"
+[ ! -f "$new_conf" ] && cp /etc/66/conf/boot@system/version/.boot@system "$new_conf" && \
+warn=$( sed -n -e "/##\ \[STARTWARN\]/p" /etc/66rc.conf | tr -d '[:space:]') && \
+ [ "$warn" = "##[STARTWARN]" ] && sed -i '1,5d' "$new_conf"
+
+# Create default tree, enable it and make it current.
+66-tree -z -nEc default || msg_trees default
+# Enable switch-initutils oneshot service in the default tree.
+66-enable -z switch-initutils || msg_services switch-initutils
+
+# Create and enable runit tree.
+66-tree -z -nE runit || msg_trees runit
+# Enable the runit service in the runit tree.
+66-enable -z -t runit runit || msg_services runit
+# Start runit tree after the default tree.
+66-tree -z -S default runit || msg_trees runit
+
+# Print on succesfull completion
+# shellcheck disable=SC2181
+if [ "$?" = 0 ]; then 66-yeller %g "Basic trees created and services enabled succesfully!"; fi
