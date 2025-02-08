@@ -1,9 +1,10 @@
 # Template file for 'mesa'
 pkgname=mesa
-version=24.2.4
-revision=1
+reverts="24.3.1_1"
+version=24.2.8
+revision=2
 build_style=meson
-_llvmver=18
+_llvmver=19
 #Disable LTO flag should be present, see https://gitlab.freedesktop.org/mesa/mesa/-/issues/6911
 configure_args="-Dglvnd=true -Dshared-glapi=enabled -Dgbm=enabled -Degl=enabled
  -Dosmesa=true -Dgles1=enabled -Dgles2=enabled -Dglx=dri -Ddri3=enabled
@@ -24,8 +25,9 @@ license="MIT, LGPL-2.1-or-later"
 homepage="https://www.mesa3d.org/"
 changelog="https://docs.mesa3d.org/relnotes.html"
 distfiles="https://mesa.freedesktop.org/archive/mesa-${version}.tar.xz"
-checksum=5ea42a8bb6d58aec9754c9f553b1e413f67c09403741f8e2786c3f9e63d3461a
+checksum=999d0a854f43864fc098266aaf25600ce7961318a1e2e358bff94a7f53580e30
 
+build_helper="qemu"
 build_options="wayland"
 build_options_default="wayland"
 
@@ -33,8 +35,9 @@ build_options_default="wayland"
 # especially on big endian it's all kinds of broken, and e.g. on
 # 32-bit powerpc it does not work at all, so fall back to softpipe
 case "$XBPS_TARGET_MACHINE" in
-	i686*|x86_64*|aarch64*|ppc64le*|arm*) ;;
-	*) configure_args+=" -Ddraw-use-llvm=false" ;;
+	i686*|x86_64*|aarch64*|ppc64le*|arm*|riscv64*)
+		_have_llvmpipe=yes
+		;;
 esac
 
 # Set subpackages manually to set proper rdeps in 32bit pkgs.
@@ -49,8 +52,7 @@ replaces="libGL>=10_1<19.2.5_2 libEGL>=10_1<19.2.5_2 libGLES>=10_1<19.2.5_2"
 
 # swrast always present
 _gallium_drivers=" -Dgallium-drivers=swrast"
-_vulkan_drivers=" -Dvulkan-drivers=swrast"
-subpackages+=" mesa-vulkan-lavapipe"
+_vulkan_drivers=" -Dvulkan-drivers="
 
 # amd and nvidia drivers on all platforms except where it makes no sense
 # amd implicitly enables clover opencl, also enable hwdec and virgl too
@@ -76,6 +78,13 @@ case "$XBPS_TARGET_MACHINE" in
 		_have_arm=yes
 		;;
 esac
+
+if [ "$_have_llvmpipe" ]; then
+	subpackages+=" mesa-vulkan-lavapipe"
+	_vulkan_drivers+=",swrast"
+else
+	configure_args+=" -Ddraw-use-llvm=false"
+fi
 
 if [ "$_have_amd" ]; then
 	# amd cards can use clover
@@ -142,7 +151,8 @@ fi
 # enabled currently by amd drivers
 if [ "$_have_opencl" ]; then
 	hostmakedepends+=" clang${_llvmver} rust rust-bindgen"
-	makedepends+=" clang${_llvmver} libclc rust SPIRV-LLVM-Translator-devel SPIRV-Tools-devel"
+	makedepends+=" clang${_llvmver} libclc${_llvmver} rust
+	 SPIRV-LLVM-Translator${_llvmver}-devel SPIRV-Tools-devel"
 	subpackages+=" mesa-opencl"
 	configure_args+=" -Dgallium-opencl=icd -Dgallium-rusticl=true -Drust_std=2021"
 fi
@@ -214,6 +224,7 @@ post_install() {
 		ppc64) oarchs="ppc";;
 		ppcle) oarchs="ppc64le";;
 		ppc) oarchs="ppc64";;
+		riscv64) oarchs="riscv64";;
 		*) ;; # no counterparts
 	esac
 	for oarch in $oarchs; do
@@ -304,7 +315,7 @@ libxatracker_package() {
 
 mesa-opencl_package() {
 	short_desc="Mesa implementation of OpenCL (r600+ only)"
-	depends="libclc"
+	depends="libclc${_llvmver}"
 	pkg_install() {
 		vmove etc/OpenCL
 		vmove usr/lib/gallium-pipe

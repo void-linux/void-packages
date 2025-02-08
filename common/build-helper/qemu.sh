@@ -5,7 +5,7 @@ fi
 
 vtargetrun() {
 	if [ "$CROSS_BUILD" ]; then
-		"/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static" "$@"
+		"/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}" "$@"
 	else
 		"$@"
 	fi
