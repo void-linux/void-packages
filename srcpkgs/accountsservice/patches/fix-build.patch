@@ -1,0 +1,142 @@
+Submitted upstream: https://gitlab.freedesktop.org/accountsservice/accountsservice/-/merge_requests/163
+
+From 00b6e12ad4044d33cc54c71c75773c5a653dad09 Mon Sep 17 00:00:00 2001
+From: oreo639 <oreo6391@gmail.com>
+Date: Sun, 9 Feb 2025 23:24:08 -0800
+Subject: [PATCH 1/2] build: Disable tests when cross compiling and allow
+ specifying path_wtmp
+
+---
+ meson.build       | 64 ++++++++++++++++++++++++++---------------------
+ meson_options.txt |  2 ++
+ 2 files changed, 38 insertions(+), 28 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 34a9d3d..7bfaf8c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -82,34 +82,40 @@ if cc.has_member('struct passwd', 'pw_expire', prefix : '#include <pwd.h>')
+   config_h.set('HAVE_STRUCT_PASSWD_PW_EXPIRE', 1)
+ endif
+ 
+-if cc.has_header_symbol('utmpx.h', 'WTMPX_FILENAME', prefix: '#define _GNU_SOURCE')
+-  code = '''#define _GNU_SOURCE
+-  #include <stdio.h>
+-  #include <utmpx.h>
+-  int main (int argc, char **argv) {
+-    printf ("%s\n", WTMPX_FILENAME);
+-    return 0;
+-  }
+-  '''
+-  result = cc.run(code, name : 'value of WTMPX_FILENAME')
+-  path_wtmp = result.stdout().strip()
+-
+-  config_h.set('PATH_WTMP', 'WTMPX_FILENAME')
+-elif cc.has_header_symbol('paths.h', '_PATH_WTMPX')
+-  code = '''#include <paths.h>
+-  #include <stdio.h>
+-  int main (int argc, char **argv) {
+-    printf ("%s\n", _PATH_WTMPX);
+-    return 0;
+-  }
+-  '''
+-  result = cc.run(code, name : 'value of _PATH_WTMPX')
+-  path_wtmp = result.stdout().strip()
+-
+-  config_h.set('PATH_WTMP', '_PATH_WTMPX')
++path_wtmp = get_option('wtmpfile')
++if path_wtmp == ''
++  if cc.has_header_symbol('utmpx.h', 'WTMPX_FILENAME', prefix: '#define _GNU_SOURCE') and meson.can_run_host_binaries()
++    code = '''#define _GNU_SOURCE
++    #include <stdio.h>
++    #include <utmpx.h>
++    int main (int argc, char **argv) {
++      printf ("%s\n", WTMPX_FILENAME);
++      return 0;
++    }
++    '''
++    result = cc.run(code, name : 'value of WTMPX_FILENAME')
++    path_wtmp = result.stdout().strip()
++
++    config_h.set('PATH_WTMP', 'WTMPX_FILENAME')
++  elif cc.has_header_symbol('paths.h', '_PATH_WTMPX') and meson.can_run_host_binaries()
++    code = '''#include <paths.h>
++    #include <stdio.h>
++    int main (int argc, char **argv) {
++      printf ("%s\n", _PATH_WTMPX);
++      return 0;
++    }
++    '''
++    result = cc.run(code, name : 'value of _PATH_WTMPX')
++    path_wtmp = result.stdout().strip()
++
++    config_h.set('PATH_WTMP', '_PATH_WTMPX')
++  else
++    assert(not meson.is_cross_build(), 'Cannot determine wtmp for this cross compile, please specify -Dwtmpfile=')
++    path_wtmp = '/var/log/utx.log'
++    assert(run_command('test', '-e', path_wtmp, check: false).returncode() == 0, 'Do not know which filename to watch for wtmp changes')
++    config_h.set_quoted('PATH_WTMP', path_wtmp)
++  endif
+ else
+-  path_wtmp = '/var/log/utx.log'
+-  assert(run_command('test', '-e', path_wtmp, check: false).returncode() == 0, 'Do not know which filename to watch for wtmp changes')
+   config_h.set_quoted('PATH_WTMP', path_wtmp)
+ endif
+ 
+@@ -250,7 +256,9 @@ if get_option('gtk_doc')
+   subdir('doc/libaccountsservice')
+ endif
+ 
+-subdir('tests')
++if get_option('tests') and meson.can_run_host_binaries()
++  subdir('tests')
++endif
+ 
+ configure_file(
+   output: 'config.h',
+diff --git a/meson_options.txt b/meson_options.txt
+index 592e961..5524ea0 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -1,6 +1,7 @@
+ option('systemdsystemunitdir', type: 'string', value: '', description: 'custom directory for systemd system units')
+ option('gdmconffile', type: 'string', value: '/etc/gdm/custom.conf', description: 'GDM configuration file')
+ option('lightdmconffile', type: 'string', value: '/etc/lightdm/lightdm.conf', description: 'LightDM configuration file')
++option('wtmpfile', type: 'string', value: '', description: 'override filepath of wtmp file')
+ 
+ option('admin_group', type: 'string', value: '', description: 'Set group for administrative accounts')
+ option('extra_admin_groups', type: 'array', value: [], description: 'Comma-separated list of extra groups that administrator users are part of')
+@@ -13,3 +13,4 @@ option('vapi', type: 'boolean', value: t
+ 
+ option('docbook', type: 'boolean', value: false, description: 'build documentation (requires xmlto)')
+ option('gtk_doc', type: 'boolean', value: false, description: 'use gtk-doc to build documentation')
++option('tests',   type: 'boolean', value: true, description: 'run accountservice tests if possible')
+-- 
+GitLab
+
+
+From 0095351cbf8cd2b26db19bf95e615070df8b4eeb Mon Sep 17 00:00:00 2001
+From: oreo639 <oreo6391@gmail.com>
+Date: Mon, 10 Feb 2025 00:11:34 -0800
+Subject: [PATCH 2/2] build: Fix skipping tests when they are unable to be run
+
+---
+ tests/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tests/meson.build b/tests/meson.build
+index 854fea6..8928fff 100644
+--- a/tests/meson.build
++++ b/tests/meson.build
+@@ -46,7 +46,7 @@ if python3_test_modules_found
+         base_args = test_file
+         suite = ['accounts-service']
+ 
+-        r = run_command(unittest_inspector, test_file, check: true)
++        r = run_command(unittest_inspector, test_file, check: false)
+         unit_tests = r.stdout().strip().split('\n')
+ 
+         if r.returncode() == 0 and unit_tests.length() > 0
+-- 
+GitLab
+

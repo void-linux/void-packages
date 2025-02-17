@@ -170,11 +170,11 @@ hook() {
 	fi
 
 	# Check for missing shlibs and SONAME bumps.
-	if [ ! -s "${PKGDESTDIR}/shlib-provides" ]; then
+	if [ ! -s "${XBPS_STATEDIR}/${pkgname}-shlib-provides" ]; then
 		return 0
 	fi
 
-	for filename in $(<${PKGDESTDIR}/shlib-provides); do
+	for filename in $(<"${XBPS_STATEDIR}/${pkgname}-shlib-provides"); do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
 		_shlib=$(echo "$libname"|sed -E 's|\+|\\+|g')

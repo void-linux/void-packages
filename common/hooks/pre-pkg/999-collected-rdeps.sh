@@ -1,7 +1,7 @@
 # This hook displays resolved dependencies for a pkg.
 
 hook() {
-	if [ -e $PKGDESTDIR/rdeps ]; then
-		echo "   $(cat $PKGDESTDIR/rdeps)"
+	if [ -e "${XBPS_STATEDIR}/${pkgname}-rdeps" ]; then
+		echo "   $(cat "${XBPS_STATEDIR}/${pkgname}-rdeps")"
 	fi
 }
