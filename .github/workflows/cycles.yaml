@@ -1,6 +1,7 @@
 name: 'Cycle Check'
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 18 * * *'
 
@@ -10,33 +11,29 @@ jobs:
     permissions:
       issues: write
     container:
-      image: 'ghcr.io/void-linux/void-buildroot-musl:20250214R1'
-      env:
-        PATH: '/usr/libexec/chroot-git:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
+      image: 'ghcr.io/void-linux/void-musl-full:20250227R1'
     steps:
       - name: Prepare container
         run: |
           # switch to repo-ci mirror
           mkdir -p /etc/xbps.d && cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
           sed -i 's|repo-default|repo-ci|g' /etc/xbps.d/*-repository-*.conf
-          # Sync and upgrade once, assume error comes from xbps update
-          xbps-install -Syu || xbps-install -yu xbps
-          # Upgrade again (in case there was a xbps update)
-          xbps-install -yu
-          # Install script dependencies
-          xbps-install -y python3-networkx github-cli
+          # install dependencies
+          xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash grep git python3-networkx github-cli
+          # create non-root user
+          useradd -G xbuilder -M builder
 
       - name: Clone and checkout
         uses: classabbyamp/treeless-checkout-action@v1
 
-      - name: Create hostrepo and prepare masterdir
+      - name: Prepare masterdir
         run: |
-          ln -s "$(pwd)" /hostrepo &&
-          common/travis/set_mirror.sh &&
-          common/travis/prepare.sh
+          chown -R builder:builder . &&
+          sudo -Eu builder common/travis/set_mirror.sh
+
       - name: Find cycles and open issues
         run: |
-          common/scripts/xbps-cycles.py | tee cycles
+          sudo -Eu builder common/scripts/xbps-cycles.py | tee cycles
           grep 'Cycle:' cycles | while read -r line; do
               if gh issue list -R "$GITHUB_REPOSITORY" -S "$line" | grep .; then
                   printf "Issue on '%s' already exists.\n" "$line"
