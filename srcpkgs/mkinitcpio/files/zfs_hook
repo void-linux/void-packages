@@ -1,0 +1,218 @@
+#
+# WARNING: This script is parsed by ash in busybox at boot time, not bash!
+# http://linux.die.net/man/1/ash
+# https://wiki.ubuntu.com/DashAsBinSh
+# http://www.jpsdomain.org/public/2008-JP_bash_vs_dash.pdf
+#
+ZPOOL_FORCE=""
+ZPOOL_IMPORT_FLAGS=""
+ZFS_BOOT_ONLY=""
+
+zfs_get_bootfs () {
+    for zfs_dataset in $(zpool list -H -o bootfs); do
+        case ${zfs_dataset} in
+            "" | "-")
+                # skip this line/dataset
+                ;;
+            "no pools available")
+                return 1
+                ;;
+            *)
+                ZFS_DATASET=${zfs_dataset}
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+zfs_decrypt_fs() {
+    dataset=$1
+
+    # Make sure dataset is encrypted; get fails if ZFS does not support encryption
+    encryption="$(zfs get -H -o value encryption "${dataset}" 2>/dev/null)" || return 0
+    [ "${encryption}" != "off" ] || return 0
+
+    # Make sure the dataset is locked
+    keystatus="$(zfs get -H -o value keystatus "${dataset}")" || return 0
+    [ "${keystatus}" != "available" ] || return 0
+
+    # Make sure the encryptionroot is sensible
+    encryptionroot="$(zfs get -H -o value encryptionroot "${dataset}")" || return 0
+    [ "${encryptionroot}" != "-" ] || return 0
+
+    # Export encryption root to be used by other hooks (SSH)
+    echo "${encryptionroot}" > /.encryptionroot
+
+    # If key location is a file, determine if it can by overridden by prompt
+    prompt_override=""
+    if keylocation="$(zfs get -H -o value keylocation "${dataset}")"; then
+        if [ "${keylocation}" != "prompt" ]; then
+            if keyformat="$(zfs get -H -o value keyformat "${dataset}")"; then
+                [ "${keyformat}" = "passphrase" ] && prompt_override="yes"
+            fi
+        fi
+    fi
+
+    # Loop until key is loaded here or by another vector (SSH, for instance)
+    while [ "$(zfs get -H -o value keystatus "${encryptionroot}")" != "available" ]; do
+        # Try the default loading mechanism
+        zfs load-key "${encryptionroot}" && break
+
+        # Load failed, try a prompt if the failure was not a prompt
+        if [ -n "${prompt_override}" ]; then
+            echo "Unable to load key ${keylocation}; please type the passphrase"
+            echo "To retry the file, interrupt now or repeatedly input a wrong passphrase"
+            zfs load-key -L prompt "${encryptionroot}" && break
+        fi
+
+        # Throttle retry attempts
+        sleep 2
+    done
+
+    if [ -f /.encryptionroot ]; then
+        rm /.encryptionroot
+    fi
+}
+
+zfs_mount_handler () {
+    if [ "${ZFS_DATASET}" = "bootfs" ] ; then
+        if ! zfs_get_bootfs ; then
+            # Lets import everything and try again
+            zpool import ${ZPOOL_IMPORT_FLAGS} -N -a ${ZPOOL_FORCE}
+            if ! zfs_get_bootfs ; then
+                err "ZFS: Cannot find bootfs."
+                exit 1
+            fi
+        fi
+    fi
+
+    local pool="${ZFS_DATASET%%/*}"
+    local rwopt_exp="${rwopt:-rw}"
+
+    if ! zpool list -H "${pool}" > /dev/null 2>&1; then
+        if [ ! "${rwopt_exp}" = "rw" ]; then
+            msg "ZFS: Importing pool ${pool} readonly."
+            ZPOOL_IMPORT_FLAGS="${ZPOOL_IMPORT_FLAGS} -o readonly=on"
+        else
+            msg "ZFS: Importing pool ${pool}."
+        fi
+
+        if ! zpool import ${ZPOOL_IMPORT_FLAGS} -N "${pool}" ${ZPOOL_FORCE} ; then
+            err "ZFS: Unable to import pool ${pool}."
+            exit 1
+        fi
+    fi
+
+    local node="$1"
+    local rootmnt=$(zfs get -H -o value mountpoint "${ZFS_DATASET}")
+    local tab_file="${node}/etc/fstab"
+    local zfs_datasets="$(zfs list -H -o name -t filesystem -r ${ZFS_DATASET})"
+
+    # Mount the root, and any child datasets
+    for dataset in ${zfs_datasets}; do
+        mountpoint=$(zfs get -H -o value mountpoint "${dataset}")
+        canmount=$(zfs get -H -o value canmount "${dataset}")
+        # skip dataset
+        [ ${dataset} != "${ZFS_DATASET}" -a \( ${canmount} = "off" -o ${canmount} = "noauto" -o ${mountpoint} = "none" \) ] && continue
+        if [ ${mountpoint} = "legacy" ]; then
+            if [ -f "${tab_file}" ]; then
+                if findmnt -snero source -F "${tab_file}" -S "${dataset}" > /dev/null 2>&1; then
+                    opt=$(findmnt -snero options -F "${tab_file}" -S "${dataset}")
+                    mnt=$(findmnt -snero target -F "${tab_file}" -S "${dataset}")
+                    zfs_decrypt_fs "${dataset}"
+                    mount -t zfs -o "${opt}" "${dataset}" "${node}${mnt}"
+                fi
+            fi
+        else
+            zfs_decrypt_fs "${dataset}"
+            mount -t zfs -o "zfsutil,${rwopt_exp}" "${dataset}" "${node}/${mountpoint##${rootmnt}}"
+        fi
+    done
+}
+
+set_flags() {
+    # Force import the pools, useful if the pool has not properly been exported using 'zpool export <pool>'
+    [ ! "${zfs_force}" = "" ] && ZPOOL_FORCE="-f"
+
+    # Disable late hook, useful if we want to use zfs-import-cache.service instead
+    [ ! "${zfs_boot_only}" = "" ] && ZFS_BOOT_ONLY="1"
+
+    # Add import directory to import command flags
+    [ ! "${zfs_import_dir}" = "" ] && ZPOOL_IMPORT_FLAGS="${ZPOOL_IMPORT_FLAGS} -d ${zfs_import_dir}"
+    [ "${zfs_import_dir}" = "" ] && [ -f /etc/zfs/zpool.cache.org ] && ZPOOL_IMPORT_FLAGS="${ZPOOL_IMPORT_FLAGS} -c /etc/zfs/zpool.cache.org"
+}
+
+run_hook() {
+    set_flags
+
+    # Wait 15 seconds for ZFS devices to show up
+    [ "${zfs_wait}" = "" ] && ZFS_WAIT="15" || ZFS_WAIT="${zfs_wait}"
+
+    case ${root} in
+        # root=zfs
+        "zfs")
+            mount_handler="zfs_mount_handler"
+            ;;
+        # root=ZFS=... syntax (grub)
+        "ZFS="*)
+            mount_handler="zfs_mount_handler"
+            ZFS_DATASET="${root#*[=]}"
+            ;;
+        # root=zfs:... syntax (dracut)
+        "zfs:"*)
+            mount_handler="zfs_mount_handler"
+            ZFS_DATASET="${root#*[:]}"
+            ;;
+    esac
+
+    case ${zfs} in
+        "")
+            # skip this line/dataset
+            ;;
+        auto|bootfs)
+            ZFS_DATASET="bootfs"
+            mount_handler="zfs_mount_handler"
+            local pool="[a-zA-Z][^ ]*"
+            ;;
+        *)
+            ZFS_DATASET="${zfs}"
+            mount_handler="zfs_mount_handler"
+            local pool="${ZFS_DATASET%%/*}"
+            ;;
+    esac
+
+    # Allow at least n seconds for zfs device to show up.  Especially
+    # when using zfs_import_dir instead of zpool.cache, the listing of
+    # available pools can be slow, so this loop must be top-tested to
+    # ensure we do one 'zpool import' pass after the timer has expired.
+    sleep ${ZFS_WAIT} & pid=$!
+    local break_after=0
+    while :; do
+        kill -0 $pid > /dev/null 2>&1 || break_after=1
+        if [ -c "/dev/zfs" ]; then
+            zpool import ${ZPOOL_IMPORT_FLAGS} | awk "
+                BEGIN     { pool_found=0; online=0; unavail=0 }
+                /^	${pool} .*/ { pool_found=1 }
+                /^\$/      { pool_found=0 }
+                /UNAVAIL/ { if (pool_found == 1) { unavail=1 } }
+                /ONLINE/  { if (pool_found == 1) { online=1 } }
+                END       { if (online == 1 && unavail != 1)
+                              { exit 0 }
+                            else
+                              { exit 1 }
+                          }" && break
+        fi
+        [ $break_after == 1 ] && break
+        sleep 1
+    done
+    kill $pid > /dev/null 2>&1
+}
+
+run_latehook () {
+    set_flags
+    # only run zpool import, if flags were set (cache file found / zfs_import_dir specified) and zfs_boot_only is not set
+    [ ! "${ZPOOL_IMPORT_FLAGS}" = "" ] && [ "${ZFS_BOOT_ONLY}" = "" ] && zpool import ${ZPOOL_IMPORT_FLAGS} -N -a ${ZPOOL_FORCE}
+}
+
+# vim:set ts=4 sw=4 ft=sh et:
