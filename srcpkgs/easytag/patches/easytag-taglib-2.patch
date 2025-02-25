@@ -1,0 +1,324 @@
+From: =?utf-8?b?QmFsbMOzIEd5w7ZyZ3k=?= <ballogyor@gmail.com>
+Date: Wed, 21 Aug 2024 10:58:05 +0200
+Subject: [PATCH] Port to taglib 2
+
+Closes: https://gitlab.gnome.org/GNOME/easytag/-/issues/92
+Forwarded: https://gitlab.gnome.org/GNOME/easytag/-/merge_requests/16
+Bug-Debian: https://bugs.debian.org/1092704
+---
+ src/tags/gio_wrapper.cc | 22 +++++++++++-----------
+ src/tags/gio_wrapper.h  | 12 ++++++------
+ src/tags/mp4_tag.cc     | 19 +++----------------
+ 4 files changed, 21 insertions(+), 34 deletions(-)
+
+diff --git a/src/tags/gio_wrapper.cc b/src/tags/gio_wrapper.cc
+index 8716331..8772d52 100644
+--- a/src/tags/gio_wrapper.cc
++++ b/src/tags/gio_wrapper.cc
+@@ -47,11 +47,11 @@ GIO_InputStream::name () const
+ }
+ 
+ TagLib::ByteVector
+-GIO_InputStream::readBlock (TagLib::ulong len)
++GIO_InputStream::readBlock (ulong len)
+ {
+     if (error)
+     {
+-        return TagLib::ByteVector::null;
++        return TagLib::ByteVector();
+     }
+ 
+     TagLib::ByteVector rv (len, 0);
+@@ -70,14 +70,14 @@ GIO_InputStream::writeBlock (TagLib::ByteVector const &data)
+ 
+ void
+ GIO_InputStream::insert (TagLib::ByteVector const &data,
+-                         TagLib::ulong start,
+-                         TagLib::ulong replace)
++                         TagLib::offset_t start,
++                         size_t replace)
+ {
+     g_warning ("%s", "Trying to write to read-only file!");
+ }
+ 
+ void
+-GIO_InputStream::removeBlock (TagLib::ulong start, TagLib::ulong len)
++GIO_InputStream::removeBlock (TagLib::offset_t start, size_t len)
+ {
+     g_warning ("%s", "Trying to write to read-only file!");
+ }
+@@ -200,11 +200,11 @@ GIO_IOStream::name () const
+ }
+ 
+ TagLib::ByteVector
+-GIO_IOStream::readBlock (TagLib::ulong len)
++GIO_IOStream::readBlock (ulong len)
+ {
+     if (error)
+     {
+-        return TagLib::ByteVector::null;
++        return TagLib::ByteVector();
+     }
+ 
+     gsize bytes = 0;
+@@ -239,8 +239,8 @@ GIO_IOStream::writeBlock (TagLib::ByteVector const &data)
+ 
+ void
+ GIO_IOStream::insert (TagLib::ByteVector const &data,
+-                      TagLib::ulong start,
+-                      TagLib::ulong replace)
++                      TagLib::offset_t start,
++                      size_t replace)
+ {
+     if (error)
+     {
+@@ -351,9 +351,9 @@ GIO_IOStream::insert (TagLib::ByteVector const &data,
+ }
+ 
+ void
+-GIO_IOStream::removeBlock (TagLib::ulong start, TagLib::ulong len)
++GIO_IOStream::removeBlock (TagLib::offset_t start, size_t len)
+ {
+-    if (start + len >= (TagLib::ulong)length ())
++    if (start + len >= (ulong)length ())
+     {
+         truncate (start);
+         return;
+diff --git a/src/tags/gio_wrapper.h b/src/tags/gio_wrapper.h
+index e49e54d..4f99b24 100644
+--- a/src/tags/gio_wrapper.h
++++ b/src/tags/gio_wrapper.h
+@@ -33,10 +33,10 @@ public:
+     GIO_InputStream (GFile *file_);
+     virtual ~GIO_InputStream ();
+     virtual TagLib::FileName name () const;
+-    virtual TagLib::ByteVector readBlock (TagLib::ulong length);
++    virtual TagLib::ByteVector readBlock (ulong length);
+     virtual void writeBlock (TagLib::ByteVector const &data);
+-    virtual void insert (TagLib::ByteVector const &data, TagLib::ulong start = 0, TagLib::ulong replace = 0);
+-    virtual void removeBlock (TagLib::ulong start = 0, TagLib::ulong length = 0);
++    virtual void insert (TagLib::ByteVector const &data, TagLib::offset_t start = 0, size_t replace = 0);
++    virtual void removeBlock (TagLib::offset_t start = 0, size_t length = 0);
+     virtual bool readOnly () const;
+     virtual bool isOpen () const;
+     virtual void seek (long int offset, TagLib::IOStream::Position p = TagLib::IOStream::Beginning);
+@@ -61,10 +61,10 @@ public:
+     GIO_IOStream (GFile *file_);
+     virtual ~GIO_IOStream ();
+     virtual TagLib::FileName name () const;
+-    virtual TagLib::ByteVector readBlock (TagLib::ulong length);
++    virtual TagLib::ByteVector readBlock (ulong length);
+     virtual void writeBlock (TagLib::ByteVector const &data);
+-    virtual void insert (TagLib::ByteVector const &data, TagLib::ulong start = 0, TagLib::ulong replace = 0);
+-    virtual void removeBlock (TagLib::ulong start = 0, TagLib::ulong len = 0);
++    virtual void insert (TagLib::ByteVector const &data, TagLib::offset_t start = 0, size_t replace = 0);
++    virtual void removeBlock (TagLib::offset_t start = 0, size_t len = 0);
+     virtual bool readOnly () const;
+     virtual bool isOpen () const;
+     virtual void seek (long int offset, TagLib::IOStream::Position p = TagLib::IOStream::Beginning);
+diff --git a/src/tags/mp4_tag.cc b/src/tags/mp4_tag.cc
+index d24695c..1728189 100644
+--- a/src/tags/mp4_tag.cc
++++ b/src/tags/mp4_tag.cc
+@@ -222,7 +222,7 @@ mp4tag_read_file_tag (GFile *file,
+         FileTag->encoded_by = g_strdup (encodedbys.front ().toCString (true));
+     }
+ 
+-    const TagLib::MP4::ItemListMap &extra_items = tag->itemListMap ();
++    const TagLib::MP4::ItemMap &extra_items = tag->itemMap ();
+ 
+     /* Album Artist */
+ #if (TAGLIB_MAJOR_VERSION == 1) && (TAGLIB_MINOR_VERSION < 10)
+@@ -437,25 +437,12 @@ mp4tag_write_file_tag (const ET_File *ETFile,
+         fields.insert ("ENCODEDBY", string);
+     }
+ 
+-    TagLib::MP4::ItemListMap &extra_items = tag->itemListMap ();
+-
+     /* Album artist. */
+     if (!et_str_empty (FileTag->album_artist))
+     {
+         TagLib::String string (FileTag->album_artist, TagLib::String::UTF8);
+-#if (TAGLIB_MAJOR_VERSION == 1) && (TAGLIB_MINOR_VERSION < 10)
+-        /* No "ALBUMARTIST" support in TagLib until 1.10; use atom directly. */
+-        extra_items.insert ("aART", TagLib::MP4::Item (string));
+-#else
+         fields.insert ("ALBUMARTIST", string);
+-#endif
+     }
+-#if (TAGLIB_MAJOR_VERSION == 1) && (TAGLIB_MINOR_VERSION < 10)
+-    else
+-    {
+-        extra_items.erase ("aART");
+-    }
+-#endif
+ 
+     /***********
+      * Picture *
+@@ -491,12 +478,12 @@ mp4tag_write_file_tag (const ET_File *ETFile,
+         TagLib::MP4::CoverArt art (f, TagLib::ByteVector((char *)data,
+                                                          data_size));
+ 
+-        extra_items.insert ("covr",
++        tag->setItem("covr",
+                             TagLib::MP4::Item (TagLib::MP4::CoverArtList ().append (art)));
+     }
+     else
+     {
+-        extra_items.erase ("covr");
++        tag->removeItem("covr");
+     }
+ 
+     tag->setProperties (fields);
+     
+From: Boyuan Yang <byang@debian.org>
+Date: Sat, 11 Jan 2025 14:48:46 -0500
+Subject: taglib-2 further fix
+
+Further fix compatibility with taglib 2.x on 32-bit architecture.
+---
+ src/tags/gio_wrapper.cc | 20 ++++++++++----------
+ src/tags/gio_wrapper.h  | 20 ++++++++++----------
+ 2 files changed, 20 insertions(+), 20 deletions(-)
+
+diff --git a/src/tags/gio_wrapper.cc b/src/tags/gio_wrapper.cc
+index 8772d52..8fdd9e7 100644
+--- a/src/tags/gio_wrapper.cc
++++ b/src/tags/gio_wrapper.cc
+@@ -47,7 +47,7 @@ GIO_InputStream::name () const
+ }
+ 
+ TagLib::ByteVector
+-GIO_InputStream::readBlock (ulong len)
++GIO_InputStream::readBlock (size_t len)
+ {
+     if (error)
+     {
+@@ -95,7 +95,7 @@ GIO_InputStream::isOpen () const
+ }
+ 
+ void
+-GIO_InputStream::seek (long int offset, TagLib::IOStream::Position p)
++GIO_InputStream::seek (TagLib::offset_t offset, TagLib::IOStream::Position p)
+ {
+     if (error)
+     {
+@@ -133,13 +133,13 @@ GIO_InputStream::clear ()
+     }
+ }
+ 
+-long int
++TagLib::offset_t
+ GIO_InputStream::tell () const
+ {
+     return g_seekable_tell (G_SEEKABLE (stream));
+ }
+ 
+-long int
++TagLib::offset_t
+ GIO_InputStream::length ()
+ {
+     if (error)
+@@ -161,7 +161,7 @@ GIO_InputStream::length ()
+ }
+ 
+ void
+-GIO_InputStream::truncate (long int len)
++GIO_InputStream::truncate (TagLib::offset_t len)
+ {
+     g_warning ("%s", "Trying to truncate read-only file");
+ }
+@@ -200,7 +200,7 @@ GIO_IOStream::name () const
+ }
+ 
+ TagLib::ByteVector
+-GIO_IOStream::readBlock (ulong len)
++GIO_IOStream::readBlock (size_t len)
+ {
+     if (error)
+     {
+@@ -400,7 +400,7 @@ GIO_IOStream::isOpen () const
+ }
+ 
+ void
+-GIO_IOStream::seek (long int offset, TagLib::IOStream::Position p)
++GIO_IOStream::seek (TagLib::offset_t offset, TagLib::IOStream::Position p)
+ {
+     if (error)
+     {
+@@ -434,13 +434,13 @@ GIO_IOStream::clear ()
+     g_clear_error (&error);
+ }
+ 
+-long int
++TagLib::offset_t
+ GIO_IOStream::tell () const
+ {
+     return g_seekable_tell (G_SEEKABLE (stream));
+ }
+ 
+-long int
++TagLib::offset_t
+ GIO_IOStream::length ()
+ {
+     long rv = -1;
+@@ -464,7 +464,7 @@ GIO_IOStream::length ()
+ }
+ 
+ void
+-GIO_IOStream::truncate (long int len)
++GIO_IOStream::truncate (TagLib::offset_t len)
+ {
+     if (error)
+     {
+diff --git a/src/tags/gio_wrapper.h b/src/tags/gio_wrapper.h
+index 4f99b24..fc634ab 100644
+--- a/src/tags/gio_wrapper.h
++++ b/src/tags/gio_wrapper.h
+@@ -33,17 +33,17 @@ public:
+     GIO_InputStream (GFile *file_);
+     virtual ~GIO_InputStream ();
+     virtual TagLib::FileName name () const;
+-    virtual TagLib::ByteVector readBlock (ulong length);
++    virtual TagLib::ByteVector readBlock (size_t length);
+     virtual void writeBlock (TagLib::ByteVector const &data);
+     virtual void insert (TagLib::ByteVector const &data, TagLib::offset_t start = 0, size_t replace = 0);
+     virtual void removeBlock (TagLib::offset_t start = 0, size_t length = 0);
+     virtual bool readOnly () const;
+     virtual bool isOpen () const;
+-    virtual void seek (long int offset, TagLib::IOStream::Position p = TagLib::IOStream::Beginning);
++    virtual void seek (TagLib::offset_t offset, TagLib::IOStream::Position p = TagLib::IOStream::Beginning);
+     virtual void clear ();
+-    virtual long int tell () const;
+-    virtual long int length ();
+-    virtual void truncate (long int length);
++    virtual TagLib::offset_t tell () const;
++    virtual TagLib::offset_t length ();
++    virtual void truncate (TagLib::offset_t length);
+ 
+     virtual const GError *getError() const;
+ 
+@@ -61,17 +61,17 @@ public:
+     GIO_IOStream (GFile *file_);
+     virtual ~GIO_IOStream ();
+     virtual TagLib::FileName name () const;
+-    virtual TagLib::ByteVector readBlock (ulong length);
++    virtual TagLib::ByteVector readBlock (size_t length);
+     virtual void writeBlock (TagLib::ByteVector const &data);
+     virtual void insert (TagLib::ByteVector const &data, TagLib::offset_t start = 0, size_t replace = 0);
+     virtual void removeBlock (TagLib::offset_t start = 0, size_t len = 0);
+     virtual bool readOnly () const;
+     virtual bool isOpen () const;
+-    virtual void seek (long int offset, TagLib::IOStream::Position p = TagLib::IOStream::Beginning);
++    virtual void seek (TagLib::offset_t offset, TagLib::IOStream::Position p = TagLib::IOStream::Beginning);
+     virtual void clear ();
+-    virtual long int tell () const;
+-    virtual long int length ();
+-    virtual void truncate (long int length);
++    virtual TagLib::offset_t tell () const;
++    virtual TagLib::offset_t length ();
++    virtual void truncate (TagLib::offset_t length);
+ 
+     virtual const GError *getError() const;
+ 
+
