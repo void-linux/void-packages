@@ -123,7 +123,8 @@ def parse_depends(args):
             pkg = getpkgname(pkgver)
             vpkg = map(getpkgname, vpkgvers.split())
             for v in vpkg:
-                vpkgs[v] = pkg
+                if pkg not in vpkgs.setdefault(v, []):
+                    vpkgs[v].append(pkg)
 
     if args.rdeps.exists():
         with args.rdeps.open() as f:
@@ -149,12 +150,17 @@ def parse_depends(args):
     missing = []
     for k in depends.keys():
         if k in vpkgs.keys():
-            pkgname = vpkgs[k]
-            if pkgname in rdeps:
-                print(f"   PYTHON: {k} <-> {pkgname}", flush=True)
-            elif pkgname in global_ignore:
-                print(f"   PYTHON: {k} <-> {pkgname} (ignored)", flush=True)
+            for pkgname in vpkgs[k]:
+                if pkgname in rdeps:
+                    print(f"   PYTHON: {k} <-> {pkgname}", flush=True)
+                    break
+                elif pkgname in global_ignore:
+                    print(f"   PYTHON: {k} <-> {pkgname} (ignored)", flush=True)
+                    break
             else:
+                pkgname = " OR ".join(vpkgs[k])
+                if len(vpkgs[k]) > 1:
+                    pkgname = "(" + pkgname + ")"
                 msg_err(f"   PYTHON: {k} <-> {pkgname} NOT IN depends PLEASE FIX!",
                         nocolor=args.nocolor, strict=args.strict)
                 missing.append(pkgname)
