@@ -1,10 +1,11 @@
 # Template file for 'x265'
 pkgname=x265
 version=3.6
-revision=1
+revision=2
 build_wrksrc=source
 build_style=cmake
-configure_args="-DENABLE_PIC=1"
+configure_args="-DENABLE_PIC=1 -DEXTRA_LINK_FLAGS='-L.'
+ -DEXTRA_LIB='x265_main10.a;x265_main12.a' -DLINKED_10BIT=TRUE -DLINKED_12BIT=TRUE"
 hostmakedepends="git"
 short_desc="Open Source H.265/HEVC video encoder"
 maintainer="Orphaned <orphan@voidlinux.org>"
@@ -50,6 +51,50 @@ pre_configure() {
 	if [ "$CROSS_BUILD" ]; then
 		vsed -i CMakeLists.txt -e "s; -mcpu=native;;"
 	fi
+}
+
+post_configure() {
+	# We need to build the library multiple times in order to support multiple bit depths
+	# The libraries are linked together using -DDEXTRA_LIB=...
+
+	configure_args="${configure_args/-DEXTRA_LIB=.*/}"
+	configure_args="${configure_args/-DLINKED_10BIT=.*/}"
+	configure_args="${configure_args/-DLINKED_12BIT=.*/}"
+
+	# source/common/x86/intrapred16.asm:20642: error: invalid combination of opcode and operands
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) configure_args="${configure_args/-DENABLE_ASSEMBLY=.*/} -DENABLE_ASSEMBLY=OFF" ;;
+		*) ;;
+	esac
+
+	(
+		cmake_builddir="build-10" \
+		configure_args="${configure_args} -DHIGH_BIT_DEPTH=TRUE -DENABLE_CLI=FALSE -DEXPORT_C_API=FALSE -DENABLE_SHARED=FALSE" \
+		do_configure
+	)
+
+	(
+		cmake_builddir="build-12" \
+		configure_args="${configure_args} -DHIGH_BIT_DEPTH=TRUE -DMAIN12=TRUE -DENABLE_CLI=FALSE -DEXPORT_C_API=FALSE -DENABLE_SHARED=FALSE" \
+		do_configure
+	)
+}
+
+pre_build() {
+	(
+		cd build-10
+		export NINJA_STATUS="[1/3][%f/%t] "
+		ninja ${makejobs} ${make_build_args} ${make_build_target}
+	)
+
+	(
+		cd build-12
+		export NINJA_STATUS="[2/3][%f/%t] "
+		ninja ${makejobs} ${make_build_args} ${make_build_target}
+	)
+
+	ln -sf ../build-10/libx265.a build/libx265_main10.a
+	ln -sf ../build-12/libx265.a build/libx265_main12.a
 }
 
 x265-devel_package() {
