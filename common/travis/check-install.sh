@@ -27,7 +27,8 @@ ADDREPO="--repository=hostdir/binpkgs/bootstrap
  --repository=hostdir/binpkgs/nonfree"
 ROOTDIR="-r /check-install"
 
-xbps-install $ROOTDIR $ADDREPO $CONFDIR -S
+# if this fails, there were no packages built for this arch and thus no repodatas
+xbps-install $ROOTDIR $ADDREPO $CONFDIR -S || exit 0
 
 while read -r pkg; do
 	for subpkg in $(xsubpkg $pkg); do
