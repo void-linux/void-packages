@@ -1,0 +1,449 @@
+diff --git a/src/sage/cli/__init__.py b/src/sage/cli/__init__.py
+new file mode 100644
+index 00000000000..d616b1e1f93
+--- /dev/null
++++ b/src/sage/cli/__init__.py
+@@ -0,0 +1,44 @@
++#!/usr/bin/env python3
++
++import argparse
++import logging
++import sys
++
++from sage.cli.eval_cmd import EvalCmd
++from sage.cli.interactive_shell_cmd import InteractiveShellCmd
++from sage.cli.notebook_cmd import JupyterNotebookCmd
++from sage.cli.options import CliOptions
++from sage.cli.version_cmd import VersionCmd
++
++
++def main() -> int:
++    input_args = sys.argv[1:]
++    parser = argparse.ArgumentParser(
++        prog="sage",
++        description="If no command is given, starts the interactive interpreter where you can enter statements and expressions, immediately execute them and see their results.",
++    )
++    parser.add_argument(
++        "-v",
++        "--verbose",
++        action="store_true",
++        default=False,
++        help="print additional information",
++    )
++
++    VersionCmd.extend_parser(parser)
++    JupyterNotebookCmd.extend_parser(parser)
++    EvalCmd.extend_parser(parser)
++
++    if not input_args:
++        return InteractiveShellCmd(CliOptions()).run()
++
++    args = parser.parse_args(input_args)
++    options = CliOptions(**vars(args))
++
++    logging.basicConfig(level=logging.DEBUG if options.verbose else logging.INFO)
++
++    if args.command:
++        return EvalCmd(options).run()
++    elif args.notebook:
++        return JupyterNotebookCmd(options).run()
++    return InteractiveShellCmd(options).run()
+diff --git a/src/sage/cli/__main__.py b/src/sage/cli/__main__.py
+new file mode 100644
+index 00000000000..ebee1cbe37f
+--- /dev/null
++++ b/src/sage/cli/__main__.py
+@@ -0,0 +1,5 @@
++import sys
++
++from sage.cli import main
++
++sys.exit(main())
+diff --git a/src/sage/cli/eval_cmd.py b/src/sage/cli/eval_cmd.py
+new file mode 100644
+index 00000000000..fdac63291e2
+--- /dev/null
++++ b/src/sage/cli/eval_cmd.py
+@@ -0,0 +1,45 @@
++import argparse
++
++from sage.cli.options import CliOptions
++from sage.repl.preparse import preparse
++from sage.all import sage_globals
++
++
++class EvalCmd:
++    @staticmethod
++    def extend_parser(parser: argparse.ArgumentParser):
++        r"""
++        Extend the parser with the "run" command.
++
++        INPUT:
++
++        - ``parsers`` -- the parsers to extend.
++
++        OUTPUT:
++
++        - the extended parser.
++        """
++        parser.add_argument(
++            "-c",
++            "--command",
++            nargs="?",
++            help="execute the given command as sage code",
++        )
++
++    def __init__(self, options: CliOptions):
++        r"""
++        Initialize the command.
++        """
++        self.options = options
++
++    def run(self) -> int:
++        r"""
++        Execute the given command.
++        """
++        code = preparse(self.options.command)
++        try:
++            eval(compile(code, "<cmdline>", "exec"), sage_globals())
++        except Exception as e:
++            print(f"An error occurred while executing the command: {e}")
++            return 1
++        return 0
+diff --git a/src/sage/cli/eval_cmd_test.py b/src/sage/cli/eval_cmd_test.py
+new file mode 100644
+index 00000000000..ec6858bc27b
+--- /dev/null
++++ b/src/sage/cli/eval_cmd_test.py
+@@ -0,0 +1,25 @@
++from sage.cli.eval_cmd import EvalCmd
++from sage.cli.options import CliOptions
++
++
++def test_eval_cmd_print(capsys):
++    options = CliOptions(command="print(3^33)")
++    eval_cmd = EvalCmd(options)
++
++    result = eval_cmd.run()
++    captured = capsys.readouterr()
++    assert captured.out == "5559060566555523\n"
++    assert result == 0
++
++
++def test_eval_cmd_invalid_command(capsys):
++    options = CliOptions(command="invalid_command")
++    eval_cmd = EvalCmd(options)
++
++    result = eval_cmd.run()
++    captured = capsys.readouterr()
++    assert (
++        "An error occurred while executing the command: name 'invalid_command' is not defined"
++        in captured.out
++    )
++    assert result == 1
+diff --git a/src/sage/cli/interactive_shell_cmd.py b/src/sage/cli/interactive_shell_cmd.py
+new file mode 100644
+index 00000000000..22f5468374c
+--- /dev/null
++++ b/src/sage/cli/interactive_shell_cmd.py
+@@ -0,0 +1,25 @@
++from sage.cli.options import CliOptions
++
++
++class InteractiveShellCmd:
++    def __init__(self, options: CliOptions):
++        r"""
++        Initialize the command.
++        """
++        self.options = options
++
++    def run(self) -> int:
++        r"""
++        Start the interactive shell.
++        """
++        # Display startup banner. Do this before anything else to give the user
++        # early feedback that Sage is starting.
++        from sage.misc.banner import banner
++
++        banner()
++
++        from sage.repl.interpreter import SageTerminalApp
++
++        app = SageTerminalApp.instance()
++        app.initialize([])
++        return app.start()  # type: ignore
+diff --git a/src/sage/cli/notebook_cmd.py b/src/sage/cli/notebook_cmd.py
+new file mode 100644
+index 00000000000..4ae2555b81f
+--- /dev/null
++++ b/src/sage/cli/notebook_cmd.py
+@@ -0,0 +1,52 @@
++import argparse
++
++from sage.cli.options import CliOptions
++
++
++class JupyterNotebookCmd:
++    @staticmethod
++    def extend_parser(parser: argparse.ArgumentParser):
++        r"""
++        Extend the parser with the Jupyter notebook command.
++
++        INPUT:
++
++        - ``parsers`` -- the parsers to extend.
++
++        OUTPUT:
++
++        - the extended parser.
++        """
++        parser.add_argument(
++            "-n",
++            "--notebook",
++            nargs="?",
++            const="jupyter",
++            choices=["jupyter", "jupyterlab"],
++            default="jupyter",
++            help="start the Jupyter notebook server (default: jupyter)",
++        )
++
++    def __init__(self, options: CliOptions):
++        r"""
++        Initialize the command.
++        """
++        self.options = options
++
++    def run(self) -> int:
++        r"""
++        Start the Jupyter notebook server.
++        """
++        if self.options.notebook == "jupyter":
++            try:
++                # notebook 6
++                from notebook.notebookapp import main
++            except ImportError:
++                # notebook 7
++                from notebook.app import main
++        elif self.options.notebook == "jupyterlab":
++            from jupyterlab.labapp import main
++        else:
++            raise ValueError(f"Unknown notebook type: {self.options.notebook}")
++
++        return main([])
+diff --git a/src/sage/cli/notebook_cmd_test.py b/src/sage/cli/notebook_cmd_test.py
+new file mode 100644
+index 00000000000..e1b9a0e880a
+--- /dev/null
++++ b/src/sage/cli/notebook_cmd_test.py
+@@ -0,0 +1,39 @@
++import argparse
++
++import pytest
++
++from sage.cli.notebook_cmd import JupyterNotebookCmd
++
++
++def test_jupyter_as_default():
++    parser = argparse.ArgumentParser()
++    JupyterNotebookCmd.extend_parser(parser)
++    args = parser.parse_args(["--notebook"])
++    assert args.notebook == "jupyter"
++
++
++def test_jupyter_explicitly():
++    parser = argparse.ArgumentParser()
++    JupyterNotebookCmd.extend_parser(parser)
++    args = parser.parse_args(["--notebook", "jupyter"])
++    assert args.notebook == "jupyter"
++
++
++def test_jupyterlab_explicitly():
++    parser = argparse.ArgumentParser()
++    JupyterNotebookCmd.extend_parser(parser)
++    args = parser.parse_args(["--notebook", "jupyterlab"])
++    assert args.notebook == "jupyterlab"
++
++
++def test_invalid_notebook_choice():
++    parser = argparse.ArgumentParser()
++    JupyterNotebookCmd.extend_parser(parser)
++    with pytest.raises(SystemExit):
++        parser.parse_args(["--notebook", "invalid"])
++
++
++def test_help():
++    parser = argparse.ArgumentParser()
++    JupyterNotebookCmd.extend_parser(parser)
++    assert parser.format_usage() == "usage: pytest [-h] [-n [{jupyter,jupyterlab}]]\n"
+diff --git a/src/sage/cli/options.py b/src/sage/cli/options.py
+new file mode 100644
+index 00000000000..874d21c7ee0
+--- /dev/null
++++ b/src/sage/cli/options.py
+@@ -0,0 +1,17 @@
++from dataclasses import dataclass
++
++
++@dataclass
++class CliOptions:
++    """
++    A TypedDict for command-line interface options.
++    """
++
++    """Indicates whether verbose output is enabled."""
++    verbose: bool = False
++
++    """The notebook type to start."""
++    notebook: str = "jupyter"
++
++    """The command to execute."""
++    command: str | None = None
+diff --git a/src/sage/cli/version_cmd.py b/src/sage/cli/version_cmd.py
+new file mode 100644
+index 00000000000..e40d3f8f1d5
+--- /dev/null
++++ b/src/sage/cli/version_cmd.py
+@@ -0,0 +1,25 @@
++import argparse
++
++from sage.version import version
++
++
++class VersionCmd:
++    @staticmethod
++    def extend_parser(parser: argparse.ArgumentParser):
++        r"""
++        Extend the parser with the version command.
++
++        INPUT:
++
++        - ``parsers`` -- the parsers to extend.
++
++        OUTPUT:
++
++        - the extended parser.
++        """
++        parser.add_argument(
++            "--version",
++            action="version",
++            version=version,
++            help="print the version number and exit",
++        )
+diff --git a/src/sage/misc/abstract_method.py b/src/sage/misc/abstract_method.py
+index fad6f3097f2..17721a7efb6 100644
+--- a/src/sage/misc/abstract_method.py
++++ b/src/sage/misc/abstract_method.py
+@@ -194,7 +194,7 @@ def _sage_src_lines_(self):
+             sage: src[0]
+             'def version():\n'
+             sage: lines
+-            19
++            20
+         """
+         from sage.misc.sageinspect import sage_getsourcelines
+         return sage_getsourcelines(self._f)
+diff --git a/src/sage/misc/banner.py b/src/sage/misc/banner.py
+index af46d711721..715d1d9ac4d 100644
+--- a/src/sage/misc/banner.py
++++ b/src/sage/misc/banner.py
+@@ -13,7 +13,8 @@
+ # ****************************************************************************
+ import sys
+ 
+-from sage.env import (SAGE_VERSION, SAGE_VERSION_BANNER, SAGE_BANNER)
++from sage.env import SAGE_BANNER, SAGE_VERSION
++from sage.version import banner as sage_banner
+ 
+ 
+ def version():
+@@ -25,9 +26,16 @@ def version():
+     EXAMPLES::
+ 
+        sage: version()
++       doctest:warning
++       ...
++       DeprecationWarning: Use sage.version instead.
++       ...
+        'SageMath version ..., Release Date: ...'
+     """
+-    return SAGE_VERSION_BANNER
++    from sage.misc.superseded import deprecation
++
++    deprecation(39015, "Use sage.version instead.")
++    return sage_banner
+ 
+ 
+ def banner_text(full=True):
+@@ -54,13 +62,13 @@ def banner_text(full=True):
+         SageMath version ..., Release Date: ...
+     """
+     if not full:
+-        return version()
++        return sage_banner
+ 
+     bars = "─" * 68
+     s = []
+     a = s.append
+     a('┌' + bars + '┐')
+-    a("\n│ %-66s │\n" % version())
++    a("\n│ %-66s │\n" % sage_banner)
+     python_version = sys.version_info[:3]
+     a("│ %-66s │\n" % 'Using Python {}.{}.{}. Type "help()" for help.'.format(*python_version))
+     a('└' + bars + '┘')
+diff --git a/src/sage/misc/lazy_attribute.pyx b/src/sage/misc/lazy_attribute.pyx
+index 7c2eaffa86e..5e8930a3a24 100644
+--- a/src/sage/misc/lazy_attribute.pyx
++++ b/src/sage/misc/lazy_attribute.pyx
+@@ -87,7 +87,7 @@ cdef class _lazy_attribute():
+             sage: src[0]
+             'def banner():\n'
+             sage: lines
+-            87
++            95
+         """
+         from sage.misc.sageinspect import sage_getsourcelines
+         return sage_getsourcelines(self.f)
+diff --git a/src/sage/tests/cmdline.py b/src/sage/tests/cmdline.py
+index 27c614d290f..b42913a982e 100644
+--- a/src/sage/tests/cmdline.py
++++ b/src/sage/tests/cmdline.py
+@@ -109,9 +109,10 @@ def test_executable(args, input='', timeout=100.0, pydebug_ignore_warnings=False
+     Run Sage itself with various options::
+ 
+         sage: # long time
++        sage: from sage.version import banner
+         sage: (out, err, ret) = test_executable([
+         ....:     "sage"], pydebug_ignore_warnings=True)
+-        sage: out.find(version()) >= 0
++        sage: out.find(banner) >= 0
+         True
+         sage: err
+         ''
+@@ -121,7 +122,7 @@ def test_executable(args, input='', timeout=100.0, pydebug_ignore_warnings=False
+         sage: # long time
+         sage: (out, err, ret) = test_executable([
+         ....:     "sage"], "3^33\n", pydebug_ignore_warnings=True)
+-        sage: out.find(version()) >= 0
++        sage: out.find(banner) >= 0
+         True
+         sage: out.find("5559060566555523") >= 0
+         True
+@@ -133,7 +134,7 @@ def test_executable(args, input='', timeout=100.0, pydebug_ignore_warnings=False
+         sage: # long time
+         sage: (out, err, ret) = test_executable([
+         ....:     "sage", "-q"], "3^33\n", pydebug_ignore_warnings=True)
+-        sage: out.find(version()) >= 0
++        sage: out.find(banner) >= 0
+         False
+         sage: out.find("5559060566555523") >= 0
+         True
+@@ -205,7 +206,8 @@ def test_executable(args, input='', timeout=100.0, pydebug_ignore_warnings=False
+     Basic information about the Sage installation::
+ 
+         sage: (out, err, ret) = test_executable(["sage", "-v"])
+-        sage: out.find(version()) >= 0
++        sage: from sage.version import banner
++        sage: out.find(banner) >= 0
+         True
+         sage: err
+         ''
