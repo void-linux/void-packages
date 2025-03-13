@@ -105,30 +105,32 @@ zfs_mount_handler () {
     fi
 
     local node="$1"
-    local rootmnt=$(zfs get -H -o value mountpoint "${ZFS_DATASET}")
-    local tab_file="${node}/etc/fstab"
-    local zfs_datasets="$(zfs list -H -o name -t filesystem -r ${ZFS_DATASET})"
+    local rootopt="${rwopt_exp}${rootflags:+,${rootflags}}"
+    local mountpoint
 
-    # Mount the root, and any child datasets
-    for dataset in ${zfs_datasets}; do
-        mountpoint=$(zfs get -H -o value mountpoint "${dataset}")
-        canmount=$(zfs get -H -o value canmount "${dataset}")
-        # skip dataset
-        [ ${dataset} != "${ZFS_DATASET}" -a \( ${canmount} = "off" -o ${canmount} = "noauto" -o ${mountpoint} = "none" \) ] && continue
-        if [ ${mountpoint} = "legacy" ]; then
-            if [ -f "${tab_file}" ]; then
-                if findmnt -snero source -F "${tab_file}" -S "${dataset}" > /dev/null 2>&1; then
-                    opt=$(findmnt -snero options -F "${tab_file}" -S "${dataset}")
-                    mnt=$(findmnt -snero target -F "${tab_file}" -S "${dataset}")
-                    zfs_decrypt_fs "${dataset}"
-                    mount -t zfs -o "${opt}" "${dataset}" "${node}${mnt}"
-                fi
-            fi
-        else
-            zfs_decrypt_fs "${dataset}"
-            mount -t zfs -o "zfsutil,${rwopt_exp}" "${dataset}" "${node}/${mountpoint##${rootmnt}}"
-        fi
-    done
+    mountpoint="$(zfs list -H -o mountpoint "${ZFS_DATASET}")" || mountpoint=
+    [ "${mountpoint}" = "legacy" ] || rootopt="zfsutil,${rootopt}"
+
+    # Decrypt (if needed) and mount the root
+    zfs_decrypt_fs "${ZFS_DATASET}"
+    mount -t zfs -o "${rootopt}" "${ZFS_DATASET}" "${node}"
+
+    # Walk the tree looking for auto-mount /usr, just in case
+    local fs canmount
+    zfs list -H -o name,mountpoint,canmount -r -t filesystem "${pool}" \
+        | while read -r fs mountpoint canmount; do
+            # Ignore all filesystems not marked for automatic mount
+            [ "${canmount}" = "on" ] || continue
+            # Ignore all mountpoints but /usr
+            [ "${mountpoint}" = "/usr" ] || continue
+            # Ignore the root filesystem that has just been mounted
+            [ "${fs}" = "${ZFS_DATASET}" ] && continue
+
+            # Decrypt (if needed) and mount first automounted /usr filesystem
+            zfs_decrypt_fs "${fs}"
+            mount -o "zfsutil,${rwopt_exp}" "${fs}" "${node}/usr"
+            break
+        done
 }
 
 set_flags() {

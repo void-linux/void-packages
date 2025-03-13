@@ -1,6 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 #
 # changed_templates.sh
+
+set -e
 
 tip="$(git rev-list -1 --parents HEAD)"
 case "$tip" in

@@ -1,31 +1,38 @@
-#!/bin/sh
+#!/bin/bash
 #
 # check-install.sh
 
-export XBPS_TARGET_ARCH="$2" XBPS_DISTDIR=/hostrepo
+set -e
 
-if [ "$1" != "$XBPS_TARGET_ARCH" ]; then
-	triplet="$(/hostrepo/xbps-src -a "$XBPS_TARGET_ARCH" show-var XBPS_CROSS_TRIPLET)"
-	CONFDIR="-C /usr/$triplet/etc/xbps.d"
+HOST_ARCH="$1"
+export XBPS_TARGET_ARCH="$2"
+
+if [ "$HOST_ARCH" != "$XBPS_TARGET_ARCH" ]; then
+	triplet="$(./xbps-src -a "$XBPS_TARGET_ARCH" show-var XBPS_CROSS_TRIPLET)"
+	CONFDIR="-C $PWD/masterdir-$HOST_ARCH/usr/$triplet/etc/xbps.d"
 else
-	CONFDIR="-C /etc/xbps.d"
+	CONFDIR="-C $PWD/masterdir-$HOST_ARCH/etc/xbps.d"
 fi
 
-mkdir /check-install
+if ! [ -d /check-install ]; then
+	/bin/echo -e "\x1b[31m/check-install does not exist\x1b[0m"
+	exit 1
+fi
 
 mkdir -p /check-install/var/db/xbps/keys
 cp /var/db/xbps/keys/* /check-install/var/db/xbps/keys/
 
-ADDREPO="--repository=$HOME/hostdir/binpkgs/bootstrap
- --repository=$HOME/hostdir/binpkgs
- --repository=$HOME/hostdir/binpkgs/nonfree"
+ADDREPO="--repository=hostdir/binpkgs/bootstrap
+ --repository=hostdir/binpkgs
+ --repository=hostdir/binpkgs/nonfree"
 ROOTDIR="-r /check-install"
 
-xbps-install $ROOTDIR $ADDREPO $CONFDIR -S
+# if this fails, there were no packages built for this arch and thus no repodatas
+xbps-install $ROOTDIR $ADDREPO $CONFDIR -S || exit 0
 
 while read -r pkg; do
 	for subpkg in $(xsubpkg $pkg); do
-		/bin/echo -e "\x1b[32mTrying to install dependants of $subpkg:\x1b[0m"
+		/bin/echo -e "\x1b[32mTrying to install dependents of $subpkg:\x1b[0m"
 		for dep in $(xbps-query $ADDREPO -RX "$subpkg"); do
 			xbps-install \
 				$ROOTDIR $ADDREPO $CONFDIR \
