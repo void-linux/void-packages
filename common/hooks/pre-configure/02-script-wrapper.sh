@@ -103,7 +103,7 @@ pkgconfig_wrapper() {
 export PKG_CONFIG_SYSROOT_DIR="$XBPS_CROSS_BASE"
 export PKG_CONFIG_PATH="$XBPS_CROSS_BASE/usr/lib/pkgconfig:$XBPS_CROSS_BASE/usr/share/pkgconfig\${PKG_CONFIG_PATH:+:\${PKG_CONFIG_PATH}}"
 export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/usr/lib/pkgconfig\${PKG_CONFIG_LIBDIR:+:\${PKG_CONFIG_LIBDIR}}"
-exec /usr/bin/pkg-config "\$@"
+exec /usr/bin/pkg-config "\$@" | sed s/lib32/lib/g
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
 	if [ -z "$no_generic_pkgconfig_link" ]; then
