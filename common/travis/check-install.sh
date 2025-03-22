@@ -30,19 +30,25 @@ ROOTDIR="-r /check-install"
 # if this fails, there were no packages built for this arch and thus no repodatas
 xbps-install $ROOTDIR $ADDREPO $CONFDIR -S || exit 0
 
+failed=()
 while read -r pkg; do
 	for subpkg in $(xsubpkg $pkg); do
 		/bin/echo -e "\x1b[32mTrying to install dependents of $subpkg:\x1b[0m"
 		for dep in $(xbps-query $ADDREPO -RX "$subpkg"); do
+			ret=0
 			xbps-install \
 				$ROOTDIR $ADDREPO $CONFDIR \
 				-ny \
-				"$subpkg" "$(xbps-uhelper getpkgname "$dep")"
-			ret="$?"
-			if [ "$ret" -eq 8 ] || [ "$ret" -eq 11 ]; then
+				"$subpkg" "$(xbps-uhelper getpkgname "$dep")" \
+				|| ret="$?"
+			if [ "$ret" -ne 0 ]; then
 				/bin/echo -e "\x1b[31mFailed to install '$subpkg' and '$dep'\x1b[0m"
-				exit 1
+				failed+=("Failed to install '$subpkg' and '$dep'")
 			fi
 		done
 	done
 done < /tmp/templates
+for msg in "${failed[@]}"; do
+	/bin/echo -e "\x1b[31m$msg\x1b[0m"
+done
+exit ${#failed[@]}
