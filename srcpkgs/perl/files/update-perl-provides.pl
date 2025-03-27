@@ -98,7 +98,7 @@ sub scrape_verln
     my($srcpath) = @_;
     open my $fh, '<', $srcpath or die "open: $!";
     while(my $ln = <$fh>){
-        if($ln =~ s/^.*VERSION *=>? *//){
+        if($ln =~ s/^.*VERSION *=>? *// or $ln =~ s/^package .*? \K[\d.]+//){
             close $fh;
             return $ln;
         }
