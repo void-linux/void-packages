@@ -87,9 +87,11 @@ is_auditable() {
 }
 
 if ! command -v cargo-auditable >/dev/null || is_auditable "$@"; then
-	exec /usr/bin/cargo "$@"
+	CARGO=/usr/bin/cargo exec /usr/bin/cargo "$@"
 fi
-exec /usr/bin/cargo auditable "$@"
+CARGO=/usr/bin/cargo exec /usr/bin/cargo auditable "$@"
 _EOF
 
 chmod 755 ${XBPS_WRAPPERDIR}/cargo
+
+export CARGO="${XBPS_WRAPPERDIR}/cargo"
