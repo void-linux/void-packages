@@ -17,6 +17,10 @@ else
 	fi
 fi
 
+case "$XBPS_GOPROXY" in
+	*direct*) hostmakedepends+=" chroot-git mercurial" ;;
+esac
+
 case "$XBPS_TARGET_MACHINE" in
 	aarch64*) export GOARCH=arm64;;
 	armv5*) export GOARCH=arm; export GOARM=5;;
@@ -41,8 +45,8 @@ export CGO_LDFLAGS="$LDFLAGS"
 export CGO_ENABLED="${CGO_ENABLED:-1}"
 export GO111MODULE=auto
 export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
-export GOPROXY="https://proxy.golang.org,direct"
-export GOSUMDB="sum.golang.org"
+export GOPROXY="${XBPS_GOPROXY:-https://proxy.golang.org,direct}"
+export GOSUMDB="${XBPS_GOSUMDB:-sum.golang.org}"
 
 case "$XBPS_TARGET_MACHINE" in
 	*-musl) export GOCACHE="${XBPS_HOSTDIR}/gocache-muslc" ;;
