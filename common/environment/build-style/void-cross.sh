@@ -1,3 +1,9 @@
+# Snapshot tarballs get removed after over a year, we can archive the ones we need in distfiles.
+case "$XBPS_DISTFILES_FALLBACK" in
+	*"repo-default.voidlinux.org/distfiles"*) ;;
+	*) XBPS_DISTFILES_FALLBACK+=" https://repo-default.voidlinux.org/distfiles" ;;
+esac
+
 lib32disabled=yes
 nopie=yes
 
