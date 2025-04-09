@@ -1,0 +1,285 @@
+diff --git a/.github/workflows/tests.yml b/.github/workflows/tests.yml
+index 8e6b7bf..783c8b1 100644
+--- a/.github/workflows/tests.yml
++++ b/.github/workflows/tests.yml
+@@ -20,7 +20,7 @@ jobs:
+     - name: Setup Zig
+       uses: mlugg/setup-zig@v1
+       with:
+-        version: 0.13.0
++        version: 0.14.0
+ 
+     - name: Run tests
+       run: zig build test
+diff --git a/build.zig.zon b/build.zig.zon
+index bec6796..ead683f 100644
+--- a/build.zig.zon
++++ b/build.zig.zon
+@@ -1,11 +1,13 @@
+ .{
+-    .name = "zf",
++    .name = .zf,
++    .fingerprint = 0x30d847eef1728438,
+     .description = "a commandline fuzzy finder designed for filtering filepaths",
+-    .version = "0.10.2",
++    .version = "0.10.3",
+     .dependencies = .{
+         .vaxis = .{
+-            .url = "https://github.com/rockorager/libvaxis/archive/refs/tags/v0.5.1.tar.gz",
+-            .hash = "1220de23a3240e503397ea579de4fd85db422f537e10036ef74717c50164475813ce",
++            .url = "git+https://github.com/rockorager/libvaxis/?ref=main#6a37605dde55898dcca4769dd3eb1e333959c209",
++            .hash = "vaxis-0.1.0-BWNV_K3yCACrTy3A5cbZElLyICx5a2O2EzPxmgVRcbKJ",
++            .lazy = true,
+         },
+     },
+     .paths = .{
+diff --git a/src/tui/EditBuffer.zig b/src/tui/EditBuffer.zig
+index 07520fe..8df9ccd 100644
+--- a/src/tui/EditBuffer.zig
++++ b/src/tui/EditBuffer.zig
+@@ -10,7 +10,7 @@ const ArrayList = std.ArrayList;
+ const EditBuffer = @This();
+ 
+ buffer: ArrayList(u8),
+-cursor: usize,
++cursor: u16,
+ dirty: bool,
+ 
+ pub fn init(allocator: Allocator) EditBuffer {
+@@ -25,8 +25,8 @@ pub fn deinit(eb: *EditBuffer) void {
+     eb.buffer.deinit();
+ }
+ 
+-pub fn len(eb: *const EditBuffer) usize {
+-    return eb.buffer.items.len;
++pub fn len(eb: *const EditBuffer) u16 {
++    return @intCast(eb.buffer.items.len);
+ }
+ 
+ pub fn slice(eb: *EditBuffer) []const u8 {
+@@ -36,7 +36,8 @@ pub fn slice(eb: *EditBuffer) []const u8 {
+ /// Insert utf-8 encoded text into the buffer at the cursor position
+ pub fn insert(eb: *EditBuffer, bytes: []const u8) !void {
+     try eb.buffer.insertSlice(eb.cursor, bytes);
+-    eb.cursor += bytes.len;
++    const bytes_len: u16 = @intCast(bytes.len);
++    eb.cursor += bytes_len;
+     eb.dirty = true;
+ }
+ 
+@@ -64,15 +65,24 @@ pub fn deleteTo(eb: *EditBuffer, pos: usize) void {
+ }
+ 
+ /// Set the cursor to an absolute position
+-pub fn setCursor(eb: *EditBuffer, pos: usize) void {
++pub fn setCursor(eb: *EditBuffer, pos: u16) void {
+     eb.cursor = if (pos > eb.len()) eb.len() else pos;
+ }
+ 
+ /// Move the cursor relative to it's current position
+-pub fn moveCursor(eb: *EditBuffer, amount: usize, direction: Direction) void {
++pub fn moveCursor(eb: *EditBuffer, amount: u16, direction: Direction) void {
+     eb.cursor = switch (direction) {
+         .left => if (amount >= eb.cursor) 0 else eb.cursor - amount,
+-        .right => if (eb.cursor + amount > eb.len()) eb.len() else eb.cursor + amount,
++        .right => blk: {
++            const destination = @addWithOverflow(eb.cursor, amount);
++
++            // if an overflow happened
++            if (destination[1] != 0) {
++                break :blk eb.len();
++            } else {
++                if (destination[0] > eb.len()) break :blk eb.len() else break :blk destination[0];
++            }
++        },
+     };
+ }
+ 
+@@ -103,7 +113,7 @@ test "EditBuffer set and move cursor" {
+     try eb.insert("Ä is for Äpfel 🍎, B is for Bear 🧸");
+ 
+     // test clamping
+-    eb.setCursor(10000);
++    eb.setCursor(65535);
+     try testing.expectEqual(41, eb.cursor);
+     eb.setCursor(0);
+     try testing.expectEqual(0, eb.cursor);
+@@ -124,9 +134,9 @@ test "EditBuffer set and move cursor" {
+     try testing.expectEqualStrings("The Awesome 💥 Alphabet: Ä is for Äpfel 🍎, B is for Bear 🧸 ...", eb.slice());
+ 
+     // clamping
+-    eb.moveCursor(100000, .right);
++    eb.moveCursor(65535, .right);
+     try testing.expectEqual(72, eb.cursor);
+-    eb.moveCursor(100000, .left);
++    eb.moveCursor(65535, .left);
+     try testing.expectEqual(0, eb.cursor);
+ }
+ 
+diff --git a/src/tui/main.zig b/src/tui/main.zig
+index 8044519..af6a2aa 100644
+--- a/src/tui/main.zig
++++ b/src/tui/main.zig
+@@ -11,7 +11,7 @@ const ArrayList = std.ArrayList;
+ const Candidate = candidate.Candidate;
+ const Color = ui.Color;
+ 
+-pub const std_options = .{
++pub const std_options: std.Options = .{
+     .log_level = .err,
+ };
+ 
+diff --git a/src/tui/opts.zig b/src/tui/opts.zig
+index b671865..5600842 100644
+--- a/src/tui/opts.zig
++++ b/src/tui/opts.zig
+@@ -94,7 +94,7 @@ const OptionIter = struct {
+ pub const Config = struct {
+     // Commandline options
+     keep_order: bool = false,
+-    height: usize = 10,
++    height: u16 = 10,
+     filter: ?[]const u8 = null,
+     plain: bool = false,
+     delimiter: []const u8 = "\n",
+@@ -144,7 +144,7 @@ pub fn parse(allocator: Allocator, args: []const []const u8, stderr: File.Writer
+         // height
+         else if (mem.eql(u8, opt, "height") or mem.eql(u8, opt, "l") or mem.eql(u8, opt, "lines")) {
+             const height_str = iter.getArg() orelse missingArg(stderr, iter, opt);
+-            const height = fmt.parseUnsigned(usize, height_str, 10) catch argError(stderr, "height must be an integer");
++            const height = fmt.parseUnsigned(u16, height_str, 10) catch argError(stderr, "height must be an integer");
+             if (height < 2) argError(stderr, "height must be an integer greater than 1");
+             config.height = height;
+         }
+diff --git a/src/tui/ui.zig b/src/tui/ui.zig
+index fa56a5d..1b36d30 100644
+--- a/src/tui/ui.zig
++++ b/src/tui/ui.zig
+@@ -75,7 +75,7 @@ fn numDigits(number: usize) u16 {
+ /// split the query on spaces and return a slice of query tokens
+ pub fn splitQuery(query_tokens: [][]const u8, query: []const u8) [][]const u8 {
+     var index: u8 = 0;
+-    var it = std.mem.tokenize(u8, query, " ");
++    var it = std.mem.tokenizeScalar(u8, query, ' ');
+     while (it.next()) |token| : (index += 1) {
+         if (index == query_tokens.len) break;
+         query_tokens[index] = token;
+@@ -298,18 +298,18 @@ pub const State = struct {
+         win.clear();
+ 
+         const width = state.vx.screen.width;
+-        const preview_width: usize = if (state.preview) |_|
++        const preview_width: u16 = if (state.preview) |_|
+             @intFromFloat(@as(f64, @floatFromInt(width)) * state.config.preview_width)
+         else
+             0;
+ 
+         const items_width = width - preview_width;
+-        const items = win.child(.{ .height = .{ .limit = state.config.height }, .width = .{ .limit = items_width } });
++        const items = win.child(.{ .height = state.config.height, .width = items_width });
+ 
+         const height = @min(state.vx.screen.height, state.config.height);
+ 
+         // draw the candidates
+-        var line: usize = 0;
++        var line: u16 = 0;
+         while (line < height - 1) : (line += 1) {
+             if (line < candidates.len) state.drawCandidate(
+                 items,
+@@ -328,18 +328,18 @@ pub const State = struct {
+             if (num_selected > 0) {
+                 const stats = try std.fmt.bufPrint(&buf, "{}/{} [{}]", .{ candidates.len, total_candidates, num_selected });
+                 const stats_width = numDigits(candidates.len) + numDigits(total_candidates) + numDigits(num_selected) + 4;
+-                _ = try items.printSegment(.{ .text = stats }, .{ .col_offset = items_width - stats_width, .row_offset = 0 });
++                _ = items.printSegment(.{ .text = stats }, .{ .col_offset = items_width - stats_width, .row_offset = 0 });
+             } else {
+                 const stats = try std.fmt.bufPrint(&buf, "{}/{}", .{ candidates.len, total_candidates });
+                 const stats_width = numDigits(candidates.len) + numDigits(total_candidates) + 1;
+-                _ = try items.printSegment(.{ .text = stats }, .{ .col_offset = items_width - stats_width, .row_offset = 0 });
++                _ = items.printSegment(.{ .text = stats }, .{ .col_offset = items_width - stats_width, .row_offset = 0 });
+             }
+         }
+ 
+         // draw the prompt
+         // TODO: handle display of queries longer than the screen width
+         // const query_width = state.query.slice().len;
+-        _ = try items.print(&.{
++        _ = items.print(&.{
+             .{ .text = state.config.prompt },
+             .{ .text = state.query.slice() },
+         }, .{ .col_offset = 0, .row_offset = 0 });
+@@ -349,15 +349,16 @@ pub const State = struct {
+             const preview_win = win.child(.{
+                 .x_off = items_width,
+                 .y_off = 0,
+-                .height = .{ .limit = state.config.height },
+-                .width = .{ .limit = preview_width },
++                .height = state.config.height,
++                .width = preview_width,
+                 .border = .{ .where = .left },
+             });
+ 
+             var lines = std.mem.splitScalar(u8, preview.output, '\n');
+-            for (0..height) |l| {
++            for (0..height) |captured_l| {
++                const l: u16 = @intCast(captured_l);
+                 if (lines.next()) |preview_line| {
+-                    _ = try preview_win.printSegment(
++                    _ = preview_win.printSegment(
+                         .{ .text = preview_line },
+                         .{ .row_offset = l, .wrap = .none },
+                     );
+@@ -365,14 +366,15 @@ pub const State = struct {
+             }
+         }
+ 
+-        items.showCursor(state.config.prompt.len + state.query.cursor, 0);
++        const config_prompt_len: u16 = @intCast(state.config.prompt.len);
++        items.showCursor(config_prompt_len + state.query.cursor, 0);
+         try state.vx.render(state.tty.anyWriter());
+     }
+ 
+     fn drawCandidate(
+         state: *State,
+         win: vaxis.Window,
+-        line: usize,
++        line: u16,
+         str: []const u8,
+         tokens: [][]const u8,
+         selected: bool,
+@@ -383,7 +385,7 @@ pub const State = struct {
+ 
+         // no highlights, just output the string
+         if (matches.len == 0) {
+-            _ = try win.print(&.{
++            _ = win.print(&.{
+                 .{ .text = if (selected) "* " else "  " },
+                 .{
+                     .text = str,
+@@ -397,7 +399,7 @@ pub const State = struct {
+         } else {
+             var slicer = HighlightSlicer.init(str, matches);
+ 
+-            var res = try win.printSegment(.{
++            var res = win.printSegment(.{
+                 .text = if (selected) "* " else "  ",
+             }, .{
+                 .row_offset = line,
+@@ -413,7 +415,7 @@ pub const State = struct {
+                     } else .default,
+                 };
+ 
+-                res = try win.printSegment(.{
++                res = win.printSegment(.{
+                     .text = slice.str,
+                     .style = highlight_style,
+                 }, .{
+@@ -428,6 +430,8 @@ pub const State = struct {
+ 
+ /// Deletes a word to the left of the cursor. Words are separated by space or slash characters
+ fn deleteWord(query: *EditBuffer) void {
++    if (query.cursor == 0) return;
++
+     var slice = query.slice()[0..query.cursor];
+     var end = slice.len - 1;
+ 
