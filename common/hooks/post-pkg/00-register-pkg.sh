@@ -30,7 +30,7 @@ hook() {
 
 	# Register -dbg binpkg if it exists.
 	pkgdir=$XBPS_REPOSITORY/debug
-	PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}"
+	PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET:+${XBPS_CROSS_TRIPLET}/}${pkgname}-dbg-${version}"
 	if [ -d ${PKGDESTDIR} -a -f ${pkgdir}/${binpkg_dbg} ]; then
 		registerpkg ${pkgdir} ${binpkg_dbg}
 	fi
@@ -44,7 +44,7 @@ hook() {
 	else
 		pkgdir=$XBPS_REPOSITORY/multilib
 	fi
-	PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}-32bit-${version}"
+	PKGDESTDIR="${XBPS_DESTDIR%/}/${pkgname}-32bit-${version}"
 	if [ -d ${PKGDESTDIR} -a -f ${pkgdir}/${binpkg32} ]; then
 		registerpkg ${pkgdir} ${binpkg32} x86_64
 	fi

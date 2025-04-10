@@ -143,7 +143,7 @@ hook() {
 		_pkgver=${pkgname}-dbg-${version}_${revision}
 		_desc="${short_desc} (debug files)"
 		binpkg=${_pkgver}.${arch}.xbps
-		PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}"
+		PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET:+${XBPS_CROSS_TRIPLET}/}${pkgname}-dbg-${version}"
 		genpkg ${repo} ${arch} "${_desc}" ${_pkgver} ${binpkg} -dbg
 	fi
 	# Generate 32bit pkg.
