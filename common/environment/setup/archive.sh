@@ -163,7 +163,7 @@ vsrcextract() {
 	local archive="$1"
 	shift
 	vextract "$sc" ${dst:+-C "$dst"} \
-		"${XBPS_SRCDISTDIR}/${pkgname}-${version}/$archive" "$@"
+		"${XBPS_SRCDISTDIR}/${sourcepkg}-${version}/$archive" "$@"
 }
 
 vtar() {
