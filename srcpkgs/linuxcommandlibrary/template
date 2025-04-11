@@ -1,0 +1,78 @@
+# Template file for 'linuxcommandlibrary'
+pkgname=linuxcommandlibrary
+version=4.0.2
+revision=1
+configure_args="--no-daemon --gradle-user-home=/tmp/gradle"
+hostmakedepends="openjdk21 gradle sdkmanager gnupg python3-charset-normalizer"
+depends="virtual?java-runtime"
+short_desc="Linux reference app with basics, tips and formatted man pages"
+maintainer="zenobit <zenobit@disroot.org>"
+license="Apache-2.0"
+homepage="http://linuxcommandlibrary.com/"
+distfiles="https://github.com/SimonSchubert/LinuxCommandLibrary/archive/refs/tags/v${version}.tar.gz"
+checksum=20f8b83ca8aa035f17a91ac7d7f3bcd2f1f69e46bfa17613b805597104be02b7
+nopie=yes
+
+export JAVA_HOME=/usr/lib/jvm/openjdk21
+export ANDROID_SDK_ROOT=/tmp/android-sdk
+if [ "$XBPS_TARGET_MACHINE" = i686 ]; then
+	export JAVA_OPTS="-Xmx2048m"
+fi
+
+# Map Void machine to Kotlin/Native target for the CLI binary
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*)	_ktarget=linuxX64 ;;
+	aarch64*)	_ktarget=linuxArm64 ;;
+	*)		_ktarget= ; msg_warn "${pkgname}: unsupported architecture ${XBPS_TARGET_MACHINE} for native CLI, skipping" ;;
+esac
+
+do_build() {
+	export GRADLE_USER_HOME=/tmp/gradle
+	chmod +x gradlew
+	# Android SDK needed for KMP common/composeApp modules (AGP configuration phase)
+	sdkmanager "platforms;android-36" "build-tools;29.0.3"
+	yes | sdkmanager --licenses
+	echo "" >> gradle.properties
+	echo "org.gradle.daemon=false" >> gradle.properties
+	# CLI (native binary per target architecture)
+	if [ -n "$_ktarget" ]; then
+		./gradlew :cli:linkReleaseExecutable${_ktarget} --no-daemon --stacktrace
+	fi
+	# Desktop
+	./gradlew :desktopApp:packageUberJarForCurrentOS --no-daemon --stacktrace
+}
+
+do_check() {
+	# desktopTest runs shared tests on JVM target (matches upstream CI)
+	./gradlew :common:desktopTest --no-daemon
+}
+
+do_install() {
+	# CLI (native binary per target architecture)
+	if [ -n "$_ktarget" ]; then
+		vbin cli/build/bin/${_ktarget}/releaseExecutable/lcl.kexe lcl
+	fi
+
+	# Desktop
+	vmkdir usr/share/${pkgname}
+	vinstall desktopApp/build/compose/jars/LinuxCommandLibrary-linux-x64-${version}.jar 644 usr/share/${pkgname} ${pkgname}.jar
+}
+
+post_install() {
+	vbin "${FILESDIR}/linuxcommandlibrary"
+	vmkdir usr/share/applications
+	vinstall "${FILESDIR}/lcl.desktop" 0644 usr/share/applications/
+	vinstall desktopApp/icon.png 644 usr/share/pixmaps linuxcommandlibrary.png
+	vinstall desktopApp/icon.png 644 usr/share/icons/hicolor/apps lcl.png
+}
+
+linuxcommandlibrary-desktop_package() {
+	short_desc+=" - desktop application"
+	depends="virtual?java-runtime"
+	pkg_install() {
+		vmove usr/bin/linuxcommandlibrary
+		vmove usr/share/applications/lcl.desktop
+		vmove usr/share/pixmaps/linuxcommandlibrary.png
+		vmove usr/share/icons/hicolor/apps/lcl.png
+	}
+}
