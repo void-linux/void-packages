@@ -1,0 +1,78 @@
+This fixes the build on armhf by backporting the following boringssl patches:
+
+* https://github.com/google/boringssl/commit/af3c8953274748404ca8235d6cc31a2e1189e64f
+* https://github.com/google/boringssl/commit/12316ab445eef5317391a94bef733fa6ff175173
+
+diff -upr android-tools-35.0.1.orig/vendor/boringssl/crypto/fipsmodule/sha/asm/sha256-armv4.pl android-tools-35.0.1/vendor/boringssl/crypto/fipsmodule/sha/asm/sha256-armv4.pl
+--- android-tools-35.0.1.orig/vendor/boringssl/crypto/fipsmodule/sha/asm/sha256-armv4.pl	2024-05-17 16:29:30.474793795 +0200
++++ android-tools-35.0.1/vendor/boringssl/crypto/fipsmodule/sha/asm/sha256-armv4.pl	2024-05-17 16:30:35.428396067 +0200
+@@ -459,6 +459,14 @@ $code.=<<___;
+ .arch	armv7-a
+ .fpu	neon
+ 
++.LK256_shortcut_neon:
++@ PC is 8 bytes ahead in Arm mode and 4 bytes ahead in Thumb mode.
++#if defined(__thumb2__)
++.word	K256-(.LK256_add_neon+4)
++#else
++.word	K256-(.LK256_add_neon+8)
++#endif
++
+ .global	sha256_block_data_order_neon
+ .type	sha256_block_data_order_neon,%function
+ .align	5
+@@ -467,10 +475,21 @@ sha256_block_data_order_neon:
+ 	stmdb	sp!,{r4-r12,lr}
+ 
+ 	sub	$H,sp,#16*4+16
+-	@ In Arm mode, the following ADR runs up against the limits of encodable
+-	@ offsets. It only fits because the offset, when the ADR is placed here,
+-	@ is a multiple of 16.
+-	adr	$Ktbl,K256
++
++	@ K256 is just at the boundary of being easily referenced by an ADR from
++	@ this function. In Arm mode, when building with __ARM_ARCH=6, it does
++	@ not fit. By moving code around, we could make it fit, but this is too
++	@ fragile. For simplicity, just load the offset from
++	@ .LK256_shortcut_neon.
++	@
++	@ TODO(davidben): adrl would avoid a load, but clang-assembler does not
++	@ support it. We might be able to emulate it with a macro, but Android's
++	@ did not work when I tried it.
++	@ https://android.googlesource.com/platform/ndk/+/refs/heads/master/docs/ClangMigration.md#arm
++	ldr	$Ktbl,.LK256_shortcut_neon
++.LK256_add_neon:
++	add	$Ktbl,pc,$Ktbl
++
+ 	bic	$H,$H,#15		@ align for 128-bit stores
+ 	mov	$t2,sp
+ 	mov	sp,$H			@ alloca
+@@ -596,12 +615,12 @@ $code.=<<___;
+ #  define INST(a,b,c,d)	.byte	a,b,c,d
+ # endif
+ 
+-.LK256_shortcut:
++.LK256_shortcut_hw:
+ @ PC is 8 bytes ahead in Arm mode and 4 bytes ahead in Thumb mode.
+ #if defined(__thumb2__)
+-.word	K256-(.LK256_add+4)
++.word	K256-(.LK256_add_hw+4)
+ #else
+-.word	K256-(.LK256_add+8)
++.word	K256-(.LK256_add_hw+8)
+ #endif
+ 
+ .global	sha256_block_data_order_hw
+@@ -610,9 +629,9 @@ $code.=<<___;
+ sha256_block_data_order_hw:
+ 	@ K256 is too far to reference from one ADR command in Thumb mode. In
+ 	@ Arm mode, we could make it fit by aligning the ADR offset to a 64-byte
+-	@ boundary. For simplicity, just load the offset from .LK256_shortcut.
+-	ldr	$Ktbl,.LK256_shortcut
+-.LK256_add:
++	@ boundary. For simplicity, just load the offset from .LK256_shortcut_hw.
++	ldr	$Ktbl,.LK256_shortcut_hw
++.LK256_add_hw:
+ 	add	$Ktbl,pc,$Ktbl
+ 
+ 	vld1.32	{$ABCD,$EFGH},[$ctx]
