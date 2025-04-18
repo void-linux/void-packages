@@ -139,7 +139,7 @@ update_check() {
             *github.com*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$pkgurlname/tags"
-                rx='/archive/refs/tags/(v?|\Q'"$pkgname"'\E[-_])?\K[\d.]+(?=\.tar\.gz")';;
+                rx='/archive/refs/tags/(\Q'"$pkgname"'\E|[-_v])*\K[\d.]+(?=\.tar\.gz")';;
             *//gitlab.*|*code.videolan.org*)
                 case "$url" in
                     */-/*) pkgurlname="$(printf %s "$url" | sed -e 's%/-/.*%%g; s%/$%%')";;
