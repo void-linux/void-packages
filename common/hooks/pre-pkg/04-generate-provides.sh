@@ -3,9 +3,17 @@
 # This hook executes the following tasks:
 #	- Generates provides file with provides entries for xbps-create(1)
 
+get_explicit_provides() {
+    # include explicit values from the template
+    if [ -n "$provides" ]; then
+        printf '%s\n' $provides
+    fi
+}
+
 generate_python_provides() {
     local py3_bin="${XBPS_MASTERDIR}/usr/bin/python3"
 
+    # get the canonical python package names for each python module
     if [ -z "$nopyprovides" ] && [ -d "${PKGDESTDIR}/${py3_sitelib}" ] && [ -x "${py3_bin}" ]; then
         PYTHONPATH="${XBPS_MASTERDIR}/${py3_sitelib}-bootstrap" "${py3_bin}" \
             "${XBPS_COMMONDIR}"/scripts/parse-py-metadata.py \
@@ -13,12 +21,53 @@ generate_python_provides() {
     fi
 }
 
-hook() {
-    # include explicit values from the template
-    local -a _provides=($provides)
+generate_pkgconfig_provides() {
+    find "${PKGDESTDIR}/usr/lib/pkgconfig" "${PKGDESTDIR}/usr/share/pkgconfig" -name '*.pc' -type f \
+        -exec pkg-config --print-provides {} \; 2>/dev/null | sed 's/^/pc:/; s/ = /-/' | sort -u
+}
 
-    # get the canonical python package names for each python module
-    mapfile -t -O "${#_provides[@]}" _provides < <( generate_python_provides )
+generate_cmd_provides() {
+    find "${PKGDESTDIR}/usr/bin" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null \
+        | sed 's/^.*$/cmd:&-'"${version}_${revision}"'/' | sort -u
+}
+
+generate_alt_cmd_provides() {
+    local _alt _group _symlink _target _path
+    for _alt in $alternatives; do
+        IFS=':' read -r _group _symlink _target <<< "$_alt"
+        case "$_symlink" in
+            /usr/bin/*)
+                echo "${_symlink##*/}"
+                ;;
+            /*)
+                # skip all other absolute paths
+                ;;
+            */*)
+                # relative path, resolve
+                _path="$(realpath -m "$_target/./$_symlink")"
+                if [ "${_path%/*}" = /usr/bin ]; then
+                    echo "${_path##*/}"
+                fi
+                ;;
+            *)
+                if [ "${_target%/*}" = /usr/bin ]; then
+                    echo "${_symlink}"
+                fi
+                ;;
+        esac
+    done | sed 's/^/cmd:/'
+}
+
+hook() {
+    local -a _provides
+
+    mapfile -t _provides < <(
+        get_explicit_provides
+        generate_python_provides
+        generate_pkgconfig_provides
+        generate_cmd_provides
+        generate_alt_cmd_provides
+    )
 
     if [ "${#_provides[@]}" -gt 0 ]; then
         echo "   ${_provides[*]}"

@@ -63,7 +63,7 @@ do_build() {
 do_check() {
 	: ${make_check_target:=./...}
 
-	${make_check_pre} go test -p "$XBPS_MAKEJOBS" -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${make_check_args} ${make_check_target}
+	${make_check_pre} go test -p "$XBPS_MAKEJOBS" -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${make_check_args} ${make_check_target}
 }
 
 do_install() {

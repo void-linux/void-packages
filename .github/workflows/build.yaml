@@ -21,9 +21,8 @@ jobs:
     runs-on: ubuntu-latest
 
     container:
-      image: 'ghcr.io/void-linux/void-buildroot-musl:20240526R1'
+      image: 'ghcr.io/void-linux/void-musl-full:20250227R1'
       env:
-        PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
         LICENSE_LIST: common/travis/license.lst
 
     steps:
@@ -32,27 +31,28 @@ jobs:
           # switch to repo-ci mirror
           mkdir -p /etc/xbps.d && cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
           sed -i 's|repo-default|repo-ci|g' /etc/xbps.d/*-repository-*.conf
-          # Sync and upgrade once, assume error comes from xbps update
-          xbps-install -Syu || xbps-install -yu xbps
-          # Upgrade again (in case there was a xbps update)
-          xbps-install -yu
-          # install tools needed for lints
-          xbps-install -y grep curl git
+          # install dependencies
+          xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash grep curl git
+          # create non-root user
+          useradd -G xbuilder -M builder
+
       - name: Clone and checkout
         uses: classabbyamp/treeless-checkout-action@v1
-      - name: Create hostrepo and prepare masterdir
+
+      - name: Prepare masterdir
         run: |
-          ln -s "$(pwd)" /hostrepo &&
-          common/travis/set_mirror.sh &&
-          common/travis/prepare.sh &&
+          chown -R builder:builder . &&
+          sudo -Eu builder common/travis/set_mirror.sh &&
           common/travis/fetch-xtools.sh
-      - run: common/travis/changed_templates.sh
+
+      - name: Find changed templates
+        run: sudo -Eu builder common/travis/changed_templates.sh
+
       - name: Run lints
         run: |
-          rv=0
-          common/travis/xlint.sh || rv=1
-          common/travis/verify-update-check.sh || rv=1
-          exit $rv
+          sudo -Eu builder common/travis/verify-update-check.sh || rv=1
+          sudo -Eu builder common/travis/xlint.sh || rv=1
+          exit "${rv:-0}"
 
   # Build changed packages.
   build:
@@ -61,14 +61,14 @@ jobs:
     if: "!contains(github.event.pull_request.title, '[ci skip]') && !contains(github.event.pull_request.body, '[ci skip]')"
 
     container:
-      image: ghcr.io/void-linux/void-buildroot-${{ matrix.config.libc }}:20240526R1
-      options: --platform ${{ matrix.config.platform }}
+      image: ghcr.io/void-linux/void-${{ matrix.config.libc }}-full:20250227R1
+      options: --platform ${{ matrix.config.platform }} --privileged
+      volumes:
+        - /dev:/dev
       env:
-        PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
         ARCH: '${{ matrix.config.arch }}'
         BOOTSTRAP: '${{ matrix.config.host }}'
         TEST: '${{ matrix.config.test }}'
-        HOSTREPO: /hostrepo
 
     strategy:
       fail-fast: false
@@ -88,64 +88,44 @@ jobs:
           # switch to repo-ci mirror
           mkdir -p /etc/xbps.d && cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
           sed -i 's|repo-default|repo-ci|g' /etc/xbps.d/*-repository-*.conf
-          # Sync and upgrade once, assume error comes from xbps update
-          xbps-install -Syu || xbps-install -yu xbps
-          # Upgrade again (in case there was a xbps update)
-          xbps-install -yu
+          # install dependencies
+          xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash curl git
+          # create non-root user
+          useradd -G xbuilder -M builder
 
       - name: Clone and checkout
-        env:
-          PATH: '/usr/libexec/chroot-git:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
         uses: classabbyamp/treeless-checkout-action@v1
-      - name: Create hostrepo and prepare masterdir
+
+      - name: Prepare masterdir
         run: |
-          ln -s "$(pwd)" /hostrepo &&
-          common/travis/set_mirror.sh &&
-          common/travis/prepare.sh &&
+          chown -R builder:builder . &&
+          sudo -Eu builder common/travis/set_mirror.sh &&
+          sudo -Eu builder common/travis/prepare.sh &&
           common/travis/fetch-xtools.sh
+
       - name: Find changed templates
-        env:
-          PATH: '/usr/libexec/chroot-git:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
-        run: common/travis/changed_templates.sh
+        run: sudo -Eu builder common/travis/changed_templates.sh
 
       - name: Build and check packages
-        run: |
-          (
-          here="$(pwd)"
-          cd /
-          "$here/common/travis/build.sh" "$BOOTSTRAP" "$ARCH" "$TEST"
-          )
+        run: sudo -Eu builder common/travis/build.sh "$BOOTSTRAP" "$ARCH" "$TEST"
 
       - name: Show files
-        run: |
-          (
-          here="$(pwd)"
-          cd /
-          "$here/common/travis/show_files.sh" "$BOOTSTRAP" "$ARCH"
-          )
+        run: sudo -Eu builder common/travis/show_files.sh "$BOOTSTRAP" "$ARCH"
 
       - name: Compare to previous
-        run: |
-          (
-          here="$(pwd)"
-          cd /
-          "$here/common/travis/xpkgdiff.sh" "$BOOTSTRAP" "$ARCH"
-          )
+        run: sudo -Eu builder common/travis/xpkgdiff.sh "$BOOTSTRAP" "$ARCH"
 
       - name: Check file conflicts
         if: matrix.config.arch == 'x86_64' # the arch indexed in xlocate
-        env:
-          PATH: '/usr/libexec/chroot-git:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
         run: |
           if [ -s /tmp/templates ]; then
-              xlocate -S &&
-              common/scripts/lint-conflicts $HOME/hostdir/binpkgs
+              export XDG_CACHE_HOME="$PWD/.cache"
+              sudo -Eu builder xlocate -S &&
+              sudo -Eu builder common/scripts/lint-conflicts
           fi
 
       - name: Verify repository state
         run: |
-          (
-          here="$(pwd)"
-          cd /
-          "$here/common/travis/check-install.sh" "$BOOTSTRAP" "$ARCH"
-          )
+          mkdir -p /check-install &&
+          chown builder:builder /check-install &&
+          sudo -Eu builder common/travis/check-install.sh "$BOOTSTRAP" "$ARCH"

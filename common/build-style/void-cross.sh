@@ -466,6 +466,19 @@ _void_cross_test_ver() {
 	fi
 }
 
+_void_cross_test_gcc_ver() {
+	local ver basever
+	_void_cross_test_ver gcc
+	ver=$(cat .gcc_version)
+	if [ -d "gcc-${ver}" ] && [ -f "gcc-${ver}/gcc/BASE-VER" ] && [ -f "gcc-${ver}/gcc/DATESTAMP" ]; then
+		basever="$(cat "gcc-${ver}/gcc/BASE-VER")_$(cat "gcc-${ver}/gcc/DATESTAMP")"
+		mv "gcc-${ver}" "gcc-${basever}"
+		echo ${basever} > ${wrksrc}/.gcc_version
+		return
+	fi
+	msg_error "could not determine gcc base version\n"
+}
+
 do_build() {
 	# Verify toolchain versions
 	cd ${wrksrc}
@@ -483,7 +496,7 @@ do_build() {
 
 	_void_cross_test_ver binutils
 	_void_cross_test_ver linux
-	_void_cross_test_ver gcc
+	_void_cross_test_gcc_ver
 
 	binutils_ver=$(cat .binutils_version)
 	linux_ver=$(cat .linux_version)

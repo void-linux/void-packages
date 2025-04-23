@@ -1,34 +1,62 @@
-Allow us to specify the typelib sysroot in wrapper scripts for cross compiling.
+Instead of hard-coding GOBJECT_INTROSPECTION_LIBDIR when
+gobject-introspection is built, use dladdr() to determine where
+GOBJECT_INTROSPECTION_LIBDIR is and use that path to calculate the
+repository directory.
 
+This fixes gobject-introspection-native accessing paths across build
+directories (e.g. if the build directories use the same shared state
+cache or sstate mirror).
+
+diff --git a/girepository/girepository.c b/girepository/girepository.c
+index c1fa3d3..efa557e 100644
 --- a/girepository/girepository.c
 +++ b/girepository/girepository.c
-@@ -154,6 +154,7 @@ gi_repository_init (GIRepository *reposi
-       const char *libdir;
-       char *typelib_dir;
-       const char *type_lib_path_env;
-+      const char *type_lib_sysroot_env;
+@@ -38,6 +40,8 @@
+ #include "gitypelib-internal.h"
+ #include "girepository-private.h"
  
-       /* This variable is intended to take precedence over both:
-        *   - the default search path;
-@@ -161,6 +162,9 @@ gi_repository_init (GIRepository *reposi
-        */
-       type_lib_path_env = g_getenv ("GI_TYPELIB_PATH");
- 
-+      /* Void Linux addition for cross compiling, since we use cross sysroots */
-+      type_lib_sysroot_env = g_getenv ("GI_TYPELIB_SYSROOT");
++#include <dlfcn.h>
 +
-       if (type_lib_path_env)
-         {
-           char **custom_dirs;
-@@ -176,7 +180,10 @@ gi_repository_init (GIRepository *reposi
- 
-       libdir = GOBJECT_INTROSPECTION_LIBDIR;
- 
--      typelib_dir = g_build_filename (libdir, "girepository-1.0", NULL);
-+      if (type_lib_sysroot_env)
-+          typelib_dir = g_build_filename (type_lib_sysroot_env, libdir, "girepository-1.0", NULL);
-+      else
-+          typelib_dir = g_build_filename (libdir, "girepository-1.0", NULL);
- 
-       g_ptr_array_add (repository->typelib_search_path, g_steal_pointer (&typelib_dir));
+ /**
+  * GIRepository:
+  *
+@@ -260,7 +264,13 @@ gi_repository_get_libdir (void)
+           libdir = GOBJECT_INTROSPECTION_LIBDIR;
+         }
+ #else /* !G_PLATFORM_WIN32 && !__APPLE__ */
+-        libdir = GOBJECT_INTROSPECTION_LIBDIR;
++        Dl_info gi_lib_info;
++        if (dladdr (gi_repository_get_version, &gi_lib_info)) {
++          libdir = g_path_get_dirname (gi_lib_info.dli_fname);
++          g_ignore_leak (libdir);
++        } else {
++          libdir = GOBJECT_INTROSPECTION_LIBDIR;
++        }
+ #endif
+       g_once_init_leave_pointer (&static_libdir, libdir);
      }
+diff --git a/girepository/meson.build b/girepository/meson.build
+index 6a8c5b5..8892f2a 100644
+--- a/girepository/meson.build
++++ b/girepository/meson.build
+@@ -139,7 +139,7 @@ libgirepository_internals = static_libra
+   c_args: gir_c_args + custom_c_args,
+   gnu_symbol_visibility : 'hidden',
+   include_directories : [configinc, girepoinc],
+-  dependencies: [girepo_gthash_dep, libffi_dep],
++  dependencies: [girepo_gthash_dep, libffi_dep, cc.find_library('dl')],
+ )
+ 
+ libgirepository_internals_dep = declare_dependency(
+diff -rup glib-2.84.0/girepository/tests/repository-search-paths.c.orig glib-2.84.0/girepository/tests/repository-search-paths.c
+--- a/girepository/tests/repository-search-paths.c
++++ a/girepository/tests/repository-search-paths.c
+@@ -28,7 +28,7 @@ test_repository_search_paths_get_expecte
+ #if defined(G_PLATFORM_WIN32)
+   const char *tests_build_dir = g_getenv ("G_TEST_BUILDDIR");
+   char *expected_rel_path = g_build_filename (tests_build_dir, "lib", "girepository-1.0", NULL);
+-#elif defined(__APPLE__)
++#elif defined(__APPLE__) || 1
+   const char *tests_build_dir = g_getenv ("G_TEST_BUILDDIR");
+   char *expected_rel_path = g_build_filename (tests_build_dir, "..", "girepository-1.0", NULL);
+ #else /* !G_PLATFORM_WIN32 && !__APPLE__ */
