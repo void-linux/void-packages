@@ -1,0 +1,261 @@
+From b861755a84eeccdd9183989ca71b3b1251c83a74 Mon Sep 17 00:00:00 2001
+From: Adhemerval Zanella <adhemerval.zanella@linaro.org>
+Date: Thu, 13 Feb 2025 14:02:38 -0300
+Subject: elf: Extend glibc.rtld.execstack tunable to force executable stack
+ (BZ 32653)
+
+From the bug report [1], multiple programs still require to dlopen
+shared libraries with either missing PT_GNU_STACK or with the executable
+bit set.  Although, in some cases, it seems to be a hard-craft assembly
+source without the required .note.GNU-stack marking (so the static linker
+is forced to set the stack executable if the ABI requires it), other
+cases seem that the library uses trampolines [2].
+
+Unfortunately, READ_IMPLIES_EXEC is not an option since on some ABIs
+(x86_64), the kernel clears the bit, making it unsupported.  To avoid
+reinstating the broken code that changes stack permission on dlopen
+(0ca8785a28), this patch extends the glibc.rtld.execstack tunable to
+allow an option to force an executable stack at the program startup.
+
+The tunable is a security issue because it defeats the PT_GNU_STACK
+hardening.  It has the slight advantage of making it explicit by the
+caller, and, as for other tunables, this is disabled for setuid binaries.
+A tunable also allows us to eventually remove it, but from previous
+experiences, it would require some time.
+
+Checked on aarch64-linux-gnu, x86_64-linux-gnu, and i686-linux-gnu.
+
+[1] https://sourceware.org/bugzilla/show_bug.cgi?id=32653
+[2] https://github.com/conda-forge/ctng-compiler-activation-feedstock/issues/143
+Reviewed-by: Sam James <sam@gentoo.org>
+
+(cherry picked from commit 12a497c716f0a06be5946cabb8c3ec22a079771e)
+---
+ NEWS                                    |  8 +++++++
+ elf/Makefile                            | 14 +++++++++++-
+ elf/dl-execstack-tunable.c              | 39 +++++++++++++++++++++++++++++++++
+ elf/dl-support.c                        |  4 +---
+ elf/dl-tunables.list                    |  2 +-
+ elf/rtld.c                              |  6 ++---
+ elf/tst-execstack-prog-static-tunable.c |  1 +
+ elf/tst-execstack-tunable.c             |  1 +
+ elf/tst-rtld-list-tunables.exp          |  2 +-
+ manual/tunables.texi                    | 10 ++++++---
+ sysdeps/generic/ldsodefs.h              | 13 +++++++++++
+ 11 files changed, 88 insertions(+), 12 deletions(-)
+ create mode 100644 elf/dl-execstack-tunable.c
+ create mode 100644 elf/tst-execstack-prog-static-tunable.c
+ create mode 100644 elf/tst-execstack-tunable.c
+
+diff --git a/elf/Makefile b/elf/Makefile
+index d6bba4b0ec..600bf3fe20 100644
+--- a/elf/Makefile
++++ b/elf/Makefile
+@@ -61,6 +61,8 @@ dl-routines = \
+   dl-deps \
+   dl-exception \
+   dl-execstack \
++  dl-execstack-tunable \
++  dl-find_object \
+   dl-fini \
+   dl-init \
+   dl-load \
+@@ -567,9 +569,11 @@ tests-execstack-yes = \
+   tst-execstack \
+   tst-execstack-needed \
+   tst-execstack-prog \
++  tst-execstack-tunable \
+   # tests-execstack-yes
+ tests-execstack-static-yes = \
+-  tst-execstack-prog-static
++  tst-execstack-prog-static \
++  tst-execstack-prog-static-tunable \
+   # tests-execstack-static-yes
+ ifeq (yes,$(run-built-tests))
+ tests-execstack-special-yes = \
+@@ -2007,6 +2011,14 @@ LDFLAGS-tst-execstack-prog = -Wl,-z,execstack
+ CFLAGS-tst-execstack-prog.c += -Wno-trampolines
+ CFLAGS-tst-execstack-mod.c += -Wno-trampolines
+ 
++# It expects loading a module with executable stack to work.
++CFLAGS-tst-execstack-tunable.c += -DUSE_PTHREADS=0 -DDEFAULT_RWX_STACK=1
++$(objpfx)tst-execstack-tunable.out: $(objpfx)tst-execstack-mod.so
++tst-execstack-tunable-ENV = GLIBC_TUNABLES=glibc.rtld.execstack=2
++
++LDFLAGS-tst-execstack-prog-static-tunable = -Wl,-z,noexecstack
++tst-execstack-prog-static-tunable-ENV = GLIBC_TUNABLES=glibc.rtld.execstack=2
++
+ LDFLAGS-tst-execstack-prog-static = -Wl,-z,execstack
+ ifeq ($(have-no-error-execstack),yes)
+ LDFLAGS-tst-execstack-prog-static += -Wl,--no-error-execstack
+diff --git a/elf/dl-execstack-tunable.c b/elf/dl-execstack-tunable.c
+new file mode 100644
+index 0000000000..6cef1a3036
+--- /dev/null
++++ b/elf/dl-execstack-tunable.c
+@@ -0,0 +1,39 @@
++/* Stack executability handling for GNU dynamic linker.
++   Copyright (C) 2025 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <ldsodefs.h>
++#include <dl-tunables.h>
++
++void
++_dl_handle_execstack_tunable (void)
++{
++  switch (TUNABLE_GET (glibc, rtld, execstack, int32_t, NULL))
++    {
++    case stack_tunable_mode_disable:
++      if ((__glibc_unlikely (GL(dl_stack_flags)) & PF_X))
++	_dl_fatal_printf (
++"Fatal glibc error: executable stack is not allowed\n");
++      break;
++
++    case stack_tunable_mode_force:
++      if (_dl_make_stack_executable (&__libc_stack_end) != 0)
++	_dl_fatal_printf (
++"Fatal glibc error: cannot enable executable stack as tunable requires");
++      break;
++    }
++}
+diff --git a/elf/dl-support.c b/elf/dl-support.c
+index a7d5a5e8ab..0388e23448 100644
+--- a/elf/dl-support.c
++++ b/elf/dl-support.c
+@@ -332,9 +332,7 @@ _dl_non_dynamic_init (void)
+ 	break;
+       }
+ 
+-  if ((__glibc_unlikely (GL(dl_stack_flags)) & PF_X)
+-      && TUNABLE_GET (glibc, rtld, execstack, int32_t, NULL) == 0)
+-    _dl_fatal_printf ("Fatal glibc error: executable stack is not allowed\n");
++  _dl_handle_execstack_tunable ();
+ 
+   call_function_static_weak (_dl_find_object_init);
+ 
+diff --git a/elf/dl-tunables.list b/elf/dl-tunables.list
+index 0b6721bc51..c03c9967f0 100644
+--- a/elf/dl-tunables.list
++++ b/elf/dl-tunables.list
+@@ -138,7 +138,7 @@ glibc {
+     execstack {
+       type: INT_32
+       minval: 0
+-      maxval: 1
++      maxval: 2
+       default: 1
+     }
+   }
+diff --git a/elf/rtld.c b/elf/rtld.c
+index 00bec15316..7a8aa56377 100644
+--- a/elf/rtld.c
++++ b/elf/rtld.c
+@@ -1626,9 +1626,9 @@ dl_main (const ElfW(Phdr) *phdr,
+ 
+   bool has_interp = rtld_setup_main_map (main_map);
+ 
+-  if ((__glibc_unlikely (GL(dl_stack_flags)) & PF_X)
+-      && TUNABLE_GET (glibc, rtld, execstack, int32_t, NULL) == 0)
+-    _dl_fatal_printf ("Fatal glibc error: executable stack is not allowed\n");
++  /* Handle this after PT_GNU_STACK parse, because it updates dl_stack_flags
++     if required.  */
++  _dl_handle_execstack_tunable ();
+ 
+   /* If the current libname is different from the SONAME, add the
+      latter as well.  */
+diff --git a/elf/tst-execstack-prog-static-tunable.c b/elf/tst-execstack-prog-static-tunable.c
+new file mode 100644
+index 0000000000..88b0ca1263
+--- /dev/null
++++ b/elf/tst-execstack-prog-static-tunable.c
+@@ -0,0 +1 @@
++#include <tst-execstack-prog-static.c>
+diff --git a/elf/tst-execstack-tunable.c b/elf/tst-execstack-tunable.c
+new file mode 100644
+index 0000000000..9f03b0f7ca
+--- /dev/null
++++ b/elf/tst-execstack-tunable.c
+@@ -0,0 +1 @@
++#include <tst-execstack.c>
+diff --git a/elf/tst-rtld-list-tunables.exp b/elf/tst-rtld-list-tunables.exp
+index 9f5990f340..8df6f5906e 100644
+--- a/elf/tst-rtld-list-tunables.exp
++++ b/elf/tst-rtld-list-tunables.exp
+@@ -13,6 +13,6 @@ glibc.malloc.top_pad: 0x20000 (min: 0x0, max: 0x[f]+)
+ glibc.malloc.trim_threshold: 0x0 (min: 0x0, max: 0x[f]+)
+ glibc.rtld.dynamic_sort: 2 (min: 1, max: 2)
+ glibc.rtld.enable_secure: 0 (min: 0, max: 1)
+-glibc.rtld.execstack: 1 (min: 0, max: 1)
++glibc.rtld.execstack: 1 (min: 0, max: 2)
+ glibc.rtld.nns: 0x4 (min: 0x1, max: 0x10)
+ glibc.rtld.optional_static_tls: 0x200 (min: 0x0, max: 0x[f]+)
+diff --git a/manual/tunables.texi b/manual/tunables.texi
+index 7f0246c789..67064f595e 100644
+--- a/manual/tunables.texi
++++ b/manual/tunables.texi
+@@ -365,8 +365,11 @@ change the main stack permission if kernel starts with a non-executable stack.
+ The @code{glibc.rtld.execstack} can be used to control whether an executable
+ stack is allowed from the main program.  Setting the value to @code{0} disables
+ the ABI auto-negotiation (meaning no executable stacks even if the ABI or ELF
+-header requires it), while @code{1} enables auto-negotiation (although the
+-program might not need an executable stack).
++header requires it), @code{1} enables auto-negotiation (although the program
++might not need an executable stack), while @code{2} forces an executable
++stack at process start.  Tthis is provided for compatibility reasons, when
++the program dynamically loads modules with @code{dlopen} which require
++an executable stack.
+ 
+ When executable stacks are not allowed, and if the main program requires it,
+ the loader will fail with an error message.
+@@ -380,7 +383,8 @@ of hardware capabilities and kernel configuration.
+ @strong{NB:} Trying to load a dynamic shared library with @code{dlopen} or
+ @code{dlmopen} that requires an executable stack will always fail if the
+ main program does not require an executable stack at loading time.  This
+-is enforced regardless of the tunable value.
++can be worked around by setting the tunable to @code{2}, where the stack is
++always executable.
+ @end deftp
+ 
+ @node Elision Tunables
+diff --git a/sysdeps/generic/ldsodefs.h b/sysdeps/generic/ldsodefs.h
+index e871f27ff2..4b44beb3f4 100644
+--- a/sysdeps/generic/ldsodefs.h
++++ b/sysdeps/generic/ldsodefs.h
+@@ -695,6 +695,19 @@ extern const ElfW(Phdr) *_dl_phdr;
+ extern size_t _dl_phnum;
+ #endif
+ 
++/* Possible values for the glibc.rtld.execstack tunable.  */
++enum stack_tunable_mode
++  {
++    /* Do not allow executable stacks, even if program requires it.  */
++    stack_tunable_mode_disable = 0,
++    /* Follows either ABI requirement, or the PT_GNU_STACK value.  */
++    stack_tunable_mode_enable = 1,
++    /* Always enable an executable stack.  */
++    stack_tunable_mode_force = 2
++  };
++
++void _dl_handle_execstack_tunable (void) attribute_hidden;
++
+ /* This function changes the permission of the memory region pointed
+    by STACK_ENDP to executable and update the internal memory protection
+    flags for future thread stack creation.  */
+-- 
+cgit 
+
