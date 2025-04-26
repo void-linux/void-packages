@@ -384,6 +384,8 @@ install_pkg_deps() {
         (
         curpkgdepname=$($XBPS_UHELPER_CMD getpkgname "$i" 2>/dev/null)
         setup_pkg $curpkgdepname
+        # do not check when building dependencies, except for "full" (-K)
+        [ "$XBPS_CHECK_PKGS" == full ] || unset XBPS_CHECK_PKGS
         exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 XBPS_DEPENDS_CHAIN="$XBPS_DEPENDS_CHAIN, $sourcepkg(host)" \
             $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross_prepare || exit $?
         ) || exit $?
