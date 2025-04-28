@@ -13,11 +13,9 @@ Reviewed-by: bobv, stuefe
  4 files changed, 135 insertions(+), 71 deletions(-)
  create mode 100644 test/hotspot/jtreg/runtime/containers/cgroup/PlainRead.java
 
-diff --git a/src/hotspot/os/linux/osContainer_linux.cpp b/src/hotspot/os/linux/osContainer_linux.cpp
-index c2f135a9e2c7..0b35bb32c5d1 100644
 --- a/src/hotspot/os/linux/osContainer_linux.cpp
 +++ b/src/hotspot/os/linux/osContainer_linux.cpp
-@@ -414,9 +414,9 @@ void OSContainer::init() {
+@@ -397,9 +397,9 @@ void OSContainer::init() {
  
  }
  
@@ -29,8 +27,6 @@ index c2f135a9e2c7..0b35bb32c5d1 100644
    } else {
      return NULL;
    }
-diff --git a/src/hotspot/os/linux/osContainer_linux.hpp b/src/hotspot/os/linux/osContainer_linux.hpp
-index 5ace80165d92..0a81364fc8d9 100644
 --- a/src/hotspot/os/linux/osContainer_linux.hpp
 +++ b/src/hotspot/os/linux/osContainer_linux.hpp
 @@ -40,7 +40,7 @@ class OSContainer: AllStatic {
@@ -42,11 +38,9 @@ index 5ace80165d92..0a81364fc8d9 100644
  
    static jlong memory_limit_in_bytes();
    static jlong memory_and_swap_limit_in_bytes();
-diff --git a/src/hotspot/os/linux/os_linux.cpp b/src/hotspot/os/linux/os_linux.cpp
-index 4544baa8f762..6d530afcc30a 100644
 --- a/src/hotspot/os/linux/os_linux.cpp
 +++ b/src/hotspot/os/linux/os_linux.cpp
-@@ -177,20 +177,17 @@ julong os::Linux::available_memory() {
+@@ -178,20 +178,17 @@ julong os::Linux::available_memory() {
  
    if (OSContainer::is_containerized()) {
      jlong mem_limit, mem_usage;
@@ -78,7 +72,7 @@ index 4544baa8f762..6d530afcc30a 100644
      }
    }
  
-@@ -201,22 +198,18 @@ julong os::Linux::available_memory() {
+@@ -202,22 +199,18 @@ julong os::Linux::available_memory() {
  }
  
  julong os::physical_memory() {
@@ -106,23 +100,22 @@ index 4544baa8f762..6d530afcc30a 100644
    log_trace(os)("total system memory: " JLONG_FORMAT, phys_mem);
    return phys_mem;
  }
-@@ -2135,63 +2128,54 @@ void os::Linux::print_full_memory_info(outputStream* st) {
+@@ -2136,63 +2129,54 @@ void os::Linux::print_full_memory_info(o
  }
  
  void os::Linux::print_container_info(outputStream* st) {
 -  if (OSContainer::is_containerized()) {
 -    st->print("container (cgroup) information:\n");
-+  if (!OSContainer::is_containerized()) {
-+    return;
-+  }
- 
+-
 -    char *p = OSContainer::container_type();
 -    if (p == NULL)
 -      st->print("container_type() failed\n");
 -    else {
 -      st->print("container_type: %s\n", p);
 -    }
-+  st->print("container (cgroup) information:\n");
++  if (!OSContainer::is_containerized()) {
++    return;
++  }
  
 -    p = OSContainer::cpu_cpuset_cpus();
 -    if (p == NULL)
@@ -131,8 +124,7 @@ index 4544baa8f762..6d530afcc30a 100644
 -      st->print("cpu_cpuset_cpus: %s\n", p);
 -      free(p);
 -    }
-+  const char *p_ct = OSContainer::container_type();
-+  st->print("container_type: %s\n", p_ct != NULL ? p_ct : "failed");
++  st->print("container (cgroup) information:\n");
  
 -    p = OSContainer::cpu_cpuset_memory_nodes();
 -    if (p < 0)
@@ -141,21 +133,22 @@ index 4544baa8f762..6d530afcc30a 100644
 -      st->print("cpu_memory_nodes: %s\n", p);
 -      free(p);
 -    }
-+  char *p = OSContainer::cpu_cpuset_cpus();
-+  st->print("cpu_cpuset_cpus: %s\n", p != NULL ? p : "failed");
-+  free(p);
++  const char *p_ct = OSContainer::container_type();
++  st->print("container_type: %s\n", p_ct != NULL ? p_ct : "failed");
  
 -    int i = OSContainer::active_processor_count();
 -    if (i < 0)
 -      st->print("active_processor_count() failed\n");
 -    else
 -      st->print("active_processor_count: %d\n", i);
++  char *p = OSContainer::cpu_cpuset_cpus();
++  st->print("cpu_cpuset_cpus: %s\n", p != NULL ? p : "failed");
++  free(p);
++
 +  p = OSContainer::cpu_cpuset_memory_nodes();
 +  st->print("cpu_memory_nodes: %s\n", p != NULL ? p : "failed");
 +  free(p);
- 
--    i = OSContainer::cpu_quota();
--    st->print("cpu_quota: %d\n", i);
++
 +  int i = OSContainer::active_processor_count();
 +  if (i > 0) {
 +    st->print("active_processor_count: %d\n", i);
@@ -163,52 +156,51 @@ index 4544baa8f762..6d530afcc30a 100644
 +    st->print("active_processor_count: failed\n");
 +  }
  
--    i = OSContainer::cpu_period();
--    st->print("cpu_period: %d\n", i);
+-    i = OSContainer::cpu_quota();
+-    st->print("cpu_quota: %d\n", i);
 +  i = OSContainer::cpu_quota();
 +  st->print("cpu_quota: %d\n", i);
  
--    i = OSContainer::cpu_shares();
--    st->print("cpu_shares: %d\n", i);
+-    i = OSContainer::cpu_period();
+-    st->print("cpu_period: %d\n", i);
 +  i = OSContainer::cpu_period();
 +  st->print("cpu_period: %d\n", i);
  
--    jlong j = OSContainer::memory_limit_in_bytes();
--    st->print("memory_limit_in_bytes: " JLONG_FORMAT "\n", j);
+-    i = OSContainer::cpu_shares();
+-    st->print("cpu_shares: %d\n", i);
 +  i = OSContainer::cpu_shares();
 +  st->print("cpu_shares: %d\n", i);
  
--    j = OSContainer::memory_and_swap_limit_in_bytes();
--    st->print("memory_and_swap_limit_in_bytes: " JLONG_FORMAT "\n", j);
+-    jlong j = OSContainer::memory_limit_in_bytes();
+-    st->print("memory_limit_in_bytes: " JLONG_FORMAT "\n", j);
 +  jlong j = OSContainer::memory_limit_in_bytes();
 +  st->print("memory_limit_in_bytes: " JLONG_FORMAT "\n", j);
  
--    j = OSContainer::memory_soft_limit_in_bytes();
--    st->print("memory_soft_limit_in_bytes: " JLONG_FORMAT "\n", j);
+-    j = OSContainer::memory_and_swap_limit_in_bytes();
+-    st->print("memory_and_swap_limit_in_bytes: " JLONG_FORMAT "\n", j);
 +  j = OSContainer::memory_and_swap_limit_in_bytes();
 +  st->print("memory_and_swap_limit_in_bytes: " JLONG_FORMAT "\n", j);
  
--    j = OSContainer::OSContainer::memory_usage_in_bytes();
--    st->print("memory_usage_in_bytes: " JLONG_FORMAT "\n", j);
+-    j = OSContainer::memory_soft_limit_in_bytes();
+-    st->print("memory_soft_limit_in_bytes: " JLONG_FORMAT "\n", j);
 +  j = OSContainer::memory_soft_limit_in_bytes();
 +  st->print("memory_soft_limit_in_bytes: " JLONG_FORMAT "\n", j);
+ 
+-    j = OSContainer::OSContainer::memory_usage_in_bytes();
+-    st->print("memory_usage_in_bytes: " JLONG_FORMAT "\n", j);
++  j = OSContainer::OSContainer::memory_usage_in_bytes();
++  st->print("memory_usage_in_bytes: " JLONG_FORMAT "\n", j);
  
 -    j = OSContainer::OSContainer::memory_max_usage_in_bytes();
 -    st->print("memory_max_usage_in_bytes: " JLONG_FORMAT "\n", j);
 -    st->cr();
 -  }
-+  j = OSContainer::OSContainer::memory_usage_in_bytes();
-+  st->print("memory_usage_in_bytes: " JLONG_FORMAT "\n", j);
-+
 +  j = OSContainer::OSContainer::memory_max_usage_in_bytes();
 +  st->print("memory_max_usage_in_bytes: " JLONG_FORMAT "\n", j);
 +  st->cr();
  }
  
  void os::print_memory_info(outputStream* st) {
-diff --git a/test/hotspot/jtreg/runtime/containers/cgroup/PlainRead.java b/test/hotspot/jtreg/runtime/containers/cgroup/PlainRead.java
-new file mode 100644
-index 000000000000..be16dab76b7a
 --- /dev/null
 +++ b/test/hotspot/jtreg/runtime/containers/cgroup/PlainRead.java
 @@ -0,0 +1,80 @@

@@ -1,44 +1,453 @@
-diff -ur a/Lib/test/test_math.py b/Lib/test/test_math.py
---- a/Lib/test/test_math.py	2024-10-07 01:02:14.000000000 -0400
-+++ b/Lib/test/test_math.py	2024-11-24 21:10:44.322603023 -0500
-@@ -2707,7 +2707,8 @@
-     # properly: it doesn't use the right sign when the result is zero.
-     @unittest.skipIf(
-         sys.platform.startswith(("freebsd", "wasi", "netbsd"))
--        or (sys.platform == "android" and platform.machine() == "x86_64"),
-+        or (sys.platform == "android" and platform.machine() == "x86_64")
-+        or platform.libc_ver()[0] != 'glibc',
+From 6146295a5b8e9286ccb8f90818b764c9a0192090 Mon Sep 17 00:00:00 2001
+From: "R. David Murray" <rdmurray@bitdance.com>
+Date: Wed, 19 Mar 2025 13:05:09 -0400
+Subject: [PATCH] gh-90548: Make musl test skips smarter (fixes Alpine errors)
+ (#131313)
+
+* Make musl test skips smarter (fixes Alpine errors)
+
+A relatively small number of tests fail when the underlying c library is
+provided by musl.  This was originally reported in bpo-46390 by
+Christian Heimes.  Among other changes, these tests were marked for
+skipping in gh-31947/ef1327e3 as part of bpo-40280 (emscripten support),
+but the skips were conditioned on the *platform* being emscripten (or
+wasi, skips for which ere added in 9b50585e02).
+
+In gh-131071 Victor Stinner added a linked_to_musl function to enable
+skipping a test in test_math that fails under musl, like it does on a
+number of other platforms.  This check can successfully detect that
+python is running under musl on Alpine, which was the original problem
+report in bpo-46390.
+
+This PR replaces Victor's solution with an enhancement to
+platform.libc_ver that does the check more cheaply, and also gets the
+version number.  The latter is important because the math test being
+skipped is due to a bug in musl that has been fixed, but as of this
+checkin date has not yet been released.  When it is, the test skip can
+be fixed to check for the minimum needed version.
+
+The enhanced version of linked_to_musl is also used to do the skips of
+the other tests that generically fail under musl, as opposed to
+emscripten or wasi only failures.  This will allow these tests to be
+skipped automatically on Alpine.
+
+This PR does *not* enhance libc_ver to support emscripten and wasi, as
+I'm not familiar with those platforms; instead it returns a version
+triple of (0, 0, 0) for those platforms.  This means the musl tests will
+be skipped regardless of musl version, so ideally someone will add
+support to libc_ver for these platforms.
+
+* Platform tests and bug fixes.
+
+In adding tests for the new platform code I found a bug in the old code:
+if a valid version is passed for version and it is greater than the
+version found for an so *and* there is no glibc version, then the
+version from the argument was returned.  The code changes here fix
+that.
+
+* Add support docs, including for some preexisting is_xxx's.
+
+* Add news item about libc_ver enhancement.
+
+* Prettify platform re expression using re.VERBOSE.
+---
+ Doc/library/test.rst                          | 31 ++++++++++++++-
+ Lib/platform.py                               | 37 +++++++++++-------
+ Lib/test/support/__init__.py                  | 39 +++++++++++++------
+ Lib/test/test__locale.py                      | 20 ++--------
+ Lib/test/test_locale.py                       | 12 ++----
+ Lib/test/test_math.py                         |  3 ++
+ Lib/test/test_os.py                           | 15 ++++---
+ Lib/test/test_platform.py                     | 35 +++++++++++++----
+ Lib/test/test_re.py                           | 12 ++----
+ Lib/test/test_strptime.py                     |  5 +--
+ Lib/test/test_support.py                      | 13 ++++++-
+ ...5-03-17-17-11-41.gh-issue-90548.xSPf_L.rst |  2 +
+ 12 files changed, 143 insertions(+), 81 deletions(-)
+ create mode 100644 Misc/NEWS.d/next/Library/2025-03-17-17-11-41.gh-issue-90548.xSPf_L.rst
+
+diff --git a/Doc/library/test.rst b/Doc/library/test.rst
+index 46f8975687714b..f27cd55e7271a0 100644
+--- a/Doc/library/test.rst
++++ b/Doc/library/test.rst
+@@ -246,7 +246,27 @@ The :mod:`test.support` module defines the following constants:
+ 
+ .. data:: is_android
+ 
+-   ``True`` if the system is Android.
++   ``True`` if ``sys.platform`` is ``android``.
++
++
++.. data:: is_emscripten
++
++   ``True`` if ``sys.platform`` is ``emscripten``.
++
++
++.. data:: is_wasi
++
++   ``True`` if ``sys.platform`` is ``wasi``.
++
++
++.. data:: is_apple_mobile
++
++   ``True`` if ``sys.platform`` is ``ios``, ``tvos``, or ``watchos``.
++
++
++.. data:: is_apple
++
++   ``True`` if ``sys.platform`` is ``darwin`` or ``is_apple_mobile`` is ``True``.
+ 
+ 
+ .. data:: unix_shell
+@@ -831,6 +851,15 @@ The :mod:`test.support` module defines the following functions:
+    Decorator for tests that fill the address space.
+ 
+ 
++.. function:: linked_with_musl()
++
++   Return ``False`` if there is no evidence the interperter was compiled with
++   ``musl``, otherwise return a version triple, either ``(0, 0, 0)`` if the
++   version is unknown, or the actual version if it is known.  Intended for use
++   in ``skip`` decorators.  ``emscripten`` and ``wasi`` are assumed to be
++   compiled with ``musl``; otherwise ``platform.libc_ver`` is checked.
++
++
+ .. function:: check_syntax_error(testcase, statement, errtext='', *, lineno=None, offset=None)
+ 
+    Test for syntax errors in *statement* by attempting to compile *statement*.
+diff --git a/Lib/platform.py b/Lib/platform.py
+index 1f6baed66d3df9..a62192589af8ff 100644
+--- a/Lib/platform.py
++++ b/Lib/platform.py
+@@ -189,22 +189,25 @@ def libc_ver(executable=None, lib='', version='', chunksize=16384):
+             # sys.executable is not set.
+             return lib, version
+ 
+-    libc_search = re.compile(b'(__libc_init)'
+-                          b'|'
+-                          b'(GLIBC_([0-9.]+))'
+-                          b'|'
+-                          br'(libc(_\w+)?\.so(?:\.(\d[0-9.]*))?)', re.ASCII)
++    libc_search = re.compile(br"""
++          (__libc_init)
++        | (GLIBC_([0-9.]+))
++        | (libc(_\w+)?\.so(?:\.(\d[0-9.]*))?)
++        | (musl-([0-9.]+))
++        """,
++        re.ASCII | re.VERBOSE)
+ 
+     V = _comparable_version
+     # We use os.path.realpath()
+     # here to work around problems with Cygwin not being
+     # able to open symlinks for reading
+     executable = os.path.realpath(executable)
++    ver = None
+     with open(executable, 'rb') as f:
+         binary = f.read(chunksize)
+         pos = 0
+         while pos < len(binary):
+-            if b'libc' in binary or b'GLIBC' in binary:
++            if b'libc' in binary or b'GLIBC' in binary or b'musl' in binary:
+                 m = libc_search.search(binary, pos)
+             else:
+                 m = None
+@@ -216,7 +219,7 @@ def libc_ver(executable=None, lib='', version='', chunksize=16384):
+                     continue
+                 if not m:
+                     break
+-            libcinit, glibc, glibcversion, so, threads, soversion = [
++            libcinit, glibc, glibcversion, so, threads, soversion, musl, muslversion = [
+                 s.decode('latin1') if s is not None else s
+                 for s in m.groups()]
+             if libcinit and not lib:
+@@ -224,18 +227,22 @@ def libc_ver(executable=None, lib='', version='', chunksize=16384):
+             elif glibc:
+                 if lib != 'glibc':
+                     lib = 'glibc'
+-                    version = glibcversion
+-                elif V(glibcversion) > V(version):
+-                    version = glibcversion
++                    ver = glibcversion
++                elif V(glibcversion) > V(ver):
++                    ver = glibcversion
+             elif so:
+                 if lib != 'glibc':
+                     lib = 'libc'
+-                    if soversion and (not version or V(soversion) > V(version)):
+-                        version = soversion
+-                    if threads and version[-len(threads):] != threads:
+-                        version = version + threads
++                    if soversion and (not ver or V(soversion) > V(ver)):
++                        ver = soversion
++                    if threads and ver[-len(threads):] != threads:
++                        ver = ver + threads
++            elif musl:
++                lib = 'musl'
++                if not ver or V(muslversion) > V(ver):
++                    ver = muslversion
+             pos = m.end()
+-    return lib, version
++    return lib, version if ver is None else ver
+ 
+ def _norm_version(version, build=''):
+ 
+diff --git a/Lib/test/test__locale.py b/Lib/test/test__locale.py
+index cef84fd9580c37..11b2c9545a1b43 100644
+--- a/Lib/test/test__locale.py
++++ b/Lib/test/test__locale.py
+@@ -137,10 +137,7 @@ def numeric_tester(self, calc_type, calc_value, data_type, used_locale):
+             return True
+ 
+     @unittest.skipUnless(nl_langinfo, "nl_langinfo is not available")
+-    @unittest.skipIf(
+-        support.is_emscripten or support.is_wasi,
+-        "musl libc issue on Emscripten, bpo-46390"
+-    )
++    @unittest.skipIf(support.linked_to_musl(), "musl libc issue, bpo-46390")
+     def test_lc_numeric_nl_langinfo(self):
+         # Test nl_langinfo against known values
+         tested = False
+@@ -158,10 +155,7 @@ def test_lc_numeric_nl_langinfo(self):
+         if not tested:
+             self.skipTest('no suitable locales')
+ 
+-    @unittest.skipIf(
+-        support.is_emscripten or support.is_wasi,
+-        "musl libc issue on Emscripten, bpo-46390"
+-    )
++    @unittest.skipIf(support.linked_to_musl(), "musl libc issue, bpo-46390")
+     def test_lc_numeric_localeconv(self):
+         # Test localeconv against known values
+         tested = False
+@@ -210,10 +204,7 @@ def test_lc_numeric_basic(self):
+ 
+     @unittest.skipUnless(nl_langinfo, "nl_langinfo is not available")
+     @unittest.skipUnless(hasattr(locale, 'ALT_DIGITS'), "requires locale.ALT_DIGITS")
+-    @unittest.skipIf(
+-        support.is_emscripten or support.is_wasi,
+-        "musl libc issue on Emscripten, bpo-46390"
+-    )
++    @unittest.skipIf(support.linked_to_musl(), "musl libc issue, bpo-46390")
+     def test_alt_digits_nl_langinfo(self):
+         # Test nl_langinfo(ALT_DIGITS)
+         tested = False
+@@ -245,10 +236,7 @@ def test_alt_digits_nl_langinfo(self):
+ 
+     @unittest.skipUnless(nl_langinfo, "nl_langinfo is not available")
+     @unittest.skipUnless(hasattr(locale, 'ERA'), "requires locale.ERA")
+-    @unittest.skipIf(
+-        support.is_emscripten or support.is_wasi,
+-        "musl libc issue on Emscripten, bpo-46390"
+-    )
++    @unittest.skipIf(support.linked_to_musl(), "musl libc issue, bpo-46390")
+     def test_era_nl_langinfo(self):
+         # Test nl_langinfo(ERA)
+         tested = False
+diff --git a/Lib/test/test_locale.py b/Lib/test/test_locale.py
+index 798c6ad62cddd1..528ceef528114c 100644
+--- a/Lib/test/test_locale.py
++++ b/Lib/test/test_locale.py
+@@ -1,5 +1,5 @@
+ from decimal import Decimal
+-from test.support import verbose, is_android, is_emscripten, is_wasi
++from test.support import verbose, is_android, linked_to_musl, os_helper
+ from test.support.warnings_helper import check_warnings
+ from test.support.import_helper import import_fresh_module
+ from unittest import mock
+@@ -351,10 +351,7 @@
+ 
+     @unittest.skipIf(sys.platform.startswith('aix'),
+                      'bpo-29972: broken test on AIX')
+-    @unittest.skipIf(
+-        is_emscripten or is_wasi,
+-        "musl libc issue on Emscripten/WASI, bpo-46390"
+-    )
++    @unittest.skipIf(linked_to_musl(), "musl libc issue, bpo-46390")
+     @unittest.skipIf(sys.platform.startswith("netbsd"),
+                      "gh-124108: NetBSD doesn't support UTF-8 for LC_COLLATE")
+     def test_strcoll_with_diacritic(self):
+@@ -362,10 +359,7 @@
+ 
+     @unittest.skipIf(sys.platform.startswith('aix'),
+                      'bpo-29972: broken test on AIX')
+-    @unittest.skipIf(
+-        is_emscripten or is_wasi,
+-        "musl libc issue on Emscripten/WASI, bpo-46390"
+-    )
++    @unittest.skipIf(linked_to_musl(), "musl libc issue, bpo-46390")
+     @unittest.skipIf(sys.platform.startswith("netbsd"),
+                      "gh-124108: NetBSD doesn't support UTF-8 for LC_COLLATE")
+     def test_strxfrm_with_diacritic(self):
+diff --git a/Lib/test/test_math.py b/Lib/test/test_math.py
+index 2649be86e5086e..b4f5dd80f55f86 100644
+--- a/Lib/test/test_math.py
++++ b/Lib/test/test_math.py
+@@ -2772,6 +2772,9 @@ def test_fma_infinities(self):
+         or (sys.platform == "android" and platform.machine() == "x86_64")
+         or support.linked_to_musl(),  # gh-131032
          f"this platform doesn't implement IEE 754-2008 properly")
++    # gh-131032: musl is fixed but the fix is not yet released; when the fixed
++    # version is known change this to:
++    #   or support.linked_to_musl() < (1, <m>, <p>)
      def test_fma_zero_result(self):
          nonnegative_finites = [0.0, 1e-300, 2.3, 1e300]
-diff -ur a/Lib/test/test_re.py b/Lib/test/test_re.py
---- a/Lib/test/test_re.py	2024-10-07 01:02:14.000000000 -0400
-+++ b/Lib/test/test_re.py	2024-11-24 21:11:47.190747775 -0500
-@@ -4,6 +4,7 @@
+ 
+diff --git a/Lib/test/test_os.py b/Lib/test/test_os.py
+index 0353c2b4866c45..333179a71e3cdc 100644
+--- a/Lib/test/test_os.py
++++ b/Lib/test/test_os.py
+@@ -2393,14 +2393,11 @@
+         self.check(os.fchown, -1, -1)
+ 
+     @unittest.skipUnless(hasattr(os, 'fpathconf'), 'test needs os.fpathconf()')
+-    @unittest.skipIf(
+-        support.is_emscripten or support.is_wasi,
+-        "musl libc issue on Emscripten/WASI, bpo-46390"
+-    )
+     def test_fpathconf(self):
+         self.assertIn("PC_NAME_MAX", os.pathconf_names)
+-        self.check(os.pathconf, "PC_NAME_MAX")
+-        self.check(os.fpathconf, "PC_NAME_MAX")
++        if not support.linked_to_musl():
++            self.check(os.pathconf, "PC_NAME_MAX")
++            self.check(os.fpathconf, "PC_NAME_MAX")
+         self.check_bool(os.pathconf, "PC_NAME_MAX")
+         self.check_bool(os.fpathconf, "PC_NAME_MAX")
+ 
+diff --git a/Lib/test/test_platform.py b/Lib/test/test_platform.py
+index ca73b043d31b7f..6ba630ad527f91 100644
+--- a/Lib/test/test_platform.py
++++ b/Lib/test/test_platform.py
+@@ -551,6 +551,10 @@ def test_libc_ver(self):
+                 (b'GLIBC_2.9', ('glibc', '2.9')),
+                 (b'libc.so.1.2.5', ('libc', '1.2.5')),
+                 (b'libc_pthread.so.1.2.5', ('libc', '1.2.5_pthread')),
++                (b'/aports/main/musl/src/musl-1.2.5', ('musl', '1.2.5')),
++                # musl uses semver, but we accept some variations anyway:
++                (b'/aports/main/musl/src/musl-12.5', ('musl', '12.5')),
++                (b'/aports/main/musl/src/musl-1.2.5.7', ('musl', '1.2.5.7')),
+                 (b'', ('', '')),
+             ):
+                 with open(filename, 'wb') as fp:
+@@ -562,14 +566,29 @@ def test_libc_ver(self):
+                                  expected)
+ 
+         # binary containing multiple versions: get the most recent,
+-        # make sure that 1.9 is seen as older than 1.23.4
+-        chunksize = 16384
+-        with open(filename, 'wb') as f:
+-            # test match at chunk boundary
+-            f.write(b'x'*(chunksize - 10))
+-            f.write(b'GLIBC_1.23.4\0GLIBC_1.9\0GLIBC_1.21\0')
+-        self.assertEqual(platform.libc_ver(filename, chunksize=chunksize),
+-                         ('glibc', '1.23.4'))
++        # make sure that eg 1.9 is seen as older than 1.23.4, and that
++        # the arguments don't count even if they are set.
++        chunksize = 200
++        for data, expected in (
++                (b'GLIBC_1.23.4\0GLIBC_1.9\0GLIBC_1.21\0', ('glibc', '1.23.4')),
++                (b'libc.so.2.4\0libc.so.9\0libc.so.23.1\0', ('libc', '23.1')),
++                (b'musl-1.4.1\0musl-2.1.1\0musl-2.0.1\0', ('musl', '2.1.1')),
++                (b'no match here, so defaults are used', ('test', '100.1.0')),
++            ):
++            with open(filename, 'wb') as f:
++                # test match at chunk boundary
++                f.write(b'x'*(chunksize - 10))
++                f.write(data)
++            self.assertEqual(
++                expected,
++                platform.libc_ver(
++                    filename,
++                    lib='test',
++                    version='100.1.0',
++                    chunksize=chunksize,
++                    ),
++                )
++
+ 
+     def test_android_ver(self):
+         res = platform.android_ver()
+diff --git a/Lib/test/test_re.py b/Lib/test/test_re.py
+index 5538de60b2a03a..f65b4076aee2c6 100644
+--- a/Lib/test/test_re.py
++++ b/Lib/test/test_re.py
+@@ -1,6 +1,6 @@
+ from test.support import (gc_collect, bigmemtest, _2G,
+                           cpython_only, captured_stdout,
+-                          check_disallow_instantiation, is_emscripten, is_wasi,
++                          check_disallow_instantiation, linked_to_musl,
                            warnings_helper, SHORT_TIMEOUT, CPUStopwatch, requires_resource)
  import locale
  import re
-+import platform
- import string
- import sys
- import time
-@@ -2016,7 +2017,8 @@
+@@ -2172,10 +2172,7 @@ def test_bug_20998(self):
+         # with ignore case.
          self.assertEqual(re.fullmatch('[a-c]+', 'ABC', re.I).span(), (0, 3))
  
-     @unittest.skipIf(
+-    @unittest.skipIf(
 -        is_emscripten or is_wasi,
-+        is_emscripten or is_wasi
-+        or platform.libc_ver()[0] != 'glibc',
-         "musl libc issue on Emscripten/WASI, bpo-46390"
-     )
+-        "musl libc issue on Emscripten/WASI, bpo-46390"
+-    )
++    @unittest.skipIf(linked_to_musl(), "musl libc issue, bpo-46390")
      def test_locale_caching(self):
-@@ -2056,7 +2058,8 @@
+         # Issue #22410
+         oldlocale = locale.setlocale(locale.LC_CTYPE)
+@@ -2212,10 +2209,7 @@ def check_en_US_utf8(self):
+         self.assertIsNone(re.match(b'(?Li)\xc5', b'\xe5'))
          self.assertIsNone(re.match(b'(?Li)\xe5', b'\xc5'))
  
-     @unittest.skipIf(
+-    @unittest.skipIf(
 -        is_emscripten or is_wasi,
-+        is_emscripten or is_wasi
-+        or platform.libc_ver()[0] != 'glibc',
-         "musl libc issue on Emscripten/WASI, bpo-46390"
-     )
+-        "musl libc issue on Emscripten/WASI, bpo-46390"
+-    )
++    @unittest.skipIf(linked_to_musl(), "musl libc issue, bpo-46390")
      def test_locale_compiled(self):
+         oldlocale = locale.setlocale(locale.LC_CTYPE)
+         self.addCleanup(locale.setlocale, locale.LC_CTYPE, oldlocale)
+diff --git a/Lib/test/test_strptime.py b/Lib/test/test_strptime.py
+index 0d30a63ab0c140..fbc43829e22a96 100644
+--- a/Lib/test/test_strptime.py
++++ b/Lib/test/test_strptime.py
+@@ -544,10 +544,7 @@ def test_date_locale(self):
+         self.roundtrip('%x', slice(0, 3), time.localtime(now - 366*24*3600))
+ 
+     # NB: Dates before 1969 do not roundtrip on many locales, including C.
+-    @unittest.skipIf(
+-        support.is_emscripten or support.is_wasi,
+-        "musl libc issue on Emscripten, bpo-46390"
+-    )
++    @unittest.skipIf(support.linked_to_musl(), "musl libc issue, bpo-46390")
+     @run_with_locales('LC_TIME', 'en_US', 'fr_FR', 'de_DE', 'ja_JP',
+                       'eu_ES', 'ar_AE', 'my_MM', 'shn_MM')
+     def test_date_locale2(self):
+diff --git a/Lib/test/test_support.py b/Lib/test/test_support.py
+index 46d796379fa212..8d5b3440d3bd30 100644
+--- a/Lib/test/test_support.py
++++ b/Lib/test/test_support.py
+@@ -746,7 +746,18 @@ def test_get_signal_name(self):
+ 
+     def test_linked_to_musl(self):
+         linked = support.linked_to_musl()
+-        self.assertIsInstance(linked, bool)
++        self.assertIsNotNone(linked)
++        if support.is_wasi or support.is_emscripten:
++            self.assertTrue(linked)
++        # The value is cached, so make sure it returns the same value again.
++        self.assertIs(linked, support.linked_to_musl())
++        # The unlike libc, the musl version is a triple.
++        if linked:
++            self.assertIsInstance(linked, tuple)
++            self.assertEqual(3, len(linked))
++            for v in linked:
++                self.assertIsInstance(v, int)
++
+ 
+     # XXX -follows a list of untested API
+     # make_legacy_pyc
+diff --git a/Misc/NEWS.d/next/Library/2025-03-17-17-11-41.gh-issue-90548.xSPf_L.rst b/Misc/NEWS.d/next/Library/2025-03-17-17-11-41.gh-issue-90548.xSPf_L.rst
+new file mode 100644
+index 00000000000000..88746c1866f14e
+--- /dev/null
++++ b/Misc/NEWS.d/next/Library/2025-03-17-17-11-41.gh-issue-90548.xSPf_L.rst
+@@ -0,0 +1,2 @@
++:func:`platform.libc_ver` can now detect and report the version of ``musl``
++on Alpine Linux.
