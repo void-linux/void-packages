@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # fetch-xtools.sh
 
@@ -16,4 +16,4 @@ else
 	xbps-fetch -o "$FILE" "$URL" || exit 1
 fi
 
-$TAR xf "$FILE" -C /tmp/bin --strip-components=1 || exit 1
+$TAR xf "$FILE" -C /usr/local/bin --strip-components=1 || exit 1

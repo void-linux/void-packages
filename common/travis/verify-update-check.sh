@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # runs update-check on all changed templates, then errors only if there was an
 # issue with the update-check. does not error if further updates are available,
 # as there may be a good reason not to update to those versions

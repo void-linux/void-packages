@@ -44,7 +44,7 @@ fi
 XBPS_SUBPKG_INSTALL_DONE="${XBPS_STATEDIR}/${PKGNAME}_${XBPS_CROSS_BUILD}_subpkg_install_done"
 
 # If it's a subpkg execute the pkg_install() function.
-if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
+if [ ! -f $XBPS_SUBPKG_INSTALL_DONE -o -n "$XBPS_BUILD_FORCEMODE" ]; then
     if [ "$sourcepkg" != "$PKGNAME" ]; then
         # Source all subpkg environment setup snippets.
         for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do

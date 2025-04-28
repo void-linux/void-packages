@@ -47,7 +47,7 @@ esac
 # Tell meson to run binaries with qemu if desired
 _MESON_EXE_WRAPPER=""
 if [[ "${build_helper}" = *qemu* ]]; then
-	_MESON_EXE_WRAPPER="exe_wrapper = '/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static'"
+	_MESON_EXE_WRAPPER="exe_wrapper = '/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}'"
 fi
 
 # Record cross-compiling information in cross file.

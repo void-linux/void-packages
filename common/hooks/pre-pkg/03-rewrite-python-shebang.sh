@@ -24,7 +24,7 @@ hook() {
 		while IFS= read -r -d '' file; do
 			[ ! -s "$file" ] && continue
 
-			pyinterp=$(sed -n -E -e 2q -e 's@^#!.*([[:space:]]|/)(python([0-9](\.[0-9]+)?)?)([[:space:]]+.*|$)@\2@p' "$file")
+			pyinterp=$(sed -n -E -e 2q -e 's@^#!(.*([[:space:]]|/))?(python([0-9](\.[0-9]+)?)?)([[:space:]]+.*|$)@\3@p' "$file")
 			[ -z "$pyinterp" ] && continue
 
 			pyver=${pyinterp#python}

@@ -1136,8 +1136,9 @@ This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 - `qmake6` is like `qmake` but for Qt6.
 
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
-for compiling cargo -sys crates. This helper is added by default for packages that use the
-`cargo` build style.
+for compiling cargo -sys crates.
+It also adds a `cargo` wrapper that detects and passes builds through `cargo-auditable`.
+This helper is added by default for packages that use the `cargo` build style.
 
 <a id="functions"></a>
 ### Functions
@@ -1644,7 +1645,7 @@ Can be used to ensure additional dependency sets are checked. Example: `python_e
 
 - `nopyprovides`: if set, don't create `provides` entries for Python modules in the package.
 
-- `nopyverifydeps`: if set, don't verify Python module dependencies.
+- `noverifypydeps`: if set, don't verify Python module dependencies.
 
 Also, a set of useful variables are defined to use in the templates:
 

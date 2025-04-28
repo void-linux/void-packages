@@ -6,7 +6,7 @@
 hook() {
     local py3_bin="${XBPS_MASTERDIR}/usr/bin/python3"
 
-    if [ -z "$nopyprovides" ] && [ -d "${PKGDESTDIR}/${py3_sitelib}" ] && [ -x "${py3_bin}" ]; then
+    if [ -z "$noverifypydeps" ] && [ -d "${PKGDESTDIR}/${py3_sitelib}" ] && [ -x "${py3_bin}" ]; then
             PYTHONPATH="${XBPS_MASTERDIR}/${py3_sitelib}-bootstrap" "${py3_bin}" \
                 "${XBPS_COMMONDIR}"/scripts/parse-py-metadata.py \
                 ${NOCOLORS:+-C} ${XBPS_STRICT:+-s} -S "${PKGDESTDIR}/${py3_sitelib}" -v "${pkgver}" \
