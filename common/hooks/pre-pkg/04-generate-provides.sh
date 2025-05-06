@@ -23,7 +23,7 @@ generate_python_provides() {
 
 generate_pkgconfig_provides() {
     find "${PKGDESTDIR}/usr/lib/pkgconfig" "${PKGDESTDIR}/usr/share/pkgconfig" -name '*.pc' -type f \
-        -exec pkg-config --print-provides {} \; 2>/dev/null | sed 's/^/pc:/; s/ = /-/' | sort -u
+        -exec pkg-config --print-provides {} \; 2>/dev/null | sed "s/^/pc:/; s/ =.*/-${version}_${revision}/" | sort -u
 }
 
 generate_cmd_provides() {
