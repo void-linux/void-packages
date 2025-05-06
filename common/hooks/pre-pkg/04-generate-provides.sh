@@ -54,7 +54,7 @@ generate_alt_cmd_provides() {
                 fi
                 ;;
         esac
-    done | sed 's/^/cmd:/'
+    done | sed "s/^/cmd:/; s/$/-0_1/"
 }
 
 hook() {
