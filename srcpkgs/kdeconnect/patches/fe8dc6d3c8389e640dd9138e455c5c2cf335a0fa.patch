@@ -1,0 +1,68 @@
+From fe8dc6d3c8389e640dd9138e455c5c2cf335a0fa Mon Sep 17 00:00:00 2001
+From: Simon Redman <simon@ergotech.com>
+Date: Thu, 17 Apr 2025 14:39:30 +0000
+Subject: [PATCH] Fix build on platforms with sizeof(qsizetype) <
+ sizeof(qint64)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+## Summary
+
+`state->read_buffer.size()` returns `qsizetype` which is defined as `ssize_t`. On some platforms, this is less than the size of `qint64`.
+
+This change casts the return of `state->read_buffer.size()` into `qint64` before comparing it to the `maxlen` parameter in `MultiplexChannel::readData`.
+
+Includes defensive assert for the possible, likely distant, future in which `qint64` is not enough to contain a `ssize_t` value, in which case I cannot guarantee the rest of the code will perform correctly.
+
+## Test Plan
+
+### Before:
+Build fails on 32-bit Debian 13 and Ubuntu 25.04 armhf package infra.
+
+```
+/core/backends/bluetooth/multiplexchannel.cpp:55:42: error: no matching function for call to ‘min(qint64&, qsizetype)’
+   55 |         const auto num_to_read = std::min(maxlen, state->read_buffer.size());
+      |
+<snip>
+/usr/include/c++/14/bits/stl_algobase.h:233:5: note: candidate: ‘template<class _Tp> constexpr const _Tp& std::min(const _Tp&, const _Tp&)’
+  233 |     min(const _Tp& __a, const _Tp& __b)
+      |     ^~~
+/usr/include/c++/14/bits/stl_algobase.h:233:5: note:   template argument deduction/substitution failed:
+/<<PKGBUILDDIR>>/core/backends/bluetooth/multiplexchannel.cpp:55:42: note:   deduced conflicting types for parameter ‘const _Tp’ (‘long long int’ and ‘qsizetype’ {aka ‘int’})
+   55 |         const auto num_to_read = std::min(maxlen, state->read_buffer.size());
+```
+
+### After:
+Build passes on my local 32-bit Debian 13 and Ubuntu armhf.
+---
+ core/backends/bluetooth/multiplexchannel.cpp | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/core/backends/bluetooth/multiplexchannel.cpp b/core/backends/bluetooth/multiplexchannel.cpp
+index 0accf0660..4887712bd 100644
+--- a/core/backends/bluetooth/multiplexchannel.cpp
++++ b/core/backends/bluetooth/multiplexchannel.cpp
+@@ -51,8 +51,17 @@ qint64 MultiplexChannel::bytesToWrite() const
+ 
+ qint64 MultiplexChannel::readData(char *data, qint64 maxlen)
+ {
+-    if (maxlen <= state->read_buffer.size() || state->read_buffer.size() > 0) {
+-        const auto num_to_read = std::min(maxlen, state->read_buffer.size());
++    // QByteArray::size() returns qsizetype, which is defined to be the same
++    // as ssize_t which might not be the same as qint64 on all platforms.
++    const qint64 read_buffer_size = (qint64)state->read_buffer.size();
++
++    // Someone sharper than me with C++ can do better here. We need to ensure
++    // that we have not accidentally truncated read_buffer_size with the cast
++    // to qint64 above.
++    static_assert(sizeof(qint64) >= sizeof(qsizetype), "This code has not been checked for safety when qsizetype exceeds the type of the maxlen parameter");
++
++    if (maxlen <= read_buffer_size || read_buffer_size > 0) {
++        const qint64 num_to_read = std::min(maxlen, read_buffer_size);
+         std::memcpy(data, state->read_buffer.data(), num_to_read);
+         state->read_buffer.remove(0, num_to_read);
+         Q_EMIT state->readAvailable();
+-- 
+GitLab
+
