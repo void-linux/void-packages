@@ -1,11 +1,11 @@
 # Template file for 'spotifyd'
 pkgname=spotifyd
-version=0.3.5
-revision=3
+version=0.4.1
+revision=1
 archs="x86_64* i686* aarch64* arm*" # ring
 build_style=cargo
 configure_args="--no-default-features"
-hostmakedepends="pkg-config"
+hostmakedepends="clang cmake pkg-config jq"
 makedepends="openssl-devel $(vopt_if alsa alsa-lib-devel)
  $(vopt_if pulseaudio pulseaudio-devel) $(vopt_if portaudio portaudio-devel)
  $(vopt_if dbus dbus-devel)"
@@ -15,17 +15,18 @@ license="GPL-3.0-or-later"
 homepage="https://github.com/Spotifyd/spotifyd"
 changelog="https://raw.githubusercontent.com/Spotifyd/spotifyd/master/CHANGELOG.md"
 distfiles="https://github.com/Spotifyd/spotifyd/archive/v${version}.tar.gz"
-checksum=59103f7097aa4e2ed960f1cc307ac8f4bdb2f0067aad664af32344aa8a972df7
+checksum=fdbf93c51232d85a0ef29813a02f3c23aacf733444eacf898729593e8837bcfc
 
 build_options="alsa pulseaudio portaudio dbus"
 build_options_default="alsa pulseaudio portaudio dbus"
 
+export AWS_LC_SYS_PREBUILT_NASM=0
 export CFLAGS_${RUST_BUILD//-/_}="${CFLAGS_host}"
 export CC_${RUST_BUILD//-/_}="${BUILD_CC}"
 
 _features="$(vopt_if alsa ',alsa_backend')"
 _features+="$(vopt_if pulseaudio ',pulseaudio_backend')"
-_features+="$(vopt_if dbus ',dbus_mpris,dbus_keyring')"
+_features+="$(vopt_if dbus ',dbus_mpris')"
 _features+="$(vopt_if portaudio ',portaudio_backend')"
 
 if [ "$_features" ]; then
@@ -33,6 +34,20 @@ if [ "$_features" ]; then
 fi
 
 pre_configure() {
-	cargo update --package rustc-serialize@0.3.24  --precise 0.3.25
-	cargo update --package time@0.3.20 --precise 0.3.35
+	AWS_LC_RS_DEP=$(cargo tree -e features -i aws-lc-rs --depth=1)
+	if [ "${AWS_LC_RS_DEP}" != "" ]; then
+		echo "aws-lc-rs dependency found"
+		
+		AWC_LC_RS_VERSION=$(echo "${AWS_LC_RS_DEP}" | grep -o 'aws-lc-rs v[0-9.]*' | cut -d ' ' -f 2 | tr -d 'v')
+		if [ "${AWC_LC_RS_VERSION}" == "" ]; then
+			echo "aws-lc-rs version not found"
+			exit 1
+		fi
+		
+		AWS_LC_RS_ACTIVE_FEATURES=$(echo "${AWS_LC_RS_DEP}" | grep -o 'aws-lc-rs feature .*' | cut -d ' ' -f 3 | tr -d '"' | grep -v prebuilt-nasm)
+		echo "$AWS_LC_RS_ACTIVE_FEATURES" | grep 'bindgen' || {
+			echo "enabling bindgen feature for aws-lc-rs and removing prebuilt-nasm one"
+			cargo add aws-lc-rs@${AWC_LC_RS_VERSION} --features "bindgen,${AWS_LC_RS_ACTIVE_FEATURES[@]}"
+		}
+	fi
 }
