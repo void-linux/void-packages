@@ -1,14 +1,29 @@
 # Template file for 'nodejs'
 pkgname=nodejs
-version=20.16.0
-revision=1
-hostmakedepends="which pkg-config python3-setuptools"
-_make_depends="zlib-devel \
- $(vopt_if icu icu-devel) \
- $(vopt_if ssl openssl-devel) \
- $(vopt_if libuv libuv-devel) \
- $(vopt_if nghttp2 nghttp2-devel) \
- $(vopt_if cares c-ares-devel) \
+version=22.15.0
+revision=2
+build_style=configure
+configure_args="
+ --prefix=/usr
+ --enable-lto
+ --shared-zlib
+ --shared-ada
+ $(vopt_if icu --with-intl=system-icu)
+ $(vopt_if ssl --shared-openssl)
+ $(vopt_if libuv --shared-libuv)
+ $(vopt_if nghttp2 --shared-nghttp2)
+ $(vopt_if cares --shared-cares)
+ $(vopt_if brotli --shared-brotli)"
+make_build_args="V=1 LD=$CXX"
+hostmakedepends="pkg-config python3-setuptools"
+_make_depends="
+ zlib-devel
+ ada-devel
+ $(vopt_if icu icu-devel)
+ $(vopt_if ssl openssl-devel)
+ $(vopt_if libuv libuv-devel)
+ $(vopt_if nghttp2 nghttp2-devel)
+ $(vopt_if cares c-ares-devel)
  $(vopt_if brotli brotli-devel)"
 makedepends="${_make_depends}"
 checkdepends="procps-ng iana-etc"
@@ -18,7 +33,7 @@ license="MIT"
 homepage="https://nodejs.org/"
 changelog="https://raw.githubusercontent.com/nodejs/node/main/doc/changelogs/CHANGELOG_V${version%%.*}.md"
 distfiles="https://nodejs.org/dist/v${version}/node-v${version}.tar.xz"
-checksum=cd6c8fc3ff2606aadbc7155db6f7e77247d2d0065ac18e2f7f049095584b8b46
+checksum=e7c4226d1d92f33ad854d6da4f7e519e77690b8e73f93496881f8c539174d9df
 python_version=3
 
 build_options="ssl libuv icu nghttp2 cares brotli"
@@ -56,21 +71,23 @@ esac
 CFLAGS="-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 CXXFLAGS="-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
-do_configure() {
-	local _args
+post_patch() {
+	vsed -e 's/install: all/install:/' -i Makefile
+}
 
+pre_configure() {
 	export LD="$CXX"
 	if [ "$CROSS_BUILD" ]; then
 		case "$XBPS_TARGET_MACHINE" in
-			arm*) _args="--dest-cpu=arm" ;;
-			aarch64*) _args="--dest-cpu=arm64" ;;
-			ppc64*) _args="--dest-cpu=ppc64" ;;
-			ppc*) _args="--dest-cpu=ppc" ;;
-			mipsel*) _args="--dest-cpu=mipsel" ;;
-			mips*) _args="--dest-cpu=mips" ;;
-			i686*) _args="--dest-cpu=x86" ;;
-			x86_64*) _args="--dest-cpu=x86_64" ;;
-			riscv64*) _args="--dest-cpu=riscv64" ;;
+			arm*) configure_args+=" --dest-cpu=arm" ;;
+			aarch64*) configure_args+=" --dest-cpu=arm64" ;;
+			ppc64*) configure_args+=" --dest-cpu=ppc64" ;;
+			ppc*) configure_args+=" --dest-cpu=ppc" ;;
+			mipsel*) configure_args+=" --dest-cpu=mipsel" ;;
+			mips*) configure_args+=" --dest-cpu=mips" ;;
+			i686*) configure_args+=" --dest-cpu=x86" ;;
+			x86_64*) configure_args+=" --dest-cpu=x86_64" ;;
+			riscv64*) configure_args+=" --dest-cpu=riscv64" ;;
 			*) msg_error "$pkgver: cannot be cross compiled for ${XBPS_TARGET_MACHINE}.\n" ;;
 		esac
 		# this is necessary - for example, normally compiling from ppc64le
@@ -79,23 +96,25 @@ do_configure() {
 		#
 		# that results in the toolset built for target only, and attempting
 		# to execute it within the build system fails
-		_args+=" --cross-compiling"
+		configure_args+=" --cross-compiling"
 	fi
-	./configure --prefix=/usr --shared-zlib  --enable-lto \
-		$(vopt_if icu --with-intl=system-icu) \
-		$(vopt_if ssl --shared-openssl) \
-		$(vopt_if libuv --shared-libuv) \
-		$(vopt_if nghttp2 --shared-nghttp2) \
-		$(vopt_if cares --shared-cares) \
-		$(vopt_if brotli --shared-brotli) ${_args}
+
+	CFLAGS=${CFLAGS/-O2/}
+	CXXFLAGS=${CXXFLAGS/-O2/}
+	if [ "$XBPS_WORDSIZE" = 32 ]; then
+		CFLAGS=${CFLAGS/-g /-g1 }
+		CXXFLAGS=${CFLAGS/-g /-g1 }
+	fi
 }
 
-do_build() {
-	if [ "$CROSS_BUILD" ]; then
-		make LD="$CXX" LDFLAGS+=-ldl ${makejobs} PORTABLE=1 V=1
-	else
-		make LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1
+pre_build() {
+	CFLAGS=${CFLAGS/-O2/}
+	CXXFLAGS=${CXXFLAGS/-O2/}
+	if [ "$XBPS_WORDSIZE" = 32 ]; then
+		CFLAGS=${CFLAGS/-g /-g1 }
+		CXXFLAGS=${CFLAGS/-g /-g1 }
 	fi
+	make_build_args+=" PORTABLE=1"
 }
 
 do_check() {
@@ -148,9 +167,8 @@ test-tls-sni-server-client.js,\
 	make CI_SKIP_TESTS="$CI_SKIP_TESTS" LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1 test-only
 }
 
-do_install() {
-	make LD="$CXX" LDFLAGS+=-ldl DESTDIR="$DESTDIR" install
-	rm $DESTDIR/usr/include/node/openssl -rf
+post_install() {
+	rm -rf $DESTDIR/usr/include/node/openssl
 	vlicense LICENSE
 }
 
