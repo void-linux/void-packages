@@ -1,0 +1,226 @@
+From 0ed85c77b8fbb3a45e4ee6a0863dc88f5b4d5940 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ivan=20Kriz=CC=8Cnar?= <ikriznar@watchpointlabs.com>
+Date: Tue, 24 Dec 2024 02:11:07 +0100
+Subject: [PATCH 1/6] Fix variable shadowing
+
+---
+ dnsrecon/cli.py | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/dnsrecon/cli.py b/dnsrecon/cli.py
+index 1b8e4cf3..5bb2923d 100755
+--- a/dnsrecon/cli.py
++++ b/dnsrecon/cli.py
+@@ -385,8 +385,8 @@ def brute_srv(res, domain, verbose=False, thread_num=None):
+             future_results = {executor.submit(res.get_srv, srvtype + domain): srvtype for srvtype in srvrcd}
+             # Display logs as soon as a thread is finished
+             for future in futures.as_completed(future_results):
+-                res = future.result()
+-                for type_, name_, target_, addr_, port_, priority_ in res:
++                result = future.result()
++                for type_, name_, target_, addr_, port_, priority_ in result:
+                     returned_records.append(
+                         {
+                             'type': type_,
+@@ -496,8 +496,8 @@ def brute_domain(
+             future_results = {executor.submit(res.get_ip, target): target for target in targets}
+             # Display logs as soon as a thread is finished
+             for future in futures.as_completed(future_results):
+-                res = future.result()
+-                for type_, name_, address_or_target_ in res:
++                result = future.result()
++                for type_, name_, address_or_target_ in result:
+                     print_and_append = False
+                     found_dict = {'type': type_, 'name': name_}
+                     if type_ in ['A', 'AAAA']:
+
+From 49755ff70148be55a5d206bc2645ebbf844df88c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ivan=20Kriz=CC=8Cnar?= <ikriznar@watchpointlabs.com>
+Date: Tue, 24 Dec 2024 02:12:10 +0100
+Subject: [PATCH 2/6] Explicitly use netaddr.IPNetwork
+
+---
+ dnsrecon/cli.py | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/dnsrecon/cli.py b/dnsrecon/cli.py
+index 5bb2923d..2edff283 100755
+--- a/dnsrecon/cli.py
++++ b/dnsrecon/cli.py
+@@ -114,11 +114,11 @@ def process_spf_data(res, data):
+ 
+     # Create a list of IPNetwork objects.
+     for ip in ipv4:
+-        for i in IPNetwork(ip):
++        for i in netaddr.IPNetwork(ip):
+             ip_list.append(i)
+ 
+     for ip in ipv6:
+-        for i in IPNetwork(ip):
++        for i in netaddr.IPNetwork(ip):
+             ip_list.append(i)
+ 
+     # Extract and process include values.
+@@ -138,7 +138,7 @@ def expand_cidr(cidr_to_expand):
+     Function to expand a given CIDR and return an Array of IP Addresses that
+     form the range covered by the CIDR.
+     """
+-    return IPNetwork(cidr_to_expand)
++    return netaddr.IPNetwork(cidr_to_expand)
+ 
+ 
+ def expand_range(startip, endip):
+@@ -146,14 +146,14 @@ def expand_range(startip, endip):
+     Function to expand a given range and return an Array of IP Addresses that
+     form the range.
+     """
+-    return IPRange(startip, endip)
++    return netaddr.IPRange(startip, endip)
+ 
+ 
+ def range2cidr(ip1, ip2):
+     """
+     Function to return the maximum CIDR given a range of IP's
+     """
+-    r1 = IPRange(ip1, ip2)
++    r1 = netaddr.IPRange(ip1, ip2)
+     return str(r1.cidrs()[-1])
+ 
+ 
+
+From 33aa1978d03da011158a7ba5bed4a3a792141cf4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ivan=20Kriz=CC=8Cnar?= <ikriznar@watchpointlabs.com>
+Date: Tue, 24 Dec 2024 02:13:47 +0100
+Subject: [PATCH 3/6] Fix Python3 compatibility
+
+---
+ dnsrecon/lib/whois.py | 19 ++++++++-----------
+ 1 file changed, 8 insertions(+), 11 deletions(-)
+
+diff --git a/dnsrecon/lib/whois.py b/dnsrecon/lib/whois.py
+index b27644cb..7b5ee9fe 100644
+--- a/dnsrecon/lib/whois.py
++++ b/dnsrecon/lib/whois.py
+@@ -16,7 +16,7 @@
+ import re
+ import socket
+ 
+-from netaddr import *
++import ipaddress
+ 
+ __name__ = 'whois.py'
+ 
+@@ -27,19 +27,16 @@
+ def get_whois(ip_addrs):
+     """
+     Function that returns what whois server is the one to be queried for
+-    registration information, returns whois.arin.net is not in database, returns
++    registration information, returns whois.arin.net if not in database, returns
+     None if private.
+     """
+     whois_server = None
+-    ip = IPAddress(ip_addrs)
+-    info_of_ip = ip.info
+-    if ip.version == 4 and ip.is_private() is False:
+-        for i in info_of_ip['IPv4']:
+-            whois_server = i['whois']
+-            if len(whois_server) == 0 and i['status'] != 'Reserved':
+-                whois_server = 'whois.arin.net'
+-            elif len(whois_server) == 0:
+-                whois_server = None
++    try:
++        ip = ipaddress.ip_address(ip_addrs)
++        if isinstance(ip, ipaddress.IPv4Address) and not ip.is_private:
++            whois_server = 'whois.arin.net'
++    except ValueError:
++        whois_server = None
+ 
+     return whois_server
+ 
+
+From e83418137c417499e2e3a122d43fe51731205a13 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ivan=20Kriz=CC=8Cnar?= <ikriznar@watchpointlabs.com>
+Date: Tue, 24 Dec 2024 02:18:14 +0100
+Subject: [PATCH 4/6] Use logger
+
+---
+ dnsrecon/cli.py | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/dnsrecon/cli.py b/dnsrecon/cli.py
+index 2edff283..bada746d 100755
+--- a/dnsrecon/cli.py
++++ b/dnsrecon/cli.py
+@@ -1707,7 +1707,7 @@ def main():
+ 
+     # if user requests tool version, we print it and exit
+     if arguments.version:
+-        print(f'DNSRecon version {__version__} https://www.darkoperator.com')
++        logger.info(f'DNSRecon version {__version__} https://www.darkoperator.com')
+         sys.exit(0)
+ 
+     # validating type param which is in the form: type1,type2,...,typeN
+@@ -1937,7 +1937,7 @@ def main():
+                     if crt_enum_records is not None and do_output:
+                         all_returned_records.extend(crt_enum_records)
+                     else:
+-                        print('[-] No records returned from crt.sh enumeration')
++                        logger.info('[-] No records returned from crt.sh enumeration')
+ 
+                 elif type_ == 'snoop':
+                     if not (dictionary and ns_server):
+
+From b8603b1f3b76090e8ee21aeab4e7f7b43713a148 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ivan=20Kriz=CC=8Cnar?= <ikriznar@watchpointlabs.com>
+Date: Tue, 24 Dec 2024 02:19:46 +0100
+Subject: [PATCH 5/6] Ensure Python 3 compatibility
+
+---
+ dnsrecon/lib/whois.py | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/dnsrecon/lib/whois.py b/dnsrecon/lib/whois.py
+index 7b5ee9fe..cf0f6990 100644
+--- a/dnsrecon/lib/whois.py
++++ b/dnsrecon/lib/whois.py
+@@ -58,9 +58,11 @@ def whois(target, whois_srv):
+         response = ''
+         while True:
+             d = s.recv(WHOIS_RECEIVE_BUFFER_SIZE)
+-            response += str(d)
++            if not d:
++                break
++            response += d.decode('utf-8')
+             counter += 1
+-            if str(d) == '' or counter == 5:
++            if counter == 5:
+                 break
+         s.close()
+     except Exception as e:
+
+From dfa52b1b0b15615adca79d2fdd95c39d602da2c8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ivan=20Kriz=CC=8Cnar?= <ikriznar@watchpointlabs.com>
+Date: Tue, 24 Dec 2024 11:02:31 +0100
+Subject: [PATCH 6/6] Organize imports
+
+---
+ dnsrecon/lib/whois.py | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/dnsrecon/lib/whois.py b/dnsrecon/lib/whois.py
+index cf0f6990..09044d43 100644
+--- a/dnsrecon/lib/whois.py
++++ b/dnsrecon/lib/whois.py
+@@ -13,11 +13,10 @@
+ #    along with this program; if not, write to the Free Software
+ #    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ 
++import ipaddress
+ import re
+ import socket
+ 
+-import ipaddress
+-
+ __name__ = 'whois.py'
+ 
+ WHOIS_PORT_NUMBER = 43
