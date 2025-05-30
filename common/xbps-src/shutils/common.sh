@@ -539,8 +539,8 @@ setup_pkg() {
 
     FILESDIR=$XBPS_SRCPKGDIR/$sourcepkg/files
     PATCHESDIR=$XBPS_SRCPKGDIR/$sourcepkg/patches
-    DESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${sourcepkg}-${version}
-    PKGDESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${pkg}-${version}
+    DESTDIR=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET:+${XBPS_CROSS_TRIPLET}/}/${sourcepkg}-${version}
+    PKGDESTDIR=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET:+$XBPS_CROSS_TRIPLET/}${pkg}-${version}
 
     export XBPS_ORIG_MAKEJOBS=${XBPS_ORIG_MAKEJOBS:=$XBPS_MAKEJOBS}
     if [ -n "$disable_parallel_build" ]; then
