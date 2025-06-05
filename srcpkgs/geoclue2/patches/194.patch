@@ -1,0 +1,112 @@
+upstream: yes
+
+From 32101976945e51536aff3b6945c12ec4d15dd203 Mon Sep 17 00:00:00 2001
+From: Chris Talbot <chris@talbothome.com>
+Date: Thu, 5 Dec 2024 06:58:48 -0700
+Subject: [PATCH] Web-Source: Set User-Agent on Soup Session Construction
+
+Also add OS Info to user-agent
+---
+ src/gclue-mozilla.c    |  6 ------
+ src/gclue-web-source.c | 30 ++++++++++++++++++++++++++++++
+ 2 files changed, 30 insertions(+), 6 deletions(-)
+
+diff --git a/src/gclue-mozilla.c b/src/gclue-mozilla.c
+index 2b3467d4..5680e451 100644
+--- a/src/gclue-mozilla.c
++++ b/src/gclue-mozilla.c
+@@ -174,8 +174,6 @@ towertec_to_radiotype (GClueTowerTec tec,
+         return TRUE;
+ }
+ 
+-#define USER_AGENT (PACKAGE_NAME "/" PACKAGE_VERSION)
+-
+ SoupMessage *
+ gclue_mozilla_create_query (GClueMozilla  *mozilla,
+                             gboolean skip_tower,
+@@ -185,7 +183,6 @@ gclue_mozilla_create_query (GClueMozilla  *mozilla,
+ {
+         gboolean has_tower = FALSE, has_bss = FALSE;
+         SoupMessage *ret = NULL;
+-        SoupMessageHeaders *request_headers;
+         JsonBuilder *builder;
+         g_autoptr(GList) bss_list = NULL;
+         JsonGenerator *generator;
+@@ -300,8 +297,6 @@ gclue_mozilla_create_query (GClueMozilla  *mozilla,
+ 
+         uri = gclue_mozilla_get_locate_url (mozilla);
+         ret = soup_message_new ("POST", uri);
+-        request_headers = soup_message_get_request_headers (ret);
+-        soup_message_headers_replace (request_headers, "User-Agent", USER_AGENT);
+         body = g_bytes_new_take (data, data_len);
+         soup_message_set_request_body_from_bytes (ret, "application/json", body);
+         g_debug ("Sending following request to '%s':\n%s", uri, data);
+@@ -566,7 +561,6 @@ gclue_mozilla_create_submit_query (GClueMozilla  *mozilla,
+ 
+         ret = soup_message_new ("POST", url);
+         request_headers = soup_message_get_request_headers (ret);
+-        soup_message_headers_replace (request_headers, "User-Agent", USER_AGENT);
+         if (nick != NULL && nick[0] != '\0')
+                 soup_message_headers_append (request_headers,
+                                              "X-Nickname",
+diff --git a/src/gclue-web-source.c b/src/gclue-web-source.c
+index 92d94b88..56d511bd 100644
+--- a/src/gclue-web-source.c
++++ b/src/gclue-web-source.c
+@@ -28,6 +28,7 @@
+ #include "gclue-error.h"
+ #include "gclue-location.h"
+ #include "gclue-mozilla.h"
++#include "config.h"
+ 
+ /**
+  * SECTION:gclue-web-source
+@@ -402,16 +403,45 @@ gclue_web_source_finalize (GObject *gsource)
+         G_OBJECT_CLASS (gclue_web_source_parent_class)->finalize (gsource);
+ }
+ 
++static char *
++get_os_info (void)
++{
++        g_autofree char *pretty_name = NULL;
++        g_autofree char *os_name = g_get_os_info (G_OS_INFO_KEY_NAME);
++        g_autofree char *os_version = g_get_os_info (G_OS_INFO_KEY_VERSION);
++
++        if (os_name && os_version)
++                return g_strdup_printf ("%s; %s", os_name, os_version);
++
++        pretty_name = g_get_os_info (G_OS_INFO_KEY_PRETTY_NAME);
++        if (pretty_name)
++                return g_steal_pointer (&pretty_name);
++
++        /* Translators: Not marked as translatable as debug output should stay English */
++        return g_strdup ("Unknown");
++}
++
++#define USER_AGENT (PACKAGE_NAME "/" PACKAGE_VERSION)
++
++static char *
++get_user_agent (void)
++{
++        g_autofree char *os_info = get_os_info ();
++        return g_strdup_printf ("%s (%s)", USER_AGENT, os_info);
++}
++
+ static void
+ gclue_web_source_constructed (GObject *object)
+ {
+         GNetworkMonitor *monitor;
+         GClueWebSourcePrivate *priv = GCLUE_WEB_SOURCE (object)->priv;
++        g_autofree char *user_agent = get_user_agent ();
+ 
+         G_OBJECT_CLASS (gclue_web_source_parent_class)->constructed (object);
+ 
+         priv->soup_session = soup_session_new ();
+         soup_session_set_proxy_resolver (priv->soup_session, NULL);
++        soup_session_set_user_agent (priv->soup_session, user_agent);
+ 
+         monitor = g_network_monitor_get_default ();
+         priv->network_changed_id =
+-- 
+GitLab
+
