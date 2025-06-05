@@ -523,12 +523,14 @@ setup_pkg() {
 
     pkgver="${pkg}-${version}_${revision}"
 
-    # If build_style() unset, a do_install() function must be defined.
+    # If build_style is unset, a do_install() function must be defined.
     if [ -z "$build_style" ]; then
         # Check that at least do_install() is defined.
-        if ! declare -f do_install >/dev/null; then
+        if [ "$metapackage" != yes ] && ! declare -f do_install >/dev/null; then
             msg_error "$pkgver: missing do_install() function!\n"
         fi
+    elif [ "$build_style" = meta ]; then
+        msg_error "$pkgver: build_style=meta is deprecated, replace with metapackage=yes\n"
     fi
 
     for x in ${hostmakedepends} ${makedepends} ${checkdepends}; do
