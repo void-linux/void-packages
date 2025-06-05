@@ -63,9 +63,13 @@ hook() {
 		esac
 	done
 
-	# Forbid empty packages unless build_style=meta or it is 32bit devel package
-	if [ "$build_style" != meta ] && [ "$emptypkg" != no ] && [[ ${pkgname} != *-devel-32bit ]]; then
-		msg_red "${pkgver}: PKGDESTDIR is empty and build_style != meta\n"
+	# Forbid empty packages unless metapackage=yes or it is 32bit devel package
+	if [ "$metapackage" != yes ] && [ "$emptypkg" != no ] && [[ ${pkgname} != *-devel-32bit ]]; then
+		msg_red "${pkgver}: PKGDESTDIR is empty and metapackage != yes\n"
+		error=1
+	fi
+	if [ "$metapackage" = yes ] && [ "$emptypkg" = no ]; then
+		msg_red "${pkgver}: PKGDESTDIR of meta package is not empty\n"
 		error=1
 	fi
 
