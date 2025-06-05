@@ -52,9 +52,11 @@ show_pkg_var() {
             _sep="	"
         fi
         if [ -n "$_always_split" ] || [[ "$_value" =~ $'\n' ]]; then
+            set -f
             for i in ${_value}; do
                 [ -n "$i" ] && echo "${_label}:${_sep}${i}"
             done
+            set +f
         else
             echo "${_label}:${_sep}${_value}"
         fi

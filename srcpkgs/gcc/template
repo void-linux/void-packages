@@ -3,40 +3,72 @@
 # which use the version number.
 
 pkgname=gcc
-version=13.2.0
-revision=3
+version=14.2.1+20250405
+revision=2
+bootstrap=yes
+_patchver="${version%+*}"
 _minorver="${version%.*}"
 _majorver="${_minorver%.*}"
 _gmp_version=6.3.0
 _mpfr_version=4.2.1
 _mpc_version=1.3.1
 _isl_version=0.26
-create_wrksrc=yes
 short_desc="GNU Compiler Collection"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 homepage="http://gcc.gnu.org"
 license="GFDL-1.2-or-later, GPL-3.0-or-later, LGPL-2.1-or-later"
-# *-musl builders have issues fetching https://ftp.gnu.org/gnu/mpc/mpc-1.1.0.tar.gz
-distfiles="
- ${GNU_SITE}/gcc/gcc-${version}/gcc-${version}.tar.xz
+case "${version}" in
+	*+*) distfiles="https://gcc.gnu.org/pub/gcc/snapshots/${_majorver}-${version#*+}/gcc-${_majorver}-${version#*+}.tar.xz" ;;
+	*) distfiles="${GNU_SITE}/gcc/gcc-${version}/gcc-${version}.tar.xz" ;;
+esac
+distfiles+="
  ${GNU_SITE}/gmp/gmp-${_gmp_version}.tar.xz
  ${GNU_SITE}/mpfr/mpfr-${_mpfr_version}.tar.xz
  ${GNU_SITE}/mpc/mpc-${_mpc_version}.tar.gz
  ${SOURCEFORGE_SITE}/libisl/isl-${_isl_version}.tar.bz2"
-checksum="e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da
+checksum="9a84b0947d8fb18197eef3fce8e255e30a61f7f382cebb961b1705c1d99214a3
  a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898
  277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2
  ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8
  5eac8664e9d67be6bd0bee5085d6840b8baf738c06814df47eaf4166d9776436"
+skip_extraction="gmp-${_gmp_version}.tar.xz mpfr-${_mpfr_version}.tar.xz
+ mpc-${_mpc_version}.tar.gz isl-${_isl_version}.tar.bz2"
+
+# Snapshot tarballs get removed after over a year, we can archive the ones we need in distfiles.
+case "$XBPS_DISTFILES_FALLBACK" in
+	*"repo-default.voidlinux.org/distfiles"*) ;;
+	*) XBPS_DISTFILES_FALLBACK+=" https://repo-default.voidlinux.org/distfiles" ;;
+esac
 
 nopie=yes
 lib32disabled=yes
-bootstrap=yes
 replaces="gcc-gcj<7.2.0 gcc-gcj-jdk-compat<7.2.0 libmpx>=0 libmpx-devel>=0
  libssp>=0 libssp-devel>=0"
 
+if [ "$CHROOT_READY" ]; then
+	hostmakedepends="tar texinfo perl flex"
+else
+	# libzstd fails to link in bootstrap with glibc 2.36
+	# when zlib has been compiled with glibc 2.32.
+	LDFLAGS="-lzstd -pthread"
+fi
+makedepends="zlib-devel libzstd-devel"
+depends="binutils libgcc-devel-${version}_${revision}
+ libstdc++-devel-${version}_${revision} libatomic-devel-${version}_${revision}"
+checkdepends="dejagnu"
+subpackages="libgcc libgomp libgomp-devel libatomic libatomic-devel"
+
+build_options="ada gnatboot"
+build_options_default="ada"
+desc_option_ada="Enable Ada build"
+desc_option_gnatboot="Enable Ada bootstrap using adacore.com binaries"
+
 _have_gccgo=yes
 _have_libquadmath=no
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*|x86_64*|ppc64le*) _have_libquadmath=yes ;;
+esac
 
 # MIPS is untested and does not have go in crosstoolchains
 # 32-bit PowerPC seems weirdly broken since the 10.x release
@@ -46,42 +78,20 @@ case "$XBPS_TARGET_MACHINE" in
 	mips*-musl|ppc*) _have_gccgo=no ;;
 esac
 
-case "$XBPS_TARGET_MACHINE" in
-	i686*|x86_64*|ppc64le*) _have_libquadmath=yes ;;
-esac
-
-if [ "$CHROOT_READY" ]; then
-	hostmakedepends="tar texinfo perl flex"
-else
-	_have_gccgo=no
-	# libzstd fails to link in bootstrap with glibc 2.36
-	# when zlib has been compiled with glibc 2.32.
-	LDFLAGS="-lzstd -pthread"
-fi
-makedepends="zlib-devel libzstd-devel"
-depends="binutils libgcc-devel-${version}_${revision}
- libstdc++-devel-${version}_${revision} libatomic-devel-${version}_${revision}"
-checkdepends="dejagnu"
-
-subpackages="libgcc libgomp libgomp-devel libatomic libatomic-devel"
-
-build_options="ada gnatboot"
-build_options_default="ada"
-desc_option_ada="Enable Ada build"
-desc_option_gnatboot="Enable Ada bootstrap using adacore.com binaries"
-
 if [ "$build_option_gnatboot" ]; then
 	case "$XBPS_TARGET_MACHINE" in
 	x86_64)
 		_gnat_tarball="gnat-gpl-2017-x86_64-linux-bin.tar.gz"
 		distfiles+=" https://community.download.adacore.com/v1/9682e2e1f2f232ce03fe21d77b14c37a0de5649b?filename=$_gnat_tarball>$_gnat_tarball"
 		checksum+=" b942bcac20dea39748b39f8b624d9619f60a8dee2e8195dbe3829c835b0956e6"
+		skip_extraction+=" $_gnat_tarball"
 		build_options_default="gnatboot"
 		;;
 	i686)
 		_gnat_tarball="gnat-gpl-2014-x86-linux-bin.tar.gz"
 		distfiles+=" https://community.download.adacore.com/v1/c5e9e6fdff5cb77ed90cf8c62536653e27c0bed6?filename=$_gnat_tarball>$_gnat_tarball"
 		checksum+=" 3b693510f5d22a240abb3034934c1adbd80ccd6e4f61a4f491cc408fdfd9c042"
+		skip_extraction+=" $_gnat_tarball"
 		build_options_default="gnatboot"
 		;;
 	esac
@@ -90,10 +100,11 @@ fi
 if [ "$CHROOT_READY" ]; then
 	subpackages+=" gcc-fortran libgfortran-devel libgfortran"
 	subpackages+=" gcc-objc gcc-objc++ libobjc-devel libobjc"
-
 	if [ "$_have_libquadmath" = "yes" ]; then
 		subpackages+=" libquadmath libquadmath-devel"
 	fi
+else
+	_have_gccgo=no
 fi
 
 if [ "$_have_gccgo" = "yes" ]; then
@@ -162,18 +173,14 @@ if [ "$CROSS_BUILD" ]; then
 fi
 
 post_extract() {
-	mv gcc-${version}/* gcc-${version}/.??* .
-	rmdir gcc-${version}
-	mv gmp-${_gmp_version} gmp
-	mv mpfr-${_mpfr_version} mpfr
-	mv mpc-${_mpc_version} mpc
-	mv isl-${_isl_version} isl
+	vsrcextract -C gmp gmp-${_gmp_version}.tar.xz
+	vsrcextract -C mpfr mpfr-${_mpfr_version}.tar.xz
+	vsrcextract -C mpc mpc-${_mpc_version}.tar.gz
+	vsrcextract -C isl isl-${_isl_version}.tar.bz2
 
 	if [ "$build_option_gnatboot" ]; then
-		local f="${XBPS_SRCDISTDIR}/${pkgname}-${version}/${_gnat_tarball}"
 		msg_normal "Extracting ${_gnat_tarball} ...\n"
-		mkdir -p ${wrksrc}/gnat-ins
-		tar -x -f "$f" --strip-components=1 -C ${wrksrc}/gnat-ins
+		vsrcextract -C gnat-ins ${_gnat_tarball}
 		cd ${wrksrc}/gnat-ins
 		make ins-all prefix=${wrksrc}/gnat
 		cd ${wrksrc}
@@ -202,6 +209,7 @@ pre_configure() {
 		done
 	fi
 }
+
 do_configure() {
 	local _langs _args _hash
 
@@ -307,6 +315,10 @@ do_configure() {
 	mkdir -p build
 	cd build
 	if [ "$build_option_gnatboot" ]; then
+		# file-prefix-map isn't supported in gcc6
+		export CFLAGS="${CFLAGS/-ffile-prefix-map=$wrksrc=./}"
+		export CXXFLAGS="${CXXFLAGS/-ffile-prefix-map=$wrksrc=./}"
+
 		_args+=" --enable-languages=${_langs},ada"
 		_args+=" --enable-libada"
 		CONFIG_SHELL=/bin/bash \
@@ -325,6 +337,7 @@ do_configure() {
 			${wrksrc}/configure ${_args}
 	fi
 }
+
 do_build() {
 	if [ -z "$CHROOT_READY" ]; then
 		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib${XBPS_TARGET_WORDSIZE}"
@@ -340,6 +353,7 @@ do_build() {
 		make ${makejobs}
 	fi
 }
+
 pre_install() {
 	if [ "$CROSS_BUILD" ]; then
 		# XXX otherwise links to host libpthread
@@ -348,6 +362,7 @@ pre_install() {
 		done
 	fi
 }
+
 do_install() {
 	cd build
 
@@ -355,16 +370,16 @@ do_install() {
 
 	# Make version a symlink of major version to make all versions
 	# from the same series work automagically.
-	mv ${DESTDIR}/usr/lib/gcc/${_triplet}/${version} \
+	mv ${DESTDIR}/usr/lib/gcc/${_triplet}/${_patchver} \
 		${DESTDIR}/usr/lib/gcc/${_triplet}/${_minorver}
 	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${_minorver} \
-		${DESTDIR}/usr/lib/gcc/${_triplet}/${version}
+		${DESTDIR}/usr/lib/gcc/${_triplet}/${_patchver}
 
 	# Ditto for c++ headers.
-	mv ${DESTDIR}/usr/include/c++/${version} \
+	mv ${DESTDIR}/usr/include/c++/${_patchver} \
 		${DESTDIR}/usr/include/c++/${_minorver}
 	ln -sfr ${DESTDIR}/usr/include/c++/${_minorver} \
-		${DESTDIR}/usr/include/c++/${version}
+		${DESTDIR}/usr/include/c++/${_patchver}
 
 	# cc symlink
 	ln -sfr ${DESTDIR}/usr/bin/gcc ${DESTDIR}/usr/bin/cc
@@ -373,7 +388,7 @@ do_install() {
 
 	# lto plugin symlink
 	vmkdir usr/lib/bfd-plugins
-	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${version}/liblto_plugin.so \
+	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${_patchver}/liblto_plugin.so \
 		${DESTDIR}/usr/lib/bfd-plugins
 
 	# Remove "fixed" header
@@ -457,7 +472,7 @@ gcc-fortran_package() {
 		if [ "$CROSS_BUILD" ]; then
 			# A number of OMP modules are not built when cross
 			# compiling gcc. Copy them from the cross compiler.
-			local src="/usr/lib/gcc/${_triplet}/${version}/finclude"
+			local src="/usr/lib/gcc/${_triplet}/${_patchver}/finclude"
 			local dst="usr/lib/gcc/${_triplet}/${_minorver}/finclude"
 			for f in omp_lib.f90 omp_lib.h omp_lib.mod omp_lib_kinds.mod \
 				openacc.f90 openacc.mod openacc_kinds.mod openacc_lib.h; do
@@ -714,7 +729,7 @@ libstdc++_package() {
 	short_desc+=" - Standard C++ Library"
 	pkg_install() {
 		vmove usr/share/gdb
-		vmove usr/share/gcc-${version}/python
+		vmove usr/share/gcc-${_patchver}/python
 		vmove "usr/lib/libstdc++.so*"
 		vlicense COPYING.RUNTIME RUNTIME.LIBRARY.EXCEPTION
 	}

@@ -52,3 +52,81 @@
        args = common_pkg_config_args + host_pkg_config_args + invoker.packages
      } else {
        args = common_pkg_config_args + pkg_config_args + invoker.packages
+--- a/build/config/clang/BUILD.gn
++++ b/build/config/clang/BUILD.gn
+@@ -168,7 +168,11 @@
+       _suffix = ""
+       _ext = "a"
+ 
+-      _clang_lib_dir = "$clang_base_path/lib/clang/$clang_version/lib"
++      if (current_cpu != target_cpu) {
++        _clang_lib_dir = "$clang_base_path/lib/clang/$clang_version/lib"
++      } else {
++        _clang_lib_dir = "$clang_cross_path/lib/clang/$clang_version/lib"
++      }
+       if (is_win) {
+         _dir = "windows"
+         _prefix = ""
+--- a/build/config/clang/clang.gni
++++ b/build/config/clang/clang.gni
+@@ -36,6 +36,7 @@
+        is_mac || is_ios || is_chromeos)
+ 
+   clang_base_path = default_clang_base_path
++  clang_cross_path = default_clang_base_path
+ 
+   # Specifies whether or not bitcode should be embedded during compilation.
+   # This is used for creating a MLGO corpus from Chromium in the non-ThinLTO case.
+--- a/build/rust/std/find_std_rlibs.py
++++ b/build/rust/std/find_std_rlibs.py
+@@ -26,6 +26,7 @@
+                       help="Path to Rust binaries",
+                       required=True),
+   parser.add_argument("--target", help="Rust target triple", required=False),
++  parser.add_argument("--sysroot", help="Rust sysroot", required=False),
+   parser.add_argument("--output",
+                       help="Path to rlibs without suffixes",
+                       required=True)
+@@ -50,6 +51,8 @@
+   rustc_args = [rustc, "--print", "target-libdir"]
+   if args.target:
+     rustc_args.extend(["--target", args.target])
++  if args.sysroot:
++    rustc_args.extend(["--sysroot", args.sysroot])
+   rustlib_dir = subprocess.check_output(rustc_args).rstrip().decode()
+ 
+   # Copy the rlibs to a predictable location. Whilst we're doing so,
+--- a/build/config/rust.gni
++++ b/build/config/rust.gni
+@@ -60,6 +60,7 @@
+   # a Rust sysroot, which will have a 'bin' directory and others. Commonly
+   # <home dir>/.rustup/toolchains/nightly-<something>-<something>
+   rust_sysroot_absolute = ""
++  rust_cross_sysroot_absolute = ""
+ 
+   # Directory under which to find `bin/bindgen` (a `bin` directory containing
+   # the bindgen exectuable).
+--- a/build/rust/std/BUILD.gn
++++ b/build/rust/std/BUILD.gn
+@@ -336,6 +335,13 @@
+         rust_abi_target,
+       ]
+ 
++      if (current_cpu == target_cpu && rust_cross_sysroot_absolute != "") {
++        args += [
++          "--sysroot",
++          rust_cross_sysroot_absolute,
++        ]
++      }
++
+       outputs = []
+       foreach(lib, all_stdlibs_to_copy) {
+         outputs += [ "$target_out_dir/lib$lib.rlib" ]
+@@ -393,6 +399,7 @@
+     group("std") {
+       all_dependent_configs = [
+         ":prebuilt_stdlib_libs",
++        ":prebuilt_stdlib_sysroot",
+         ":stdlib_public_dependent_libs",
+       ]
+       deps = [ ":prebuilt_rustc_copy_to_sysroot" ]

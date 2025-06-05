@@ -295,9 +295,14 @@ _void_cross_build_musl() {
 
 	msg_normal "Patching musl for ${tgt}\n"
 
+	case "${ver}" in
+		1.1.*) _musl_pkgname="musl1.1" ;;
+		*) _musl_pkgname="musl" ;;
+	esac
+
 	cd ${wrksrc}/musl-${ver}
-	if [ -d "${XBPS_SRCPKGDIR}/musl/patches" ]; then
-		for f in ${XBPS_SRCPKGDIR}/musl/patches/*.patch; do
+	if [ -d "${XBPS_SRCPKGDIR}/${_musl_pkgname}/patches" ]; then
+		for f in ${XBPS_SRCPKGDIR}/${_musl_pkgname}/patches/*.patch; do
 			_void_cross_apply_patch "$f"
 		done
 	fi
@@ -323,7 +328,7 @@ _void_cross_build_musl() {
 	CFLAGS="-pipe -fPIC ${cross_musl_cflags}" \
 	CPPFLAGS="${cross_musl_cflags}" LDFLAGS="${cross_musl_ldflags}" \
 	${tgt}-gcc -pipe -fPIC ${cross_musl_cflags} ${cross_musl_ldflags} -fpie \
-		-c ${XBPS_SRCPKGDIR}/musl/files/__stack_chk_fail_local.c \
+		-c ${XBPS_SRCPKGDIR}/${_musl_pkgname}/files/__stack_chk_fail_local.c \
 		-o __stack_chk_fail_local.o
 	${tgt}-ar r libssp_nonshared.a __stack_chk_fail_local.o
 	cp libssp_nonshared.a ${wrksrc}/build_root/usr/${tgt}/usr/lib
@@ -466,6 +471,19 @@ _void_cross_test_ver() {
 	fi
 }
 
+_void_cross_test_gcc_ver() {
+	local ver basever
+	_void_cross_test_ver gcc
+	ver=$(cat .gcc_version)
+	if [ -d "gcc-${ver}" ] && [ -f "gcc-${ver}/gcc/BASE-VER" ] && [ -f "gcc-${ver}/gcc/DATESTAMP" ]; then
+		basever="$(cat "gcc-${ver}/gcc/BASE-VER")_$(cat "gcc-${ver}/gcc/DATESTAMP")"
+		mv "gcc-${ver}" "gcc-${basever}"
+		echo ${basever} > ${wrksrc}/.gcc_version
+		return
+	fi
+	msg_error "could not determine gcc base version\n"
+}
+
 do_build() {
 	# Verify toolchain versions
 	cd ${wrksrc}
@@ -483,7 +501,7 @@ do_build() {
 
 	_void_cross_test_ver binutils
 	_void_cross_test_ver linux
-	_void_cross_test_ver gcc
+	_void_cross_test_gcc_ver
 
 	binutils_ver=$(cat .binutils_version)
 	linux_ver=$(cat .linux_version)

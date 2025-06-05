@@ -231,9 +231,10 @@ $(print_cross_targets)
     Variable is split and each word is printed in separate line by default.
     In order to print the whole value in one line, append asterisk to variable name.
 
--Q  Enable running the check stage.
+-Q  Enable running the check stage, for the target package only.
 
 -K  Enable running the check stage with longer tests.
+    Unlike -Q, this will also run the check stage on built dependencies.
 
 -q  Suppress informational output of xbps-src (build output is still printed).
 
@@ -343,10 +344,11 @@ read_pkg() {
 }
 
 setup_distfiles_mirror() {
+    local mirror_list="$1"
     local mirror scheme path
 
     # Scheme file:// mirror locations only work with uchroot
-    for mirror in $XBPS_DISTFILES_MIRROR; do
+    for mirror in $mirror_list; do
         scheme="file"
         if [[ "$mirror" == *://* ]]; then
             scheme="${mirror%%://*}"
@@ -380,7 +382,6 @@ XBPS_VERSION=$(xbps-uhelper -V)
 XBPS_VERSION=${XBPS_VERSION%%API*}
 XBPS_VERSION=${XBPS_VERSION##*:}
 readonly XBPS_SRC_VERSION="113"
-export XBPS_MACHINE=$(xbps-uhelper -C /dev/null arch)
 
 XBPS_OPTIONS=
 XBPS_OPTSTRING="1A:a:bc:CEfgGhH:iIj:Lm:No:p:qsQKr:tvV"
@@ -519,11 +520,23 @@ else
     : ${XBPS_MAKEJOBS:=1}
 fi
 
+if [ -z "$XBPS_MACHINE" ]; then
+    XBPS_MACHINE=$(xbps-uhelper -C /dev/null arch)
+    # default to the same libc when -a is given but not -A
+    if [ -n "$XBPS_CROSS_BUILD" ]; then
+        if [ -z "${XBPS_CROSS_BUILD##*-musl}" ]; then
+            XBPS_MACHINE="${XBPS_MACHINE%-musl}-musl"
+        else
+            XBPS_MACHINE="${XBPS_MACHINE%-musl}"
+        fi
+    fi
+fi
+
 export XBPS_BUILD_ONLY_ONE_PKG XBPS_SKIP_REMOTEREPOS XBPS_BUILD_FORCEMODE \
        XBPS_INFORMATIVE_RUN XBPS_TEMP_MASTERDIR XBPS_BINPKG_EXISTS \
        XBPS_USE_GIT_REVS XBPS_CHECK_PKGS XBPS_DEBUG_PKGS XBPS_SKIP_DEPS \
        XBPS_KEEP_ALL XBPS_QUIET XBPS_ALT_REPOSITORY XBPS_STRICT XBPS_CROSS_BUILD \
-       XBPS_MAKEJOBS XBPS_PRINT_VARIABLES XBPS_IGNORE_BROKENNESS
+       XBPS_MAKEJOBS XBPS_PRINT_VARIABLES XBPS_IGNORE_BROKENNESS XBPS_MACHINE
 
 # The masterdir/hostdir variables are forced and readonly in chroot
 if [ -z "$IN_CHROOT" ]; then
@@ -696,7 +709,7 @@ export XBPS_SHUTILSDIR XBPS_CROSSPFDIR XBPS_TRIGGERSDIR \
     XBPS_LIBEXECDIR XBPS_DISTDIR XBPS_DISTFILES_MIRROR XBPS_ALLOW_RESTRICTED \
     XBPS_USE_GIT_COMMIT_DATE XBPS_PKG_COMPTYPE XBPS_REPO_COMPTYPE \
     XBPS_BUILDHELPERDIR XBPS_USE_BUILD_MTIME XBPS_BUILD_ENVIRONMENT \
-    XBPS_PRESERVE_PKGS XBPS_IGNORE_BROKENNESS
+    XBPS_PRESERVE_PKGS XBPS_IGNORE_BROKENNESS XBPS_DISTFILES_FALLBACK
 
 for i in REPOSITORY DESTDIR BUILDDIR SRCDISTDIR; do
     eval val="\$XBPS_$i"
@@ -760,7 +773,10 @@ done
 if [ -z "$IN_CHROOT" ]; then
     trap 'exit_func' INT TERM
     if [ -n "$XBPS_DISTFILES_MIRROR" ]; then
-        setup_distfiles_mirror
+        setup_distfiles_mirror "$XBPS_DISTFILES_MIRROR"
+    fi
+    if [ -n "$XBPS_DISTFILES_FALLBACK" ]; then
+        setup_distfiles_mirror "$XBPS_DISTFILES_FALLBACK"
     fi
 fi
 

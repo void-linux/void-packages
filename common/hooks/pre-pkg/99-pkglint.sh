@@ -104,6 +104,14 @@ hook() {
 		error=1
 	fi
 
+	if [ -d ${PKGDESTDIR}/usr/share/zsh/vendor-functions ]; then
+		msg_red "${pkgver}: /usr/share/zsh/vendor-functions is forbidden. Use /usr/share/zsh/site-functions.\n"
+	fi
+
+	if [ -d ${PKGDESTDIR}/usr/share/zsh/vendor-completions ]; then
+		msg_red "${pkgver}: /usr/share/zsh/vendor-completions is forbidden. Use /usr/share/zsh/site-functions.\n"
+	fi
+
 	# Prevent packages from installing to these paths in etc, they should use
 	# their equivalent in usr/lib
 	for f in udev/{rules.d,hwdb.d} modprobe.d sysctl.d; do
