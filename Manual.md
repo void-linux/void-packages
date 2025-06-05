@@ -691,6 +691,9 @@ redistribution.
 to override the guessed list. Only use this if a specific order of subpackages is required,
 otherwise the default would work in most cases.
 
+- `metapackage` If set to `yes`, the package must be an empty meta-package, i.e. a package that
+only depends on other packages.
+
 - `broken` If set, building the package won't be allowed because its state is currently broken.
 This should be set to a string describing why it is broken, or a link to a buildlog demonstrating the failure.
 
@@ -1010,11 +1013,6 @@ import path, e.g. `github.com/github/hub` for the `hub` program. This
 information can be found in the `go.mod` file for modern Go projects.
 It's expected that the distfile contains the package, but dependencies
 will be downloaded with `go get`.
-
-- `meta` For `meta-packages`, i.e packages that only install local files or simply
-depend on additional packages. This build style does not install
-dependencies to the root directory, and only checks if a binary package is
-available in repositories.
 
 - `R-cran` For packages that are available on The Comprehensive R Archive
 Network (CRAN). The build style requires the `pkgname` to start with

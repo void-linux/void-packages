@@ -34,7 +34,13 @@ if [ "$SUBPKG_MODE"  = "no" ]; then
     if [ ! -f $XBPS_INSTALL_DONE ] || [ -f $XBPS_INSTALL_DONE -a -n "$XBPS_BUILD_FORCEMODE" ]; then
         mkdir -p $XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/$pkgname-$version
 
-        run_step install "" skip
+        if [ "$metapackage" = yes ]; then
+            optional="optional"
+        else
+            optional=""
+        fi
+
+        run_step install "$optional" skip
 
         touch -f $XBPS_INSTALL_DONE
     fi
@@ -53,6 +59,10 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE -o -n "$XBPS_BUILD_FORCEMODE" ]; then
 
         ${PKGNAME}_package
         pkgname=$PKGNAME
+
+        if [ "$build_style" = meta ]; then
+            msg_error "$pkgver: build_style=meta is deprecated, replace with metapackage=yes\n"
+        fi
 
         source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 
