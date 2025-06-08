@@ -114,6 +114,16 @@ def parse_depends(args):
     vpkgs = dict()
     extras = set(args.extras.split())
 
+    with args.provides.open() as f:
+        for ln in f.readlines():
+            if not ln.strip():
+                continue
+            pkgver, vpkgver = ln.split(" ", maxsplit=2)
+            pkg = getpkgname(pkgver)
+            vpkg = getpkgname(vpkgver)
+            if pkg not in vpkgs.setdefault(vpkg, []):
+                vpkgs[vpkg].append(pkg)
+
     with args.vpkgs.open() as f:
         for ln in f.readlines():
             if not ln.strip():
@@ -196,6 +206,7 @@ if __name__ == "__main__":
     deps_parser = subparsers.add_parser("depends")
     deps_parser.add_argument("-e", dest="extras", default="")
     deps_parser.add_argument("-V", dest="vpkgs", type=Path)
+    deps_parser.add_argument("-P", dest="provides", type=Path)
     deps_parser.add_argument("-D", dest="rdeps", type=Path)
     deps_parser.set_defaults(func=parse_depends)
 
