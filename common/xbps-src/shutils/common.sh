@@ -266,16 +266,16 @@ set_build_options() {
     # Prepare final options.
     for f in ${build_options}; do
         if [[ ${options[$f]} -eq 1 ]]; then
-            eval export build_option_${f}=1
+            eval "export build_option_${f}=1"
         else
-            eval unset build_option_${f}
+            eval "export build_option_${f}="
         fi
     done
 
     # Re-read pkg template to get conditional vars.
-    if [ -z "$XBPS_BUILD_OPTIONS_PARSED" ]; then
-        source_file $XBPS_SRCPKGDIR/$pkgname/template
+    if [[ ! -v XBPS_BUILD_OPTIONS_PARSED ]]; then
         XBPS_BUILD_OPTIONS_PARSED=1
+        source_file "$XBPS_SRCPKGDIR/$pkgname/template"
         unset PKG_BUILD_OPTIONS
         set_build_options
         unset XBPS_BUILD_OPTIONS_PARSED
