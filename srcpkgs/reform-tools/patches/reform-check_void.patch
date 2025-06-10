@@ -1,0 +1,396 @@
+diff --git a/bin/reform-check b/bin/reform-check
+index f898d08..5b91b47 100755
+--- a/bin/reform-check
++++ b/bin/reform-check
+@@ -102,6 +102,14 @@ if [ "$#" -gt 0 ]; then
+   exit 1
+ fi
+ 
++if [ -f "/etc/os-release" ]; then
++    if [ $(head -1 /etc/os-release | cut -d'=' -f 2) = '"Void"' ]; then
++	DISTRO=void-linux
++    fi
++else
++    DISTRO=debian-linux
++fi
++
+ if [ "$MIRROR" != "mntre.com" ] && [ "$MIRROR" != "reform.debian.net" ]; then
+   echo "E: invalid value for --mirror: $MIRROR -- only mntre.com and reform.debian.net are supported" >&2
+   exit 1
+@@ -134,7 +142,7 @@ if [ -z "$MIRROR" ]; then
+   MIRROR="mntre.com"
+ fi
+ 
+-if [ -z "$(apt-get indextargets)" ] && [ "$OFFLINE" != "yes" ]; then
++if [ $DISTRO = "debian-linux" ] && [ -z "$(apt-get indextargets)" ] && [ "$OFFLINE" != "yes" ]; then
+   echo "E: reform-check needs a populated apt cache for some of its operation." >&2
+   echo "E: re-run with --offline (disabling some checks) or choose to run apt-update now." >&2
+   printf "Should reform-check run 'apt update' for you? [y/N]" >&2
+@@ -158,8 +166,14 @@ fi
+ 
+ echo "I: Contents of /proc/device-tree/model: $(cat /proc/device-tree/model)" >&2
+ echo "I: \`uname -a\` output: $(uname -a)" >&2
+-echo "I: Version of linux-image-mnt-reform-arm64: $(dpkg-query --show --showformat '${Version}' linux-image-mnt-reform-arm64)" >&2
+-echo "I: Version of reform-tools: $(dpkg-query --show --showformat '${Version}' reform-tools)" >&2
++if [ $DISTRO = "debian-linux" ]; then
++    echo "I: Version of linux-image-mnt-reform-arm64: $(dpkg-query --show --showformat '${Version}' linux-image-mnt-reform-arm64)" >&2
++    echo "I: Version of reform-tools: $(dpkg-query --show --showformat '${Version}' reform-tools)" >&2
++elif [ $DISTRO = "void-linux" ]; then 
++    echo "I: Version of pocket-reform-kernel: $(xbps-query --property=pkgver pocket-reform-kernel)" >&2
++    echo "I: Version of reform-tools: $(xbps-query --property=pkgver reform-tools)" >&2
++fi
++
+ HUMAN_ROOT=
+ case $(findmnt --noheadings --evaluate --mountpoint / --output SOURCE) in
+   "/dev/reformvg/root")
+@@ -227,27 +241,30 @@ case "$MIRROR" in
+   mntre.com) aptprefcontent="Package: *\nPin: release n=reform, l=reform\nPin-Priority: 990\n" ;;
+   reform.debian.net) aptprefcontent="Package: *\nPin: origin \"reform.debian.net\"\nPin-Priority: 999\n" ;;
+ esac
+-if [ ! -e /etc/apt/preferences.d/reform.pref ]; then
+-  echo "E: /etc/apt/preferences.d/reform.pref doesn't exist" >&2
+-  echo "E: you should not install packages on this system unless you know what you are doing" >&2
+-  echo "E: /etc/apt/preferences.d/reform.pref should contain the following lines:" >&2
+-  printf "$aptprefcontent" >&2
+-else
+-  if ! printf "$aptprefcontent" | cmp --quiet - /etc/apt/preferences.d/reform.pref; then
+-    echo "W: unexpected content in /etc/apt/preferences.d/reform.pref:" >&2
+-    printf "$aptprefcontent" | diff -u - /etc/apt/preferences.d/reform.pref || true
+-    echo "W: you should not install packages on this system unless you know what you are doing" >&2
++if [ $DISTRO = "debian-linux" ]; then
++  if [ ! -e /etc/apt/preferences.d/reform.pref ]; then
++    echo "E: /etc/apt/preferences.d/reform.pref doesn't exist" >&2
++    echo "E: you should not install packages on this system unless you know what you are doing" >&2
++    echo "E: /etc/apt/preferences.d/reform.pref should contain the following lines:" >&2
++    printf "$aptprefcontent" >&2
++  else
++    if ! printf "$aptprefcontent" | cmp --quiet - /etc/apt/preferences.d/reform.pref; then
++      echo "W: unexpected content in /etc/apt/preferences.d/reform.pref:" >&2
++      printf "$aptprefcontent" | diff -u - /etc/apt/preferences.d/reform.pref || true
++      echo "W: you should not install packages on this system unless you know what you are doing" >&2
++    fi
+   fi
+-fi
+ 
+-notinstalled=
+-for package in $PKGSGUI $PKGSTOOLS $PKGSNET $PKGSADMIN $PKGSUTILS $PKGSMISC; do
+-  if ! dpkg-query --showformat '${db:Status-Status}\n' --show "$package" 2>/dev/null | grep -q '^installed$'; then
+-    notinstalled="$notinstalled $package"
++  notinstalled=
++  for package in $PKGSGUI $PKGSTOOLS $PKGSNET $PKGSADMIN $PKGSUTILS $PKGSMISC; do
++    if ! dpkg-query --showformat '${db:Status-Status}\n' --show "$package" 2>/dev/null | grep -q '^installed$'; then
++      notinstalled="$notinstalled $package"
++    fi
++  done
++
++  if [ -n "$notinstalled" ]; then
++    echo "I: not installed: $(echo "$notinstalled" | tr " " "\n" | sort | tr "\n" " ")" >&2
+   fi
+-done
+-if [ -n "$notinstalled" ]; then
+-  echo "I: not installed: $(echo "$notinstalled" | tr " " "\n" | sort | tr "\n" " ")" >&2
+ fi
+ 
+ if [ -z "$(findmnt --fstab --noheadings --evaluate --mountpoint / --output SOURCE)" ]; then
+@@ -300,15 +317,18 @@ else
+   esac
+ fi
+ 
++
+ flashkerneldefaultcontent="LINUX_KERNEL_CMDLINE=\"\"\nLINUX_KERNEL_CMDLINE_DEFAULTS=\"\"\n"
+-if [ ! -e /etc/default/flash-kernel ]; then
+-  echo "E: /etc/default/flash-kernel doesn't exist" >&2
+-  echo "E: /etc/default/flash-kernel should contain the following lines:" >&2
+-  printf "$flashkerneldefaultcontent" >&2
+-else
+-  if ! printf "$flashkerneldefaultcontent" | cmp --quiet - /etc/default/flash-kernel; then
+-    echo "W: unexpected content in /etc/default/flash-kernel:" >&2
+-    printf "$flashkerneldefaultcontent" | diff -u - /etc/default/flash-kernel || true
++if [ $DISTRO = "debian-linux" ]; then
++  if [ ! -e /etc/default/flash-kernel ]; then
++    echo "E: /etc/default/flash-kernel doesn't exist" >&2
++    echo "E: /etc/default/flash-kernel should contain the following lines:" >&2
++    printf "$flashkerneldefaultcontent" >&2
++  else
++    if ! printf "$flashkerneldefaultcontent" | cmp --quiet - /etc/default/flash-kernel; then
++      echo "W: unexpected content in /etc/default/flash-kernel:" >&2
++      printf "$flashkerneldefaultcontent" | diff -u - /etc/default/flash-kernel || true
++    fi
+   fi
+ fi
+ 
+@@ -349,91 +369,99 @@ if grep --quiet '^root::' /etc/shadow; then
+   echo "E: root account has no password (maybe run passwd -l root)" >&2
+ fi
+ 
+-if [ ! -e /etc/skel/.profile ]; then
+-  echo "E: /etc/skel/.profile doesn't exist" >&2
+-  echo "E: install the package bash to create it" >&2
+-else
+-  # shellcheck disable=SC2016
+-  skelprofilecontent='if [ "$(whoami)" = "root" ]; then reform-help --root; elif [ -z "$WAYLAND_DISPLAY" ]; then reform-help; fi'
+-  if [ "$(tail -1 /etc/skel/.profile)" != "$skelprofilecontent" ]; then
+-    echo "E: unexpected last line in /etc/skel/.profile, should be:" >&2
+-    echo "$skelprofilecontent" >&2
++if [ $DISTRO = "debian-linux" ]; then
++  if [ ! -e /etc/skel/.profile ]; then
++    echo "E: /etc/skel/.profile doesn't exist" >&2
++    echo "E: install the package bash to create it" >&2
++  else
++    # shellcheck disable=SC2016
++    skelprofilecontent='if [ "$(whoami)" = "root" ]; then reform-help --root; elif [ -z "$WAYLAND_DISPLAY" ]; then reform-help; fi'
++    if [ "$(tail -1 /etc/skel/.profile)" != "$skelprofilecontent" ]; then
++      echo "E: unexpected last line in /etc/skel/.profile, should be:" >&2
++      echo "$skelprofilecontent" >&2
++    fi
+   fi
+-fi
+ 
+-if [ -n "$(dpkg --verify reform-tools)" ]; then
+-  echo "I: the following files differ from how they are shipped by reform-tools (ignore /var/lib/alsa/asound.state):" >&2
+-  dpkg --verify reform-tools
+-fi
++  if [ -n "$(dpkg --verify reform-tools)" ]; then
++    echo "I: the following files differ from how they are shipped by reform-tools (ignore /var/lib/alsa/asound.state):" >&2
++    dpkg --verify reform-tools
++  fi
+ 
+-if dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-arm64" 2>/dev/null | grep -q '^installed$'; then
+-  case "$MIRROR" in mntre.com)
+-    if ! apt-cache policy linux-image-arm64 | grep --quiet mntre.com; then
+-      echo "E: the linux-image-arm64 package cannot come from the MNT repos" >&2
++  if dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-arm64" 2>/dev/null | grep -q '^installed$'; then
++    case "$MIRROR" in mntre.com)
++      if ! apt-cache policy linux-image-arm64 | grep --quiet mntre.com; then
++        echo "E: the linux-image-arm64 package cannot come from the MNT repos" >&2
++      fi
++      ;;
++    reform.debian.net)
++      if ! apt-cache policy linux-image-arm64 | grep --quiet /reform.debian.net/; then
++        echo "E: the linux-image-arm64 package cannot come from the reform.debian.net repos" >&2
++      fi
++      ;;
++    *)
++      echo "invalid mirror: $MIRROR" >&2
++      exit 1
++      ;;
++    esac
++    echo "W: The deprecated meta-package linux-image-arm64 is installed." >&2
++    if dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-mnt-reform-arm64" 2>/dev/null | grep -q '^installed$'; then
++      echo "W: Since the new meta-package linux-image-mnt-reform-arm64 is installed," >&2
++      echo "W: the old meta-package linux-image-arm64 should be removed." >&2
++    else
++      echo "W: Please install the new meta-package linux-image-mnt-reform-arm64" >&2
++      echo "W: and remove the old meta-package linux-image-arm64." >&2
+     fi
+-    ;;
+-  reform.debian.net)
+-    if ! apt-cache policy linux-image-arm64 | grep --quiet /reform.debian.net/; then
+-      echo "E: the linux-image-arm64 package cannot come from the reform.debian.net repos" >&2
++    if ! dpkg-query --showformat '${Version}' --show linux-image-arm64 | grep --quiet reform; then
++      echo "E: the currently installed package linux-image-arm64 does not come with Reform patches" >&2
+     fi
+-    ;;
+-  *)
+-    echo "invalid mirror: $MIRROR" >&2
+-    exit 1
+-    ;;
+-  esac
+-  echo "W: The deprecated meta-package linux-image-arm64 is installed." >&2
+-  if dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-mnt-reform-arm64" 2>/dev/null | grep -q '^installed$'; then
+-    echo "W: Since the new meta-package linux-image-mnt-reform-arm64 is installed," >&2
+-    echo "W: the old meta-package linux-image-arm64 should be removed." >&2
+-  else
+-    echo "W: Please install the new meta-package linux-image-mnt-reform-arm64" >&2
+-    echo "W: and remove the old meta-package linux-image-arm64." >&2
+   fi
+-  if ! dpkg-query --showformat '${Version}' --show linux-image-arm64 | grep --quiet reform; then
+-    echo "E: the currently installed package linux-image-arm64 does not come with Reform patches" >&2
++
++  if dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-mnt-reform-arm64" 2>/dev/null | grep -q '^installed$'; then
++    case "$MIRROR" in mntre.com)
++      if ! apt-cache policy linux-image-mnt-reform-arm64 | grep --quiet mntre.com; then
++        echo "E: the linux-image-mnt-reform-arm64 package cannot come from the MNT repos" >&2
++      fi
++      ;;
++    reform.debian.net)
++      if ! apt-cache policy linux-image-mnt-reform-arm64 | grep --quiet /reform.debian.net/; then
++        echo "E: the linux-image-mnt-reform-arm64 package cannot come from the reform.debian.net repos" >&2
++      fi
++      ;;
++    *)
++      echo "invalid mirror: $MIRROR" >&2
++      exit 1
++      ;;
++    esac
+   fi
+-fi
+ 
+-if dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-mnt-reform-arm64" 2>/dev/null | grep -q '^installed$'; then
+-  case "$MIRROR" in mntre.com)
+-    if ! apt-cache policy linux-image-mnt-reform-arm64 | grep --quiet mntre.com; then
+-      echo "E: the linux-image-mnt-reform-arm64 package cannot come from the MNT repos" >&2
++
++  for file in /boot/initrd.img-*-reform2-arm64 /boot/vmlinuz-*-reform2-arm64; do
++    if [ ! -e "$file" ]; then
++      continue
+     fi
+-    ;;
+-  reform.debian.net)
+-    if ! apt-cache policy linux-image-mnt-reform-arm64 | grep --quiet /reform.debian.net/; then
+-      echo "E: the linux-image-mnt-reform-arm64 package cannot come from the reform.debian.net repos" >&2
++    echo "I: file from deprecated kernel flavour found: $file" >&2
++  done
++  
++  for file in /boot/initrd.img-*-mnt-reform-arm64 /boot/vmlinuz-*-mnt-reform-arm64; do
++    suffix="${file##/boot/}"
++    suffix="${suffix##initrd.img-}"
++    suffix="${suffix##vmlinuz-}"
++    if ! dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-$suffix" 2>/dev/null | grep -q '^installed$'; then
++      echo "I: $file does not belong to any installed kernel package" >&2
+     fi
+-    ;;
+-  *)
+-    echo "invalid mirror: $MIRROR" >&2
+-    exit 1
+-    ;;
+-  esac
++  done
+ fi
+-
+-for file in /boot/initrd.img-*-reform2-arm64 /boot/vmlinuz-*-reform2-arm64; do
+-  if [ ! -e "$file" ]; then
+-    continue
++if [ $DISTRO = "debain-linux" ]; then
++  if ! dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-$(uname -r)" 2>/dev/null | grep -q '^installed$'; then
++    echo "E: the currently running kernel is not installed as a package" >&2
+   fi
+-  echo "I: file from deprecated kernel flavour found: $file" >&2
+-done
+-
+-for file in /boot/initrd.img-*-mnt-reform-arm64 /boot/vmlinuz-*-mnt-reform-arm64; do
+-  suffix="${file##/boot/}"
+-  suffix="${suffix##initrd.img-}"
+-  suffix="${suffix##vmlinuz-}"
+-  if ! dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-$suffix" 2>/dev/null | grep -q '^installed$'; then
+-    echo "I: $file does not belong to any installed kernel package" >&2
++  if ! uname --kernel-version | grep --quiet --fixed-strings " $(dpkg-query --show --showformat '${Version}' linux-image-mnt-reform-arm64) "; then
++    echo "E: the currently running kernel is not the one provided by linux-image-mnt-reform-arm64" >&2
++  fi
++elif [ $DISTRO = "void-linux" ]; then
++  if [ $(xbps-query --property=pkgver pocket-reform-kernel) != "pocket-reform-kernel-$(uname -r)" ]; then
++    echo "E: the currently running kernel is not the one provided by pocket-reform-kernel" >&2
+   fi
+-done
+-
+-if ! dpkg-query --showformat '${db:Status-Status}\n' --show "linux-image-$(uname -r)" 2>/dev/null | grep -q '^installed$'; then
+-  echo "E: the currently running kernel is not installed as a package" >&2
+-fi
+-if ! uname --kernel-version | grep --quiet --fixed-strings " $(dpkg-query --show --showformat '${Version}' linux-image-mnt-reform-arm64) "; then
+-  echo "E: the currently running kernel is not the one provided by linux-image-mnt-reform-arm64" >&2
+ fi
+ 
+ if [ "$MIRROR" = "reform.debian.net" ]; then
+@@ -443,25 +471,41 @@ if [ "$MIRROR" = "reform.debian.net" ]; then
+   fi
+ fi
+ 
+-if [ ! -e /boot/boot.scr ]; then
+-  echo "E: /boot/boot.scr doesn't exist" >&2
+-  echo "E: run 'sudo flash-kernel' to create it" >&2
+-elif ! grep --quiet "setenv fk_kvers '$(uname -r)'" /boot/boot.scr; then
+-  echo "E: /boot/boot.scr doesn't reference the currently running kernel" >&2
+-fi
++if [ $DISTRO = "debian-linux" ]; then
++  if [ ! -e /boot/boot.scr ]; then
++    echo "E: /boot/boot.scr doesn't exist" >&2
++    echo "E: run 'sudo flash-kernel' to create it" >&2
++  elif ! grep --quiet "setenv fk_kvers '$(uname -r)'" /boot/boot.scr; then
++    echo "E: /boot/boot.scr doesn't reference the currently running kernel" >&2
++  fi
+ 
+-if [ ! -e "/boot/vmlinuz-$(uname -r)" ]; then
+-  echo "E: no vmlinuz in /boot for the currently running kernel" >&2
+-fi
++  if [ ! -e "/boot/vmlinuz-$(uname -r)" ]; then
++    echo "E: no vmlinuz in /boot for the currently running kernel" >&2
++  fi
++  
++  if [ ! -e "/boot/initrd.img-$(uname -r)" ]; then
++    echo "E: no initrd.img in /boot for the currently running kernel" >&2
++  fi
++elif [ $DISTRO = "void-linux" ]; then
++  if [ ! -e /boot/extlinux/extlinux.conf ]; then
++    echo "E: /boot/extlinux/extlinux.conf doesn't exist" >&2
++  elif ! grep --quiet "linux /vmlinux-$(uname -r)" /boot/extlinux/extlinux.conf; then
++    echo "E: /boot/extlinux/extlinux.conf doesn't reference the currently running kernel" >&2
++  fi
+ 
+-if [ ! -e "/boot/initrd.img-$(uname -r)" ]; then
+-  echo "E: no initrd.img in /boot for the currently running kernel" >&2
++  if [ ! -e "/boot/vmlinux-$(uname -r)" ]; then
++    echo "E: no vmlinux in /boot for the currently running kernel" >&2
++  fi
++  
++  if [ ! -e "/boot/initramfs-$(uname -r).img" ]; then
++    echo "E: no initramfs.img in /boot for the currently running kernel" >&2
++  fi
+ fi
+ 
+ if [ ! -e "/boot/dtb-$(uname -r)" ]; then
+   echo "E: no dtb-* symlink for the currently running kernel" >&2
+   echo "E: run 'sudo flash-kernel' to create it" >&2
+-elif [ ! -e "/boot/dtbs/$(uname -r)/$DTBPATH" ]; then
++elif [ $DISTRO = "debian-linux" ] && [ ! -e "/boot/dtbs/$(uname -r)/$DTBPATH" ]; then
+   echo "E: device tree file $DTBPATH is missing from /boot/dtbs" >&2
+ elif [ "$(readlink "/boot/dtb-$(uname -r)")" != "dtbs/$(uname -r)/$DTBPATH" ]; then
+   echo "E: /boot/dtb-$(uname -r) symlink does not reference dtbs/$(uname -r)/$DTBPATH but: $(readlink "/boot/dtb-$(uname -r)")" >&2
+@@ -510,21 +554,27 @@ if [ "$(tr ' ' '\n' </proc/cmdline | grep console= | tail -1)" != "console=tty1"
+   echo "W: This could lead to the luks password prompt being printed to serial instead of your screen." >&2
+ fi
+ 
+-if ! dpkg-query --showformat '${db:Status-Status}\n' --show "linux-headers-$(uname -r)" 2>/dev/null | grep -q '^installed$'; then
++
++if [ $DISTRO = "debian-linux" ] && ! dpkg-query --showformat '${db:Status-Status}\n' --show "linux-headers-$(uname -r)" 2>/dev/null | grep -q '^installed$'; then
+   echo "E: the linux header package linux-headers-$(uname -r) for the currently running kernel is not installed" >&2
++elif [ $DISTRO = "void-linux" ] && [ $(xbps-query --property=pkgver pocket-reform-kernel-headers) != "pocket-reform-kernel-headers-$(uname -r)" ]; then
++  echo "E: the linux header package pocket-reform-kernel-headers-$(uname -r) for the currently running kernel is not installed" >&2
++fi
++
++if [ $DISTRO = "debian-linux" ]; then
++  for f in mntre reform_bookworm reform_bookworm-backports; do
++    file="/etc/apt/sources.list.d/${f}.sources"
++    if [ ! -e "$file" ]; then
++      continue
++    fi
++    if [ "$(stat -c %a "$file")" != 666 ]; then
++      # nothing to do
++      continue
++    fi
++    echo "E: $file has insecure permissions 0666, consider a chmod 644" >&2
++  done
+ fi
+ 
+-for f in mntre reform_bookworm reform_bookworm-backports; do
+-  file="/etc/apt/sources.list.d/${f}.sources"
+-  if [ ! -e "$file" ]; then
+-    continue
+-  fi
+-  if [ "$(stat -c %a "$file")" != 666 ]; then
+-    # nothing to do
+-    continue
+-  fi
+-  echo "E: $file has insecure permissions 0666, consider a chmod 644" >&2
+-done
+ for f in . firefox firefox/syspref.js motd-full motd-rescue profile.d profile.d/reform.sh profile.d/reform-setup.sh; do
+   file="/etc/$f"
+   if [ ! -e "$file" ]; then
+@@ -574,7 +624,7 @@ esac
+ 
+ if [ "$OFFLINE" = "yes" ]; then
+   echo "I: skipping the remaining checks because --offline was used" >&2
+-else
++elif [ $DISTRO = "debian-linux" ]; then
+   # shellcheck disable=SC2016
+   case "$MIRROR" in mntre.com)
+     if [ "$(apt-get indextargets 'Created-By: Packages' 'Repo-URI: https://mntre.com/reform-debian-repo/' --format '$(RELEASE)')" != reform ]; then
