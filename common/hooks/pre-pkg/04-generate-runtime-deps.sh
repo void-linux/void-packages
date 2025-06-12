@@ -117,7 +117,7 @@ hook() {
             _pkgname=${_pkgname%.nosoname}
             _sdep="${_pkgname}-${version}_${revision}"
         else
-            _rdep="$(awk -v sl="$f" '$1 == sl { print $2; exit; }' "$mapshlibs")"
+            _rdep="$(awk -v sl="$f" -v arch="$XBPS_TARGET_MACHINE" '$1 == sl && ($3 == "" || $3 == "ignore" || $3 == arch) { print $2; exit; }' "$mapshlibs")"
 
             if [ -z "$_rdep" ]; then
                 msg_red_nochroot "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!\n"

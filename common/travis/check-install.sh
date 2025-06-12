@@ -27,6 +27,16 @@ ADDREPO="--repository=hostdir/binpkgs/bootstrap
  --repository=hostdir/binpkgs/nonfree"
 ROOTDIR="-r /check-install"
 
+# HACK: remove remote bootstrap repo from consideration
+# if the libc package is virtual (like musl1.1), xbps
+# can choose the one provided by cross-vpkg-dummy instead
+# of the actual package
+# this is fine to do here because it runs last in CI
+for f in "${CONFDIR#-C }"/*remote*.conf; do
+	[ -e "$f" ] || break
+	sed -i -e '/bootstrap/d' "$f"
+done
+
 # if this fails, there were no packages built for this arch and thus no repodatas
 xbps-install $ROOTDIR $ADDREPO $CONFDIR -S || exit 0
 
