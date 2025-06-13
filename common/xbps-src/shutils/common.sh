@@ -526,7 +526,7 @@ setup_pkg() {
     # If build_style is unset, a do_install() function must be defined.
     if [ -z "$build_style" ]; then
         # Check that at least do_install() is defined.
-        if [ "$metapackage" != yes ] && ! declare -f do_install >/dev/null; then
+        if [ "$metapackage" != yes ] && ! declare -f do_install >/dev/null && [ "${pkgname}" = "${sourcepkg}" ]; then
             msg_error "$pkgver: missing do_install() function!\n"
         fi
     elif [ "$build_style" = meta ]; then
