@@ -30,7 +30,7 @@ hook() {
 
 	# Register -dbg binpkg if it exists.
 	pkgdir=$XBPS_REPOSITORY/debug
-	PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}"
+	PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET:+${XBPS_CROSS_TRIPLET}/}${pkgname}-dbg-${version}"
 	if [ -d ${PKGDESTDIR} -a -f ${pkgdir}/${binpkg_dbg} ]; then
 		registerpkg ${pkgdir} ${binpkg_dbg}
 	fi

@@ -1,0 +1,134 @@
+From 874a075f0f031eb02aa0eb1e5609ca20a312fca4 Mon Sep 17 00:00:00 2001
+From: Serhiy Storchaka <storchaka@gmail.com>
+Date: Tue, 10 Jun 2025 09:56:45 +0300
+Subject: [PATCH] [3.13] gh-135326: Restore support of __index__ in
+ random.getrandbits()
+
+---
+ Lib/test/test_random.py                            | 14 +++++++++++++-
+ .../2025-06-10-10-00-17.gh-issue-135326.sOHe_p.rst |  2 ++
+ Modules/_randommodule.c                            | 12 +++++++++---
+ Modules/clinic/_randommodule.c.h                   | 10 +++++-----
+ 4 files changed, 29 insertions(+), 9 deletions(-)
+ create mode 100644 Misc/NEWS.d/next/Library/2025-06-10-10-00-17.gh-issue-135326.sOHe_p.rst
+
+diff --git a/Lib/test/test_random.py b/Lib/test/test_random.py
+index 22b097b974c640..29caa0aade024f 100644
+--- a/Lib/test/test_random.py
++++ b/Lib/test/test_random.py
+@@ -14,6 +14,15 @@
+ from fractions import Fraction
+ from collections import abc, Counter
+ 
++
++class MyIndex:
++    def __init__(self, value):
++        self.value = value
++
++    def __index__(self):
++        return self.value
++
++
+ class TestBasicOps:
+     # Superclass with tests common to all generators.
+     # Subclasses must arrange for self.gen to retrieve the Random instance
+@@ -393,7 +402,7 @@ def test_getrandbits(self):
+         self.assertRaises(TypeError, self.gen.getrandbits, 1, 2)
+         self.assertRaises(ValueError, self.gen.getrandbits, -1)
+         self.assertRaises(OverflowError, self.gen.getrandbits, 1<<1000)
+-        self.assertRaises(ValueError, self.gen.getrandbits, -1<<1000)
++        self.assertRaises((ValueError, OverflowError), self.gen.getrandbits, -1<<1000)
+         self.assertRaises(TypeError, self.gen.getrandbits, 10.1)
+ 
+     def test_pickling(self):
+@@ -809,6 +818,9 @@ def test_getrandbits(self):
+         self.gen.seed(1234567)
+         self.assertEqual(self.gen.getrandbits(100),
+                          97904845777343510404718956115)
++        self.gen.seed(1234567)
++        self.assertEqual(self.gen.getrandbits(MyIndex(100)),
++                         97904845777343510404718956115)
+ 
+     def test_getrandbits_2G_bits(self):
+         size = 2**31
+diff --git a/Misc/NEWS.d/next/Library/2025-06-10-10-00-17.gh-issue-135326.sOHe_p.rst b/Misc/NEWS.d/next/Library/2025-06-10-10-00-17.gh-issue-135326.sOHe_p.rst
+new file mode 100644
+index 00000000000000..c83f67b7b0ef8e
+--- /dev/null
++++ b/Misc/NEWS.d/next/Library/2025-06-10-10-00-17.gh-issue-135326.sOHe_p.rst
+@@ -0,0 +1,2 @@
++Restore support of integer-like objects with :meth:`!__index__` in
++:func:`random.getrandbits`.
+diff --git a/Modules/_randommodule.c b/Modules/_randommodule.c
+index 8fb040fb6c5b35..6a311bb0d71f9f 100644
+--- a/Modules/_randommodule.c
++++ b/Modules/_randommodule.c
+@@ -495,21 +495,27 @@ _random_Random_setstate_impl(RandomObject *self, PyObject *state)
+ _random.Random.getrandbits
+ 
+   self: self(type="RandomObject *")
+-  k: unsigned_long_long(bitwise=False)
++  k: long_long
+   /
+ 
+ getrandbits(k) -> x.  Generates an int with k random bits.
+ [clinic start generated code]*/
+ 
+ static PyObject *
+-_random_Random_getrandbits_impl(RandomObject *self, unsigned long long k)
+-/*[clinic end generated code: output=25a604fab95885d4 input=88e51091eea2f042]*/
++_random_Random_getrandbits_impl(RandomObject *self, long long k)
++/*[clinic end generated code: output=c2c02a7b0bfdf7f7 input=834d0fe668b981e4]*/
+ {
+     Py_ssize_t i, words;
+     uint32_t r;
+     uint32_t *wordarray;
+     PyObject *result;
+ 
++    if (k < 0) {
++        PyErr_SetString(PyExc_ValueError,
++                        "number of bits must be non-negative");
++        return NULL;
++    }
++
+     if (k == 0)
+         return PyLong_FromLong(0);
+ 
+diff --git a/Modules/clinic/_randommodule.c.h b/Modules/clinic/_randommodule.c.h
+index 12c845d4c44d00..b9f2e53bb5c925 100644
+--- a/Modules/clinic/_randommodule.c.h
++++ b/Modules/clinic/_randommodule.c.h
+@@ -3,7 +3,6 @@ preserve
+ [clinic start generated code]*/
+ 
+ #include "pycore_critical_section.h"// Py_BEGIN_CRITICAL_SECTION()
+-#include "pycore_long.h"          // _PyLong_UnsignedLongLong_Converter()
+ #include "pycore_modsupport.h"    // _PyArg_CheckPositional()
+ 
+ PyDoc_STRVAR(_random_Random_random__doc__,
+@@ -125,15 +124,16 @@ PyDoc_STRVAR(_random_Random_getrandbits__doc__,
+     {"getrandbits", (PyCFunction)_random_Random_getrandbits, METH_O, _random_Random_getrandbits__doc__},
+ 
+ static PyObject *
+-_random_Random_getrandbits_impl(RandomObject *self, unsigned long long k);
++_random_Random_getrandbits_impl(RandomObject *self, long long k);
+ 
+ static PyObject *
+ _random_Random_getrandbits(RandomObject *self, PyObject *arg)
+ {
+     PyObject *return_value = NULL;
+-    unsigned long long k;
++    long long k;
+ 
+-    if (!_PyLong_UnsignedLongLong_Converter(arg, &k)) {
++    k = PyLong_AsLongLong(arg);
++    if (k == -1 && PyErr_Occurred()) {
+         goto exit;
+     }
+     Py_BEGIN_CRITICAL_SECTION(self);
+@@ -143,4 +143,4 @@ _random_Random_getrandbits(RandomObject *self, PyObject *arg)
+ exit:
+     return return_value;
+ }
+-/*[clinic end generated code: output=e9a5c68295678cff input=a9049054013a1b77]*/
++/*[clinic end generated code: output=d3a199bc869e5c63 input=a9049054013a1b77]*/
