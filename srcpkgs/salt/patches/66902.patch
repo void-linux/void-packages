@@ -1,0 +1,239 @@
+From 32bfb196c75c45564982ea0746021fb4dce8c688 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marek=20Marczykowski-G=C3=B3recki?=
+ <marmarek@invisiblethingslab.com>
+Date: Thu, 15 Aug 2024 14:57:01 +0200
+Subject: [PATCH 1/2] Use timezone-aware datetime objects, for UTC too
+
+datetime.datetime.utcnow() is deprecated in Python 3.12, and it's
+recommended to switch to timezone-aware objects, so do this. It also
+simplifies local time handling, as .astimezone() method can be used
+instead of calculating timezone_delta manually.
+
+Part of #65604
+---
+ salt/grains/core.py                          |  4 +--
+ salt/state.py                                | 34 ++++++++------------
+ salt/utils/jid.py                            |  2 +-
+ salt/utils/pkg/rpm.py                        |  5 ++-
+ tests/pytests/unit/grains/test_core.py       |  4 ++-
+ tests/pytests/unit/state/test_state_basic.py |  9 ++++--
+ tests/unit/utils/test_jid.py                 |  6 ++++
+ 7 files changed, 37 insertions(+), 27 deletions(-)
+
+diff --git a/salt/grains/core.py b/salt/grains/core.py
+index 7afcbd5cbae8..7e0084b42c66 100644
+--- a/salt/grains/core.py
++++ b/salt/grains/core.py
+@@ -2906,12 +2906,12 @@ def ip_fqdn():
+         if not ret["ipv" + ipv_num]:
+             ret[key] = []
+         else:
+-            start_time = datetime.datetime.utcnow()
++            start_time = datetime.datetime.now(tz=datetime.timezone.utc)
+             try:
+                 info = socket.getaddrinfo(_fqdn, None, socket_type)
+                 ret[key] = list({item[4][0] for item in info})
+             except (OSError, UnicodeError):
+-                timediff = datetime.datetime.utcnow() - start_time
++                timediff = datetime.datetime.now(tz=datetime.timezone.utc) - start_time
+                 if timediff.seconds > 5 and __opts__["__role"] == "master":
+                     log.warning(
+                         'Unable to find IPv%s record for "%s" causing a %s '
+diff --git a/salt/state.py b/salt/state.py
+index f8821c498096..3c1dc3faa642 100644
+--- a/salt/state.py
++++ b/salt/state.py
+@@ -171,11 +171,9 @@ def _calculate_fake_duration():
+     Generate a NULL duration for when states do not run
+     but we want the results to be consistent.
+     """
+-    utc_start_time = datetime.datetime.utcnow()
+-    local_start_time = utc_start_time - (
+-        datetime.datetime.utcnow() - datetime.datetime.now()
+-    )
+-    utc_finish_time = datetime.datetime.utcnow()
++    utc_start_time = datetime.datetime.now(tz=datetime.timezone.utc)
++    local_start_time = utc_start_time.astimezone()
++    utc_finish_time = datetime.datetime.now(tz=datetime.timezone.utc)
+     start_time = local_start_time.time().isoformat()
+     delta = utc_finish_time - utc_start_time
+     # duration in milliseconds.microseconds
+@@ -2153,7 +2151,7 @@ def _call_parallel_target(cls, instance, init_kwargs, name, cdata, low):
+             instance = cls(**init_kwargs)
+         # we need to re-record start/end duration here because it is impossible to
+         # correctly calculate further down the chain
+-        utc_start_time = datetime.datetime.utcnow()
++        utc_start_time = datetime.datetime.now(tz=datetime.timezone.utc)
+ 
+         instance.format_slots(cdata)
+         tag = _gen_tag(low)
+@@ -2173,10 +2171,9 @@ def _call_parallel_target(cls, instance, init_kwargs, name, cdata, low):
+                 "comment": f"An exception occurred in this state: {trb}",
+             }
+ 
+-        utc_finish_time = datetime.datetime.utcnow()
+-        timezone_delta = datetime.datetime.utcnow() - datetime.datetime.now()
+-        local_finish_time = utc_finish_time - timezone_delta
+-        local_start_time = utc_start_time - timezone_delta
++        utc_finish_time = datetime.datetime.now(tz=datetime.timezone.utc)
++        local_finish_time = utc_finish_time.astimezone()
++        local_start_time = utc_start_time.astimezone()
+         ret["start_time"] = local_start_time.time().isoformat()
+         delta = utc_finish_time - utc_start_time
+         # duration in milliseconds.microseconds
+@@ -2206,8 +2203,8 @@ def _call_parallel_target(cls, instance, init_kwargs, name, cdata, low):
+                         *cdata["args"], **cdata["kwargs"]
+                     )
+ 
+-                    utc_start_time = datetime.datetime.utcnow()
+-                    utc_finish_time = datetime.datetime.utcnow()
++                    utc_start_time = datetime.datetime.now(tz=datetime.timezone.utc)
++                    utc_finish_time = datetime.datetime.now(tz=datetime.timezone.utc)
+                     delta = utc_finish_time - utc_start_time
+                     duration = (delta.seconds * 1000000 + delta.microseconds) / 1000.0
+                     retry_ret["duration"] = duration
+@@ -2294,10 +2291,8 @@ def call(self, low, chunks=None, running=None, retries=1):
+         Call a state directly with the low data structure, verify data
+         before processing.
+         """
+-        utc_start_time = datetime.datetime.utcnow()
+-        local_start_time = utc_start_time - (
+-            datetime.datetime.utcnow() - datetime.datetime.now()
+-        )
++        utc_start_time = datetime.datetime.now(tz=datetime.timezone.utc)
++        local_start_time = utc_start_time.astimezone()
+         log.info(
+             "Running state [%s] at time %s",
+             low["name"].strip() if isinstance(low["name"], str) else low["name"],
+@@ -2486,10 +2481,9 @@ def call(self, low, chunks=None, running=None, retries=1):
+         self.__run_num += 1
+         format_log(ret)
+         self.check_refresh(low, ret)
+-        utc_finish_time = datetime.datetime.utcnow()
+-        timezone_delta = datetime.datetime.utcnow() - datetime.datetime.now()
+-        local_finish_time = utc_finish_time - timezone_delta
+-        local_start_time = utc_start_time - timezone_delta
++        utc_finish_time = datetime.datetime.now(tz=datetime.timezone.utc)
++        local_finish_time = utc_finish_time.astimezone()
++        local_start_time = utc_start_time.astimezone()
+         ret["start_time"] = local_start_time.time().isoformat()
+         delta = utc_finish_time - utc_start_time
+         # duration in milliseconds.microseconds
+diff --git a/salt/utils/jid.py b/salt/utils/jid.py
+index 69d926469b98..84f5b3c4a323 100644
+--- a/salt/utils/jid.py
++++ b/salt/utils/jid.py
+@@ -16,7 +16,7 @@ def _utc_now():
+     """
+     Helper method so tests do not have to patch the built-in method.
+     """
+-    return datetime.datetime.utcnow()
++    return datetime.datetime.now(tz=datetime.timezone.utc)
+ 
+ 
+ def gen_jid(opts):
+diff --git a/salt/utils/pkg/rpm.py b/salt/utils/pkg/rpm.py
+index 7574a068e83c..e07f865fef4d 100644
+--- a/salt/utils/pkg/rpm.py
++++ b/salt/utils/pkg/rpm.py
+@@ -130,7 +130,10 @@ def parse_pkginfo(line, osarch=None):
+ 
+     if install_time not in ("(none)", "0"):
+         install_date = (
+-            datetime.datetime.utcfromtimestamp(int(install_time)).isoformat() + "Z"
++            datetime.datetime.fromtimestamp(
++                int(install_time), datetime.timezone.utc
++            ).isoformat()
++            + "Z"
+         )
+         install_date_time_t = int(install_time)
+     else:
+diff --git a/tests/pytests/unit/grains/test_core.py b/tests/pytests/unit/grains/test_core.py
+index 8b840738ef7e..07735102e506 100644
+--- a/tests/pytests/unit/grains/test_core.py
++++ b/tests/pytests/unit/grains/test_core.py
+@@ -17,6 +17,7 @@
+ import tempfile
+ import textwrap
+ import uuid
++import warnings
+ from collections import namedtuple
+ 
+ import pytest
+@@ -2151,7 +2152,8 @@ def _check_type(key, value, ip4_empty, ip6_empty):
+         salt.utils.network, "ip_addrs6", MagicMock(return_value=net_ip6_mock)
+     ), patch.object(
+         core.socket, "getaddrinfo", side_effect=_getaddrinfo
+-    ):
++    ), warnings.catch_warnings():
++        warnings.simplefilter("error")
+         get_fqdn = core.ip_fqdn()
+         ret_keys = ["fqdn_ip4", "fqdn_ip6", "ipv4", "ipv6"]
+         for key in ret_keys:
+diff --git a/tests/pytests/unit/state/test_state_basic.py b/tests/pytests/unit/state/test_state_basic.py
+index c76a8b950ad2..9c5352bc8bb8 100644
+--- a/tests/pytests/unit/state/test_state_basic.py
++++ b/tests/pytests/unit/state/test_state_basic.py
+@@ -2,6 +2,8 @@
+ Test functions in state.py that are not a part of a class
+ """
+ 
++import warnings
++
+ import pytest
+ 
+ import salt.state
+@@ -139,8 +141,11 @@ def test_state_args_id_not_high():
+             ),
+         ]
+     )
+-    ret = salt.state.state_args(id_, state, high)
+-    assert ret == set()
++    with warnings.catch_warnings():
++        warnings.simplefilter("error")
++        salt.utils.jid.gen_jid({})
++        ret = salt.state.state_args(id_, state, high)
++        assert ret == set()
+ 
+ 
+ def test_state_args_state_not_high():
+diff --git a/tests/unit/utils/test_jid.py b/tests/unit/utils/test_jid.py
+index 347e14113280..faa2383639aa 100644
+--- a/tests/unit/utils/test_jid.py
++++ b/tests/unit/utils/test_jid.py
+@@ -4,6 +4,7 @@
+ 
+ import datetime
+ import os
++import warnings
+ 
+ import salt.utils.jid
+ from tests.support.mock import patch
+@@ -49,3 +50,8 @@ def test_deprecation_58225(self):
+             self.assertEqual(
+                 str(no_opts), "gen_jid() missing 1 required positional argument: 'opts'"
+             )
++
++    def test_deprecation_65604(self):
++        with warnings.catch_warnings():
++            warnings.simplefilter("error")
++            salt.utils.jid.gen_jid({})
+
+From 90454cc14102b1b9d7cfc8cb2c4147b94b83678f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marek=20Marczykowski-G=C3=B3recki?=
+ <marmarek@invisiblethingslab.com>
+Date: Wed, 18 Sep 2024 14:58:14 +0200
+Subject: [PATCH 2/2] Add changelog entry
+
+---
+ changelog/65604.fixed.md | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 100644 changelog/65604.fixed.md
+
+diff --git a/changelog/65604.fixed.md b/changelog/65604.fixed.md
+new file mode 100644
+index 000000000000..2e7a9fe75c0c
+--- /dev/null
++++ b/changelog/65604.fixed.md
+@@ -0,0 +1 @@
++Fixed some instances of deprecated datetime.datetime.utcnow()

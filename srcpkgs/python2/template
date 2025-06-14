@@ -1,0 +1,137 @@
+# Template file for 'python2'
+pkgname=python2
+version=2.7.18.11
+revision=2
+_commit=a22a1d856ea8c656debe6f9a8fe9fee1ffc3f144
+pycompile_dirs="usr/lib/python2.7"
+hostmakedepends="pkg-config"
+makedepends="libffi-devel readline-devel gdbm-devel openssl-devel expat-devel
+ sqlite-devel bzip2-devel zlib-devel tk-devel"
+depends="ca-certificates"
+short_desc="Interpreted, interactive, object-oriented programming language"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
+license="Python-2.0"
+homepage="https://www.python.org"
+distfiles="https://github.com/ActiveState/cpython/archive/${_commit}.tar.gz"
+checksum=aeb7b021405093b8687239009e5dadb2cb4099e69e75a246d6279770a5fee3af
+
+short_desc+=" (limited install; not for regular use)"
+
+alternatives="
+ python:2to3:/usr/bin/2to3-2.7
+ python:pydoc:/usr/bin/pydoc2.7
+ python:python:/usr/bin/python2.7
+ python:python.1:/usr/share/man/man1/python2.7.1"
+
+if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
+	makedepends+=" libxcrypt-devel"
+fi
+
+pre_configure() {
+	# Ensure that internal copies of expat and libffi are not used.
+	rm -r Modules/expat
+	rm -r Modules/_ctypes/libffi*
+	# Enable loading sqlite extensions.
+	vsed -i '/SQLITE_OMIT_LOAD_EXTENSION/d' setup.py
+}
+
+do_configure() {
+	local _args
+	unset GCC CC CXX CPP LD AR AS RANLIB
+	if [ "$CROSS_BUILD" ]; then
+		mkdir -p host-build
+		cd host-build
+		env -i PATH=$PATH XBPS_ARCH=$XBPS_ARCH ../configure
+		env -i PATH=$PATH XBPS_ARCH=$XBPS_ARCH make ${makejobs} python
+		mkdir -p ../hostpython
+		mv python ../hostpython
+		cd ..
+		patch -Np0 -i ${FILESDIR}/cross.patch
+		_args="--build=${XBPS_MACHINE%%-musl}"
+	fi
+	./configure ${configure_args} ${_args} \
+		--enable-shared --enable-ipv6 --with-threads --enable-unicode=ucs4 \
+		--with-computed-gotos --with-wctype-functions --with-dbmliborder=gdbm:ndbm \
+		--with-system-expat --with-system-ffi --without-ensurepip
+}
+
+do_build() {
+	export PATH="$PATH:$wrksrc/hostpython"
+	export AS_DEPENDENCIES_DIR="${XBPS_CROSS_BASE}/"
+	make ${makejobs}
+}
+
+do_install() {
+	export PATH="$PATH:$wrksrc/hostpython"
+	make DESTDIR=${DESTDIR} altinstall
+	ln -sf pydoc2.7 ${DESTDIR}/usr/bin/pydoc2
+	ln -sf python2.7 ${DESTDIR}/usr/bin/python2
+	ln -sf python2.7-config ${DESTDIR}/usr/bin/python-config
+	ln -sf python2.7-config ${DESTDIR}/usr/bin/python2-config
+	ln -sf python2.7.1 ${DESTDIR}/usr/share/man/man1/python2.1
+	ln -sf python-2.7.pc ${DESTDIR}/usr/lib/pkgconfig/python2.pc
+}
+
+post_install() {
+	chmod 755 ${DESTDIR}/usr/lib/libpython*.so*
+	vlicense LICENSE
+
+	rm ${DESTDIR}/usr/bin/smtpd.py
+
+	mv ${DESTDIR}/usr/bin/2to3{,-${py2_ver}}
+	mv ${DESTDIR}/usr/bin/pydoc{,${py2_ver}}
+	mv ${DESTDIR}/usr/bin/idle{,${py2_ver}}
+	ln -sf "idle${py2_ver}" "${DESTDIR}/usr/bin/idle2"
+
+	# Remove test module and tests that fail to be byte-compiled.
+	rm -r ${DESTDIR}/${py2_lib}/test
+	rm -r ${DESTDIR}/${py2_lib}/lib2to3/tests
+
+	# Remove references to the install(1) wrapper.
+	vsed -e "s,${XBPS_WRAPPERDIR},/usr/bin,g" -i \
+		${DESTDIR}/${py2_lib}/_sysconfigdata.py \
+		${DESTDIR}/${py2_lib}/config/Makefile
+
+	if [ "$CROSS_BUILD" ]; then
+		# Remove references to cross toolchain.
+		vsed -i "s/$XBPS_CROSS_TRIPLET-//g" \
+			${DESTDIR}/${py2_lib}/_sysconfigdata.py \
+			${DESTDIR}/${py2_lib}/config/Makefile
+	fi
+}
+
+python2-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/bin/python*-config
+		vmove usr/lib/pkgconfig
+		vmove usr/include
+		vmove "${py2_lib}/config/libpython2.7.a"
+
+		# Restore pyconfig.h to main package
+		mkdir -p "${DESTDIR}/${py2_inc}"
+		mv "${PKGDESTDIR}/${py2_inc}/pyconfig.h" "${DESTDIR}/${py2_inc}"
+	}
+}
+
+python2-tkinter_package() {
+	short_desc+=" - GUI toolkit for Python2"
+	depens="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove "${py2_lib}/lib-tk"
+		vmove "${py2_lib}/lib-dynload/_tkinter.so"
+	}
+}
+
+idle-python2_package() {
+	short_desc="${_desc} - IDE for Python2 using Tkinter"
+	pycompile_dirs="usr/lib/python2.7/idlelib"
+	depends="${sourcepkg}-${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin/idle*
+		vmove usr/lib/python2.7/idlelib
+		vinstall ${FILESDIR}/idle2.xpm 644 usr/share/pixmaps
+		vinstall ${FILESDIR}/idle2.desktop 644 usr/share/applications
+	}
+}

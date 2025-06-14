@@ -1,0 +1,92 @@
+From: Joshua Peisach <itzswirlz2020@outlook.com>
+Date: Sat, 06 Aug 2022 11:37:51 +0200
+Subject: Port to libsoup3.
+
+Forwarded: not-yet
+Last-Update: 2022-08-06
+---
+Index: libtimezonemap/configure.ac
+===================================================================
+--- libtimezonemap.orig/configure.ac
++++ libtimezonemap/configure.ac
+@@ -50,13 +50,13 @@
+ GLIB_REQUIRED_VERSION=2.26
+ GTK3_REQUIRED_VERSION=3.1.4
+ GIO_REQUIRED_VERSION=2.5.11
+-SOUP_REQUIRED_VERSION=2.42.0
++SOUP_REQUIRED_VERSION=3.0.7
+ 
+ AC_CHECK_LIBM
+ 
+ PKG_CHECK_MODULES(LIBTIMEZONEMAP, gio-2.0 >= $GIO_REQUIRED_VERSION
+                                   gtk+-3.0 >= $GTK3_REQUIRED_VERSION
+-                                  libsoup-2.4 >= $SOUP_REQUIRED_VERSION
++                                  libsoup-3.0 >= $SOUP_REQUIRED_VERSION
+                                   json-glib-1.0)
+ LIBTIMEZONEMAP_LIBS="$LIBTIMEZONEMAP_LIBS $LIBM"
+ 
+Index: libtimezonemap/src/timezone-completion.c
+===================================================================
+--- libtimezonemap.orig/src/timezone-completion.c
++++ libtimezonemap/src/timezone-completion.c
+@@ -270,9 +270,10 @@
+   CcTimezoneCompletionPrivate * priv = completion->priv;
+   GError * error = NULL;
+   GInputStream * stream;
+-  SoupMessage *message;
++  const gchar * reason_phrase;
++  SoupStatus status_code;
+ 
+-  stream = soup_request_send_finish (SOUP_REQUEST (object), res, &error);
++  stream = soup_session_send_finish (priv->soup_session, res, &error);
+   if (stream == NULL)
+     {
+       if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+@@ -283,8 +284,9 @@
+       return;
+     }
+ 
+-  message = soup_request_http_get_message (SOUP_REQUEST_HTTP (object));
+-  if (message->status_code == SOUP_STATUS_OK)
++  reason_phrase = soup_message_get_reason_phrase (SOUP_MESSAGE (object));
++  status_code = soup_message_get_status (SOUP_MESSAGE (object));
++  if (status_code == SOUP_STATUS_OK)
+     {
+       JsonParser *parser;
+ 
+@@ -296,10 +298,10 @@
+   else
+     {
+       g_warning ("Unable to fetch geonames (server responded with: %u %s)",
+-                 message->status_code, message->reason_phrase);
++                 status_code, reason_phrase);
+     }
+ 
+-  g_object_unref (message);
++  g_object_unref (object);
+   g_object_unref (stream);
+ }
+ 
+@@ -362,7 +364,7 @@
+ request_zones (CcTimezoneCompletion * completion)
+ {
+   CcTimezoneCompletionPrivate * priv = completion->priv;
+-  SoupRequest *req;
++  SoupMessage *req;
+   GError *error = NULL;
+ 
+   priv->queued_request = 0;
+@@ -391,10 +393,11 @@
+   g_free (locale);
+   g_free (escaped);
+ 
+-  req = soup_session_request (priv->soup_session, url, &error);
++  req = soup_message_new (NULL, url);
+   if (req)
+     {
+-      soup_request_send_async (req, priv->cancel, geonames_data_ready, completion);
++      soup_session_send_async (priv->soup_session, req, G_PRIORITY_DEFAULT,
++                               priv->cancel, geonames_data_ready, completion);
+       g_object_unref (req);
+     }
+   else
