@@ -1,0 +1,130 @@
+From b16ff281f854564e2669b2c3f4871793ddc51fc3 Mon Sep 17 00:00:00 2001
+From: KaitoHH <hh.kaito@gmail.com>
+Date: Tue, 26 Sep 2017 15:39:06 +0800
+Subject: [PATCH] Add feature of locating line and column number of error
+
+---
+ include/rapidjson/document.h    | 11 ++++++++-
+ include/rapidjson/error/error.h |  8 +++++++
+ include/rapidjson/stream.h      | 42 +++++++++++++++++++++++++++++++++
+ 3 files changed, 60 insertions(+), 1 deletion(-)
+
+diff --git a/include/rapidjson/document.h b/include/rapidjson/document.h
+index 93b091f64..de6574090 100644
+--- document.h	2025-04-19 22:31:29.000000000 +0200
++++ document.h	2025-04-19 22:31:29.000000000 +0200
+@@ -2152,14 +2150,17 @@
+         \return The document itself for fluent API.
+     */
+     template <unsigned parseFlags, typename SourceEncoding, typename InputStream>
+-    GenericDocument& ParseStream(InputStream& is) {
++    GenericDocument& ParseStream(InputStream& is_) {
+         GenericReader<SourceEncoding, Encoding, StackAllocator> reader(
+             stack_.HasAllocator() ? &stack_.GetAllocator() : 0);
+         ClearStackOnExit scope(*this);
++        GenericStreamWrapper<InputStream, SourceEncoding> is(is_);
+         parseResult_ = reader.template Parse<parseFlags>(is, *this);
+         if (parseResult_) {
+             RAPIDJSON_ASSERT(stack_.GetSize() == sizeof(ValueType)); // Got one and only one root object
+             ValueType::operator=(*stack_.template Pop<ValueType>(1));// Move value from stack to document
++        } else {
++            parseResult_.SetPos(is.line_, is.col_);
+         }
+         return *this;
+     }
+@@ -2288,6 +2289,12 @@
+ 
+     //! Get the position of last parsing error in input, 0 otherwise.
+     size_t GetErrorOffset() const { return parseResult_.Offset(); }
++    
++    //! Get the position of last parsing error in input, 0 otherwise.
++    size_t GetErrorLine() const { return parseResult_.Line(); }
++    
++    //! Get the position of last parsing error in input, 0 otherwise.
++    size_t GetErrorColumn() const { return parseResult_.Col(); }    
+ 
+     //! Implicit conversion to get the last parse result
+ #ifndef __clang // -Wdocumentation
+diff --git a/include/rapidjson/error/error.h b/include/rapidjson/error/error.h
+index 9311d2f03..be8057911 100644
+--- a/include/rapidjson/error/error.h
++++ b/include/rapidjson/error/error.h
+@@ -114,6 +114,10 @@
+     ParseErrorCode Code() const { return code_; }
+     //! Get the error offset, if \ref IsError(), 0 otherwise.
+     size_t Offset() const { return offset_; }
++    //! Get the position of line number if error exists.
++    size_t Line() const { return line_; }
++    //! Get the position of column number if error exists.
++    size_t Col() const { return col_; }
+ 
+     //! Conversion to \c bool, returns \c true, iff !\ref IsError().
+     operator bool() const { return !IsError(); }
+@@ -128,10 +132,14 @@
+     void Clear() { Set(kParseErrorNone); }
+     //! Update error code and offset.
+     void Set(ParseErrorCode code, size_t offset = 0) { code_ = code; offset_ = offset; }
++    //! Update line number and column number of the error position
++    void SetPos(size_t line, size_t col) { line_ = line; col_ = col; }
+ 
+ private:
+     ParseErrorCode code_;
+     size_t offset_;
++    size_t line_;
++    size_t col_;
+ };
+ 
+ //! Function pointer type of GetParseError().
+diff --git a/include/rapidjson/stream.h b/include/rapidjson/stream.h
+index fef82c252..4e4ba80a4 100644
+--- a/include/rapidjson/stream.h
++++ b/include/rapidjson/stream.h
+@@ -100,6 +100,48 @@ inline void PutN(Stream& stream, Ch c, size_t n) {
+         PutUnsafe(stream, c);
+ }
+ 
++///////////////////////////////////////////////////////////////////////////////
++// GenericStreamWrapper
++
++//! A Stream Wrapper
++/*! \tThis string stream is designed for counting line and column number 
++    \tof the error (if exists) position, while just forwarding any received 
++    \tmessage to the origin stream. 
++    \note implements Stream concept
++*/
++template <typename InputStream, typename Encoding>
++class GenericStreamWrapper {
++public:
++    typedef typename Encoding::Ch Ch;
++    size_t line_;
++    size_t col_;
++    GenericStreamWrapper(InputStream& is): is_(is), line_(1), col_(0) {}
++    
++    Ch Peek() const { return is_.Peek(); }
++    
++    // counting line and column number
++    Ch Take() {
++        Ch ch = is_.Take();
++        if(ch == '\n') {
++            line_ ++;
++            col_ = 0;
++        } else {
++            col_ ++;
++        }
++        return ch;
++    }
++    size_t Tell() { return is_.Tell(); }
++    
++    Ch* PutBegin() { return is_.PutBegin(); }
++    void Put(Ch ch) { return is_.Put(ch); }
++    void Flush() { return is_.Flush(); }
++    size_t PutEnd(Ch* ch) { is_.PutEnd(ch); }	
++    
++    const Ch* Peek4() const { is_.Peek4(); }
++private:
++    InputStream& is_;
++};
++
+ ///////////////////////////////////////////////////////////////////////////////
+ // StringStream
+ 

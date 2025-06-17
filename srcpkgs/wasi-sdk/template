@@ -1,0 +1,157 @@
+# Template file for 'wasi-sdk'
+pkgname=wasi-sdk
+version=25
+revision=1
+_llvmversion="19.1.7"
+_llvmver="${_llvmversion%%.*}"
+_wasi_sdk_ver=25
+build_wrksrc="llvm-project-${_llvmversion}.src"
+build_style=cmake
+hostmakedepends="python3 clang${_llvmver} llvm${_llvmver} chroot-git ninja"
+makedepends="wasi-libc"
+depends="wasi-libc wasi-libcxx wasi-compiler-rt"
+short_desc="WASI-enabled WebAssembly C/C++ toolchain"
+maintainer="Duncaen <duncaen@voidlinux.org>"
+license="custom:Apache-2.0-with-llvm-exception"
+homepage="https://github.com/WebAssembly/wasi-sdk"
+distfiles="https://github.com/llvm/llvm-project/releases/download/llvmorg-${_llvmversion}/llvm-project-${_llvmversion}.src.tar.xz
+ https://github.com/WebAssembly/wasi-sdk/archive/refs/tags/wasi-sdk-${version}.tar.gz"
+checksum="82401fea7b79d0078043f7598b835284d6650a75b93e64b6f761ea7b63097501
+ 4ab1ad1b5fc60d3c9c36905fea8ed899f5fdc5bd0bd77849c112e0b5a1788916"
+
+nostrip=yes
+
+export CMAKE_GENERATOR=Ninja
+
+post_extract() {
+	cp "wasi-sdk-wasi-sdk-${version}/wasi-sdk.cmake" "llvm-project-${_llvmversion}.src"/wasi-sdk.cmake
+	cp -r "wasi-sdk-wasi-sdk-${version}/cmake/Platform" "llvm-project-${_llvmversion}.src"/cmake
+}
+
+_configure_libcxx() {
+	local target="$1"
+	local destdir="$2"
+	local want_threads="OFF"
+	local extra_cflags=""
+
+	case "$target" in
+	*-threads)
+		want_threads="ON"
+		extra_cflags="-pthread"
+		;;
+	esac
+
+	cmake -B "$destdir" -G Ninja -S runtimes -Wno-dev \
+		-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" \
+		-DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_MODULE_PATH="${wrksrc}/${build_wrksrc}/cmake" \
+		-DCMAKE_TOOLCHAIN_FILE="${wrksrc}/${build_wrksrc}/wasi-sdk.cmake" \
+		-DCMAKE_C_COMPILER_WORKS=ON \
+		-DCMAKE_CXX_COMPILER_WORKS=ON \
+		-DCMAKE_C_FLAGS="$CFLAGS $extra_cflags --target=$target" \
+		-DCMAKE_CXX_FLAGS="$CXXFLAGS $extra_cflags --target=$target" \
+		-DCMAKE_ASM_COMPILER_TARGET="$target" \
+		-DCMAKE_CXX_COMPILER_TARGET="$target" \
+		-DCMAKE_C_COMPILER_TARGET="$target" \
+		-DLLVM_DEFAULT_TARGET_TRIPLE="$target" \
+		-DCMAKE_STAGING_PREFIX="${XBPS_CROSS_BASE}/usr/share/wasi-sysroot" \
+		-DCXX_SUPPORTS_CXX11=ON \
+		-DLIBCXX_ABI_VERSION=2 \
+		-DLIBCXX_BUILD_EXTERNAL_THREAD_LIBRARY=OFF \
+		-DLIBCXX_CXX_ABI=libcxxabi \
+		-DLIBCXX_CXX_ABI_INCLUDE_PATHS=libcxxabi/include \
+		-DLIBCXX_ENABLE_EXCEPTIONS=OFF \
+		-DLIBCXX_ENABLE_EXPERIMENTAL_LIBRARY=OFF \
+		-DLIBCXX_ENABLE_FILESYSTEM=OFF \
+		-DLIBCXX_ENABLE_SHARED=OFF \
+		-DLIBCXX_ENABLE_THREADS=$want_threads \
+		-DLIBCXX_HAS_EXTERNAL_THREAD_API=OFF \
+		-DLIBCXX_HAS_MUSL_LIBC=ON \
+		-DLIBCXX_HAS_PTHREAD_API=$want_threads \
+		-DLIBCXX_HAS_WIN32_THREAD_API=OFF \
+		-DLIBCXX_INCLUDE_TESTS="$([ "$CHECK_PKGS" ] && echo ON || echo OFF)" \
+		-DLIBCXXABI_BUILD_EXTERNAL_THREAD_LIBRARY=OFF \
+		-DLIBCXXABI_ENABLE_EXCEPTIONS=OFF \
+		-DLIBCXXABI_ENABLE_PIC=OFF \
+		-DLIBCXXABI_ENABLE_SHARED=OFF \
+		-DLIBCXXABI_ENABLE_THREADS=$want_threads \
+		-DLIBCXXABI_HAS_EXTERNAL_THREAD_API=OFF \
+		-DLIBCXXABI_HAS_PTHREAD_API=$want_threads \
+		-DLIBCXXABI_HAS_WIN32_THREAD_API=OFF \
+		-DLIBCXXABI_INCLUDE_TESTS="$([ "$CHECK_PKGS" ] && echo ON || echo OFF)" \
+		-DLIBCXXABI_LIBCXX_INCLUDES="${wrksrc}/${build_wrksrc}/build-libcxx/include/c++/v1" \
+		-DLIBCXXABI_LIBCXX_PATH=libcxx \
+		-DLIBCXXABI_SILENT_TERMINATE:BOOL=ON \
+		-DLIBCXXABI_USE_LLVM_UNWINDER=OFF \
+		-DUNIX=ON \
+		-DWASI_SDK_PREFIX=/usr \
+		-DLIBCXX_INSTALL_INCLUDE_DIR=include/$target/c++/v1 \
+		-DLIBCXX_INSTALL_INCLUDE_TARGET_DIR=include/$target/c++/v1 \
+		-DLIBCXXABI_INSTALL_INCLUDE_DIR=include/$target/c++/v1
+}
+
+do_configure() {
+	export CFLAGS="-O2 -fno-exceptions --sysroot=${XBPS_CROSS_BASE}/usr/share/wasi-sysroot"
+	export CXXFLAGS="-O2 -fno-exceptions --sysroot=${XBPS_CROSS_BASE}/usr/share/wasi-sysroot"
+
+	_configure_libcxx wasm32-wasi build
+	_configure_libcxx wasm32-wasi-threads build-threads
+
+	cmake -B build-compiler-rt -G Ninja -S compiler-rt -Wno-dev \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_MODULE_PATH="${wrksrc}/${build_wrksrc}/cmake" \
+		-DCMAKE_TOOLCHAIN_FILE="${wrksrc}/${build_wrksrc}/wasi-sdk.cmake" \
+		-DCMAKE_C_COMPILER_WORKS=ON \
+		-DCMAKE_CXX_COMPILER_WORKS=ON \
+		-DCOMPILER_RT_BAREMETAL_BUILD=ON \
+		-DCOMPILER_RT_INCLUDE_TESTS=OFF \
+		-DCOMPILER_RT_HAS_FPIC_FLAG=OFF \
+		-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+		-DCOMPILER_RT_OS_DIR=wasi \
+		-DWASI_SDK_PREFIX=/usr \
+		-DCMAKE_INSTALL_PREFIX="/usr/lib/llvm/${_llvmver}/lib/clang/${_llvmver}/"
+}
+
+do_build() {
+	cmake --build build ${makejobs}
+	cmake --build build-threads ${makejobs}
+	cmake --build build-compiler-rt ${makejobs}
+}
+
+do_install() {
+	DESTDIR="$DESTDIR" cmake --install build-compiler-rt
+	rm -r "$DESTDIR/usr/lib/llvm/${_llvmver}/lib/clang/${_llvmver}/include"
+
+	DESTDIR="$DESTDIR" cmake --install build
+	mv -v "${DESTDIR}"/usr/share/wasi-sysroot/lib/wasm32-{unknown-,}wasi
+	DESTDIR="$DESTDIR" cmake --install build-threads
+	mv -v "${DESTDIR}"/usr/share/wasi-sysroot/lib/wasm32-{unknown-,}wasi-threads
+
+	mkdir -p "${DESTDIR}/etc/clang${_llvmver}"
+	cat <<-EOF >"${DESTDIR}/etc/clang${_llvmver}/wasm32-unknown-wasi.cfg"
+	--sysroot /usr/share/wasi-sysroot
+	EOF
+	ln -svf wasm32-unknown-wasi.cfg "${DESTDIR}/etc/clang$_llvmver/wasm32-unknown-wasi-threads.cfg"
+	vlicense "../wasi-sdk-wasi-sdk-${version}/LICENSE"
+}
+
+wasi-libcxx_package() {
+	short_desc+=" - C++ standard library"
+	nostrip=yes
+	make_dirs="/usr/share/wasi-sysroot/include/c++/v1 0755 root root"
+	pkg_install() {
+		vmove usr/share/wasi-sysroot/include
+		vmove usr/share/wasi-sysroot/share
+		vmove usr/share/wasi-sysroot/lib/wasm32-wasi
+		vmove usr/share/wasi-sysroot/lib/wasm32-wasi-threads
+	}
+}
+
+wasi-compiler-rt_package() {
+	short_desc+=" - runtime libraries"
+	nostrip=yes
+	pkg_install() {
+		vmove "usr/lib/llvm/${_llvmver}/lib/clang/${_llvmver}/lib/wasi/libclang_rt.builtins-wasm32.a"
+	}
+}

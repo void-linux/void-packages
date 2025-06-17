@@ -1,0 +1,122 @@
+From 2e91be2679b5efa0773292d9d0a2ae72255bb271 Mon Sep 17 00:00:00 2001
+From: Ghostkeeper <rubend@tutanota.com>
+Date: Tue, 6 Oct 2020 16:13:15 +0200
+Subject: [PATCH 1/3] Allow for an item to be a disallowed area
+
+Disallowed areas have slightly different behaviour from fixed items: Other items won't get packed closely around them. Implementation of that pending.
+
+Contributes to issue CURA-7754.
+---
+ include/libnest2d/nester.hpp | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git include/libnest2d/nester.hpp include/libnest2d/nester.hpp
+index 2f207d5..932a060 100644
+--- a/include/libnest2d/nester.hpp
++++ b/include/libnest2d/nester.hpp
+@@ -71,6 +71,15 @@ class _Item {
+     int binid_{BIN_ID_UNSET}, priority_{0};
+     bool fixed_{false};
+ 
++    /**
++     * \brief If this is a fixed area, indicates whether it is a disallowed area
++     * or a previously placed item.
++     *
++     * If this is a disallowed area, other objects will not get packed close
++     * together with this item. It only blocks other items in its area.
++     */
++    bool disallowed_{false};
++
+ public:
+ 
+     /// The type of the shape which was handed over as the template argument.
+@@ -129,11 +138,18 @@ class _Item {
+         sh_(sl::create<RawShape>(std::move(contour), std::move(holes))) {}
+     
+     inline bool isFixed() const noexcept { return fixed_; }
++    inline bool isDisallowedArea() const noexcept { return disallowed_; }
+     inline void markAsFixedInBin(int binid)
+     {
+         fixed_ = binid >= 0;
+         binid_ = binid;
+     }
++    inline void markAsDisallowedAreaInBin(int binid)
++    {
++        fixed_ = binid >= 0;
++        binid_ = binid;
++        disallowed_ = true;
++    }
+ 
+     inline void binId(int idx) { binid_ = idx; }
+     inline int binId() const noexcept { return binid_; }
+
+From ff61049e59d3151462bca7ff2e2268c2b32731e7 Mon Sep 17 00:00:00 2001
+From: Ghostkeeper <rubend@tutanota.com>
+Date: Tue, 6 Oct 2020 16:14:36 +0200
+Subject: [PATCH 2/3] Allow unsetting of being a disallowed area
+
+If you set the bin to -1 or set the item to be a simple fixed item afterwards, it'll no longer be a disallowed area.
+
+Contributes to issue CURA-7754.
+---
+ include/libnest2d/nester.hpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git include/libnest2d/nester.hpp include/libnest2d/nester.hpp
+index 932a060..54761a6 100644
+--- a/include/libnest2d/nester.hpp
++++ b/include/libnest2d/nester.hpp
+@@ -143,12 +143,13 @@ class _Item {
+     {
+         fixed_ = binid >= 0;
+         binid_ = binid;
++        disallowed_ = false;
+     }
+     inline void markAsDisallowedAreaInBin(int binid)
+     {
+         fixed_ = binid >= 0;
+         binid_ = binid;
+-        disallowed_ = true;
++        disallowed_ = fixed_;
+     }
+ 
+     inline void binId(int idx) { binid_ = idx; }
+
+From 31391fd173249ad9b906390058e13b09238fadc8 Mon Sep 17 00:00:00 2001
+From: Ghostkeeper <rubend@tutanota.com>
+Date: Thu, 8 Oct 2020 11:06:58 +0200
+Subject: [PATCH 3/3] Align items to their starting position if all placed
+ items are disallowed
+
+We shouldn't align items to disallowed areas. So place them in the starting position according to the alignment property.
+
+Lot of work to investigate. But very little code changes!
+
+Contributes to issue CURA-7754.
+---
+ include/libnest2d/placers/nfpplacer.hpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git include/libnest2d/placers/nfpplacer.hpp include/libnest2d/placers/nfpplacer.hpp
+index 96a8cff..b0ebb15 100644
+--- a/include/libnest2d/placers/nfpplacer.hpp
++++ b/include/libnest2d/placers/nfpplacer.hpp
+@@ -101,7 +101,7 @@ struct NfpPConfig {
+      * alignment with the candidate item or do anything else.
+      *
+      * \param remaining A container with the remaining items waiting to be
+-     * placed. You can use some features about the remaining items to alter to
++     * placed. You can use some features about the remaining items to alter the
+      * score of the current placement. If you know that you have to leave place
+      * for other items as well, that might influence your decision about where
+      * the current candidate should be placed. E.g. imagine three big circles
+@@ -735,7 +735,8 @@ class _NofitPolyPlacer: public PlacerBoilerplate<_NofitPolyPlacer<RawShape, TBin
+             remlist.insert(remlist.end(), remaining.from, remaining.to);
+         }
+ 
+-        if(items_.empty()) {
++        if(std::all_of(items_.begin(), items_.end(),
++                [](const Item& item) { return item.isDisallowedArea(); })) {
+             setInitialPosition(item);
+             best_overfit = overfit(item.transformedShape(), bin_);
+             can_pack = best_overfit <= 0;

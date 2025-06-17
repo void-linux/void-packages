@@ -1,0 +1,98 @@
+---
+name: 'Build buildroot containers'
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - common/container/**
+  push:
+    branches:
+      - master
+    paths:
+      - common/container/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        libc:
+          - glibc
+          - musl
+
+    steps:
+      - name: Checkout
+        uses: classabbyamp/treeless-checkout-action@v1
+
+      - name: Get image release
+        id: release
+        run: |
+          # gets the list of all date-shaped tags for the image, finds the most recent one
+          tag="$(skopeo list-tags "docker://ghcr.io/${{ github.repository_owner }}/void-buildroot-${{ matrix.libc }}" | \
+            jq -r '.Tags | sort | reverse | map(select(test("^[0-9]{8}(R[0-9]+)?$")))[0]')"
+          # tags from a different day or pre-YYYYMMDDRN
+          if [ "${tag%R*}" != "$(date -u +%Y%m%d)" ] || [ "${tag%R*}" = "${tag}" ]; then
+            rel=1
+          else
+            rel=$(( ${tag##*R} + 1 ))
+          fi
+          echo "rel=${rel}" >> "${GITHUB_OUTPUT}"
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/void-buildroot-${{ matrix.libc }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value={{date 'YYYYMMDD'}}R${{ steps.release.outputs.rel }},enable={{is_default_branch}},priority=1000
+          flavor: latest=false
+          labels: |
+            org.opencontainers.image.authors=Void Linux team and contributors
+            org.opencontainers.image.url=https://voidlinux.org
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.vendor=Void Linux
+            org.opencontainers.image.title=Void Linux build root
+            org.opencontainers.image.description=Image for building packages with xbps-src on Void Linux
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GCHR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push images
+        id: build_and_push
+        uses: docker/bake-action@v5
+        with:
+          push: ${{ github.event_name != 'pull_request' }}
+          targets: void-buildroot-${{ matrix.libc }}
+          files: |
+            common/container/docker-bake.hcl
+            ${{ steps.meta.outputs.bake-file }}
+          set: |
+            _common.cache-to=type=gha
+            _common.cache-from=type=gha

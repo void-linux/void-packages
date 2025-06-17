@@ -1,0 +1,201 @@
+From b817541f1cfd38e4b81257b3215e276ea9d0fc61 Mon Sep 17 00:00:00 2001
+From: Duncan Bellamy <dunk@denkimushi.com>
+Date: Wed, 31 Aug 2022 20:07:34 +0100
+Subject: [PATCH] add statx interface using syscall, fallback to fstatat
+
+---
+ include/sys/stat.h | 55 ++++++++++++++++++++++++++++++++++++++++++++++
+ src/linux/statx.c  | 42 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 97 insertions(+)
+ create mode 100644 src/linux/statx.c
+
+diff --git a/include/sys/stat.h b/include/sys/stat.h
+index e6d0049c..6690192d 100644
+--- a/include/sys/stat.h
++++ b/include/sys/stat.h
+@@ -18,6 +18,13 @@ extern "C" {
+ #define __NEED_blkcnt_t
+ #define __NEED_struct_timespec
+ 
++#ifdef _GNU_SOURCE
++#define __NEED_int64_t
++#define __NEED_uint64_t
++#define __NEED_uint32_t
++#define __NEED_uint16_t
++#endif
++
+ #include <bits/alltypes.h>
+ 
+ #include <bits/stat.h>
+@@ -98,6 +105,54 @@ int lchmod(const char *, mode_t);
+ #define S_IEXEC S_IXUSR
+ #endif
+ 
++#if defined(_GNU_SOURCE)
++#define STATX_TYPE 1U
++#define STATX_MODE 2U
++#define STATX_NLINK 4U
++#define STATX_UID 8U
++#define STATX_GID 0x10U
++#define STATX_ATIME 0x20U
++#define STATX_MTIME 0x40U
++#define STATX_CTIME 0x80U
++#define STATX_INO 0x100U
++#define STATX_SIZE 0x200U
++#define STATX_BLOCKS 0x400U
++#define STATX_BASIC_STATS 0x7ffU
++#define STATX_BTIME 0x800U
++#define STATX_ALL 0xfffU
++
++struct statx_timestamp {
++	int64_t tv_sec;
++	uint32_t tv_nsec, __pad;
++};
++
++struct statx {
++	uint32_t stx_mask;
++	uint32_t stx_blksize;
++	uint64_t stx_attributes;
++	uint32_t stx_nlink;
++	uint32_t stx_uid;
++	uint32_t stx_gid;
++	uint16_t stx_mode;
++	uint16_t __pad0[1];
++	uint64_t stx_ino;
++	uint64_t stx_size;
++	uint64_t stx_blocks;
++	uint64_t stx_attributes_mask;
++	struct statx_timestamp stx_atime;
++	struct statx_timestamp stx_btime;
++	struct statx_timestamp stx_ctime;
++	struct statx_timestamp stx_mtime;
++	uint32_t stx_rdev_major;
++	uint32_t stx_rdev_minor;
++	uint32_t stx_dev_major;
++	uint32_t stx_dev_minor;
++	uint64_t __pad1[14];
++};
++
++int statx(int, const char *__restrict, int, unsigned, struct statx *__restrict);
++#endif
++
+ #if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
+ #define stat64 stat
+ #define fstat64 fstat
+diff --git a/src/linux/statx.c b/src/linux/statx.c
+new file mode 100644
+index 00000000..4616bff4
+--- /dev/null
++++ b/src/linux/statx.c
+@@ -0,0 +1,42 @@
++#define _GNU_SOURCE
++#include <sys/stat.h>
++#include <string.h>
++#include <syscall.h>
++#include <sys/sysmacros.h>
++#include <errno.h>
++
++int statx(int dirfd, const char *restrict path, int flags, unsigned mask, struct statx *restrict stx)
++{
++	int ret = __syscall(SYS_statx, dirfd, path, flags, mask, stx);
++
++#ifndef SYS_fstatat
++	return __syscall_ret(ret);
++#endif
++
++	if (ret != -ENOSYS) return __syscall_ret(ret);
++
++	struct stat st;
++	ret = fstatat(dirfd, path, &st, flags);
++	if (ret) return ret;
++
++	stx->stx_dev_major = major(st.st_dev);
++	stx->stx_dev_minor = minor(st.st_dev);
++	stx->stx_ino = st.st_ino;
++	stx->stx_mode = st.st_mode;
++	stx->stx_nlink = st.st_nlink;
++	stx->stx_uid = st.st_uid;
++	stx->stx_gid = st.st_gid;
++	stx->stx_size = st.st_size;
++	stx->stx_blksize = st.st_blksize;
++	stx->stx_blocks = st.st_blocks;
++	stx->stx_atime.tv_sec = st.st_atim.tv_sec;
++	stx->stx_atime.tv_nsec = st.st_atim.tv_nsec;
++	stx->stx_mtime.tv_sec = st.st_mtim.tv_sec;
++	stx->stx_mtime.tv_nsec = st.st_mtim.tv_nsec;
++	stx->stx_ctime.tv_sec = st.st_ctim.tv_sec;
++	stx->stx_ctime.tv_nsec = st.st_ctim.tv_nsec;
++	stx->stx_btime = (struct statx_timestamp){.tv_sec=0, .tv_nsec=0};
++	stx->stx_mask = STATX_BASIC_STATS;
++
++	return 0;
++}
+
+From 251cbb6366403a056b39638264932c82d18ec610 Mon Sep 17 00:00:00 2001
+From: Gabriel Ravier <gabravier@gmail.com>
+Date: Fri, 13 Sep 2024 22:00:15 +0200
+Subject: [PATCH] statx: fix ENOSYS emulation not setting stx_rdev_*
+
+The current implementation of the statx function fails to set the
+values of stx->stx_rdev_major and stx->stx_rdev_minor if the statx
+syscall fails with ENOSYS and thus the statx function has to fall back
+on fstatat-based emulation.
+---
+ src/linux/statx.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/linux/statx.c b/src/linux/statx.c
+index 4616bff4a..5f6dde923 100644
+--- a/src/linux/statx.c
++++ b/src/linux/statx.c
+@@ -21,6 +21,8 @@ int statx(int dirfd, const char *restrict path, int flags, unsigned mask, struct
+ 
+ 	stx->stx_dev_major = major(st.st_dev);
+ 	stx->stx_dev_minor = minor(st.st_dev);
++	stx->stx_rdev_major = major(st.st_rdev);
++	stx->stx_rdev_minor = minor(st.st_rdev);
+ 	stx->stx_ino = st.st_ino;
+ 	stx->stx_mode = st.st_mode;
+ 	stx->stx_nlink = st.st_nlink;
+
+From 4ca8c267768e371930ef7ec9593a5f8b44a7f810 Mon Sep 17 00:00:00 2001
+From: Rich Felker <dalias@aerifal.cx>
+Date: Fri, 13 Sep 2024 17:08:11 -0400
+Subject: [PATCH] statx: fix uninitialized attributes/mask in fallback path
+
+commit b817541f1cfd38e4b81257b3215e276ea9d0fc61 introduced statx with
+a fallback using fstatat, but failed to fill in stx_rdev_major/minor
+and stx_attributes[_mask]. the rdev omission has been addressed
+separately. rather than explicitly zeroing the attributes and their
+mask, pre-fill the entire structure with zeros. this will also cover
+the padding adjacent to stx_mode, in case it's ever used in the
+future.
+
+explicit zeroing of stx_btime is removed since, with this change, it
+will already be pre-zeroed. as an aside, zeroing it was not strictly
+necessary, since STATX_BASIC_STATS does not include STATX_BTIME and
+thus does not indicate any validity for it.
+---
+ src/linux/statx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/linux/statx.c b/src/linux/statx.c
+index 5f6dde92..4fb96e4b 100644
+--- a/src/linux/statx.c
++++ b/src/linux/statx.c
+@@ -19,6 +19,7 @@ int statx(int dirfd, const char *restrict path, int flags, unsigned mask, struct
+ 	ret = fstatat(dirfd, path, &st, flags);
+ 	if (ret) return ret;
+ 
++	*stx = (struct statx){0};
+ 	stx->stx_dev_major = major(st.st_dev);
+ 	stx->stx_dev_minor = minor(st.st_dev);
+ 	stx->stx_rdev_major = major(st.st_rdev);
+@@ -37,7 +38,6 @@ int statx(int dirfd, const char *restrict path, int flags, unsigned mask, struct
+ 	stx->stx_mtime.tv_nsec = st.st_mtim.tv_nsec;
+ 	stx->stx_ctime.tv_sec = st.st_ctim.tv_sec;
+ 	stx->stx_ctime.tv_nsec = st.st_ctim.tv_nsec;
+-	stx->stx_btime = (struct statx_timestamp){.tv_sec=0, .tv_nsec=0};
+ 	stx->stx_mask = STATX_BASIC_STATS;
+ 
+ 	return 0;
