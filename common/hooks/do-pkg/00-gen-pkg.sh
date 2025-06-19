@@ -88,6 +88,7 @@ genpkg() {
 		--maintainer "${maintainer}" \
 		--desc "${desc}" \
 		--pkgver "${pkgver}" \
+		--sourcepkg "${sourcepkg}" \
 		--quiet \
 		${PKGDESTDIR}
 	rval=$?
