@@ -1,11 +1,530 @@
 # Template file for 'texlive-core'
 pkgname=texlive-core
-version=2023.66587
+version=20250308
 revision=1
-build_style="texmf"
+depends="perl-File-HomeDir perl-Unicode-LineBreak perl-YAML-Tiny"
 short_desc="TeX Live - core texmf distribution"
 maintainer="fosslinux <fosslinux@aussies.space>"
 license="GPL-2.0-or-later"
 homepage="https://tug.org/texlive"
-distfiles="https://sources.archlinux.org/other/texlive/${pkgname}-${version}-src.zip"
-checksum=2cdaf356d89351e61152243f1192a5e000a9586c67b873737f01878a3e5724ff
+# may want https://svn.tug.org:8369/texlive/branches/branch2025/Master/
+# or https://git.texlive.info/texlive/
+# as it includes critical post-release patches
+distfiles="https://ftp.tu-chemnitz.de/pub/tug/historic/systems/texlive/${version:0:4}/texlive-${version}-texmf.tar.xz
+ https://ftp.tu-chemnitz.de/pub/tug/historic/systems/texlive/${version:0:4}/texlive-${version}-extra.tar.xz"
+checksum="08dcda7430bf0d2f6ebb326f1e197e1473d3f7cc0984a2adb7236df45316c7cf
+ ea69cfecbc9b138acbc45476e8cb4d9357f5e4e45fd12b3bf9ceabbebd7669d2"
+python_version=3
+make_dirs="/var/lib/texmf 0755 root root"
+
+# docs need to come last
+subpackages="texlive-bibtexextra
+texlive-binextra
+texlive-context
+texlive-fontsextra
+texlive-fontsrecommended
+texlive-fontutils
+texlive-formatsextra
+texlive-games
+texlive-humanities
+texlive-langarabic
+texlive-langchinese
+texlive-langcjk
+texlive-langcyrillic
+texlive-langczechslovak
+texlive-langenglish
+texlive-langeuropean
+texlive-langfrench
+texlive-langgerman
+texlive-langgreek
+texlive-langitalian
+texlive-langjapanese
+texlive-langkorean
+texlive-langother
+texlive-langpolish
+texlive-langportuguese
+texlive-langspanish
+texlive-latex
+texlive-latexextra
+texlive-latexrecommended
+texlive-luatex
+texlive-mathscience
+texlive-metapost
+texlive-music
+texlive-pictures
+texlive-plaingeneric
+texlive-pstricks
+texlive-publishers
+texlive-xetex
+texlive-core-doc"
+
+# helper functions taken from Alpine Linux
+# https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/texmf-dist/APKBUILD
+# fixme: cannot inject dependencies, rather must inspect by hand
+
+_tlpdb_get_values() {
+	local pkg
+	local key
+	pkg="$1"
+	key="$2"
+
+	awk \
+		"/^name $pkg\$/,/^$/{if(/^$key /) print substr(\$0, length(\"$key\") + 2)}" \
+		"$_tlpdb"
+}
+
+_tlpdb_write_pkgsnip() {
+	local pkg
+	pkg="$1"
+	local snip
+	snip="$2"
+
+	awk \
+		"/^name $pkg\$/,/^\$/{print \$0}" \
+		"$_tlpdb" > "$snip"
+}
+
+_tlpdb_get_xfiles() {
+	local pkg
+	local type
+	snip="$1"
+	type="$2"
+
+	awk \
+		'/^'"$type"'files size=[0-9]*$/ {flag=1; next} flag && /^ texmf-dist/ {print $1; next} flag && !/^ / {exit}' \
+		"$snip"
+}
+
+_tlpdb_get_docfiles() {
+	_tlpdb_get_xfiles "$1" doc
+}
+
+_tlpdb_get_datafiles() {
+	_tlpdb_get_xfiles "$1" run
+	_tlpdb_get_xfiles "$1" src
+}
+
+_pack_collection() {
+	local collection
+	local deps
+	local pkgsnip
+	pkgsnip="$(mktemp)"
+	collection="$1"
+	deps="$(_tlpdb_get_values "collection-$collection" "depend")"
+
+	for dep in $deps; do
+		case "$dep" in
+		collection-basic)
+			# All subpackages already depend on texlive-core
+			;;
+		collection-*)
+			local actualdep
+			actualdep="texlive-${dep#collection-}"
+			echo "Injecting dependency on $actualdep"
+			depends+=" $actualdep"
+			;;
+		*)
+			echo "Adding $dep"
+			# writing part of DB for current package into temporary file, so
+			# that when parsing metadata from it we do not need to search the
+			# whole DB again.
+			_tlpdb_write_pkgsnip "$dep" "$pkgsnip"
+			local paths
+			paths="$(_tlpdb_get_datafiles "$pkgsnip")"
+			for path in $paths; do
+				mkdir -p ${PKGDESTDIR}/usr/share/$(dirname "$path")
+				mv "$wrksrc/$path" "${PKGDESTDIR}/usr/share/$path"
+			done
+			paths="$(_tlpdb_get_docfiles "$pkgsnip")"
+			for path in $paths; do
+				case "$path" in
+				texmf-dist/doc/man/*.pdf)
+					# all man pages are provided twice, one as PDF and once
+					# as troff. Since they are identical content-wise, we only
+					# pack the smaller troff file
+					;;
+				texmf-dist/doc/man/*.1)
+					# fixme: conflict with texlive
+					#vman "$wrksrc/$path"
+					;;
+				texmf-dist/doc/man/*.5)
+					#vman "$wrksrc/$path"
+					;;
+				*)
+					# fixme: may want doc subpackages
+					mkdir -p ${DESTDIR}/usr/share/$(dirname "$path")
+					mv "$wrksrc/$path" "${DESTDIR}/usr/share/$path"
+					;;
+				esac
+			done
+			;;
+		esac
+	done
+
+	rm -f "$pkgsnip"
+}
+
+post_extract() {
+	mv texlive-${version}-texmf/* .
+}
+
+do_install() {
+	vmkdir usr/share/tlpkg
+	vinstall ${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb 0644 usr/share/tlpkg
+	vcopy ${wrksrc}/texlive-${version}-extra/tlpkg/TeXLive usr/share/tlpkg
+
+	_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+	_pack_collection "basic"
+}
+
+texlive-core-doc_package() {
+	short_desc+=" documentation and examples"
+	pkg_install() {
+		vmove usr/share/texmf-dist/doc
+
+		# fixme: non-PIE executable found in PIE build
+		rm -f ${PKGDESTDIR}/usr/share/texmf-dist/doc/luatex/opbible/txs-gen/mod2tex
+	}
+}
+
+texlive-bibtexextra_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-binextra_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-context_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-fontsextra_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-fontsrecommended_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-fontutils_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-formatsextra_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-games_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-humanities_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langarabic_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langchinese_package() {
+	depends="texlive-core texlive-langcjk"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langcjk_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langcyrillic_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langczechslovak_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langenglish_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langeuropean_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langfrench_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langgerman_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langgreek_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langitalian_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langjapanese_package() {
+	depends="texlive-core texlive-langcjk"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langkorean_package() {
+	depends="texlive-core texlive-langcjk"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langother_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langpolish_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langportuguese_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-langspanish_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-latex_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-latexextra_package() {
+	depends="perl-File-Which python3-Pygments texlive-core texlive-latexrecommended texlive-pictures"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-latexrecommended_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-luatex_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-mathscience_package() {
+	depends="texlive-core texlive-fontsrecommended texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-metapost_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-music_package() {
+	depends="fontforge python3 texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-pictures_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-plaingeneric_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-pstricks_package() {
+	depends="texlive-core texlive-plaingeneric"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-publishers_package() {
+	depends="texlive-core texlive-latex"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
+
+texlive-xetex_package() {
+	depends="texlive-core"
+	pkg_install() {
+		_tlpdb=${wrksrc}/texlive-${version}-extra/tlpkg/texlive.tlpdb
+		short_desc="Tex Live - $(_tlpdb_get_values collection-${pkgname:8} shortdesc)"
+		_pack_collection "${pkgname:8}"
+	}
+}
