@@ -1,0 +1,101 @@
+From 663c2818115316f1cbd4f97324ba2764870b6269 Mon Sep 17 00:00:00 2001
+From: Komeil Parseh <komeilparseh@disroot.org>
+Date: Mon, 16 Jun 2025 15:44:47 +0330
+Subject: [PATCH 2/3] Adjust LuaJIT dependency to avoid cross-build test
+ failures
+
+On Void Linux, LuaJIT is consistently provided as version 5.2 (97618aeef1ac02ddc6cc755a8c9c712c7de3bfe2)(#55648)
+Aegisub's Meson build system performs an internal check/test
+to verify compatibility with LuaJIT 5.2 during configuration.
+This test involves running a compiled binary or script for the
+target architecture, which invariably fails in a cross-compilation
+environment with "Can not run test applications in this cross environment"
+errors, even when LuaJIT is correctly installed for the target.
+
+To resolve this, the Meson build configuration is modified to
+bypass this runtime compatibility test. Instead of explicitly
+checking for LuaJIT 5.2 support, it now relies on the system's
+'luajit' dependency directly. This ensures that the build
+process completes successfully without attempting to execute
+target binaries/scripts on the host system.
+
+This addresses the LuaJIT test failures encountered during
+aarch64 cross-compilation.
+---
+ meson.build                     | 24 +-----------------------
+ subprojects/luabins/meson.build | 24 +-----------------------
+ 2 files changed, 2 insertions(+), 46 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index f0e56521c..0af26806e 100644
+--- a/meson.build
++++ b/meson.build
+@@ -319,29 +319,7 @@ if get_option('enable_update_checker')
+ endif
+ 
+ luajit = dependency('luajit', version: '>=2.0.0', required: get_option('system_luajit'))
+-if luajit.found() and luajit.type_name() != 'internal'
+-    luajit_test = cc.run('''#include <lauxlib.h>
+-int main(void)
+-{
+-    lua_State *L = luaL_newstate();
+-    if (!L) return 1;
+-    // This is valid in lua 5.2, but a syntax error in 5.1
+-    const char testprogram[] = "function foo() while true do break return end end";
+-    return luaL_loadstring(L, testprogram) == LUA_ERRSYNTAX;
+-}''', dependencies: luajit)
+-
+-    if luajit_test.returncode() == 1
+-        if get_option('system_luajit')
+-            error('System luajit found but not compiled in 5.2 mode')
+-        else
+-            message('System luajit found but not compiled in 5.2 mode; using built-in luajit')
+-        endif
+-    else
+-        deps += luajit
+-    endif
+-else
+-    message('System luajit not found; using built-in luajit')
+-endif
++deps += luajit  # void already uses luajit52 https://github.com/void-linux/void-packages/commit/97618aeef1ac02ddc6cc755a8c9c712c7de3bfe2
+ 
+ if not deps.contains(luajit)
+     deps += subproject('luajit').get_variable('luajit_dep')
+diff --git a/subprojects/luabins/meson.build b/subprojects/luabins/meson.build
+index 1d87ab2b1..6176a8471 100644
+--- a/subprojects/luabins/meson.build
++++ b/subprojects/luabins/meson.build
+@@ -12,29 +12,7 @@ luabins_src = files(
+ deps = []
+ 
+ luajit = dependency('luajit', version: '>=2.0.0')
+-if luajit.found() and luajit.type_name() != 'internal'
+-    luajit_test = meson.get_compiler('c').run('''#include <lauxlib.h>
+-int main(void)
+-{
+-    lua_State *L = luaL_newstate();
+-    if (!L) return 1;
+-    // This is valid in lua 5.2, but a syntax error in 5.1
+-    const char testprogram[] = "function foo() while true do break return end end";
+-    return luaL_loadstring(L, testprogram) == LUA_ERRSYNTAX;
+-}''', dependencies: luajit)
+-
+-    if luajit_test.returncode() == 1
+-        message('System luajit found but not compiled in 5.2 mode; using built-in luajit')
+-    else
+-        deps += luajit
+-    endif
+-else
+-    message('System luajit not found; using built-in luajit')
+-endif
+-
+-if not deps.contains(luajit)
+-    deps += subproject('luajit').get_variable('luajit_dep')
+-endif
++deps += luajit # void already uses luajit52 https://github.com/void-linux/void-packages/commit/97618aeef1ac02ddc6cc755a8c9c712c7de3bfe2
+ 
+ luabins = static_library('luabins', luabins_src, dependencies: deps)
+ luabins_dep = declare_dependency(link_with: luabins)
+-- 
+2.49.0
+
