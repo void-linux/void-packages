@@ -1,0 +1,395 @@
+From 97bd8f29a61e691ceea98ca2444b974cf4256ae0 Mon Sep 17 00:00:00 2001
+From: Rafael Siejakowski <rs@rs-math.net>
+Date: Sun, 8 Jun 2025 21:30:44 +0200
+Subject: [PATCH 1/2] Fix build against Poppler 25.06
+
+Accommodate for the private API change, whereby an array of pointers
+has been replaced with a vector of unique_ptr.
+
+Backported from MR 7261
+https://gitlab.com/inkscape/inkscape/-/merge_requests/7261
+
+Fixes https://gitlab.com/inkscape/inkscape/-/issues/5836
+---
+ .../internal/pdfinput/pdf-parser.cpp          | 23 +++++++++++--------
+ .../pdfinput/poppler-transition-api.h         | 12 ++++++++++
+ 2 files changed, 25 insertions(+), 10 deletions(-)
+
+diff --git a/src/extension/internal/pdfinput/pdf-parser.cpp b/src/extension/internal/pdfinput/pdf-parser.cpp
+index 01d7bf6ef0e..0d31eda16f4 100644
+--- a/src/extension/internal/pdfinput/pdf-parser.cpp
++++ b/src/extension/internal/pdfinput/pdf-parser.cpp
+@@ -27,6 +27,7 @@
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
++#include <memory>
+ #include <mutex> // std::call_once()
+ #include <utility>
+ #include <vector>
+@@ -686,7 +687,6 @@ void PdfParser::opSetLineWidth(Object args[], int /*numArgs*/)
+ void PdfParser::opSetExtGState(Object args[], int /*numArgs*/)
+ {
+     Object obj1, obj2, obj3, obj4, obj5;
+-    Function *funcs[4] = {nullptr, nullptr, nullptr, nullptr};
+     GfxColor backdropColor;
+     GBool haveBackdropColor = gFalse;
+     GBool alpha = gFalse;
+@@ -744,13 +744,14 @@ void PdfParser::opSetExtGState(Object args[], int /*numArgs*/)
+         state->setLineWidth(obj2.getNum());
+     }
+ 
++    _POPPLER_DECLARE_TRANSFER_FUNCTION_VECTOR(funcs);
++
+     // transfer function
+     if (_POPPLER_CALL_ARGS_DEREF(obj2, obj1.dictLookup, "TR2").isNull()) {
+         _POPPLER_CALL_ARGS(obj2, obj1.dictLookup, "TR");
+     }
+     if (obj2.isName(const_cast<char *>("Default")) || obj2.isName(const_cast<char *>("Identity"))) {
+-        funcs[0] = funcs[1] = funcs[2] = funcs[3] = nullptr;
+-        state->setTransfer(funcs);
++        state->setTransfer(std::move(funcs));
+     } else if (obj2.isArray() && obj2.arrayGetLength() == 4) {
+         int pos = 4;
+         for (int i = 0; i < 4; ++i) {
+@@ -763,12 +764,14 @@ void PdfParser::opSetExtGState(Object args[], int /*numArgs*/)
+         }
+         _POPPLER_FREE(obj3);
+         if (pos == 4) {
+-            state->setTransfer(funcs);
++            state->setTransfer(std::move(funcs));
+         }
+     } else if (obj2.isName() || obj2.isDict() || obj2.isStream()) {
+         if ((funcs[0] = Function::parse(&obj2))) {
+-            funcs[1] = funcs[2] = funcs[3] = nullptr;
+-            state->setTransfer(funcs);
++            funcs[1] = nullptr;
++            funcs[2] = nullptr;
++            funcs[3] = nullptr;
++            state->setTransfer(std::move(funcs));
+         }
+     } else if (!obj2.isNull()) {
+         error(errSyntaxError, getPos(), "Invalid transfer function in ExtGState");
+@@ -790,8 +793,7 @@ void PdfParser::opSetExtGState(Object args[], int /*numArgs*/)
+                 funcs[0] = Function::parse(&obj3);
+                 if (funcs[0]->getInputSize() != 1 || funcs[0]->getOutputSize() != 1) {
+                     error(errSyntaxError, getPos(), "Invalid transfer function in soft mask in ExtGState");
+-                    delete funcs[0];
+-                    funcs[0] = nullptr;
++                    _POPPLER_DELETE_TRANSFER_FUNCTION(funcs[0]);
+                 }
+             }
+             _POPPLER_FREE(obj3);
+@@ -835,9 +837,10 @@ void PdfParser::opSetExtGState(Object args[], int /*numArgs*/)
+                             }
+                         }
+                     }
+-                    doSoftMask(&obj3, alpha, blendingColorSpace.get(), isolated, knockout, funcs[0], &backdropColor);
++                    doSoftMask(&obj3, alpha, blendingColorSpace.get(), isolated, knockout,
++                               _POPPLER_GET_TRANSFER_FUNCTION_POINTER(funcs[0]), &backdropColor);
+                     if (funcs[0]) {
+-                        delete funcs[0];
++                        _POPPLER_DELETE_TRANSFER_FUNCTION(funcs[0]);
+                     }
+                 } else {
+                     error(errSyntaxError, getPos(), "Invalid soft mask in ExtGState - missing group");
+diff --git a/src/extension/internal/pdfinput/poppler-transition-api.h b/src/extension/internal/pdfinput/poppler-transition-api.h
+index a67132ba6bd..d04412757bc 100644
+--- a/src/extension/internal/pdfinput/poppler-transition-api.h
++++ b/src/extension/internal/pdfinput/poppler-transition-api.h
+@@ -15,6 +15,18 @@
+ #include <glib/poppler-features.h>
+ #include <poppler/UTF.h>
+ 
++#if POPPLER_CHECK_VERSION(25, 6, 0)
++#define _POPPLER_DECLARE_TRANSFER_FUNCTION_VECTOR(name) std::vector<std::unique_ptr<Function>> name(4)
++#define _POPPLER_DELETE_TRANSFER_FUNCTION(name) name.reset()
++#define _POPPLER_GET_TRANSFER_FUNCTION_POINTER(name) name.get()
++#else
++#define _POPPLER_DECLARE_TRANSFER_FUNCTION_VECTOR(name) Function *name[4] = {}
++#define _POPPLER_DELETE_TRANSFER_FUNCTION(name) \
++    delete name;                                \
++    name = nullptr
++#define _POPPLER_GET_TRANSFER_FUNCTION_POINTER(name) name
++#endif
++
+ #if POPPLER_CHECK_VERSION(25,2,0)
+ #define _POPPLER_GET_CODE_TO_GID_MAP(ff, len) getCodeToGIDMap(ff)
+ #define _POPPLER_GET_CID_TO_GID_MAP(len) getCIDToGIDMap()
+-- 
+GitLab
+
+
+From b4fcfc7969329513afa83e8c0cf52e3e36eae041 Mon Sep 17 00:00:00 2001
+From: Rafael Siejakowski <rs@rs-math.net>
+Date: Mon, 9 Jun 2025 13:51:59 +0200
+Subject: [PATCH 2/2] Fix includes in PDF input extensions
+
+This commit fixes a build error against a non-system libpoppler.
+
+The include directives referencing Poppler's private headers are "system"
+includes, so they should use angular brackets. The path prefix "poppler/"
+is necessary to ensure they work correctly against a custom Poppler
+installation.
+
+In addition, several includes of lib2geom are also converted to angular
+brackets. A handful of unused includes are removed.
+---
+ .../internal/pdfinput/pdf-parser.cpp          | 42 +++++++++----------
+ src/extension/internal/pdfinput/pdf-parser.h  |  9 ++--
+ src/extension/internal/pdfinput/pdf-utils.h   |  9 ++--
+ .../pdfinput/poppler-cairo-font-engine.cpp    | 13 +++---
+ .../pdfinput/poppler-cairo-font-engine.h      |  4 +-
+ .../internal/pdfinput/poppler-utils.cpp       |  8 ++--
+ .../internal/pdfinput/svg-builder.cpp         | 28 ++++++-------
+ src/extension/internal/pdfinput/svg-builder.h |  4 +-
+ 8 files changed, 56 insertions(+), 61 deletions(-)
+
+diff --git a/src/extension/internal/pdfinput/pdf-parser.cpp b/src/extension/internal/pdfinput/pdf-parser.cpp
+index 0d31eda16f4..0773e389085 100644
+--- a/src/extension/internal/pdfinput/pdf-parser.cpp
++++ b/src/extension/internal/pdfinput/pdf-parser.cpp
+@@ -22,42 +22,40 @@
+ #pragma implementation
+ #endif
+ 
++#include <2geom/transforms.h>
+ #include <cmath>
+-#include <cstddef>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
++#include <glib/poppler-features.h>
++#include <goo/GooString.h>
++#include <goo/gmem.h>
+ #include <memory>
+ #include <mutex> // std::call_once()
++#include <poppler/Annot.h>
++#include <poppler/Array.h>
++#include <poppler/CharTypes.h>
++#include <poppler/Dict.h>
++#include <poppler/Error.h>
++#include <poppler/Gfx.h>
++#include <poppler/GfxFont.h>
++#include <poppler/GfxState.h>
++#include <poppler/GlobalParams.h>
++#include <poppler/Lexer.h>
++#include <poppler/Object.h>
++#include <poppler/OutputDev.h>
++#include <poppler/PDFDoc.h>
++#include <poppler/Page.h>
++#include <poppler/Parser.h>
++#include <poppler/Stream.h>
+ #include <utility>
+ #include <vector>
+-#include <2geom/transforms.h>
+ 
+-#include "Annot.h"
+-#include "Array.h"
+-#include "CharTypes.h"
+-#include "Dict.h"
+-#include "Error.h"
+-#include "Gfx.h"
+-#include "GfxFont.h"
+-#include "GfxState.h"
+-#include "GlobalParams.h"
+-#include "Lexer.h"
+-#include "Object.h"
+-#include "OutputDev.h"
+-#include "PDFDoc.h"
+-#include "Page.h"
+-#include "Parser.h"
+-#include "Stream.h"
+-#include "glib/poppler-features.h"
+-#include "goo/GooString.h"
+-#include "goo/gmem.h"
+ #include "pdf-utils.h"
+ #include "poppler-cairo-font-engine.h"
+ #include "poppler-transition-api.h"
+ #include "poppler-utils.h"
+ #include "svg-builder.h"
+-#include "util/units.h"
+ 
+ // the MSVC math.h doesn't define this
+ #ifndef M_PI
+diff --git a/src/extension/internal/pdfinput/pdf-parser.h b/src/extension/internal/pdfinput/pdf-parser.h
+index 99a205d186d..2c3a57bf50c 100644
+--- a/src/extension/internal/pdfinput/pdf-parser.h
++++ b/src/extension/internal/pdfinput/pdf-parser.h
+@@ -25,16 +25,15 @@
+ #pragma interface
+ #endif
+ 
+-#include "glib/poppler-features.h"
+-#include "Object.h"
+-
++#include <2geom/affine.h>
++#include <glib/poppler-features.h>
+ #include <map>
+ #include <memory>
++#include <poppler/Object.h>
+ #include <string>
+-#include <2geom/affine.h>
+ 
+ #define Operator Operator_Gfx
+-#include <Gfx.h>
++#include <poppler/Gfx.h>
+ #undef Operator
+ 
+ namespace Inkscape::Extension::Internal {
+diff --git a/src/extension/internal/pdfinput/pdf-utils.h b/src/extension/internal/pdfinput/pdf-utils.h
+index e1a449a4e38..c1d602bec00 100644
+--- a/src/extension/internal/pdfinput/pdf-utils.h
++++ b/src/extension/internal/pdfinput/pdf-utils.h
+@@ -11,12 +11,13 @@
+ #ifndef PDF_UTILS_H
+ #define PDF_UTILS_H
+ 
++#include <2geom/affine.h>
+ #include <2geom/rect.h>
++#include <poppler/Gfx.h>
++#include <poppler/GfxState.h>
++#include <poppler/Page.h>
++
+ #include "poppler-transition-api.h"
+-#include "2geom/affine.h"
+-#include "Gfx.h"
+-#include "GfxState.h"
+-#include "Page.h"
+ 
+ class ClipHistoryEntry
+ {
+diff --git a/src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp b/src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp
+index 5e1a6426250..dff615cb616 100644
+--- a/src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp
++++ b/src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp
+@@ -47,14 +47,11 @@
+ #include <cstring>
+ #include <fofi/FoFiTrueType.h>
+ #include <fofi/FoFiType1C.h>
+-#include <fstream>
+-
+-#include "Error.h"
+-#include "Gfx.h"
+-#include "GlobalParams.h"
+-#include "Page.h"
+-#include "XRef.h"
+-#include "goo/gfile.h"
++#include <poppler/Error.h>
++#include <poppler/Gfx.h>
++#include <poppler/GlobalParams.h>
++#include <poppler/Page.h>
++#include <poppler/XRef.h>
+ 
+ //========================================================================
+ //
+diff --git a/src/extension/internal/pdfinput/poppler-cairo-font-engine.h b/src/extension/internal/pdfinput/poppler-cairo-font-engine.h
+index d3e1a94e845..114a23181a7 100644
+--- a/src/extension/internal/pdfinput/poppler-cairo-font-engine.h
++++ b/src/extension/internal/pdfinput/poppler-cairo-font-engine.h
+@@ -36,11 +36,11 @@
+ #include <memory>
+ #include <mutex>
+ #include <optional>
++#include <poppler/GfxFont.h>
++#include <poppler/PDFDoc.h>
+ #include <unordered_map>
+ #include <vector>
+ 
+-#include "GfxFont.h"
+-#include "PDFDoc.h"
+ #include "poppler-config.h"
+ #include "poppler-transition-api.h"
+ 
+diff --git a/src/extension/internal/pdfinput/poppler-utils.cpp b/src/extension/internal/pdfinput/poppler-utils.cpp
+index ad0dd236a2a..a579ffcacf3 100644
+--- a/src/extension/internal/pdfinput/poppler-utils.cpp
++++ b/src/extension/internal/pdfinput/poppler-utils.cpp
+@@ -12,12 +12,12 @@
+ 
+ #include "poppler-utils.h"
+ 
++#include <2geom/affine.h>
++#include <poppler/GfxFont.h>
++#include <poppler/GfxState.h>
++#include <poppler/PDFDoc.h>
+ #include <poppler/UTF.h>
+ 
+-#include "2geom/affine.h"
+-#include "GfxFont.h"
+-#include "GfxState.h"
+-#include "PDFDoc.h"
+ #include "libnrtype/font-factory.h"
+ 
+ /**
+diff --git a/src/extension/internal/pdfinput/svg-builder.cpp b/src/extension/internal/pdfinput/svg-builder.cpp
+index cdd8d755e82..f14be1ec62e 100644
+--- a/src/extension/internal/pdfinput/svg-builder.cpp
++++ b/src/extension/internal/pdfinput/svg-builder.cpp
+@@ -27,26 +27,28 @@
+ 
+ #ifdef HAVE_POPPLER
+ 
+-#include "Function.h"
+-#include "GfxFont.h"
+-#include "GfxState.h"
+-#include "Page.h"
+-#include "Stream.h"
++#include <poppler/Function.h>
++#include <poppler/GfxFont.h>
++#include <poppler/GfxState.h>
++#include <poppler/Page.h>
++#include <poppler/Stream.h>
++
+ #include "color.h"
++#include "color/cms-util.h"
++#include "display/cairo-utils.h"
++#include "display/nr-filter-utils.h"
+ #include "document.h"
+ #include "extract-uri.h"
++#include "helper/geom.h"
++#include "object/sp-defs.h"
++#include "object/sp-item-group.h"
++#include "object/sp-namedview.h"
++#include "object/sp-text.h"
+ #include "pdf-parser.h"
+ #include "pdf-utils.h"
+ #include "png.h"
+ #include "poppler-cairo-font-engine.h"
+ #include "profile-manager.h"
+-
+-#include "color/cms-util.h"
+-#include "display/cairo-utils.h"
+-#include "display/nr-filter-utils.h"
+-#include "object/sp-defs.h"
+-#include "object/sp-item-group.h"
+-#include "object/sp-namedview.h"
+ #include "svg/css-ostringstream.h"
+ #include "svg/path-string.h"
+ #include "svg/svg.h"
+diff --git a/src/extension/internal/pdfinput/svg-builder.h b/src/extension/internal/pdfinput/svg-builder.h
+index ae6b916bcb0..db42f81b87d 100644
+--- a/src/extension/internal/pdfinput/svg-builder.h
++++ b/src/extension/internal/pdfinput/svg-builder.h
+@@ -27,7 +27,7 @@ namespace Inkscape {
+ }
+ 
+ #define Operator Operator_Gfx
+-#include <Gfx.h>
++#include <poppler/Gfx.h>
+ #undef Operator
+ 
+ #include <2geom/affine.h>
+@@ -35,8 +35,8 @@ namespace Inkscape {
+ #include <cairo-ft.h>
+ #include <glibmm/ustring.h>
+ #include <lcms2.h>
++#include <poppler/CharTypes.h>
+ 
+-#include "CharTypes.h"
+ #include "enums.h"
+ #include "poppler-utils.h"
+ class Function;
+-- 
+GitLab
+
