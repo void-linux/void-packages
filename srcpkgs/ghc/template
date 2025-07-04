@@ -1,38 +1,28 @@
 # Template file for 'ghc'
 pkgname=ghc
 # Keep this synchronized with http://www.stackage.org/lts
-version=9.0.2
-revision=2
-build_style=gnu-configure
-hostmakedepends="automake docbook-xsl ghc-bin libxslt libnuma-devel
- ncurses-devel python3-Sphinx python3-setuptools"
-makedepends="libnuma-devel"
-depends="perl gcc libffi-devel gmp-devel libnuma-devel"
-short_desc="Glorious Haskell Compiler"
+version=9.8.4
+revision=1
+build_helper="haskell"
+_configure_args="--prefix=/usr"
+_hadrian_args="--prefix=/usr"
+hostmakedepends="ghc-bin python3 tar xz automake"
+makedepends="libffi-devel"
+depends="gcc libffi-devel gmp-devel libnuma-devel"
+short_desc="Glasgow Haskell Compiler"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="http://www.haskell.org/ghc/"
-distfiles="http://www.haskell.org/ghc/dist/${version%[!0-9]}/${pkgname}-${version%[!0-9]}-src.tar.xz"
-checksum=140e42b96346322d1a39eb17602bcdc76e292028ad4a69286b230bab188a9197
+distfiles="http://www.haskell.org/ghc/dist/${version}/${pkgname}-${version}-src.tar.xz"
+checksum=17e8188f3c8a5c2f73fb4e35d01032e8dc258835ec876d52c8ad8ee3d24b2fc5
+_hadrian_cmd="hadrian/bootstrap/_build/bin/hadrian"
 nocross=yes # this is conditionally unset for cross bindist
-nodebug=yes # work around assembler error "Fatal error: duplicate .debug_line sections"
-_bindir="/usr/lib/${pkgname}-${version}/bin"
-nopie_files="
- ${_bindir}/ghc
- ${_bindir}/ghc-iserv
- ${_bindir}/ghc-iserv-dyn
- ${_bindir}/ghc-iserv-prof
- ${_bindir}/ghc-pkg
- ${_bindir}/haddock
- ${_bindir}/hp2ps
- ${_bindir}/hpc
- ${_bindir}/hsc2hs
- ${_bindir}/runghc
- ${_bindir}/unlit
-"
+nopie=yes
+_ghc_ver="${version//./_}"
 
-build_options="bindist"
+build_options="bindist stage3"
 desc_option_bindist="Create a binary distribution"
+desc_option_stage3="Build a stage3 compiler"
 
 # it is not possible to cross-compile an entire ghc distribution as
 # some components rely on stage2 binaries being runnable on the host
@@ -40,114 +30,113 @@ desc_option_bindist="Create a binary distribution"
 # use them to compile proper bindists on newly bootstrapped targets
 if [ -z "$build_option_bindist" ]; then
 	# final package builds use system libffi as well as gmp and ncurses
-	configure_args=" --with-system-libffi"
-	makedepends+=" libffi-devel ncurses-devel gmp-devel"
+	_configure_args+=" --with-system-libffi"
+
+	# --hash-unit-ids is needed because it only became part of the
+	# release flavour in later GHC versions.
+	_hadrian_args+=" --flavour=release --hash-unit-ids --docs=no-sphinx-pdfs"
+
+	hostmakedepends+=" python3-Sphinx docbook-xsl"
+	makedepends+=" ncurses-devel gmp-devel libnuma-devel"
 elif [ -z "$CROSS_BUILD" ]; then
-	# native bindist builds use gmp and ncurses, but builtin libffi
+	# native bindist builds use system libffi as well as gmp and ncurses
+	_configure_args+=" --with-system-libffi --disable-numa"
+	_hadrian_args+=" --flavour=quick --docs=none"
+
 	makedepends+=" ncurses-devel gmp-devel"
 elif [ "${XBPS_MACHINE%-*}" != "${XBPS_TARGET_MACHINE%-*}" ]; then
 	# ghc's cross mode only works when the actual target arch differs
 	# i.e. cross-compiling to same arch but different libc does not work
 	unset nocross
-	# host must equal build and target must be set when cross-compiling
-	configure_args+=" --host=${XBPS_TRIPLET} --target=${XBPS_CROSS_TRIPLET}"
-fi
-
-case "$XBPS_TARGET_MACHINE" in
-aarch64*)
-	# GHC uses LLVM to generate code on aarch64
-	hostmakedepends+=" llvm17-devel"
-	depends+=" llvm17-devel"
-	;;
-esac
-
-# Recent safe to use tarball
-# GHC's bundled tarball is from 2017, buggy on some archs
-_ffi_rev=4d6d2866ae43e55325e8ee96561221804602cd7a
-
-if [ "$build_option_bindist" ]; then
-	# Required to make the binary distribution tarball
-	hostmakedepends+=" tar xz libtool libltdl-devel"
-	# Fetch a safe libffi tarball
-	distfiles+=" https://github.com/libffi/libffi/archive/${_ffi_rev}.tar.gz>libffi-${_ffi_rev}.tar.gz"
-	checksum+=" f7a17fa61261942e93450ec52272b5f09d8f42cfffd147867587f969ee01b739"
-	skip_extraction+=" libffi-${_ffi_rev}.tar.gz"
+	_configure_args+=" --with-system-libffi --disable-numa"
+	_configure_args+=" --target=${XBPS_CROSS_TRIPLET} --enable-unregistered"
+	_hadrian_args+=" --flavour=quick --docs=none --bignum=native"
 fi
 
 post_extract() {
-	[ "$build_option_bindist" ] || return 0
+	if [ -e ${FILESDIR}/plan-bootstrap-${_ghc_ver}.json ]; then
+		cp "${FILESDIR}/plan-bootstrap-${_ghc_ver}.json" hadrian/bootstrap/
+	fi
+}
 
-	# update libffi for all bindists
-	rm -f libffi-tarballs/libffi-*.tar.gz
-	cp ${XBPS_SRCDISTDIR}/${pkgname}-${version}/libffi-${_ffi_rev}.tar.gz \
-	 libffi-tarballs
-
-	[ "$CROSS_BUILD" ] || return 0
-
-	# create build config for cross bindists
-	local flav="quick"
-
-	echo "BuildFlavour = ${flav}" >> mk/build.mk
-	cat mk/flavours/${flav}.mk >> mk/build.mk
-
-	# gmp segfaults when cross-built
-	echo "INTEGER_LIBRARY = integer-simple" >> mk/build.mk
-	# otherwise needs ncurses for target
-	echo "WITH_TERMINFO = NO" >> mk/build.mk
-	# cannot be cross-compiled
-	echo "HADDOCK_DOCS = NO" >> mk/build.mk
-	# just wastes time
-	echo "BUILD_SPHINX_HTML = NO" >> mk/build.mk
-	echo "BUILD_SPHINX_PDF = NO" >> mk/build.mk
-	echo "BUILD_MAN = NO" >> mk/build.mk
+do_patch() {
+	if [ "$build_option_stage3" ]; then
+		sed -i 's/finalStage = Stage2/finalStage = Stage3/' hadrian/src/UserSettings.hs
+	fi
 }
 
 pre_configure() {
-	# stage0 and stage1 are built for build/host (which are the
-	# same in ghc) and stage2 is built for target (when cross)
-	export CONF_CC_OPTS_STAGE0=$CFLAGS_FOR_BUILD
-	export CONF_CC_OPTS_STAGE1=$CFLAGS_FOR_BUILD
-	export CONF_CC_OPTS_STAGE2=$CFLAGS
-	export CONF_GCC_LINKER_OPTS_STAGE0=$LDFLAGS_FOR_BUILD
-	export CONF_GCC_LINKER_OPTS_STAGE1=$LDFLAGS_FOR_BUILD
-	export CONF_GCC_LINKER_OPTS_STAGE2=$LDFLAGS
-	export CONF_CPP_OPTS_STAGE0=$CPPFLAGS_FOR_BUILD
-	export CONF_CPP_OPTS_STAGE1=$CPPFLAGS_FOR_BUILD
-	export CONF_CPP_OPTS_STAGE2=$CPPFLAGS
+	if [ ! -e hadrian/bootstrap/plan-bootstrap-${_ghc_ver}.json ]; then
+		# To generate a bootstrap plan for a new ghc version ensure a
+		# cabal binary is available, run this, then move the plan to
+		# ${FILESDIR}
+		cabal update
+		cd hadrian
+		cabal build --flags=-selftest --dry-run hadrian
+		cp dist-newstyle/cache/plan.json bootstrap/plan-${_ghc_ver}.json
+		cd bootstrap
+		cabal build hadrian-bootstrap-gen --allow-newer
+		cabal run -v0 hadrian-bootstrap-gen -- "plan-${_ghc_ver}.json" \
+			| python3 -m json.tool > "plan-bootstrap-${_ghc_ver}.json"
+		msg_normal "Please install hadrian/bootstrap/plan-bootstrap-${_ghc_ver}.json in ${FILESDIR}\n"
+		exit 1
+	else
+		cd hadrian/bootstrap
+	fi
 
-	autoreconf -fi
+	./bootstrap.py -d plan-bootstrap-${_ghc_ver}.json
 }
 
-post_install() {
-	sed -i 's#/usr/lib/ccache/bin/##g' ${DESTDIR}/usr/lib/ghc-${version%[!0-9]}/settings
-	vlicense LICENSE
+do_configure() {
+	# GNU binutils ld does not work on ARM with haskell, see
+	# https://sourceware.org/bugzilla/show_bug.cgi?id=16177
+	# ld.gold works but was removed from binutils in 2.44
+	# So we set LD to CC and the configure script will set -fuse-ld to lld
+	export LD="$CC"
+	./configure ${_configure_args}
+}
 
-	local arch dest
+do_build() {
+	${_hadrian_cmd} ${makejobs} ${_hadrian_args}
+}
+
+do_install() {
+	local arch targ
 	if [ "$CROSS_BUILD" ]; then
 		arch=${XBPS_CROSS_TRIPLET%%-*}
+		targ=ghc-${version}-${XBPS_CROSS_TRIPLET}
 	else
 		arch=${XBPS_TRIPLET%%-*}
-	fi
-	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
-		dest=ghc-${version}-${arch}-void-linux-musl.tar.xz
-	else
-		dest=ghc-${version}-${arch}-void-linux.tar.xz
+		targ=ghc-${version}-${arch}-unknown-linux
 	fi
 
 	if [ "$build_option_bindist" ]; then
 		msg_normal "Creating binary distribution for ${XBPS_TARGET_MACHINE}...\n"
-		make ${makejobs} binary-dist
+		${_hadrian_cmd} ${_hadrian_args} binary-dist
 		mkdir -p ${XBPS_SRCDISTDIR}/distfiles
-		mv ghc-${version}-${arch}-unknown-linux.tar.xz ${dest}
-		install -m 0644 ${dest} ${XBPS_SRCDISTDIR}/distfiles
+		install -m 0644 _build/bindist/${targ}.tar.xz ${XBPS_SRCDISTDIR}/distfiles
 		msg_normal "Installed in ${XBPS_SRCDISTDIR}/distfiles\n"
 		exit 1
+	else
+		DESTDIR=${DESTDIR} ${_hadrian_cmd} ${_hadrian_args} install
 	fi
 }
 
+post_install() {
+	vlicense LICENSE
+}
+
 ghc-doc_package() {
-	short_desc+=" -- documentation"
+	short_desc+=" - documentation"
 	pkg_install() {
 		vmove usr/share/doc
+	}
+}
+
+ghc-devel_package() {
+	short_desc+=" - development files"
+	pkg_install() {
+		cd ${DESTDIR}
+		find usr/lib \( -type f -o -type l \) \( -name "*.p_*" -o -name "lib*_p.a" \) | while read f; do vmove "$f"; done
 	}
 }
