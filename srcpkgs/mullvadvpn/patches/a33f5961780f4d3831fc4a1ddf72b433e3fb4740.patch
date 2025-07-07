@@ -1,0 +1,143 @@
+From a33f5961780f4d3831fc4a1ddf72b433e3fb4740 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?David=20L=C3=B6nnhager?= <david.l@mullvad.net>
+Date: Tue, 10 Jun 2025 09:36:48 +0200
+Subject: [PATCH] Add RPC for checking if split tunneling is available on Linux
+
+---
+ .../packages/mullvad-vpn/src/main/daemon-rpc.ts   |  5 +++++
+ mullvad-daemon/src/lib.rs                         | 11 +++++++++++
+ mullvad-daemon/src/management_interface.rs        | 15 +++++++++++++++
+ .../proto/management_interface.proto              |  1 +
+ talpid-core/src/split_tunnel/linux.rs             | 15 +++++++++++++--
+ 5 files changed, 45 insertions(+), 2 deletions(-)
+
+diff --git a/desktop/packages/mullvad-vpn/src/main/daemon-rpc.ts b/desktop/packages/mullvad-vpn/src/main/daemon-rpc.ts
+index d0d424418616..206070598c25 100644
+--- a/desktop/packages/mullvad-vpn/src/main/daemon-rpc.ts
++++ b/desktop/packages/mullvad-vpn/src/main/daemon-rpc.ts
+@@ -510,6 +510,11 @@ export class DaemonRpc extends GrpcClient {
+     await this.callBool(this.client.setSplitTunnelState, enabled);
+   }
+ 
++  public async splitTunnelIsEnabled(): Promise<boolean> {
++    const isEnabled = await this.callEmpty<BoolValue>(this.client.splitTunnelIsEnabled);
++    return isEnabled.getValue();
++  }
++
+   public async needFullDiskPermissions(): Promise<boolean> {
+     const needFullDiskPermissions = await this.callEmpty<BoolValue>(
+       this.client.needFullDiskPermissions,
+diff --git a/mullvad-daemon/src/lib.rs b/mullvad-daemon/src/lib.rs
+index edb770ec5809..70db828aa3aa 100644
+--- a/mullvad-daemon/src/lib.rs
++++ b/mullvad-daemon/src/lib.rs
+@@ -344,6 +344,9 @@ pub enum DaemonCommand {
+     /// Remove settings and clear the cache
+     #[cfg(not(target_os = "android"))]
+     FactoryReset(ResponseTx<(), Error>),
++    /// Return whether split tunneling is available
++    #[cfg(target_os = "linux")]
++    SplitTunnelIsEnabled(oneshot::Sender<bool>),
+     /// Request list of processes excluded from the tunnel
+     #[cfg(target_os = "linux")]
+     GetSplitTunnelProcesses(ResponseTx<Vec<i32>, split_tunnel::Error>),
+@@ -1454,6 +1457,8 @@ impl Daemon {
+             #[cfg(not(target_os = "android"))]
+             FactoryReset(tx) => self.on_factory_reset(tx).await,
+             #[cfg(target_os = "linux")]
++            SplitTunnelIsEnabled(tx) => self.on_split_tunnel_is_enabled(tx),
++            #[cfg(target_os = "linux")]
+             GetSplitTunnelProcesses(tx) => self.on_get_split_tunnel_processes(tx),
+             #[cfg(target_os = "linux")]
+             AddSplitTunnelProcess(tx, pid) => self.on_add_split_tunnel_process(tx, pid),
+@@ -2029,6 +2034,12 @@ impl Daemon {
+         }));
+     }
+ 
++    #[cfg(target_os = "linux")]
++    fn on_split_tunnel_is_enabled(&mut self, tx: oneshot::Sender<bool>) {
++        let enabled = self.exclude_pids.is_enabled();
++        Self::oneshot_send(tx, enabled, "split_tunnel_is_enabled response");
++    }
++
+     #[cfg(target_os = "linux")]
+     fn on_get_split_tunnel_processes(&mut self, tx: ResponseTx<Vec<i32>, split_tunnel::Error>) {
+         let result = self.exclude_pids.list().inspect_err(|error| {
+diff --git a/mullvad-daemon/src/management_interface.rs b/mullvad-daemon/src/management_interface.rs
+index 7beadb3ddd38..5695683fcf15 100644
+--- a/mullvad-daemon/src/management_interface.rs
++++ b/mullvad-daemon/src/management_interface.rs
+@@ -833,6 +833,21 @@ impl ManagementService for ManagementServiceImpl {
+     // Split tunneling
+     //
+ 
++    async fn split_tunnel_is_enabled(&self, _: Request<()>) -> ServiceResult<bool> {
++        #[cfg(target_os = "linux")]
++        {
++            log::debug!("split_tunnel_is_enabled");
++            let (tx, rx) = oneshot::channel();
++            self.send_command_to_daemon(DaemonCommand::SplitTunnelIsEnabled(tx))?;
++            Ok(self.wait_for_result(rx).await.map(Response::new)?)
++        }
++        #[cfg(not(target_os = "linux"))]
++        {
++            log::error!("split_tunnel_is_enabled is only available on Linux");
++            Ok(Response::new(false))
++        }
++    }
++
+     async fn get_split_tunnel_processes(
+         &self,
+         _: Request<()>,
+diff --git a/mullvad-management-interface/proto/management_interface.proto b/mullvad-management-interface/proto/management_interface.proto
+index f3be6708220e..ab9883c1efdd 100644
+--- a/mullvad-management-interface/proto/management_interface.proto
++++ b/mullvad-management-interface/proto/management_interface.proto
+@@ -97,6 +97,7 @@ service ManagementService {
+   rpc TestApiAccessMethodById(UUID) returns (google.protobuf.BoolValue) {}
+ 
+   // Split tunneling (Linux)
++  rpc SplitTunnelIsEnabled(google.protobuf.Empty) returns (google.protobuf.BoolValue) {}
+   rpc GetSplitTunnelProcesses(google.protobuf.Empty) returns (stream google.protobuf.Int32Value) {}
+   rpc AddSplitTunnelProcess(google.protobuf.Int32Value) returns (google.protobuf.Empty) {}
+   rpc RemoveSplitTunnelProcess(google.protobuf.Int32Value) returns (google.protobuf.Empty) {}
+diff --git a/talpid-core/src/split_tunnel/linux.rs b/talpid-core/src/split_tunnel/linux.rs
+index dfbf8fc479a4..1efb1dc60bf0 100644
+--- a/talpid-core/src/split_tunnel/linux.rs
++++ b/talpid-core/src/split_tunnel/linux.rs
+@@ -3,7 +3,10 @@ use std::{
+     io::{self, BufRead, BufReader, Write},
+     path::{Path, PathBuf},
+ };
+-use talpid_types::cgroup::{find_net_cls_mount, SPLIT_TUNNEL_CGROUP_NAME};
++use talpid_types::{
++    cgroup::{find_net_cls_mount, SPLIT_TUNNEL_CGROUP_NAME},
++    ErrorExt,
++};
+ 
+ const DEFAULT_NET_CLS_DIR: &str = "/sys/fs/cgroup/net_cls";
+ const NET_CLS_DIR_OVERRIDE_ENV_VAR: &str = "TALPID_NET_CLS_MOUNT_DIR";
+@@ -70,7 +73,10 @@ impl Default for PidManager {
+         let inner = match Self::new_inner() {
+             Ok(net_cls_path) => Inner::Ok { net_cls_path },
+             Err(err) => {
+-                log::error!("{}", err.display_chain_with_msg("Failed to enable split tunneling"));
++                log::error!(
++                    "{}",
++                    err.display_chain_with_msg("Failed to enable split tunneling")
++                );
+                 Inner::Failed { err }
+             }
+         };
+@@ -197,6 +203,11 @@ impl PidManager {
+         Ok(())
+     }
+ 
++    /// Return whether it is enabled
++    pub fn is_enabled(&self) -> bool {
++        matches!(self.inner, Inner::Ok { .. })
++    }
++
+     fn open_parent_cgroup_handle(net_cls_path: &Path) -> io::Result<fs::File> {
+         fs::OpenOptions::new()
+             .write(true)
