@@ -1,26 +1,32 @@
 # Template file for '0ad'
 pkgname=0ad
-version=0.0.26
-revision=9
-archs="x86_64* i686* aarch64* armv7l* ppc64le*"
+version=0.27.0
+revision=1
+archs="x86_64* i686* aarch64* armv7l* ppc64le* riscv64*"
+# Unclear whether ppc64le and riscv64 will work, though upstream seems to support them
 build_helper=rust
-hostmakedepends="pkg-config perl cmake python3.11 rust cargo yasm tar clang"
+_cxxtest_version=4.4
+_fcollada_version=28209
+_nvtt_version=28209
+hostmakedepends="pkg-config perl cmake python3 rust cargo yasm llvm xz m4
+ premake5 subversion"
 makedepends="SDL2-devel boost-devel gloox-devel libcurl-devel libenet-devel
  libopenal-devel libpng-devel libsodium-devel libxml2-devel miniupnpc-devel
- nspr-devel wxWidgets-gtk3-devel fmt-devel freetype-devel"
-depends="${pkgname}-data"
+ nspr-devel wxWidgets-gtk3-devel fmt-devel freetype-devel mozjs115-devel"
+depends="0ad-data"
+checkdepends="0ad-data"
 short_desc="Historically-based real-time strategy game"
 maintainer="Helmut Pozimski <helmut@pozimski.eu>"
 license="GPL-2.0-or-later, CC-BY-SA-3.0, MPL-2.0, MIT"
 homepage="https://play0ad.com"
-distfiles="https://releases.wildfiregames.com/${pkgname}-${version}-alpha-unix-build.tar.xz
- https://github.com/mozilla/gecko-dev/commit/74641307d32a59806b75cd2b8c7161aca50d5cb7.patch>1654457-virtualenv.patch"
-checksum="2e1c6df7e3312e77c5f82788664cffc3a78d3bf60606c00039275e1d13c0ee4b
- f18fa3adae7acb07a49148354b6804028e6c9d7344991622fb7c00f638173e03"
-nocross="uses bundled third-party libraries that do not cross-compile"
+distfiles="
+https://releases.wildfiregames.com/${pkgname}-${version}-unix-build.tar.xz
+https://github.com/CxxTest/cxxtest/archive/refs/tags/${_cxxtest_version}.tar.gz>cxxtest-${_cxxtest_version}.tar.gz"
+checksum="
+aa94857009750d5f61dbf016bc150e3bdcbdb3acdfc8ad20b73ab8b43e9a1ba6
+1c154fef91c65dbf1cd4519af7ade70a61d85a923b6e0c0b007dc7f4895cf7d8"
+skip_extraction="cxxtest-${_cxxtest_version}.tar.gz"
 lib32disabled=yes
-
-skip_extraction="1654457-virtualenv.patch"
 
 CXXFLAGS="-fpermissive"
 # Use BFD linker to avoid erroneous detection of llvm pr8927 with *-musl
@@ -32,30 +38,67 @@ if [ "$XBPS_TARGET_LIBC" = musl ]; then
 	makedepends+=" libexecinfo-devel"
 fi
 
-post_patch() {
-	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
-		echo "TARGET_LINK_LIBRARIES(nvcore execinfo)" >> \
-			libraries/source/nvtt/src/src/nvcore/CMakeLists.txt
-	fi
-	cp ${FILESDIR}/python-3.11.patch libraries/source/spidermonkey/
-	cp ${FILESDIR}/rust-target.patch libraries/source/spidermonkey/
-	cp ${XBPS_SRCDISTDIR}/${pkgname}-${version}/1654457-virtualenv.patch \
-		libraries/source/spidermonkey/
+post_extract() {
+	# tests still need to be extracted and built as a library as it is a dependency internally (for now)
+	msg_normal "Extracting cxxtest-${_cxxtest_version}"
+	vsrcextract -C ${wrksrc}/libraries/source/cxxtest-${_cxxtest_version}/ --no-strip-components cxxtest-${_cxxtest_version}.tar.gz
+	msg_normal "Fetching fcollada from svn\n"
+	svn export --quiet https://svn.wildfiregames.com/public/source-libs/trunk/fcollada@${_fcollada_version} ${wrksrc}/libraries/source/fcollada/fcollada-${_fcollada_version}
+	msg_normal "Fetching nvtt from svn\n"
+	svn export --quiet https://svn.wildfiregames.com/public/source-libs/trunk/nvtt@${_nvtt_version} ${wrksrc}/libraries/source/nvtt/nvtt-${_nvtt_version}
 }
 
-do_configure() {
-	export JOBS="${makejobs}"
-	cd ${wrksrc}/build/workspaces
-	./clean-workspaces.sh
+post_patch() {
+	msg_normal "Applying patch 0ad/files/nvtt-ppc-musl.patch\n"
+	patch -sNp1 -i ${FILESDIR}/nvtt-ppc-musl.patch -d ${wrksrc}/libraries/source/nvtt/nvtt-${_nvtt_version}
+	msg_normal "Applying patch 0ad/files/nvtt-ppc64.patch\n"
+	patch -sNp1 -i ${FILESDIR}/nvtt-ppc64.patch -d ${wrksrc}/libraries/source/nvtt/nvtt-${_nvtt_version}
+
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		echo "TARGET_LINK_LIBRARIES(nvcore execinfo)" >> \
+			${wrksrc}/libraries/source/nvtt/nvtt-${_nvtt_version}/src/src/nvcore/CMakeLists.txt
+	fi
 }
 
 do_build() {
 	export JOBS="${makejobs}"
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*)
+			CXXFLAGS=" -msse2"
+			;;
+	esac
+
+	_build_options="--with-system-premake5 --with-lto --with-system-mozjs "
+	if [ -n "$CROSS_BUILD" ]; then
+		_build_options+="--without-tests "
+	fi
+
+	cd ${wrksrc}/libraries
+	msg_normal "Building libraries\n"
+
+	# These have to be set separately, as passing extra arguments errors out
+	./build-source-libs.sh --with-system-premake --with-system-mozjs
+
 	cd ${wrksrc}/build/workspaces
-	./update-workspaces.sh --bindir=/usr/bin --libdir=/usr/lib/0ad \
-		--datadir=/usr/share/${pkgname}/data
+	msg_normal "Building the project\n"
+
+	./update-workspaces.sh ${_build_options} \
+		--bindir=/usr/bin --libdir=/usr/lib/${pkgname} --datadir=/usr/share/${pkgname}/data
+
 	cd ${wrksrc}
 	make config=release -C build/workspaces/gcc ${makejobs}
+}
+
+pre_check() {
+	ln -sf /usr/share/${pkgname}/data/mods/mod ${wrksrc}/binaries/data/mods
+	ln -sf /usr/share/${pkgname}/data/mods/public ${wrksrc}/binaries/data/mods
+	ln -sf ${wrksrc}/binaries/system /usr/lib/${pkgname}
+}
+
+do_check() {
+	cd ${wrksrc}/binaries/system/
+	./test
 }
 
 do_install() {
@@ -67,5 +110,5 @@ do_install() {
 	vbin build/resources/${pkgname}.sh ${pkgname}
 	vinstall build/resources/${pkgname}.desktop 0644 usr/share/applications
 	vinstall build/resources/${pkgname}.png 0644 usr/share/pixmaps
-	vlicense LICENSE.txt
+	vlicense LICENSE.md
 }

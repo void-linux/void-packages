@@ -76,6 +76,7 @@ _EOF
 	# Remove -pipe: https://gitlab.kitware.com/cmake/cmake/issues/19590
 	CFLAGS="-DNDEBUG ${CFLAGS/ -pipe / }" CXXFLAGS="-DNDEBUG ${CXXFLAGS/ -pipe / }" \
 		cmake ${cmake_args} ${configure_args} \
+		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 		${LIBS:+-DCMAKE_C_STANDARD_LIBRARIES="$LIBS"} \
 		${LIBS:+-DCMAKE_CXX_STANDARD_LIBRARIES="$LIBS"} \
 		${wrksrc}/${build_wrksrc}
