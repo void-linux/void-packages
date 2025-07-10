@@ -31,6 +31,7 @@ _process_patch() {
 
 	cd "$wrksrc"
 	msg_normal "$pkgver: patching: ${_patch}.\n"
+	POSIXLY_CORRECT=1 \
 	patch -s ${_args} <"${_patch}" 2>/dev/null
 }
 
