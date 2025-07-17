@@ -2,70 +2,65 @@
 pkgname=Signal-Desktop
 version=7.63.0
 revision=1
-# Signal officially only supports x86_64
-# x86_64-musl could potentially work based on the Alpine port:
+# *-musl could potentially work based on the Alpine port:
 # https://git.alpinelinux.org/aports/tree/testing/signal-desktop
-# ARM: https://github.com/signalapp/Signal-Desktop/issues/3410
-archs="x86_64"
-hostmakedepends="git git-lfs nodejs-lts python3 python3-distutils-extra tar pnpm xz"
+archs="x86_64 aarch64"
+hostmakedepends="git git-lfs nodejs-lts python3 python3-distutils-extra
+ tar pnpm xz electron-tasje"
 depends="cairo gtk+3 libvips pango desktop-file-utils hicolor-icon-theme"
+checkdepends="glib nss libgbm alsa-lib $depends"
 short_desc="Signal Private Messenger for Linux"
-maintainer="Orphaned <orphan@voidlinux.org>"
+maintainer="dkwo <npiazza@disroot.org>"
 license="AGPL-3.0-only"
 homepage="https://github.com/signalapp/Signal-Desktop"
 distfiles="https://github.com/signalapp/Signal-Desktop/archive/v${version}.tar.gz"
 checksum=d1f152444b0dd04450a63c5978c66caa8992bf3dba5d250ddd89f08bea80e538
 nostrip_files="signal-desktop"
+nocross="gyp -> aarch64-linux-gnu-gcc: error: unrecognized command-line option '-m64'"
 
-post_extract() {
+post_patch() {
+	case ${XBPS_TARGET_MACHINE} in
+		aarch64*)
+			vsed -i 's/xxxtarget/arm64/' package.json
+			;;
+		x86_64*)
+			vsed -i 's/xxxtarget/x64/' package.json
+			;;
+	esac
+}
+
+pre_build() {
 	# git-lfs hook needs to be installed for one of the dependencies
 	git lfs install
-
-	vsed 's/"node": ".*"/"node": ">=20.0.0"/' -i package.json
-
-	# patch node fs with graceful-fs to avoid using too many file descriptors
-	pnpm add -D graceful-fs@4.2.11
-	echo "require('graceful-fs').gracefulify(require('fs'));" > ${wrksrc}/use-graceful-fs.js
-	export NODE_OPTIONS="--require ${wrksrc}/use-graceful-fs.js"
-
-	# Install dependencies for sticker-creator
-	pnpm --prefix ./sticker-creator/ install
 
 	# Install dependencies for signal-desktop
 	pnpm install
 }
 
 do_build() {
-	# Build the sticker creator
-	pnpm --prefix ./sticker-creator/ run build
-
 	# Build signal-desktop
+	pnpm run generate
 	pnpm run build
+	SIGNAL_ENV=production tasje pack
+}
 
-	# Extract the generated .desktop file
-	bsdtar xOf release/signal-desktop_*.deb data.tar.xz | \
-		bsdtar xO ./usr/share/applications/signal-desktop.desktop > signal-desktop.desktop
-	vsed -i -e 's/\/opt\/Signal\///' signal-desktop.desktop
+do_check() {
+	# fixme: it complains about sandbox/missing files
+	# pnpm run test
+	:
 }
 
 do_install() {
 	vmkdir usr/lib/signal-desktop
-
-	# Remove prebuilt binaries for foreign architectures (to not confuse strip)
-	for prebin in darwin-x64 linux-arm64 win32-ia32 win32-x64; do
-		rm -rf release/linux-unpacked/resources/app.asar.unpacked/node_modules/{ffi-napi,ref-napi}/prebuilds/$prebin
-		rm -rf release/linux-unpacked/resources/app.asar.unpacked/node_modules/ffi-napi/node_modules/ref-napi/prebuilds/$prebin
-	done
-
-	vcopy release/linux-unpacked/* usr/lib/signal-desktop
+	vcopy release/linux*-unpacked/* usr/lib/signal-desktop
 
 	vmkdir usr/bin
 	ln -s /usr/lib/signal-desktop/signal-desktop ${DESTDIR}/usr/bin/
 
-	vinstall signal-desktop.desktop 644 usr/share/applications
+	vinstall tasje_out/signal.desktop 644 usr/share/applications
 
 	for size in 16 24 32 48 64 128 256 512 1024; do
-		vinstall build/icons/png/${size}x${size}.png 644 usr/share/icons/hicolor/${size}x${size}/apps signal-desktop.png
+		vinstall tasje_out/icons/${size}x${size}.png 644 usr/share/icons/hicolor/${size}x${size}/apps signal-desktop.png
 	done
 
 	vlicense LICENSE
