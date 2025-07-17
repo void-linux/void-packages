@@ -275,6 +275,7 @@ chroot_sync_repodata() {
     fi
 
     echo "syslog=false" > $confdir/00-xbps-src.conf
+    echo "staging=true" >> $confdir/00-xbps-src.conf
 
     # Copy host repos to the cross root.
     if [ -n "$XBPS_CROSS_BUILD" ]; then
@@ -303,6 +304,7 @@ chroot_sync_repodata() {
         fi
 
         echo "syslog=false" > $crossconfdir/00-xbps-src.conf
+        echo "staging=true" >> $crossconfdir/00-xbps-src.conf
     fi
 
 
