@@ -502,7 +502,7 @@ setup_pkg() {
     # Check if base-chroot is already installed.
     if [ -z "$bootstrap" -a -z "$CHROOT_READY" -a "z$show_problems" != "zignore-problems" ]; then
         msg_red "${pkg} is not a bootstrap package and cannot be built without it.\n"
-        msg_error "Please install bootstrap packages and try again.\n"
+        msg_error "Please run '${PROGNAME} -A ${XBPS_MACHINE} binary-bootstrap' or install bootstrap packages, then try again.\n"
     fi
 
     sourcepkg="${pkgname}"
