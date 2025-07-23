@@ -1,0 +1,102 @@
+reduced -lnl
+
+From e201e2d467b0daad6cdbbfcd5b0e34760e4099c1 Mon Sep 17 00:00:00 2001
+From: Alan Zhao <ayzhao@google.com>
+Date: Mon, 7 Apr 2025 18:15:01 -0700
+Subject: [PATCH] Roll rust *only* f7b43542838f0a4a6cfdb17fbeadf45002042a77-1 :
+ 3f690c2257b7080cd3a8cce64e082fc972148990-1
+
+https://chromium.googlesource.com/external/github.com/rust-lang/rust/+log/f7b43542838f..3f690c2257b7
+
+Ran: ./tools/clang/scripts/upload_revision.py 5b36835df010c5813808d34e45428c624fb52ff1
+
+Additionally, add fixes to the rust allocator to address https://crbug.com/407024458.
+
+Bug: 404285928,407024458
+Disable-Rts: True
+Cq-Include-Trybots: chromium/try:chromeos-amd64-generic-cfi-thin-lto-rel
+Cq-Include-Trybots: chromium/try:dawn-win10-x86-deps-rel
+Cq-Include-Trybots: chromium/try:linux-chromeos-dbg
+Cq-Include-Trybots: chromium/try:linux_chromium_cfi_rel_ng
+Cq-Include-Trybots: chromium/try:linux_chromium_chromeos_msan_rel_ng
+Cq-Include-Trybots: chromium/try:linux_chromium_msan_rel_ng
+Cq-Include-Trybots: chromium/try:mac11-arm64-rel,mac_chromium_asan_rel_ng
+Cq-Include-Trybots: chromium/try:ios-catalyst,win-asan,android-official
+Cq-Include-Trybots: chromium/try:fuchsia-arm64-cast-receiver-rel
+Cq-Include-Trybots: chromium/try:mac-official,linux-official
+Cq-Include-Trybots: chromium/try:win-official,win32-official
+Cq-Include-Trybots: chromium/try:win-swangle-try-x86
+Cq-Include-Trybots: chromium/try:android-cronet-riscv64-dbg
+Cq-Include-Trybots: chromium/try:android-cronet-riscv64-rel
+Cq-Include-Trybots: chrome/try:iphone-device
+Cq-Include-Trybots: chrome/try:linux-chromeos-chrome
+Cq-Include-Trybots: chrome/try:win-chrome,win64-chrome,linux-chrome,mac-chrome
+Cq-Include-Trybots: chrome/try:linux-pgo,mac-pgo,win32-pgo,win64-pgo
+Cq-Include-Trybots: luci.chromium.try:linux-cast-x64-rel
+Cq-Include-Trybots: chromium/try:android-rust-arm32-rel
+Cq-Include-Trybots: chromium/try:android-rust-arm64-dbg
+Cq-Include-Trybots: chromium/try:android-rust-arm64-rel
+Cq-Include-Trybots: chromium/try:linux-rust-x64-dbg
+Cq-Include-Trybots: chromium/try:linux-rust-x64-rel
+Cq-Include-Trybots: chromium/try:mac-rust-x64-dbg
+Cq-Include-Trybots: chromium/try:win-rust-x64-dbg
+Cq-Include-Trybots: chromium/try:win-rust-x64-rel
+Change-Id: Iec99681a89deaf3f2c79c76f9c4d1c2b2b7d6fe1
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/6439711
+Reviewed-by: Collin Baker <collinbaker@chromium.org>
+Commit-Queue: Alan Zhao <ayzhao@google.com>
+Cr-Commit-Position: refs/heads/main@{#1443873}
+---
+ build/rust/allocator/BUILD.gn |   6 +-
+ build/rust/allocator/lib.rs   |   6 +-
+ build/rust/std/rules/BUILD.gn | 476 +++++++++++++++++-----------------
+ tools/rust/update_rust.py     |   2 +-
+ 4 files changed, 251 insertions(+), 239 deletions(-)
+
+diff --git a/build/rust/allocator/BUILD.gn b/build/rust/allocator/BUILD.gn
+index f09314afc8158..ca581630c76c9 100644
+--- a/build/rust/allocator/BUILD.gn
++++ b/build/rust/allocator/BUILD.gn
+@@ -32,6 +32,10 @@ if (toolchain_has_rust) {
+     sources = [ "lib.rs" ]
+     crate_root = "lib.rs"
+     cxx_bindings = [ "lib.rs" ]
++    rustflags = [
++      "--cfg",
++      "mangle_alloc_error_handler",
++    ]
+ 
+     deps = [ ":allocator_impls" ]
+ 
+@@ -40,7 +44,7 @@ if (toolchain_has_rust) {
+     allow_unsafe = true
+ 
+     if (use_cpp_allocator_impls) {
+-      rustflags = [
++      rustflags += [
+         "--cfg",
+         "use_cpp_allocator_impls",
+       ]
+diff --git a/build/rust/allocator/lib.rs b/build/rust/allocator/lib.rs
+index b8b67d9c6c649..4e2dad3d542a8 100644
+--- a/build/rust/allocator/lib.rs
++++ b/build/rust/allocator/lib.rs
+@@ -57,13 +57,17 @@ static GLOBAL: std::alloc::System = std::alloc::System;
+ #[linkage = "weak"]
+ static __rust_no_alloc_shim_is_unstable: u8 = 0;
+ 
+-#[no_mangle]
++// Mangle the symbol name as rustc expects.
++#[cfg_attr(mangle_alloc_error_handler, rustc_std_internal_symbol)]
++#[cfg_attr(not(mangle_alloc_error_handler), no_mangle)]
++#[allow(non_upper_case_globals)]
+ #[linkage = "weak"]
+ static __rust_alloc_error_handler_should_panic: u8 = 0;
+ 
+ // Mangle the symbol name as rustc expects.
+ #[cfg_attr(mangle_alloc_error_handler, rustc_std_internal_symbol)]
+ #[cfg_attr(not(mangle_alloc_error_handler), no_mangle)]
++#[allow(non_upper_case_globals)]
+ #[linkage = "weak"]
+ fn __rust_alloc_error_handler(_size: usize, _align: usize) {
+     unsafe { ffi::crash_immediately() }

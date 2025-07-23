@@ -1,0 +1,477 @@
+# Template file for 'electron35'
+pkgname=electron35
+version=35.7.2
+revision=1
+_nodever=22.16.0
+_chromiumver=134.0.6998.205
+archs="x86_64* aarch64*"
+create_wrksrc=yes
+build_wrksrc="src"
+_llvmver=19
+hostmakedepends="
+ $(vopt_if clang "clang${_llvmver} lld${_llvmver} llvm${_llvmver} compiler-rt${_llvmver}")
+ pkg-config perl gperf bison ninja nodejs hwids which git yarn jq
+ python3 libepoxy-devel libevent-devel libglib-devel rust rust-bindgen
+ gn"
+makedepends="libpng-devel gtk+3-devel nss-devel pciutils-devel
+ libXi-devel libgcrypt-devel cups-devel elfutils-devel
+ libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
+ libXScrnSaver-devel alsa-lib-devel libdrm-devel
+ libxml2-devel libxslt-devel $(vopt_if pulseaudio pulseaudio-devel) libexif-devel
+ libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel
+ libjpeg-turbo-devel libevent-devel json-c-devel minizip-devel jsoncpp-devel
+ zlib-devel libcap-devel libXdamage-devel fontconfig-devel freetype-devel opus-devel libffi-devel
+ libva-devel libuv-devel c-ares-devel libnotify-devel
+ $(vopt_if pipewire pipewire-devel) wayland-devel libcurl-devel libxshmfence-devel
+ compiler-rt${_llvmver} rust-std"
+short_desc="Cross platform application framework based on web technologies"
+maintainer="Duncaen <duncaen@voidlinux.org>"
+license="BSD-3-Clause"
+homepage="https://electronjs.org"
+distfiles="https://ayakael.net/api/packages/mirrors/generic/electron/v${version}/electron-v${version}-${_chromiumver}.tar.zst
+ https://github.com/nodejs/node/archive/v$_nodever.tar.gz>node-$_nodever.tar.gz"
+checksum="780f96730b910ae378a2ef292c2645ab8749a5e9a364359d2f9a12a15e4c5c26
+ 00d7c2a8f315f201fe30e2f7ac5a137663ab1c79a5c6873df553aff0409ce291"
+
+
+
+if [ "$XBPS_LIBC" = musl ]; then
+	hostmakedepends+=" musl-legacy-compat"
+fi
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	makedepends+=" musl-legacy-compat"
+fi
+
+no_generic_pkgconfig_link=yes
+lib32disabled=yes
+
+build_options="clang libcxx debug vaapi pulseaudio sndio pipewire lto drumbrake"
+build_options_default="clang libcxx vaapi pulseaudio pipewire"
+desc_option_clang="Use clang to build"
+desc_option_libcxx="Use bundled libc++"
+desc_option_debug="Build with debug symbols"
+desc_option_pipewire="Enable support for screen sharing for WebRTC via PipeWire"
+desc_option_drumbrake="WebAssembly Interpreter"
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" libX11-devel libxcb-devel pciutils-devel libXext-devel libglvnd-devel
+	 libjpeg-turbo-devel libXi-devel nss-devel libpng-devel libwebp-devel
+	 libxml2-devel $(vopt_if pulseaudio pulseaudio-devel) libxslt-devel libxkbcommon-devel
+	 $(vopt_if pipewire pipewire-devel) opus-devel pango-devel libva-devel
+	 libcurl-devel libXrandr-devel libXcomposite-devel cups-devel
+	 mit-krb5-devel alsa-lib-devel libXdamage-devel libepoxy-devel libevdev-devel
+	 libavif-devel libaom-devel libdav1d-devel libflac-devel
+	 libdrm-devel libgbm-devel"
+fi
+
+if [ ! "$XBPS_WORDSIZE" = "$XBPS_TARGET_WORDSIZE" ]; then
+	broken="chromium (v8) can only be cross compiled if word size matches"
+fi
+
+if [ "$CROSS_BUILD" ]; then
+	case "${XBPS_TARGET_MACHINE}" in
+		#aarch64*) ;;
+		*) nocross="chromium can not be cross compiled for this architecture" ;;
+	esac
+fi
+
+_buildtype=Release
+
+_setup_clang() {
+	export CC=clang
+	export CXX=clang++
+	export AR=llvm-ar
+	export NM=llvm-nm
+	export CFLAGS="-Wno-unknown-warning-option -fdebug-prefix-map=$wrksrc=."
+	export CXXFLAGS="-Wno-unknown-warning-option -fdebug-prefix-map=$wrksrc=."
+	export LDFLAGS=""
+	export BUILD_CC=clang
+	export BUILD_CXX=clang++
+	export BUILD_AR=llvm-ar
+	export BUILD_NM=llvm-nm
+	export BUILD_CFLAGS="-Wno-unknown-warning-option"
+	export BUILD_CXXFLAGS="-Wno-unknown-warning-option"
+	if [[ -n "$CROSS_BUILD" ]]; then
+		CFLAGS+=" --sysroot=${XBPS_CROSS_BASE}"
+		CXXFLAGS+=" --sysroot=${XBPS_CROSS_BASE}"
+		LDFLAGS+=" --sysroot=${XBPS_CROSS_BASE}"
+		if [[ -z "$build_option_libcxx" ]]; then
+			local gcc_version=$(gcc -dumpversion)
+			local clang_version=$(clang -dumpversion)
+			CFLAGS+=" --gcc-toolchain=/usr"
+			CFLAGS+=" -nostdinc"
+			CFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
+			CFLAGS+=" -isystem /usr/lib/clang/${clang_version}/include"
+			CXXFLAGS+=" --gcc-toolchain=/usr"
+			CXXFLAGS+=" -nostdinc++"
+			CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}"
+			CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}"
+			CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward"
+			CXXFLAGS+=" -nostdinc"
+			CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
+			CXXFLAGS+=" -isystem /usr/lib/clang/${clang_version}/include"
+			LDFLAGS+=" --gcc-toolchain=/usr"
+		fi
+	fi
+}
+
+_setup_toolchain() {
+	if [ "$build_option_clang" ]; then
+		_setup_clang
+	fi
+}
+
+_apply_patch() {
+	local args="$1" pname="$(basename $2)"
+
+	if [ ! -f ".${pname}_done" ]; then
+		if [ -f "${2}.args" ]; then
+			args=$(<"${2}.args")
+		fi
+		msg_normal "$pkgver: patching: ${pname}.\n"
+		patch -N $args -i $2
+		touch .${pname}_done
+	fi
+}
+
+_git_am() {
+	local pname="$(basename $1)"
+
+	if [ ! -f ".${pname}_done" ]; then
+		msg_normal "$pkgver: patching: ${pname}.\n"
+		git -c 'user.name=Electron build' -c 'user.email=electron@ebuild' \
+			am --exclude "third_party/blink/tools/**" \
+			--exclude "test/mjsunit/**" --exclude "content/test/**" \
+			--exclude "test/cctest/**" --exclude "test/unittests/**" \
+			--exclude "third_party/blink/web_tests/**" \
+			--exclude "chrome/test/**" \
+			$1
+		touch .${pname}_done
+	fi
+}
+
+
+_get_chromium_arch() {
+	case "$1" in
+		x86_64*) echo x64 ;;
+		i686*) echo x86 ;;
+		arm*) echo arm ;;
+		aarch64*) echo arm64 ;;
+		ppc64*) echo ppc64 ;;
+		ppc*) echo ppc ;;
+		mipsel*) echo mipsel ;;
+		mips*) echo mips ;;
+		*) msg_error "$pkgver: cannot be compiled for ${XBPS_TARGET_MACHINE}.\n" ;;
+	esac
+}
+
+post_extract() {
+	mv "electron-v${version}-${_chromiumver}" src
+	mv "node-${_nodever}" src/third_party/electron_node
+}
+
+_git_init() {
+	repopath="$1"
+	cd "${wrksrc}/${repopath}"
+	rm -rf ".git"
+	git init -q
+	git config "gc.auto" 0
+	if [ "$repopath" != "src" ]; then
+		echo "/${repopath#src/}" >> "$wrksrc/$build_wrksrc/.gitignore"
+	fi
+	pwd
+	ls
+	git add .
+	git -c 'user.name=Electron build' \
+		-c 'user.email=electron@ebuild' \
+		commit --allow-empty -q -m "init"
+
+}
+
+post_patch() {
+	cd "$wrksrc"
+	for x in $FILESDIR/patches/*.patch; do
+		case "${x##*/}" in
+			electron*.patch)
+				_apply_patch "-d src/electron -p1" "$x"
+		esac
+	done
+
+	for x in $FILESDIR/patches/*; do
+		case "${x##*/}" in
+			chromium*.patch)
+				cd src
+				_apply_patch -p1 "$x"
+				cd "$wrksrc"
+				;;
+		esac
+	done
+
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		for x in $FILESDIR/musl-patches/*; do
+			case "${x##*/}" in
+				chromium*.patch)
+					cd src
+					_apply_patch -p1 "$x"
+					cd "$wrksrc"
+					;;
+				electron*.patch)
+					cd src/electron
+					_apply_patch -p1 "$x"
+					cd "$wrksrc"
+					;;
+			esac
+		done
+	fi
+
+	vsed -i 's/OFFICIAL_BUILD/GOOGLE_CHROME_BUILD/' \
+		src/tools/generate_shim_headers/generate_shim_headers.py
+}
+
+pre_configure() {
+	local system=()
+
+	# https://groups.google.com/a/chromium.org/d/topic/chromium-packagers/9JX1N2nf4PU/discussion
+	touch chrome/test/data/webui/i18n_process_css_test.html
+	# Use the file at run time instead of effectively compiling it in
+	sed 's|//third_party/usb_ids/usb.ids|/usr/share/hwdata/usb.ids|g' \
+		-i services/device/public/cpp/usb/BUILD.gn
+
+	mkdir -p third_party/node/linux/node-linux-x64/bin
+	ln -sf /usr/bin/node third_party/node/linux/node-linux-x64/bin/
+	rm -f third_party/devtools-frontend/src/third_party/esbuild/esbuild
+
+	if false; then
+		# compile gn early, so it can be used to generate gni stuff
+		AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
+			CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
+			tools/gn/bootstrap/bootstrap.py ${makejobs} --skip-generate-buildfiles
+	fi
+
+	# reusable system library settings
+	# libcxx
+	# snappy System snappy is linked against libstdc++ and not CR libcxx
+	# ffmpeg
+	system=(
+		flac
+		fontconfig
+		freetype
+		libdrm
+		libjpeg
+		libpng
+		libwebp
+		libxml
+		libxslt
+		opus
+	)
+
+	# remove build scripts for system provided dependencies - basically does the
+	# same as the bundeled script to remove bundeled libs, but this way we don't
+	# have to list the remaining libs
+	for LIB in "${system[@]}" libjpeg_turbo; do
+		msg_normal "Removing buildscripts for system provided $LIB\n"
+		find "third_party/$LIB" -type f \
+			\! -path "third_party/$LIB/chromium/*" \
+			\! -path "third_party/$LIB/google/*" \
+			\! -path './base/third_party/icu/*' \
+			\! -path './third_party/harfbuzz-ng/utils/hb_scoped.h' \
+			\! -regex '.*\.\(gn\|gni\|isolate\)' \
+			-delete || :
+	done
+
+
+	# switch to system provided dependencies
+	build/linux/unbundle/replace_gn_files.py --system-libraries "${system[@]}"
+
+	third_party/libaddressinput/chromium/tools/update-strings.py
+
+	# Satisfy some scripts that use git describe to figure out the electron version
+	# cd ${wrksrc}/src/electron
+	# git tag -f "v${version}"
+}
+
+do_configure() {
+	local target_arch="$(_get_chromium_arch ${XBPS_TARGET_MACHINE})"
+	local host_arch="$(_get_chromium_arch ${XBPS_MACHINE})"
+	local conf=()
+
+	cd third_party/electron_node
+	if [ "$CROSS_BUILD" ]; then
+		conf_args=" --dest-cpu=${target_arch} --cross-compiling"
+	fi
+	./configure --prefix=/usr \
+		--shared-zlib \
+		--shared-libuv \
+		--shared-openssl \
+		--shared-cares \
+		--openssl-use-def-ca-store \
+		--without-npm \
+		--without-bundled-v8 \
+		${conf_args}
+
+	cd "$wrksrc/$build_wrksrc"/electron
+	yarn install --frozen-lockfile
+	cd "$wrksrc/$build_wrksrc"
+
+	local clang_version="$(clang -dumpversion)"
+	conf+=(
+		'import("//electron/build/args/release.gn")'
+		"override_electron_version=\"${version}\""
+	)
+	conf+=(
+		'enable_nacl=false'
+
+		'use_sysroot=false'
+
+		'host_pkg_config="/usr/bin/pkg-config"'
+
+		"is_clang=$(vopt_if clang true false)"
+		"use_lld=$(vopt_if clang true false)"
+		'clang_use_chrome_plugins=false'
+		'clang_base_path="/usr"'
+		"clang_version=\"${clang_version%%.*}\""
+
+		"use_custom_libcxx=$(vopt_if libcxx true false)" # https://github.com/llvm/llvm-project/issues/61705
+
+		'enable_rust=true'
+		'rust_sysroot_absolute="/usr"'
+		'rust_bindgen_root="/usr"'
+		"rustc_version=\"$(rustc --version)\""
+
+		# is_debug makes the build a debug build, changes some things.
+		# might be useful for real debugging vs just debug symbols.
+		"is_debug=false"
+		"blink_symbol_level=$(vopt_if debug 1 0)"
+		"symbol_level=$(vopt_if debug 1 0)"
+
+		'icu_use_data_file=true'
+
+		'enable_widevine=false'
+		'enable_hangout_services_extension=true'
+
+		'use_system_harfbuzz=false'
+		'use_system_libffi=true'
+
+		'use_qt5=false'
+		'use_qt6=false'
+
+		'use_cups=true'
+
+		"use_vaapi=$(vopt_if vaapi true false)"
+
+		"use_pulseaudio=$(vopt_if pulseaudio true false)"
+		"link_pulseaudio=$(vopt_if pulseaudio true false)"
+
+		"rtc_use_pipewire=$(vopt_if pipewire true false)"
+
+		"v8_enable_drumbrake=$(vopt_if drumbrake true false)"
+
+		# Always support proprietary codecs.
+		# Enable H.264 support in bundled ffmpeg.
+		'proprietary_codecs=true'
+		'ffmpeg_branding="Chrome"'
+
+		# Make sure that -Werror doesn't get added to CFLAGS by the build system.
+		# Depending on GCC version the warnings are different and we don't want
+		# the build to fail because of that.
+		'treat_warnings_as_errors=false'
+		'fatal_linker_warnings=false'
+
+		# Save space by removing DLOG and DCHECK messages (about 6% reduction).
+		# 'logging_like_official_build=true'
+		'disable_fieldtrial_testing_config=true'
+
+		'is_official_build=true'
+
+		# segfaults with llvm-12.0.1
+		'is_cfi=false'
+		'use_cfi_icall=false'
+
+		"use_thin_lto=$(vopt_if lto true false)"
+		'chrome_pgo_phase=0'
+	)
+
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		conf+=( 'is_musl=true' )
+	fi
+
+	if [ "$CROSS_BUILD" ]; then
+		conf+=(
+			'custom_toolchain="//build/toolchain/linux/unbundle:default"'
+			'host_toolchain="//build/toolchain/linux/unbundle:host"'
+			'v8_snapshot_toolchain="//build/toolchain/linux/unbundle:v8_snapshot_cross"'
+		)
+	else
+		conf+=(
+			'custom_toolchain="//build/toolchain/linux/unbundle:default"'
+			'host_toolchain="//build/toolchain/linux/unbundle:default"'
+		)
+	fi
+
+	conf+=(
+		"target_cpu=\"$target_arch\""
+		"host_cpu=\"$host_arch\""
+	)
+
+	_setup_toolchain
+	if false; then
+		out/Release/gn gen out/Release --args="${conf[*]}"
+	else
+		gn gen out/Release --args="${conf[*]}"
+	fi
+}
+
+do_build() {
+	# XXX: need for error: the option `Z` is only accepted on the nightly compiler
+	export RUSTC_BOOTSTRAP=1
+	export ELECTRON_OUT_DIR="${wrksrc}/${build_wrksrc}/out/${_buildtype}/"
+
+	_setup_toolchain
+	msg_normal "Ninja turtles GO!\n"
+	CCACHE_SLOPPINESS=include_file_mtime ninja ${makejobs} -C out/$_buildtype \
+		copy_node_headers version electron chromium_licenses
+}
+
+do_install() {
+	vmkdir /usr/lib/$pkgname
+	vmkdir /usr/include/$pkgname
+
+	for f in out/$_buildtype/*.bin out/$_buildtype/*.pak out/$_buildtype/icudtl.dat; do
+		vinstall $f 0644 usr/lib/$pkgname
+	done
+	vinstall out/$_buildtype/resources/default_app.asar 0644 usr/lib/$pkgname/resources
+
+
+	vcopy out/$_buildtype/locales usr/lib/$pkgname
+	rm -v ${DESTDIR}/usr/lib/$pkgname/locales/*.pak.info
+
+	vinstall out/$_buildtype/electron 0755 usr/lib/$pkgname
+	vinstall out/$_buildtype/chrome_crashpad_handler 0755 usr/lib/$pkgname
+	vinstall out/$_buildtype/libEGL.so 0755 usr/lib/$pkgname
+	vinstall out/$_buildtype/libGLESv2.so 0755 usr/lib/$pkgname
+	vinstall out/$_buildtype/libvulkan.so.1 0755 usr/lib/$pkgname
+	vinstall out/$_buildtype/libffmpeg.so 0755 usr/lib/$pkgname
+	vinstall out/$_buildtype/libvk_swiftshader.so 0755 usr/lib/$pkgname
+	vinstall out/$_buildtype/vk_swiftshader_icd.json 0644 usr/lib/$pkgname
+	vinstall out/$_buildtype/version 0644 usr/lib/$pkgname
+	vinstall out/$_buildtype/LICENSES.chromium.html 0644 usr/lib/$pkgname
+
+	vcopy out/$_buildtype/gen/node_headers usr/include/$pkgname
+	ln -sv /usr/include/$pkgname/node_headers/include/node ${DESTDIR}/usr/include/$pkgname/node
+
+	vlicense ${wrksrc}/src/LICENSE chromium.LICENSE
+	vlicense ${wrksrc}/src/electron/LICENSE electron.LICENSE
+	vlicense ${wrksrc}/src/third_party/electron_node/LICENSE node.LICENSE
+
+	vmkdir /usr/bin
+	ln -s ../lib/$pkgname/electron "$DESTDIR"/usr/bin/$pkgname
+}
+
+electron35-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+	}
+}
