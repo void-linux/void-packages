@@ -1,19 +1,58 @@
 # Template file for 'gifski'
 pkgname=gifski
-version=1.14.4
+version=1.34.0
 revision=1
 build_style=cargo
+configure_args="$(vopt_if ffmpeg --features=video)"
+hostmakedepends="pkg-config $(vopt_if ffmpeg clang19-devel)"
+makedepends="$(vopt_if ffmpeg ffmpeg6-devel)"
 short_desc="Highest-quality GIF encoder based on pngquant"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="AGPL-3.0-only"
 homepage="https://gif.ski"
 changelog="https://github.com/ImageOptim/gifski/releases"
 distfiles="https://github.com/ImageOptim/gifski/archive/refs/tags/${version}.tar.gz"
-checksum=7d6b1400833c31f6a24aac3a1b5d44c466e07f98af6d6c17487a7c8c6f4aa519
+checksum=c9711473615cb20d7754e8296621cdd95cc068cb04b640f391cd71f8787b692c
+make_check=ci-skip # cargo names for bin and lib conflict, errors out on ci
 
-pre_build() {
-	# https://github.com/ImageOptim/gifski/issues/300#issuecomment-1553003435
-	rm -rf .cargo
+build_options="ffmpeg"
+build_options_default="ffmpeg"
+
+case "$XBPS_TARGET_MACHINE" in
+	armv7l)
+		XBPS_CFLAGS+=" -D__ARM_PCS_VFP" ;; # rust-cc is confused about hard eabi
+	aarch64)
+		XBPS_CFLAGS+=" -D_MATH_H" ;; # see desmume pr 50600, disables math-vector from wrong typedefs, void aarch64 does not have vector math
+	i386)
+		make_check=no ;; # cargo names for bin and lib conflict, causes hard fail on i386
+	*) ;;
+esac
+
+do_build() {
+	export CFLAGS_${RUST_TARGET//-/_}="${CFLAGS} --verbose"
+	export HOST_CFLAGS="-fstack-clash-protection ${CFLAGS_host} --verbose"
+	export CFLAGS_${RUST_BUILD//-/_}="${HOST_CFLAGS} --verbose"
+	unset CFLAGS
+	cargo build --release --locked --target ${RUST_TARGET} ${configure_args} ${make_build_args}
+}
+
+do_check() {
+	export CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}"
+	export HOST_CFLAGS="-fstack-clash-protection ${CFLAGS_host}"
+	export CFLAGS_${RUST_BUILD//-/_}="${HOST_CFLAGS}"
+	unset CFLAGS
+	cargo test --release --locked --target ${RUST_TARGET} ${configure_args}
+}
+
+do_install() {
+	export CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}"
+	export HOST_CFLAGS="-fstack-clash-protection ${CFLAGS_host}"
+	export CFLAGS_${RUST_BUILD//-/_}="${HOST_CFLAGS}"
+	unset CFLAGS
+	cargo install --target ${RUST_TARGET} --root="${DESTDIR}/usr" --offline --locked ${configure_args} --path .
+
+	rm -f "${DESTDIR}"/usr/.crates.toml
+	rm -f "${DESTDIR}"/usr/.crates2.json
 }
 
 post_install() {
