@@ -44,7 +44,7 @@ hook() {
 	else
 		pkgdir=$XBPS_REPOSITORY/multilib
 	fi
-	PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}-32bit-${version}"
+	PKGDESTDIR="${XBPS_DESTDIR%/}/${pkgname}-32bit-${version}"
 	if [ -d ${PKGDESTDIR} -a -f ${pkgdir}/${binpkg32} ]; then
 		registerpkg ${pkgdir} ${binpkg32} x86_64
 	fi
