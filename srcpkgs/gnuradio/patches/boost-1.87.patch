@@ -1,0 +1,146 @@
+From 111a4ff8b868791dae74d8cdf8c1e0684840f51a Mon Sep 17 00:00:00 2001
+From: Landry Breuil <landry@openbsd.org>
+Date: Wed, 27 Nov 2024 14:16:08 +0100
+Subject: [PATCH] gr-network: fix build with boost 1.87
+
+- stop using asio..query
+- replace deprecated io_context.reset() by restart()
+- drop unneeded io_context.reset() calls
+- stop using asio::buffer_cast
+
+Signed-off-by: Landry Breuil <landry@openbsd.org>
+---
+ gr-network/lib/socket_pdu_impl.cc | 25 ++++++++++++++++++-------
+ gr-network/lib/tcp_sink_impl.cc   |  9 +++------
+ gr-network/lib/udp_sink_impl.cc   |  8 +++-----
+ gr-network/lib/udp_source_impl.cc |  3 +--
+ 4 files changed, 25 insertions(+), 20 deletions(-)
+
+diff --git a/gr-network/lib/socket_pdu_impl.cc b/gr-network/lib/socket_pdu_impl.cc
+index ef2ce6b4828..7cfef6812eb 100644
+--- a/gr-network/lib/socket_pdu_impl.cc
++++ b/gr-network/lib/socket_pdu_impl.cc
+@@ -54,9 +54,12 @@ socket_pdu_impl::socket_pdu_impl(std::string type,
+         d_tcp_endpoint = asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port_num);
+     } else if ((type == "TCP_SERVER") || (type == "TCP_CLIENT")) {
+         asio::ip::tcp::resolver resolver(d_io_context);
+-        asio::ip::tcp::resolver::query query(
+-            asio::ip::tcp::v4(), addr, port, asio::ip::resolver_query_base::passive);
+-        d_tcp_endpoint = *resolver.resolve(query);
++        d_tcp_endpoint = *(resolver
++                               .resolve(asio::ip::tcp::v4(),
++                                        addr,
++                                        port,
++                                        asio::ip::resolver_query_base::passive)
++                               .cbegin());
+     } else if ((type == "UDP_SERVER") &&
+                ((addr.empty()) || (addr == "0.0.0.0"))) { // Bind on all interfaces
+         int port_num = atoi(port.c_str());
+@@ -66,13 +69,21 @@ socket_pdu_impl::socket_pdu_impl(std::string type,
+         d_udp_endpoint = asio::ip::udp::endpoint(asio::ip::udp::v4(), port_num);
+     } else if ((type == "UDP_SERVER") || (type == "UDP_CLIENT")) {
+         asio::ip::udp::resolver resolver(d_io_context);
+-        asio::ip::udp::resolver::query query(
+-            asio::ip::udp::v4(), addr, port, asio::ip::resolver_query_base::passive);
+ 
+         if (type == "UDP_SERVER")
+-            d_udp_endpoint = *resolver.resolve(query);
++            d_udp_endpoint = *(resolver
++                                   .resolve(asio::ip::udp::v4(),
++                                            addr,
++                                            port,
++                                            asio::ip::resolver_query_base::passive)
++                                   .cbegin());
+         else
+-            d_udp_endpoint_other = *resolver.resolve(query);
++            d_udp_endpoint_other = *(resolver
++                                         .resolve(asio::ip::udp::v4(),
++                                                  addr,
++                                                  port,
++                                                  asio::ip::resolver_query_base::passive)
++                                         .cbegin());
+     }
+ 
+     if (type == "TCP_SERVER") {
+diff --git a/gr-network/lib/tcp_sink_impl.cc b/gr-network/lib/tcp_sink_impl.cc
+index bbbc053db20..b7120ad87e4 100644
+--- a/gr-network/lib/tcp_sink_impl.cc
++++ b/gr-network/lib/tcp_sink_impl.cc
+@@ -63,10 +63,8 @@ bool tcp_sink_impl::start()
+ 
+         std::string s_port = std::to_string(d_port);
+         asio::ip::tcp::resolver resolver(d_io_context);
+-        asio::ip::tcp::resolver::query query(
+-            d_host, s_port, asio::ip::resolver_query_base::passive);
+-
+-        d_endpoint = *resolver.resolve(query, err);
++        d_endpoint = *(
++            resolver.resolve(d_host, s_port, asio::ip::tcp::resolver::passive).cbegin());
+ 
+         if (err) {
+             throw std::runtime_error(
+@@ -159,7 +157,7 @@ void tcp_sink_impl::connect(bool initial_connection)
+             d_acceptor = new asio::ip::tcp::acceptor(
+                 d_io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), d_port));
+     } else {
+-        d_io_context.reset();
++        d_io_context.restart();
+     }
+ 
+     if (d_tcpsocket) {
+@@ -194,7 +192,6 @@ bool tcp_sink_impl::stop()
+         d_tcpsocket = NULL;
+     }
+ 
+-    d_io_context.reset();
+     d_io_context.stop();
+ 
+     if (d_acceptor) {
+diff --git a/gr-network/lib/udp_sink_impl.cc b/gr-network/lib/udp_sink_impl.cc
+index bbdb96f8bb5..3e2462a5e9b 100644
+--- a/gr-network/lib/udp_sink_impl.cc
++++ b/gr-network/lib/udp_sink_impl.cc
+@@ -125,11 +125,10 @@ bool udp_sink_impl::start()
+     std::string str_port = std::to_string(d_port);
+     std::string str_host = d_host.empty() ? std::string("localhost") : d_host;
+     asio::ip::udp::resolver resolver(d_io_context);
+-    asio::ip::udp::resolver::query query(
+-        str_host, str_port, asio::ip::resolver_query_base::passive);
+-
+     asio::error_code err;
+-    d_endpoint = *resolver.resolve(query, err);
++    d_endpoint =
++        *(resolver.resolve(str_host, str_port, asio::ip::tcp::resolver::passive, err)
++              .cbegin());
+ 
+     if (err) {
+         throw std::runtime_error(std::string("[UDP Sink] Unable to resolve host/IP: ") +
+@@ -177,7 +176,6 @@ bool udp_sink_impl::stop()
+         delete d_udpsocket;
+         d_udpsocket = nullptr;
+ 
+-        d_io_context.reset();
+         d_io_context.stop();
+     }
+ 
+diff --git a/gr-network/lib/udp_source_impl.cc b/gr-network/lib/udp_source_impl.cc
+index 37f38a9b72d..774f348b90c 100644
+--- a/gr-network/lib/udp_source_impl.cc
++++ b/gr-network/lib/udp_source_impl.cc
+@@ -163,7 +163,6 @@ bool udp_source_impl::stop()
+         delete d_udpsocket;
+         d_udpsocket = nullptr;
+ 
+-        d_io_context.reset();
+         d_io_context.stop();
+     }
+ 
+@@ -275,7 +274,7 @@ int udp_source_impl::work(int noutput_items,
+             // Get the data and add it to our local queue.  We have to maintain a
+             // local queue in case we read more bytes than noutput_items is asking
+             // for.  In that case we'll only return noutput_items bytes
+-            const char* read_data = asio::buffer_cast<const char*>(d_read_buffer.data());
++            const char* read_data = static_cast<const char*>(d_read_buffer.data().data());
+ 
+             // Discard bytes if the input is longer than the buffer
+             if (bytes_read > d_localqueue_writer->bufsize()) {
