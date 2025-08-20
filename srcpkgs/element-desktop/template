@@ -1,15 +1,16 @@
 # Template file for 'element-desktop'
 pkgname=element-desktop
-version=1.11.83
+version=1.11.106
 revision=1
+_electronver=35
 create_wrksrc=yes
-conf_files="/etc/${pkgname}/config.json"
+build_helper="rust"
+conf_files="/etc/element-desktop/config.json"
 hostmakedepends="git yarn nodejs rust cargo python3 curl
- sqlcipher-devel libnotify-devel pkg-config
- app-builder jq moreutils"
-makedepends="libsecret-devel"
-depends="c-ares ffmpeg gtk+3 http-parser libevent
- libxslt minizip nss re2 snappy sqlcipher electron24"
+ sqlcipher-devel libnotify-devel pkg-config electron-tasje"
+makedepends="libsecret-devel electron${_electronver}-devel"
+depends="c-ares http-parser libevent
+ libxslt minizip nss snappy sqlcipher electron${_electronver}"
 short_desc="Glossy Matrix collaboration client, desktop version"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="Apache-2.0"
@@ -17,23 +18,19 @@ homepage="https://element.io"
 changelog="https://raw.githubusercontent.com/vector-im/element-desktop/develop/CHANGELOG.md"
 distfiles="https://github.com/vector-im/element-desktop/archive/v${version}.tar.gz>element-desktop-v${version}.tar.gz
  https://github.com/vector-im/element-web/archive/v${version}.tar.gz>element-web-v${version}.tar.gz"
-checksum="be20c6cdf5b77bd9ee49bc202611a3e13deed31522e7cf956635ae13112008de
- 50cd755c8fb22163f089eeb89b2fc23a7c28d65522565a1e9b0a791aa8829952"
+checksum="c6598ff1736dc8cc0e48141420ce9a78c1354d773e477d3f803859460ac27f3f
+ 8c92be4ceac34c5e476eb7a3975920d7c65b03177e70ef1d4aa79108b9ec147e"
 
 export USE_SYSTEM_APP_BUILDER=true
 
 post_extract() {
-	mv ${pkgname}-${version} ${pkgname}
-	mv ${pkgname/desktop/web}-${version} ${pkgname/desktop/web}
+	mv "element-desktop-${version}" element-desktop
+	mv "element-web-${version}" element-web
 }
 
 post_patch() {
-	cd ${pkgname/desktop/web}
 	# Disable auto-updating
-	jq '.update_base_url = ""' element.io/app/config.json | sponge element.io/app/config.json
-
-	cd ../${pkgname}
-	jq '.build.linux.target = ["dir"]' package.json | sponge package.json
+	vsed -e 's|"https://packages.element.io/desktop/update/"|null|' -i element-desktop/element.io/release/config.json
 }
 
 pre_build() {
@@ -45,56 +42,89 @@ pre_build() {
 		i686*) carch=ia32 ;;
 	esac
 
-	cd ${pkgname/desktop/web}
+	cd element-web
+	yarn install --no-fund --ignore-scripts --frozen-lockfile
 
-	# Build dependencies for element-web
-	npm_config_arch=$carch yarn install
-
-	# Build dependencies and alterations for element-desktop
-	cd ../${pkgname}
-	npm_config_arch=$carch yarn add keytar
-	npm_config_arch=$carch yarn install
+	cd ../element-desktop
+	yarn install --no-fund --ignore-scripts --frozen-lockfile
 }
 
 do_build() {
-	cd ${pkgname/desktop/web}
-	yarn build
-	cd ../${pkgname}
-	if [ "$CROSS_BUILD" ]; then
-		yarn run build:native --target ${XBPS_CROSS_RUST_TARGET}
-	else
-		yarn run build:native
-	fi
-	# normally just "yarn run build" would be okay, but at least on ppc64
-	# we need to force x86_64 arch as electron-builder does not support
-	# ppc64 and fails on arch detection; ARM is supported so just use build
-	case "$XBPS_TARGET_MACHINE" in
-		x86_64*|ppc64*) yarn run build:64 ;;
-		i686*) yarn run build:32 ;;
-		*) yarn run build ;;
-	esac
+	cd element-web
+	NODE_ENV=production VERSION=${version} yarn build
+
+	cd ../element-desktop
+
+	yarn asar-webapp
+
+	# add "optional" native dependencies
+	# hak stands for hack
+	yarn run hak
+
+	yarn build:ts
+
+	yarn build:res
+
+	cat <<-EOF >tsconfig.electron-builder.json
+	{
+		"compilerOptions": {
+			"module": "node16",
+			"moduleResolution": "node16",
+			"esModuleInterop": true,
+			"resolveJsonModule": true,
+			"skipLibCheck": true,
+			"strict": true,
+			"target": "es2019",
+			"sourceMap": false,
+			"noImplicitAny": false,
+			"noEmitOnError": true,
+		},
+		"files": ["electron-builder.ts"]
+	}
+	EOF
+	yarn tsc -p tsconfig.electron-builder.json
+	ELECTRON_RUN_AS_NODE=1 IS_TASJE=1 node -e 'console.log(JSON.stringify(require("./electron-builder.js").default))' >electron-builder.json
+
+	yarn install --frozen-lockfile --ignore-scripts --production
+	npm rebuild keytar-forked --nodedir=/usr/include/electron35/node_headers --build-from-source
+
+	# stripping in build because it gets into asar
+	/usr/bin/$STRIP node_modules/keytar-forked/build/Release/keytar.node
+
+	tasje -c ./electron-builder.json pack
 }
 
 do_install() {
-	cd ${pkgname/desktop/web}
-	vmkdir usr/lib/element-desktop
-	vmkdir etc/element-desktop
-	case "$XBPS_TARGET_MACHINE" in
-		i686*) vcopy ../element-desktop/dist/linux-ia32-unpacked/resources /usr/lib/element-desktop/resources;;
-		*) vcopy ../element-desktop/dist/linux-unpacked/resources /usr/lib/element-desktop/resources
-	esac
-	vinstall config.sample.json 644 /etc/element-desktop/ config.json
-	vcopy webapp /usr/lib/element-desktop/resources
-	ln -s /etc/element-desktop/config.json $DESTDIR/usr/lib/element-desktop/resources/webapp/config.json
+	vmkdir usr/lib/element-desktop/resources
 
-	vbin ${FILESDIR}/element-desktop
-	ln -s element-desktop $DESTDIR/usr/bin/riot-desktop
-	vinstall ${FILESDIR}/element-desktop.desktop 644 /usr/share/applications/ element-desktop.desktop
+	cd element-web
+
+	vcopy webapp usr/lib/element-desktop/resources
+
 	vinstall webapp/themes/element/img/logos/element-logo.svg 644 /usr/share/icons/hicolor/scalable/apps/ element.svg
 
-	for i in 16 24 48 64 96 128 256 512; do
-		vinstall ../element-desktop/build/icons/${i}x${i}.png 644 /usr/share/icons/hicolor/${i}x${i}/apps/ element.png
-	done
+	vinstall config.sample.json 644 etc/element-desktop config.json
+	ln -s /etc/element-desktop/config.json $DESTDIR/usr/lib/element-desktop/resources/webapp/config.json
+
+	cd ../element-desktop
+	vinstall webapp.asar 644 usr/lib/element-desktop
+	vinstall dist/resources/app.asar 644 usr/lib/element-desktop/resources
+	vcopy dist/resources/app.asar.unpacked usr/lib/element-desktop/resources
+
+	vcopy dist/resources/img usr/lib/element-desktop/resources
+	vinstall dist/element-desktop.desktop 644 usr/share/applications
+	while read -r size; do
+		vinstall dist/icons/$size.png 644 "usr/share/icons/hicolor/$size/apps" element-desktop.png
+	done <dist/icons/size-list
+
+	cat <<-EOF > element-desktop
+	#!/bin/sh
+	exec electron${_electronver} /usr/lib/element-desktop/resources/app.asar "\$@"
+	EOF
+	vbin element-desktop
+	ln -s element-desktop "${DESTDIR}/usr/bin/riot-desktop"
+
+	find $DESTDIR
 }
 
 riot-desktop_package() {
