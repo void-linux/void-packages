@@ -60,7 +60,7 @@ HostBinaries=/usr/lib/qt6/bin
 HostLibraries=/usr/lib
 HostLibraryExecutables=/usr/lib/qt6/libexec
 Spec=linux-g++
-TargetSpec=$XBPS_WRAPPERDIR/target-spec/linux-g++
+TargetSpec=$XBPS_WRAPPERDIR/qt6/target-spec/linux-g++
 _EOF
 
 	# create the qmake-wrapper here because it only
