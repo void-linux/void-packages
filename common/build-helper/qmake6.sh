@@ -5,8 +5,8 @@
 # respectively.
 
 if [ "$CROSS_BUILD" ]; then
-	mkdir -p "${XBPS_WRAPPERDIR}/target-spec/linux-g++"
-	cat > "${XBPS_WRAPPERDIR}/target-spec/linux-g++/qmake.conf" <<_EOF
+	mkdir -p "${XBPS_WRAPPERDIR}/qt6/target-spec/linux-g++"
+	cat > "${XBPS_WRAPPERDIR}/qt6/target-spec/linux-g++/qmake.conf" <<_EOF
 MAKEFILE_GENERATOR      = UNIX
 CONFIG                 += incremental no_qt_rpath
 QMAKE_INCREMENTAL_STYLE = sublib
@@ -34,9 +34,9 @@ QMAKE_CXXFLAGS          = ${CXXFLAGS}
 QMAKE_LFLAGS            = ${LDFLAGS}
 load(qt_config)
 _EOF
-	echo "#include \"${XBPS_CROSS_BASE}/usr/lib/qt6/mkspecs/linux-g++/qplatformdefs.h\"" > "${XBPS_WRAPPERDIR}/target-spec/linux-g++/qplatformdefs.h"
+	echo "#include \"${XBPS_CROSS_BASE}/usr/lib/qt6/mkspecs/linux-g++/qplatformdefs.h\"" > "${XBPS_WRAPPERDIR}/qt6/target-spec/linux-g++/qplatformdefs.h"
 
-	cat > "${XBPS_WRAPPERDIR}/qt.conf" <<_EOF
+	cat > "${XBPS_WRAPPERDIR}/qt6.conf" <<_EOF
 [Paths]
 Sysroot=${XBPS_CROSS_BASE}
 Prefix=${XBPS_CROSS_BASE}/usr
@@ -60,7 +60,7 @@ HostBinaries=/usr/lib/qt6/bin
 HostLibraries=/usr/lib
 HostLibraryExecutables=/usr/lib/qt6/libexec
 Spec=linux-g++
-TargetSpec=$XBPS_WRAPPERDIR/target-spec/linux-g++
+TargetSpec=$XBPS_WRAPPERDIR/qt6/target-spec/linux-g++
 _EOF
 
 	# create the qmake-wrapper here because it only
@@ -69,15 +69,15 @@ _EOF
 	#
 	#   + base flags will be picked up from QMAKE_{C,CXX,LD}FLAGS
 	#   + hardening flags will be picked up from environment variables
-        cat > "${XBPS_WRAPPERDIR}/qmake" <<_EOF
+        cat > "${XBPS_WRAPPERDIR}/qmake6" <<_EOF
 #!/bin/sh
-exec /usr/lib/qt6/bin/qmake "\$@" -qtconf "${XBPS_WRAPPERDIR}/qt.conf" \\
+exec /usr/lib/qt6/bin/qmake "\$@" -qtconf "${XBPS_WRAPPERDIR}/qt6.conf" \\
 	QMAKE_CFLAGS+="\${CFLAGS}" \\
 	QMAKE_CXXFLAGS+="\${CXXFLAGS}" \\
 	QMAKE_LFLAGS+="\${LDFLAGS}"
 _EOF
 else
-        cat > "${XBPS_WRAPPERDIR}/qmake" <<_EOF
+        cat > "${XBPS_WRAPPERDIR}/qmake6" <<_EOF
 #!/bin/sh
 exec /usr/lib/qt6/bin/qmake \
 	"\$@" \
@@ -92,6 +92,8 @@ exec /usr/lib/qt6/bin/qmake \
 	CONFIG+=no_qt_rpath
 _EOF
 fi
-chmod 755 ${XBPS_WRAPPERDIR}/qmake
-cp -p ${XBPS_WRAPPERDIR}/qmake{,-qt6}
-cp -p ${XBPS_WRAPPERDIR}/qmake{,6}
+chmod 755 ${XBPS_WRAPPERDIR}/qmake6
+cp -p ${XBPS_WRAPPERDIR}/qmake{6,-qt6}
+if [ -z "$qmake_default_version" ] || [ "${qmake_default_version}" = "6" ]; then
+	cp -p ${XBPS_WRAPPERDIR}/qmake{6,}
+fi

@@ -71,6 +71,8 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	g-ir-generate = '${XBPS_CROSS_BASE}/usr/bin/g-ir-generate'
 	llvm-config = 'llvm-config-qemu'
 	cups-config = '${XBPS_CROSS_BASE}/usr/bin/cups-config'
+	qmake6 = 'qmake6'
+	qmake5 = 'qmake5'
 
 	[properties]
 	needs_exe_wrapper = true
