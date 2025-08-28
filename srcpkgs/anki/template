@@ -1,21 +1,130 @@
 # Template file for 'anki'
 pkgname=anki
-version=2.1.15
-revision=7
-build_style=gnu-makefile
-depends="python3-PyQt5-webengine python3-requests python3-SQLAlchemy
- python3-PyAudio python3-mpv python3-Markdown python3-send2trash
- python3-BeautifulSoup4 python3-decorator python3-jsonschema"
+version=25.07.5
+revision=1
+_anki_commit="7172b2d26684c7ef9d10e249bd43dc5bf73ae00c"
+_i18n_git="8f5566ca5d3597b2b6fe3e2f278fa6009262a39a"
+_ftl_git="bc2da83c77749d96f3df8144f00c87d68dd2187a"
+build_helper="rust qemu"
+hostmakedepends="cargo hatchling pkgconf protobuf  python3-pyqt6-devel-tools
+ python3-wheel ninja nodejs rsync unzip uv yarn"
+makedepends="libzstd-devel rust-std sqlite-devel"
+depends="lame mpv sqlite python3 python3-PyAudio python3-BeautifulSoup4 python3-waitress python3-requests
+ python3-decorator python3-markdown2 python3-orjson python3-protobuf python3-pysocks python3-distro
+ python3-Flask-Cors python3-jsonschema python3-send2trash python3-certifi python3-pyqt6 python3-pyqt6-declarative
+ python3-pyqt6-gui python3-pyqt6-network python3-pyqt6-printsupport python3-pyqt6-webengine qt6-svg qt6-multimedia"
 short_desc="Spaced repetition flashcard program"
-maintainer="Orphaned <orphan@voidlinux.org>"
+maintainer="Komeil Parseh <komeilparseh@disroot.org>"
 license="AGPL-3.0-or-later"
 homepage="https://apps.ankiweb.net"
-changelog="https://apps.ankiweb.net/docs/changes.html"
-distfiles="https://apps.ankiweb.net/downloads/archive/anki-$version-source.tgz"
-checksum=5a53760164c77d619f55107a13099cffe620566a7f610b61b6c4b52487f3bb89
+distfiles="https://github.com/ankitects/anki/archive/refs/tags/${version}.tar.gz>anki-${version}.tar.gz
+ https://github.com/ankitects/anki-core-i18n/archive/${_i18n_git}.tar.gz>anki-core-i18n-${_i18n_git}.tar.gz
+ https://github.com/ankitects/anki-desktop-ftl/archive/${_ftl_git}.tar.gz>anki-desktop-ftl-${_ftl_git}.tar.gz"
+checksum="ad9c0f53c2388680cde23b131d9c2abbf0f5338024ae35d8f34592fdcdf63179
+ aaf0663dc4d6aec37a5e872d89ea57c6d85a9a058964c697f8323c9b22523a6b
+ e81f423f3fbe28bd526d47f7e1b386da26f3f6e00194c3085696180e48915cce"
 
-python_version=3
+if [ "$XBPS_TARGET_WORDSIZE" = "32" ]; then
+	broken="Anki only supports 64-bit platforms due to Rust runner"
+fi
 
-post_install() {
+pre_patch() {
+	cp -a anki-"${version}"/. .
+	rm -rf anki-"${version}"
+
+	# place translations in build dir
+	cp -a anki-core-i18n-"${_i18n_git}"/. ftl/core-repo
+	cp -a anki-desktop-ftl-"${_ftl_git}"/. ftl/qt-repo
+}
+
+do_configure() {
+	# Remove any corepack references to build with normal system yarn
+	rm -f yarn.lock
+	vsed -i 's/"type": "module",/"type": "module"/' package.json
+	vsed -i '/packageManager/d' package.json
+	vsed -i 's/"corepack enable yarn"/"true"/' ./build/ninja_gen/src/node.rs
+}
+
+pre_build() {
+	# runner wants .git/HEAD to be present.
+	mkdir -p .git ftl/{core-repo,qt-repo}.git out
+	touch .git/HEAD ftl/{core-repo,qt-repo}.git/HEAD
+	echo "${_anki_commit}" > ./out/buildhash
+
+	# Fetch node_modules
+	export YARN_CACHE_FOLDER="$srcdir/$_caches_yarn"
+	yarn install --modules-folder out/node_modules --ignore-scripts
+	ln -sf ./out/node_modules ./
+
+	# use locally-installed versions
+	export NODE_BINARY=$(command -v node)
+	export PROTOC_BINARY=$(command -v protoc)
+	export PYTHON_BINARY=$(command -v python3)
+	export UV_BINARY=$(command -v uv)
+	export YARN_BINARY=$(command -v yarn)
+
+	export CARGO_TARGET_DIR=./out/rust
+
+	# anki internal var for optimization
+	export RELEASE=2  # 1 faster but less optimization build
+
+	export OFFLINE_BUILD=1
+	export UV_NO_BUILD_ISOLATION=1
+	export UV_OFFLINE=1
+
+	# mask pip-sync as we provide dependencies ourselves
+	local venv="./out/pyenv"
+	python3 -m venv --system-site-packages --without-pip "$venv"
+	printf '#!/bin/bash\nexit 0' > "$venv/bin/pip-sync"
+	chmod +x "$venv/bin/pip-sync"
+
+	if [ ! $CROSS_BUILD ]; then
+		RUST_TARGET=$(rustc -vV | sed -n 's|host: ||p')
+	fi
+}
+
+do_build() {
+	cargo build --release --bin runner --target ${RUST_TARGET} --verbose --verbose
+	vtargetrun out/rust/${RUST_TARGET}/release/runner build wheels
+}
+
+pre_install() {
+	mkdir -p ./out/dist
+
+	cd ./out/wheels
+	unzip -d ../dist anki*.whl
+	unzip -d ../dist aqt*.whl
+
+	# Update the timestamps otherwise the set dates of the wheels
+	find ../dist -type f -exec touch {} +
+}
+
+do_install() {
+	vmkdir usr/share/anki/_aqt
+	vmkdir usr/share/anki/anki
+	vmkdir usr/share/anki/aqt
+	vmkdir usr/share/pixmaps
+	vmkdir usr/share/applications
+	vmkdir usr/share/man/man1
+	vmkdir usr/bin
+	vmkdir usr/lib/anki
+
+	vcopy ./out/dist/aqt/* "usr/share/anki/aqt/"
+	vcopy ./out/dist/_aqt/* "usr/share/anki/_aqt/"
+	vcopy ./out/dist/anki/* "usr/share/anki/anki/"
+
+	vinstall qt/launcher/lin/anki.xpm 644 usr/share/pixmaps/
+	vinstall qt/launcher/lin/anki.png 644 usr/share/pixmaps/
+	vinstall qt/launcher/lin/anki.desktop 644 usr/share/applications/
+
+	vbin qt/tools/runanki.system.in anki
+	vman qt/launcher/lin/anki.1
+
+	mv "${DESTDIR}/usr/share/anki/anki/_rsbridge.so" "${DESTDIR}/usr/lib/anki/"
+
+	# Create a symlink from the old location to the new one so Anki doesn't break
+	ln -s /usr/lib/anki/_rsbridge.so "${DESTDIR}/usr/share/anki/anki/_rsbridge.so"
+
+	vsed -i "s|@PREFIX@|/usr|" "${DESTDIR}/usr/bin/anki"
 	vlicense LICENSE
 }
