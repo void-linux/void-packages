@@ -1,9 +1,7 @@
-# Template file for 'icu'
-# NOTE: Please convert this package to support progressive updates with the
-#       next soname bump.
-pkgname=icu
+# Template file for 'libicu73'
+pkgname=libicu73
 version=73.2
-revision=2
+revision=3
 build_wrksrc=source
 build_style=gnu-configure
 # use archive data instead of .so data for correct cross-compiling
@@ -16,6 +14,8 @@ license="ICU"
 homepage="https://home.unicode.org/"
 distfiles="https://github.com/unicode-org/icu/releases/download/release-${version//./-}/icu4c-${version//./_}-src.tgz"
 checksum=818a80712ed3caacd9b652305e01afc7fa167e6f2e94996da44b90c2ab604ce1
+replaces="icu-libs>=0"
+provides="icu-libs-${version}_${revision}"
 
 CFLAGS="-fPIC  -D_LARGE_FILE_SOURCE=1 -D_FILE_OFFSET_BITS=64"
 CXXFLAGS="-fPIC  -D_LARGE_FILE_SOURCE=1 -D_FILE_OFFSET_BITS=64"
@@ -26,17 +26,11 @@ CXXFLAGS="-fPIC  -D_LARGE_FILE_SOURCE=1 -D_FILE_OFFSET_BITS=64"
 _icu_dat="icudt${version%.*}"
 _icu_data="source/data/in"
 
+if [ $XBPS_TARGET_LIBC = musl ]; then
+	configure_args+=" ac_cv_func_strtod_l=no"
+fi
+
 pre_configure() {
-
-	# strtod_l() is not supported by musl; also xlocale.h is missing
-	# It is not possible to disable its use via configure switches or env vars
-	# so monkey patching is needed. Idea was stollen from openembedded
-	# https://github.com/openembedded/openembedded-core/blob/master/meta/recipes-support/icu/icu.inc#L30
-	# http://git.alpinelinux.org/cgit/aports/tree/main/icu/APKBUILD?id=46736e7b8040becc9f69ad6d2c2d317a52d5485b#n34
-	case "${XBPS_TARGET_MACHINE}" in
-	*-musl) sed -i -e 's,DU_HAVE_STRTOD_L=1,DU_HAVE_STRTOD_L=0,' configure ;;
-	esac
-
 	if [ "$CROSS_BUILD" ]; then
 		# Configure and build for host.
 		mkdir host-build
@@ -67,17 +61,28 @@ pre_configure() {
 	mkdir -p ${wrksrc}/source/data/out/tmp
 }
 
+_rm_tools() {
+	# Remove files of icu-tools
+	for _file in ${DESTDIR}/usr/bin/* \
+		${DESTDIR}/usr/share/man/man1/*; do
+		case "${_file}" in
+		*icu-config*) ;;
+		*) rm -f ${_file} ;;
+		esac
+	done
+	rm -rf ${DESTDIR}/usr/share/man/man8
+}
+
 post_install() {
 	vlicense $wrksrc/LICENSE
-
-	# handled separately
-	rm -f ${DESTDIR}/usr/share/icu/${version}/${_icu_dat}${XBPS_TARGET_ENDIAN%e}.dat
+	_rm_tools
 
 	# for little endian just use the file that's there
 	if [ "$XBPS_TARGET_ENDIAN" != "be" ]; then
 		return
 	fi
 
+	rm -f ${DESTDIR}/usr/share/icu/${version}/${_icu_dat}l.dat
 	# for big endian, we need to convert the file that's there with icupkg
 	local _icupkg_path="${DESTDIR}/usr"
 	if [ "$CROSS_BUILD" ]; then
@@ -89,31 +94,30 @@ post_install() {
 	LD_LIBRARY_PATH="${_icupkg_path}/lib" ${_icupkg_path}/bin/icupkg -tb \
 	 ${wrksrc}/${_icu_data}/${_icu_dat}l.dat \
 	 ${wrksrc}/${_icu_data}/${_icu_dat}b.dat
+	vinstall ${wrksrc}/${_icu_data}/${_icu_dat}b.dat \
+		0644 usr/share/icu/${version}/
 }
 
-icu-devel_package() {
-	depends="icu-libs>=${version}_${revision}"
+libicu73-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	replaces="icu-devel>=0"
+	provides="icu-devel-${version}_${revision}"
 	short_desc+=" - development files"
 	pkg_install() {
 		vmove usr/include
 		vmove usr/lib/icu
 		vmove "usr/lib/*.a"
 		vmove usr/lib/pkgconfig
-		vmove usr/share/icu
+		vmove usr/share/icu/${version}/config
+		vmove "usr/share/icu/${version}/*install*"
 		vmove usr/bin/icu-config
 		vmove "usr/share/man/man1/icu-config*"
 		vmove "usr/lib/*.so"
 	}
 }
-icu-libs_package() {
-	short_desc+=" - shared libs"
-	pkg_install() {
-		vmove "usr/lib/*.so.*"
 
-		# install data manually
-		vmkdir "usr/share/icu/${version}"
-		install -Dm644 \
-			${wrksrc}/${_icu_data}/${_icu_dat}${XBPS_TARGET_ENDIAN%e}.dat \
-			${PKGDESTDIR}/usr/share/icu/${version}
-	}
+icu-libs_package() {
+	short_desc+=" - transitional package"
+	depends="${sourcepkg}>=${version}_${revision}"
+	metapackage=yes
 }
