@@ -1,6 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 #
 # changed_templates.sh
+
+set -e
 
 tip="$(git rev-list -1 --parents HEAD)"
 case "$tip" in
@@ -24,5 +26,6 @@ git diff-tree -r --no-renames --name-only --diff-filter=AM \
 	"$base" "$tip" \
 	-- 'srcpkgs/*/template' |
 	cut -d/ -f 2 |
+	xargs ./xbps-src sort-dependencies |
 	tee /tmp/templates |
 	sed "s/^/  /" >&2

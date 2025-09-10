@@ -1,0 +1,1 @@
+qcoro-qt6

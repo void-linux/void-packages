@@ -1,0 +1,1 @@
+kf6-qqc2-desktop-style

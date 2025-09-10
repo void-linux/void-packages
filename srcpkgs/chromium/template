@@ -1,23 +1,26 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See https://chromiumdash.appspot.com/releases?platform=Linux for the latest version
-version=118.0.5993.70
+version=140.0.7339.80
 revision=1
 archs="i686* x86_64* aarch64* armv7l*"
+_llvmver=19
 hostmakedepends="
- $(vopt_if clang "clang lld llvm15")
+ $(vopt_if clang "clang${_llvmver} lld${_llvmver} llvm${_llvmver} compiler-rt${_llvmver}")
  bison git gperf hwids ninja nodejs perl pkg-config python3
- libepoxy-devel libevent-devel libglib-devel"
+ libepoxy-devel libglib-devel rust rust-bindgen
+ gn"
 makedepends="
- alsa-lib-devel libdav1d-devel brotli-devel cups-devel elfutils-devel ffmpeg-devel
- fontconfig-devel freetype-devel gtk+3-devel jsoncpp-devel libXScrnSaver-devel
+ alsa-lib-devel libdav1d-devel brotli-devel cups-devel elfutils-devel
+ fontconfig-devel freetype-devel gtk+3-devel libXScrnSaver-devel
  libXcomposite-devel libXcursor-devel libXdamage-devel libXi-devel libXrandr-devel
- libavif-devel libcap-devel libcurl-devel libdrm-devel libevent-devel
+ libavif-devel libcap-devel libcurl-devel libdrm-devel
  libexif-devel libflac-devel libgcrypt-devel libjpeg-turbo-devel libmtp-devel
  libpng-devel libva-devel libwebp-devel libxml2-devel libxshmfence-devel
- libxslt-devel woff2-devel minizip-devel mit-krb5-devel nss-devel opus-devel
+ libxslt-devel minizip-devel mit-krb5-devel nss-devel opus-devel
  pciutils-devel snappy-devel speech-dispatcher-devel speex-devel
  xcb-proto zlib-devel libaom-devel libffi-devel libevdev-devel
+ compiler-rt${_llvmver} rust-std
  $(vopt_if pipewire pipewire-devel)
  $(vopt_if pulseaudio pulseaudio-devel)
  $(vopt_if sndio sndio-devel)"
@@ -26,16 +29,22 @@ short_desc="Google's attempt at creating a safer, faster, and more stable browse
 maintainer="Duncaen <duncaen@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
-distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=49ee00a734de3dae7c421eb3c974e8d451b4de6f5b4e34b603fd6435eab6993d
+# distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/chromium-${version}.tar.xz"
+# distfiles="https://chromium-tarballs.distfiles.gentoo.org/chromium-${version}.tar.xz"
+# distfiles="https://chromium.googlesource.com/chromium/src.git/+archive/refs/tags/${version}.tar.gz"
+distfiles="https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/${version}/chromium-${version}-linux.tar.xz"
+checksum=76e2b9ff34c67c2049c678b0b693942ff4e79ad7fbbe96fba434e37e39878050
 
 lib32disabled=yes
 
-build_options="clang debug vaapi pulseaudio sndio pipewire"
-build_options_default="clang vaapi pulseaudio pipewire"
+build_options="clang libcxx debug vaapi pulseaudio sndio pipewire lto drumbrake"
+build_options_default="clang libcxx vaapi pulseaudio pipewire"
 desc_option_clang="Use clang to build"
+desc_option_libcxx="Use bundled libc++"
 desc_option_debug="Build with debug symbols"
+desc_option_lto="Enable Link Time Optimization"
 desc_option_pipewire="Enable support for screen sharing for WebRTC via PipeWire"
+desc_option_drumbrake="WebAssembly Interpreter"
 
 if [ "$XBPS_LIBC" = musl ]; then
 	hostmakedepends+=" musl-legacy-compat"
@@ -49,10 +58,11 @@ if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" libX11-devel libxcb-devel pciutils-devel libXext-devel libglvnd-devel
 	 libjpeg-turbo-devel libXi-devel nss-devel libpng-devel libwebp-devel
 	 libxml2-devel $(vopt_if pulseaudio pulseaudio-devel) libxslt-devel libxkbcommon-devel
-	 $(vopt_if pipewire pipewire-devel) ffmpeg-devel opus-devel pango-devel libva-devel
+	 $(vopt_if pipewire pipewire-devel) opus-devel pango-devel libva-devel
 	 libcurl-devel snappy-devel libXrandr-devel libXcomposite-devel cups-devel
 	 mit-krb5-devel alsa-lib-devel libXdamage-devel libepoxy-devel libevdev-devel
-	 libavif-devel libaom-devel jsoncpp-devel woff2-devel libdav1d-devel libflac-devel"
+	 libavif-devel libaom-devel libdav1d-devel libflac-devel
+	 libdrm-devel libgbm-devel"
 fi
 
 if [ ! "$XBPS_WORDSIZE" = "$XBPS_TARGET_WORDSIZE" ]; then
@@ -81,11 +91,13 @@ post_patch() {
 	# allow system dependencies in "official builds"
 	vsed -i 's/OFFICIAL_BUILD/GOOGLE_CHROME_BUILD/' \
 		tools/generate_shim_headers/generate_shim_headers.py
+
+	mkdir -p third_party/node/linux/node-linux-x64/bin
+	rm -f third_party/node/linux/node-linux-x64/bin/node
+	ln -s /usr/bin/node third_party/node/linux/node-linux-x64/bin/
 }
 
 _setup_clang() {
-	local gcc_version=$(gcc -dumpversion)
-	local clang_version=$(clang -dumpversion)
 	export CC=clang
 	export CXX=clang++
 	export AR=llvm-ar
@@ -99,22 +111,27 @@ _setup_clang() {
 	export BUILD_NM=llvm-nm
 	export BUILD_CFLAGS="-Wno-unknown-warning-option"
 	export BUILD_CXXFLAGS="-Wno-unknown-warning-option"
-	if [ "$CROSS_BUILD" ]; then
-		CFLAGS+=" --gcc-toolchain=/usr"
+	if [[ -n "$CROSS_BUILD" ]]; then
 		CFLAGS+=" --sysroot=${XBPS_CROSS_BASE}"
-		CFLAGS+=" -nostdinc"
-		CFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
-		CFLAGS+=" -isystem /usr/lib/clang/${clang_version}/include"
-		CXXFLAGS+=" --gcc-toolchain=/usr"
 		CXXFLAGS+=" --sysroot=${XBPS_CROSS_BASE}"
-		CXXFLAGS+=" -nostdinc++"
-		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}"
-		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}"
-		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward"
-		CXXFLAGS+=" -nostdinc"
-		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
-		CXXFLAGS+=" -isystem /usr/lib/clang/${clang_version}/include"
-		LDFLAGS+=" --gcc-toolchain=/usr --sysroot=${XBPS_CROSS_BASE}"
+		LDFLAGS+=" --sysroot=${XBPS_CROSS_BASE}"
+		if [[ -z "$build_option_libcxx" ]]; then
+			local gcc_version=$(gcc -dumpversion)
+			local clang_version=$(clang -dumpversion)
+			CFLAGS+=" --gcc-toolchain=/usr"
+			CFLAGS+=" -nostdinc"
+			CFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
+			CFLAGS+=" -isystem /usr/lib/clang/${clang_version}/include"
+			CXXFLAGS+=" --gcc-toolchain=/usr"
+			CXXFLAGS+=" -nostdinc++"
+			CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}"
+			CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}"
+			CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward"
+			CXXFLAGS+=" -nostdinc"
+			CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
+			CXXFLAGS+=" -isystem /usr/lib/clang/${clang_version}/include"
+			LDFLAGS+=" --gcc-toolchain=/usr"
+		fi
 	fi
 }
 
@@ -125,12 +142,14 @@ _setup_toolchain() {
 }
 
 do_configure() {
-	local system="" conf=()
+	local system=() conf=()
 
-	# compile gn early, so it can be used to generate gni stuff
-	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
-		CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
-		tools/gn/bootstrap/bootstrap.py ${makejobs} --skip-generate-buildfiles
+	if false; then
+		# compile gn early, so it can be used to generate gni stuff
+		AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
+			CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
+			tools/gn/bootstrap/bootstrap.py ${makejobs} --skip-generate-buildfiles
+	fi
 
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
@@ -143,26 +162,27 @@ do_configure() {
 	# use_system_v8=1
 	# bzip2 xdg_utils speex
 	# XXX: harfbuzz-ng use builtin one until system-wide is updated >=3.0.0
-	system="
-		ffmpeg
+	# libcxx https://github.com/llvm/llvm-project/issues/61705:
+	# snappy
+	# ffmpeg: system ffmpeg is too old and makes the ffmpeg update not require
+	#  rebuilding chromium
+	system=(
 		flac
 		fontconfig
 		freetype
 		libdrm
-		libevent
 		libjpeg
 		libpng
 		libwebp
 		libxml
 		libxslt
 		opus
-		snappy
-	"
+	)
 
 	# remove build scripts for system provided dependencies - basically does the
 	# same as the bundeled script to remove bundeled libs, but this way we don't
 	# have to list the remaining libs
-	for LIB in ${system} libjpeg_turbo; do
+	for LIB in "${system[@]}" libjpeg_turbo; do
 		find "third_party/$LIB" -type f \
 			\! -path "third_party/$LIB/chromium/*" \
 			\! -path "third_party/$LIB/google/*" \
@@ -173,14 +193,12 @@ do_configure() {
 	done
 
 	# switch to system provided dependencies
-	build/linux/unbundle/replace_gn_files.py --system-libraries ${system}
+	build/linux/unbundle/replace_gn_files.py --system-libraries "${system[@]}"
 
 	third_party/libaddressinput/chromium/tools/update-strings.py
 
+	local clang_version="$(clang -dumpversion)"
 	conf=(
-		'enable_nacl=false'
-		'enable_rust=false'
-
 		'use_sysroot=false'
 
 		'host_pkg_config="/usr/bin/pkg-config"'
@@ -189,12 +207,18 @@ do_configure() {
 		"use_lld=$(vopt_if clang true false)"
 		'clang_use_chrome_plugins=false'
 		'clang_base_path="/usr"'
+		"clang_cross_path=\"${XBPS_CROSS_BASE}\""
+		"clang_version=\"${clang_version%%.*}\""
 
-		"gold_path=\"${XBPS_CROSS_BASE}/usr/bin/ld.gold\""
-		'use_custom_libcxx=false'
-		'use_gold=false'
+		"use_custom_libcxx=$(vopt_if libcxx true false)" # https://github.com/llvm/llvm-project/issues/61705
 
+		'enable_rust=true'
 		'rust_sysroot_absolute="/usr"'
+		"rust_cross_sysroot_absolute=\"${XBPS_CROSS_BASE}\""
+		'rust_bindgen_root="/usr"'
+		"rustc_version=\"$(rustc --version)\""
+
+		'node_version_check=false'
 
 		# is_debug makes the build a debug build, changes some things.
 		# might be useful for real debugging vs just debug symbols.
@@ -210,7 +234,8 @@ do_configure() {
 		'use_system_harfbuzz=false'
 		'use_system_libffi=true'
 
-		'use_qt=false'
+		'use_qt5=false'
+		'use_qt6=false'
 
 		'use_cups=true'
 
@@ -222,6 +247,8 @@ do_configure() {
 		"rtc_use_pipewire=$(vopt_if pipewire true false)"
 
 		"use_sndio=$(vopt_if sndio true false)"
+
+		"v8_enable_drumbrake=$(vopt_if drumbrake true false)"
 
 		# Always support proprietary codecs.
 		# Enable H.264 support in bundled ffmpeg.
@@ -242,8 +269,9 @@ do_configure() {
 
 		# segfaults with llvm-12.0.1
 		'is_cfi=false'
-		'use_thin_lto=false'
 		'use_cfi_icall=false'
+
+		"use_thin_lto=$(vopt_if lto true false)"
 		'chrome_pgo_phase=0'
 	)
 
@@ -280,10 +308,17 @@ do_configure() {
 		esac
 	fi
 	_setup_toolchain
-	out/Release/gn gen out/Release --args="${conf[*]}"
+	if false; then
+		out/Release/gn gen out/Release --args="${conf[*]}"
+	else
+		gn gen out/Release --args="${conf[*]}"
+	fi
 }
 
 do_build() {
+	# XXX: need for error: the option `Z` is only accepted on the nightly compiler
+	export RUSTC_BOOTSTRAP=1
+
 	_setup_toolchain
 	CCACHE_SLOPPINESS=include_file_mtime ninja -C out/Release ${makejobs} chrome chromedriver.unstripped chrome_crashpad_handler
 }
@@ -303,7 +338,6 @@ do_install() {
 	vmkdir usr/lib/chromium/locales
 	vcopy "out/Release/locales/*.pak" usr/lib/chromium/locales
 
-	vinstall ${FILESDIR}/chromium.desktop 644 usr/share/applications
 
 	vinstall out/Release/icudtl.dat 0644 usr/lib/chromium
 
@@ -321,4 +355,14 @@ do_install() {
 	vbin ${FILESDIR}/chromium.sh chromium
 	vlicense LICENSE
 	ln -sf /usr/lib/chromium/chromedriver ${DESTDIR}/usr/bin/chromedriver
+
+	vinstall chrome/installer/linux/common/desktop.template 644 usr/share/applications chromium.desktop
+	vman chrome/app/resources/manpage.1.in chromium.1
+
+	sed -i \
+		-e 's/@@MENUNAME@@/Chromium/g' \
+		-e 's/@@PACKAGE@@/chromium/g' \
+		-e 's/@@USR_BIN_SYMLINK_NAME@@/chromium/g' \
+		${DESTDIR}/usr/share/man/man1/chromium.1 \
+		${DESTDIR}/usr/share/applications/chromium.desktop
 }

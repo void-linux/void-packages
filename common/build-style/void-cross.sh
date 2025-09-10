@@ -264,9 +264,10 @@ _void_cross_build_glibc() {
 
 	CC="${tgt}-gcc" CXX="${tgt}-g++" CPP="${tgt}-cpp" LD="${tgt}-ld" \
 	AR="${tgt}-ar" AS="${tgt}-as" NM="${tgt}-nm" \
+	OBJDUMP="${tgt}-objdump" OBJCOPY="${tgt}-objcopy" \
 	CFLAGS="-pipe ${cross_glibc_cflags}" \
 	CXXFLAGS="-pipe ${cross_glibc_cflags}" \
-	CPPFLAGS="${cross_glibc_cflags}" \
+	CPPFLAGS="" \
 	LDFLAGS="${cross_glibc_ldflags}" \
 	../glibc-${ver}/configure \
 		--prefix=/usr \
@@ -294,9 +295,14 @@ _void_cross_build_musl() {
 
 	msg_normal "Patching musl for ${tgt}\n"
 
+	case "${ver}" in
+		1.1.*) _musl_pkgname="musl1.1" ;;
+		*) _musl_pkgname="musl" ;;
+	esac
+
 	cd ${wrksrc}/musl-${ver}
-	if [ -d "${XBPS_SRCPKGDIR}/musl/patches" ]; then
-		for f in ${XBPS_SRCPKGDIR}/musl/patches/*.patch; do
+	if [ -d "${XBPS_SRCPKGDIR}/${_musl_pkgname}/patches" ]; then
+		for f in ${XBPS_SRCPKGDIR}/${_musl_pkgname}/patches/*.patch; do
 			_void_cross_apply_patch "$f"
 		done
 	fi
@@ -322,7 +328,7 @@ _void_cross_build_musl() {
 	CFLAGS="-pipe -fPIC ${cross_musl_cflags}" \
 	CPPFLAGS="${cross_musl_cflags}" LDFLAGS="${cross_musl_ldflags}" \
 	${tgt}-gcc -pipe -fPIC ${cross_musl_cflags} ${cross_musl_ldflags} -fpie \
-		-c ${XBPS_SRCPKGDIR}/musl/files/__stack_chk_fail_local.c \
+		-c ${XBPS_SRCPKGDIR}/${_musl_pkgname}/files/__stack_chk_fail_local.c \
 		-o __stack_chk_fail_local.o
 	${tgt}-ar r libssp_nonshared.a __stack_chk_fail_local.o
 	cp libssp_nonshared.a ${wrksrc}/build_root/usr/${tgt}/usr/lib
@@ -403,13 +409,8 @@ _void_cross_build_gcc() {
 
 	# note on --disable-libquadmath:
 	# on some platforms the library is actually necessary for the
-	# fortran frontend to build, but still disable it because it
-	# should not be in the resulting packages; it conflicts with
-	# the libquadmath you can install into the cross root
-	#
-	# platforms where this is a problem should explicitly force
-	# libquadmath to be on via cross_gcc_configure_args, the
-	# do_install in this build-style automatically removes it
+	# fortran frontend to build, platforms where this is a problem
+	# should explicitly force libquadmath to be on via cross_gcc_configure_args
 	#
 	../gcc-${ver}/configure \
 		--prefix=/usr \
@@ -470,6 +471,19 @@ _void_cross_test_ver() {
 	fi
 }
 
+_void_cross_test_gcc_ver() {
+	local ver basever
+	_void_cross_test_ver gcc
+	ver=$(cat .gcc_version)
+	if [ -d "gcc-${ver}" ] && [ -f "gcc-${ver}/gcc/BASE-VER" ] && [ -f "gcc-${ver}/gcc/DATESTAMP" ]; then
+		basever="$(cat "gcc-${ver}/gcc/BASE-VER")_$(cat "gcc-${ver}/gcc/DATESTAMP")"
+		mv "gcc-${ver}" "gcc-${basever}"
+		echo ${basever} > ${wrksrc}/.gcc_version
+		return
+	fi
+	msg_error "could not determine gcc base version\n"
+}
+
 do_build() {
 	# Verify toolchain versions
 	cd ${wrksrc}
@@ -487,7 +501,7 @@ do_build() {
 
 	_void_cross_test_ver binutils
 	_void_cross_test_ver linux
-	_void_cross_test_ver gcc
+	_void_cross_test_gcc_ver
 
 	binutils_ver=$(cat .binutils_version)
 	linux_ver=$(cat .linux_version)
@@ -645,9 +659,9 @@ do_install() {
 	ln -sf libgnat-${gcc_major}.so ${DESTDIR}/${sysroot}/usr/lib/libgnat.so
 	rm -vf ${DESTDIR}/${adalib}/libgna{rl,t}.so
 
-	# If libquadmath was forced (needed for gfortran on some platforms)
-	# then remove it because it conflicts with libquadmath package
-	rm -rf ${DESTDIR}/${sysroot}/usr/lib/libquadmath.*
+	# Remove libgomp library because it conflicts with libgomp and
+	# libgomp-devel packages
+	rm -f ${DESTDIR}/${sysroot}/usr/lib/libgomp*
 
 	# Remove libdep linker plugin because it conflicts with system binutils
 	rm -f ${DESTDIR}/usr/lib/bfd-plugins/libdep*

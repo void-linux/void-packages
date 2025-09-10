@@ -1,173 +1,198 @@
 This is not among the normal patches as these changes are musl specific and
 there is no way to easily conditionalize it in source for some of the changes.
 
-Added by q66: runtime.h now uses libucontext_ prefixed APIs to allow build
-with freestanding versions of libucontext
+Source: https://gitlab.alpinelinux.org/alpine/alpine-gcc-patches/-/tree/alpine/13.1?ref_type=heads
 
-Souurce: Adélie Linux, q66
-URL: https://code.foxkit.us/adelie/packages/tree/master/system/gcc
+From 4bfcb35bc43d3e3b7510620362d7c28d9e4c17ca Mon Sep 17 00:00:00 2001
+From: psykose <alice@ayaya.dev>
+Date: Mon, 10 Jul 2023 23:23:29 +0000
+Subject: [PATCH 34/35] libgo: fix lfs64 use
 
---- a/Makefile.in
-+++ b/Makefile.in
-@@ -46325,7 +46325,7 @@ configure-target-libgo:
- 	esac; \
- 	module_srcdir=libgo; \
- 	rm -f no-such-file || : ; \
--	CONFIG_SITE=no-such-file $(SHELL) \
-+	CONFIG_SITE=no-such-file LIBS="-lucontext $$LIBS" $(SHELL) \
- 	  $$s/$$module_srcdir/configure \
- 	  --srcdir=$${topdir}/$$module_srcdir \
- 	  $(TARGET_CONFIGARGS) --build=${build_alias} --host=${target_alias} \
---- a/libgo/mksysinfo.sh
-+++ b/libgo/mksysinfo.sh
-@@ -379,11 +379,7 @@ fi
- # Some basic types.
- echo 'type Size_t _size_t' >> ${OUT}
- echo "type Ssize_t _ssize_t" >> ${OUT}
--if grep '^const _HAVE_OFF64_T = ' gen-sysinfo.go > /dev/null 2>&1; then
--  echo "type Offset_t _off64_t" >> ${OUT}
--else
--  echo "type Offset_t _off_t" >> ${OUT}
--fi
-+echo "type Offset_t _off_t" >> ${OUT}
- echo "type Mode_t _mode_t" >> ${OUT}
- echo "type Pid_t _pid_t" >> ${OUT}
- echo "type Uid_t _uid_t" >> ${OUT}
---- a/libgo/go/runtime/mem_gccgo.go
-+++ b/libgo/go/runtime/mem_gccgo.go
-@@ -16,7 +16,7 @@ import (
- //go:linkname sysFree runtime.sysFree
+---
+ .../go/internal/syscall/unix/at_largefile.go  |  2 +-
+ libgo/go/os/dir_largefile.go                  |  2 +-
+ libgo/go/syscall/libcall_glibc.go             |  2 +-
+ libgo/go/syscall/libcall_linux.go             |  4 +--
+ libgo/go/syscall/libcall_posix_largefile.go   | 26 +++++++++----------
+ libgo/runtime/go-varargs.c                    |  2 +-
+ libgo/sysinfo.c                               |  9 +++----
+ 7 files changed, 22 insertions(+), 25 deletions(-)
+
+diff --git a/libgo/go/internal/syscall/unix/at_largefile.go b/libgo/go/internal/syscall/unix/at_largefile.go
+index 82e0dcfd074..16151ecad1b 100644
+--- a/libgo/go/internal/syscall/unix/at_largefile.go
++++ b/libgo/go/internal/syscall/unix/at_largefile.go
+@@ -10,5 +10,5 @@ import (
+ 	"syscall"
+ )
  
- //extern mmap
--func sysMmap(addr unsafe.Pointer, n uintptr, prot, flags, fd int32, off uintptr) unsafe.Pointer
-+func sysMmap(addr unsafe.Pointer, n uintptr, prot, flags, fd int32, off int64) unsafe.Pointer
+-//extern fstatat64
++//extern fstatat
+ func fstatat(int32, *byte, *syscall.Stat_t, int32) int32
+diff --git a/libgo/go/os/dir_largefile.go b/libgo/go/os/dir_largefile.go
+index 1fc5ee0771f..0c6dffe1a75 100644
+--- a/libgo/go/os/dir_largefile.go
++++ b/libgo/go/os/dir_largefile.go
+@@ -11,5 +11,5 @@ package os
  
- //extern munmap
- func munmap(addr unsafe.Pointer, length uintptr) int32
-@@ -38,7 +38,7 @@ func init() {
- 	}
+ import "syscall"
+ 
+-//extern readdir64
++//extern readdir
+ func libc_readdir(*syscall.DIR) *syscall.Dirent
+diff --git a/libgo/go/syscall/libcall_glibc.go b/libgo/go/syscall/libcall_glibc.go
+index 5c1ec483c75..5a1245ed44b 100644
+--- a/libgo/go/syscall/libcall_glibc.go
++++ b/libgo/go/syscall/libcall_glibc.go
+@@ -114,7 +114,7 @@ func Pipe2(p []int, flags int) (err error) {
  }
  
--func mmap(addr unsafe.Pointer, n uintptr, prot, flags, fd int32, off uintptr) (unsafe.Pointer, int) {
-+func mmap(addr unsafe.Pointer, n uintptr, prot, flags, fd int32, off int64) (unsafe.Pointer, int) {
- 	p := sysMmap(addr, n, prot, flags, fd, off)
- 	if uintptr(p) == _MAP_FAILED {
- 		return nil, errno()
---- a/libgo/go/syscall/errstr.go
-+++ b/libgo/go/syscall/errstr.go
-@@ -5,7 +5,6 @@
- // license that can be found in the LICENSE file.
+ //sys	sendfile(outfd int, infd int, offset *Offset_t, count int) (written int, err error)
+-//sendfile64(outfd _C_int, infd _C_int, offset *Offset_t, count Size_t) Ssize_t
++//sendfile(outfd _C_int, infd _C_int, offset *Offset_t, count Size_t) Ssize_t
  
- // +build !hurd
--// +build !linux
- 
- package syscall
- 
---- a/libgo/go/syscall/errstr_glibc.go
-+++ /dev/null
-@@ -1,33 +0,0 @@
--// errstr_glibc.go -- GNU/Linux and GNU/Hurd specific error strings.
--
--// Copyright 2010 The Go Authors. All rights reserved.
--// Use of this source code is governed by a BSD-style
--// license that can be found in the LICENSE file.
--
--// We use this rather than errstr.go because on GNU/Linux sterror_r
--// returns a pointer to the error message, and may not use buf at all.
--
--// +build hurd linux
--
--package syscall
--
--import "unsafe"
--
--//sysnb	strerror_r(errnum int, b []byte) (errstr *byte)
--//strerror_r(errnum _C_int, b *byte, len Size_t) *byte
--
--func Errstr(errnum int) string {
--	a := make([]byte, 128)
--	p := strerror_r(errnum, a)
--	b := (*[1000]byte)(unsafe.Pointer(p))
--	i := 0
--	for b[i] != 0 {
--		i++
--	}
--	// Lowercase first letter: Bad -> bad, but STREAM -> STREAM.
--	if i > 1 && 'A' <= b[0] && b[0] <= 'Z' && 'a' <= b[1] && b[1] <= 'z' {
--		c := b[0] + 'a' - 'A'
--		return string(c) + string(b[1:i])
--	}
--	return string(b[:i])
--}
+ func Sendfile(outfd int, infd int, offset *int64, count int) (written int, err error) {
+ 	if race.Enabled {
+diff --git a/libgo/go/syscall/libcall_linux.go b/libgo/go/syscall/libcall_linux.go
+index 03ca7261b59..ad21fd0b3ac 100644
 --- a/libgo/go/syscall/libcall_linux.go
 +++ b/libgo/go/syscall/libcall_linux.go
-@@ -206,19 +206,19 @@ func Gettid() (tid int) {
- //sys	Setxattr(path string, attr string, data []byte, flags int) (err error)
- //setxattr(path *byte, name *byte, value *byte, size Size_t, flags _C_int) _C_int
+@@ -158,7 +158,7 @@ func Reboot(cmd int) (err error) {
+ //adjtimex(buf *Timex) _C_int
  
--//sys	splice(rfd int, roff *_loff_t, wfd int, woff *_loff_t, len int, flags int) (n int64, err error)
--//splice(rfd _C_int, roff *_loff_t, wfd _C_int, woff *_loff_t, len Size_t, flags _C_uint) Ssize_t
-+//sys	splice(rfd int, roff *_off_t, wfd int, woff *_off_t, len int, flags int) (n int64, err error)
-+//splice(rfd _C_int, roff *_off_t, wfd _C_int, woff *_off_t, len Size_t, flags _C_uint) Ssize_t
- func Splice(rfd int, roff *int64, wfd int, woff *int64, len int, flags int) (n int64, err error) {
--	var lroff _loff_t
--	var plroff *_loff_t
-+	var lroff _off_t
-+	var plroff *_off_t
- 	if roff != nil {
--		lroff = _loff_t(*roff)
-+		lroff = _off_t(*roff)
- 		plroff = &lroff
- 	}
--	var lwoff _loff_t
--	var plwoff *_loff_t
-+	var lwoff _off_t
-+	var plwoff *_off_t
- 	if woff != nil {
--		lwoff = _loff_t(*woff)
-+		lwoff = _off_t(*woff)
- 		plwoff = &lwoff
- 	}
- 	n, err = splice(rfd, plroff, wfd, plwoff, len, flags)
---- a/libgo/runtime/runtime.h
-+++ b/libgo/runtime/runtime.h
-@@ -500,10 +500,13 @@ int __go_setcontext(__go_context_t*);
- void __go_makecontext(__go_context_t*, void (*)(), void*, size_t);
- #else
- #define __go_context_t	ucontext_t
--#define __go_getcontext(c)	getcontext(c)
--#define __go_setcontext(c)	setcontext(c)
-+int  libucontext_getcontext(__go_context_t *);
-+void libucontext_makecontext(__go_context_t *, void (*)(), int, ...);
-+int  libucontext_setcontext(const __go_context_t *);
-+#define __go_getcontext(c)	libucontext_getcontext(c)
-+#define __go_setcontext(c)	libucontext_setcontext(c)
- #define __go_makecontext(c, fn, sp, size) \
--	((c)->uc_stack.ss_sp = sp, (c)->uc_stack.ss_size = size, makecontext(c, fn, 0))
-+	((c)->uc_stack.ss_sp = sp, (c)->uc_stack.ss_size = size, libucontext_makecontext(c, fn, 0))
+ //sys	Fstatfs(fd int, buf *Statfs_t) (err error)
+-//fstatfs64(fd _C_int, buf *Statfs_t) _C_int
++//fstatfs(fd _C_int, buf *Statfs_t) _C_int
+ 
+ func Gettid() (tid int) {
+ 	r1, _, _ := Syscall(SYS_GETTID, 0, 0, 0)
+@@ -245,7 +245,7 @@ func Splice(rfd int, roff *int64, wfd int, woff *int64, len int, flags int) (n i
+ }
+ 
+ //sys	Statfs(path string, buf *Statfs_t) (err error)
+-//statfs64(path *byte, buf *Statfs_t) _C_int
++//statfs(path *byte, buf *Statfs_t) _C_int
+ 
+ //sysnb	Sysinfo(info *Sysinfo_t) (err error)
+ //sysinfo(info *Sysinfo_t) _C_int
+diff --git a/libgo/go/syscall/libcall_posix_largefile.go b/libgo/go/syscall/libcall_posix_largefile.go
+index f90055bb29a..334212f0af1 100644
+--- a/libgo/go/syscall/libcall_posix_largefile.go
++++ b/libgo/go/syscall/libcall_posix_largefile.go
+@@ -10,40 +10,40 @@
+ package syscall
+ 
+ //sys	Creat(path string, mode uint32) (fd int, err error)
+-//creat64(path *byte, mode Mode_t) _C_int
++//creat(path *byte, mode Mode_t) _C_int
+ 
+ //sys	Fstat(fd int, stat *Stat_t) (err error)
+-//fstat64(fd _C_int, stat *Stat_t) _C_int
++//fstat(fd _C_int, stat *Stat_t) _C_int
+ 
+ //sys	Ftruncate(fd int, length int64) (err error)
+-//ftruncate64(fd _C_int, length Offset_t) _C_int
++//ftruncate(fd _C_int, length Offset_t) _C_int
+ 
+ //sysnb	Getrlimit(resource int, rlim *Rlimit) (err error)
+-//getrlimit64(resource _C_int, rlim *Rlimit) _C_int
++//getrlimit(resource _C_int, rlim *Rlimit) _C_int
+ 
+ //sys	Lstat(path string, stat *Stat_t) (err error)
+-//lstat64(path *byte, stat *Stat_t) _C_int
++//lstat(path *byte, stat *Stat_t) _C_int
+ 
+ //sys	mmap(addr uintptr, length uintptr, prot int, flags int, fd int, offset int64) (xaddr uintptr, err error)
+-//mmap64(addr *byte, length Size_t, prot _C_int, flags _C_int, fd _C_int, offset Offset_t) *byte
++//mmap(addr *byte, length Size_t, prot _C_int, flags _C_int, fd _C_int, offset Offset_t) *byte
+ 
+ //sys	Open(path string, mode int, perm uint32) (fd int, err error)
+-//__go_open64(path *byte, mode _C_int, perm Mode_t) _C_int
++//__go_open(path *byte, mode _C_int, perm Mode_t) _C_int
+ 
+ //sys	Pread(fd int, p []byte, offset int64) (n int, err error)
+-//pread64(fd _C_int, buf *byte, count Size_t, offset Offset_t) Ssize_t
++//pread(fd _C_int, buf *byte, count Size_t, offset Offset_t) Ssize_t
+ 
+ //sys	Pwrite(fd int, p []byte, offset int64) (n int, err error)
+-//pwrite64(fd _C_int, buf *byte, count Size_t, offset Offset_t) Ssize_t
++//pwrite(fd _C_int, buf *byte, count Size_t, offset Offset_t) Ssize_t
+ 
+ //sys	Seek(fd int, offset int64, whence int) (off int64, err error)
+-//lseek64(fd _C_int, offset Offset_t, whence _C_int) Offset_t
++//lseek(fd _C_int, offset Offset_t, whence _C_int) Offset_t
+ 
+ //sysnb	Setrlimit(resource int, rlim *Rlimit) (err error)
+-//setrlimit64(resource int, rlim *Rlimit) _C_int
++//setrlimit(resource int, rlim *Rlimit) _C_int
+ 
+ //sys	Stat(path string, stat *Stat_t) (err error)
+-//stat64(path *byte, stat *Stat_t) _C_int
++//stat(path *byte, stat *Stat_t) _C_int
+ 
+ //sys	Truncate(path string, length int64) (err error)
+-//truncate64(path *byte, length Offset_t) _C_int
++//truncate(path *byte, length Offset_t) _C_int
+diff --git a/libgo/runtime/go-varargs.c b/libgo/runtime/go-varargs.c
+index f84860891e6..7efc9615985 100644
+--- a/libgo/runtime/go-varargs.c
++++ b/libgo/runtime/go-varargs.c
+@@ -84,7 +84,7 @@ __go_ioctl_ptr (int d, int request, void *arg)
+ int
+ __go_open64 (char *path, int mode, mode_t perm)
+ {
+-  return open64 (path, mode, perm);
++  return open (path, mode, perm);
+ }
+ 
  #endif
- 
- // Symbols defined by the linker.
+diff --git a/libgo/sysinfo.c b/libgo/sysinfo.c
+index 180f5c31d74..1d717d55c0e 100644
 --- a/libgo/sysinfo.c
 +++ b/libgo/sysinfo.c
-@@ -73,9 +73,6 @@
- #include <sys/times.h>
- #include <sys/wait.h>
- #include <sys/un.h>
--#if defined(HAVE_SYS_USER_H)
--#include <sys/user.h>
--#endif
- #if defined(HAVE_SYS_UTSNAME_H)
- #include <sys/utsname.h>
+@@ -366,7 +366,7 @@ typedef loff_t libgo_loff_t_type;
  #endif
---- a/libgo/go/runtime/os_linux.go
-+++ b/libgo/go/runtime/os_linux.go
-@@ -365,7 +365,7 @@ func setThreadCPUProfiler(hz int32) {
- 	var sevp _sigevent
- 	sevp.sigev_notify = _SIGEV_THREAD_ID
- 	sevp.sigev_signo = _SIGPROF
--	*((*int32)(unsafe.Pointer(&sevp._sigev_un))) = int32(mp.procid)
-+	*((*int32)(unsafe.Pointer(&sevp.__sev_fields))) = int32(mp.procid)
- 	ret := timer_create(_CLOCK_THREAD_CPUTIME_ID, &sevp, &timerid)
- 	if ret != 0 {
- 		// If we cannot create a timer for this M, leave profileTimerValid false
+ 
+ #if defined(HAVE_OFF64_T)
+-typedef off64_t libgo_off_t_type;
++typedef off_t libgo_off_t_type;
+ #else
+ typedef off_t libgo_off_t_type;
+ #endif
+@@ -398,13 +398,11 @@ typedef off_t libgo_off_t_type;
+ 
+ // From dirent.h
+ SREF(dirent);
+-SREF(dirent64);
+ OTREF(DIR);
+ EREF(DT_UNKNOWN);
+ 
+ // From fcntl.h
+ SREF(flock);
+-SREF(flock64);
+ 
+ // From ffi headers
+ SREF(_ffi_type);
+@@ -485,11 +483,10 @@ EREF(SS_ONSTACK);
+ EREF(SEGV_MAPERR);
+ 
+ // From stat.h
+-SREF(stat64);
++SREF(stat);
+ 
+ // From statfs.h
+ SREF(statfs);
+-SREF(statfs64);
+ 
+ // From sysinfo.h
+ SREF(sysinfo);
+@@ -519,7 +516,7 @@ EREF(PTRACE_PEEKTEXT);
+ 
+ // From sys/resource.h
+ SREF(rusage);
+-SREF(rlimit64);
++SREF(rlimit);
+ EREF(RLIMIT_NOFILE);
+ EREF(PRIO_USER);
+ EREF(RUSAGE_SELF);
+

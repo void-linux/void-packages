@@ -1,17 +1,19 @@
-#!/bin/sh
+#!/bin/bash
 #
 # xpkgdiff.sh
 
-export XBPS_TARGET_ARCH="$2" XBPS_DISTDIR=/hostrepo XBPS_HOSTDIR="$HOME/hostdir"
+set -e
+
+export XBPS_TARGET_ARCH="$2"
 export DIFF='diff --unified=0 --report-identical-files --suppress-common-lines
  --color=always --label REPO --label BUILT'
 ARGS="-a $2 -R https://repo-ci.voidlinux.org/current"
 
 while read -r pkg; do
 	for subpkg in $(xsubpkg $pkg); do
-		if xbps-query --repository=$HOME/hostdir/binpkgs/bootstrap \
-					  --repository=$HOME/hostdir/binpkgs \
-					  --repository=$HOME/hostdir/binpkgs/nonfree \
+		if xbps-query --repository=hostdir/binpkgs/bootstrap \
+					  --repository=hostdir/binpkgs \
+					  --repository=hostdir/binpkgs/nonfree \
 					  -i "$subpkg" >&/dev/null; then
 			/bin/echo -e "\x1b[34mFile Diff of $subpkg:\x1b[0m"
 			xpkgdiff $ARGS -f $subpkg

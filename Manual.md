@@ -62,7 +62,6 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [kernel-hooks](#triggers_kernel_hooks)
 		* [mimedb](#triggers_mimedb)
 		* [mkdirs](#triggers_mkdirs)
-		* [openjdk-profile](#triggers_openjdk_profile)
 		* [pango-modules](#triggers_pango_module)
 		* [pycompile](#triggers_pycompile)
 		* [register-shell](#triggers_register_shell)
@@ -208,7 +207,7 @@ a package providing the executable named `<name>` and the module named
 language prefix can be dropped. Short names for languages are no valid substitute
 for the language prefix.
 
-Example: python-pam, perl-URI, python3-pyside2
+Example: perl-URI, python3-pyside2
 
 <a id="language_bindings"></a>
 #### Language Bindings
@@ -221,7 +220,7 @@ The naming convention to those packages is:
 <name>-<language>
 ```
 
-Example: gimp-python, irssi-perl
+Example: gimp-python3, irssi-perl
 
 <a id="programs"></a>
 #### Programs
@@ -317,7 +316,7 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	`${FILESDIR}/$service`, containing `exec vlogger -t $service -p $facility`.
 	if a second argument is not specified, the `daemon` facility is used.
 	For more information about `vlogger` and available values for the facility,
-	see [vlogger(1)](https://man.voidlinux.org/vlogger.1).
+	see [vlogger(8)](https://man.voidlinux.org/vlogger.8).
 
 - *vsed()* `vsed -i <file> -e <regex>`
 
@@ -335,6 +334,29 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	and with the appropriate filename for `shell`. If `command` isn't specified,
 	it will default to `pkgname`. The `shell` argument can be one of `bash`,
 	`fish` or `zsh`.
+
+- *vextract()* `[-C <target directory>] [--no-strip-components|--strip-components=<n>] <file>`
+
+	Extracts `file` to `target directory` with `n` directory components stripped. If
+	`target directory` not specified, defaults to the working directory. If
+	`--strip-components` or `--no-strip-components` is not specified, defaults to
+	`--strip-components=1`.
+
+- *vsrcextract()* `[-C <target directory>] [--no-strip-components|--strip-components=<n>] <file>`
+
+	Extracts `$XBPS_SRCDISTDIR/$pkgname-$version/<file>` to `target directory`
+	with `n` directory components stripped. If `target directory` not specified,
+	defaults to the working directory. If `--strip-components` or `--no-strip-components`
+	is not specified, defaults to `--strip-components=1`.
+
+	This is useful when used in conjunction with `skip_extraction` and for submodule distfiles.
+
+- *vsrccopy()* `<file>... <target>`
+
+	Copies `file`s from `$XBPS_SRCDISTDIR/$pkgname-$version/` into the `target` directory,
+	creating `target` if it does not exist.
+
+	This is useful when used in conjunction with `skip_extraction`.
 
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
@@ -417,7 +439,12 @@ The list of mandatory variables for a template:
 - <a id="var_license"></a>
 `license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
 `Public Domain`, or string prefixed with `custom:` for other licenses.
-Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, custom:Hugware`.
+Multiple licenses should be listed as an
+[SPDX license expression](https://spdx.github.io/spdx-spec/v3.0/annexes/SPDX-license-expressions/)
+(examples: `MIT OR Apache-2.0`, `MIT AND (LGPL-2.1-or-later OR BSD-3-Clause)`).
+Usage of `AND`, `OR`, `WITH`, and `()` are supported by xlint. The legacy
+comma-separated format should be converted when encountered (example:
+`GPL-3.0-or-later, custom:Hugware`).
 
   Empty meta-packages that don't include any files
   and thus have and require no license should use
@@ -570,9 +597,9 @@ build methods. By default set to `check`.
 
 - `make_install_target` The installation target. When `${build_style}` is set to `configure`,
 `gnu-configure` or `gnu-makefile`, this is the target passed to `${make_command}` in the install
-phase; when unset, it defaults to `install`. If `${build_style}` is `python-pep517`, this is the
+phase; when unset, it defaults to `install`. If `${build_style}` is `python3-pep517`, this is the
 path of the Python wheel produced by the build phase that will be installed; when unset, the
-`python-pep517` build style will look for a wheel matching the package name and version in the
+`python3-pep517` build style will look for a wheel matching the package name and version in the
 current directory with respect to the install.
 
 - `make_check_pre` The expression in front of `${make_cmd}`. This can be used for wrapper commands
@@ -664,6 +691,9 @@ redistribution.
 to override the guessed list. Only use this if a specific order of subpackages is required,
 otherwise the default would work in most cases.
 
+- `metapackage` If set to `yes`, the package must be an empty meta-package, i.e. a package that
+only depends on other packages.
+
 - `broken` If set, building the package won't be allowed because its state is currently broken.
 This should be set to a string describing why it is broken, or a link to a buildlog demonstrating the failure.
 
@@ -737,9 +767,9 @@ built for, available architectures can be found under `common/cross-profiles`.
 In general, `archs` should only be set if the upstream software explicitly targets
 certain architectures or there is a compelling reason why the software should not be
 available on some supported architectures.
-Prepending pattern with tilde means disallowing build on indicated archs.
-First matching pattern is taken to allow/deny build. When no pattern matches,
-package is build if last pattern includes tilde.
+Prepending a pattern with a tilde means disallowing build on the indicated archs.
+The first matching pattern is taken to allow/deny build. When no pattern matches,
+the package is built if the last pattern includes a tilde.
 Examples:
 
 	```
@@ -755,6 +785,9 @@ A special value `noarch` used to be available, but has since been removed.
 - `nocheckperms` If set, xbps-src will not fail on common permission errors (world writable files, etc.)
 
 - `nofixperms` If set, xbps-src will not fix common permission errors (executable manpages, etc.)
+
+- `no_generic_pkgconfig_link` If set, xbps-src will not create a symlink from `$XBPS_CROSS_TRIPLET-pkg-config`
+  to `$XBPS_WRAPPERDIR/pkg-config` before building the template.
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
@@ -851,7 +884,7 @@ package shouldn't be added as a build time dependency.
 The global repository takes the name of
 the current branch, except if the name of the branch is master. Then the resulting
 repository will be at the global scope. The usage scenario is that the user can
-update multiple packages in a second branch without polluting his local repository.
+update multiple packages in a second branch without polluting their local repository.
 
 <a id="pkg_defined_repo"></a>
 #### Package defined Repositories
@@ -981,11 +1014,6 @@ information can be found in the `go.mod` file for modern Go projects.
 It's expected that the distfile contains the package, but dependencies
 will be downloaded with `go get`.
 
-- `meta` For `meta-packages`, i.e packages that only install local files or simply
-depend on additional packages. This build style does not install
-dependencies to the root directory, and only checks if a binary package is
-available in repositories.
-
 - `R-cran` For packages that are available on The Comprehensive R Archive
 Network (CRAN). The build style requires the `pkgname` to start with
 `R-cran-` and any dashes (`-`) in the CRAN-given version to be replaced
@@ -1017,12 +1045,10 @@ Additional install arguments can be specified via `make_install_args`.
 
 - `waf3` For packages that use the Python3 `waf` build method with python3.
 
-- `waf` For packages that use the Python `waf` method with python2.
-
 - `slashpackage` For packages that use the /package hierarchy and package/compile to build,
 such as `daemontools` or any `djb` software.
 
-- `qmake` For packages that use Qt4/Qt5 qmake profiles (`*.pro`), qmake arguments
+- `qmake` For packages that use Qt5/Qt6 qmake profiles (`*.pro`), qmake arguments
 for the configure phase can be passed in via `configure_args`, make build arguments can
 be passed in via `make_build_args` and install arguments via `make_install_args`. The build
 target can be overridden via `make_build_target` and the install target
@@ -1046,8 +1072,6 @@ system. Additional arguments may be passed to the `zig build` invocation using
 
 For packages that use the Python module build method (`setup.py` or
 [PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
-
-- `python2-module` to build Python 2.x modules
 
 - `python3-module` to build Python 3.x modules
 
@@ -1105,11 +1129,14 @@ It also creates the `vtargetrun` function to wrap commands in a call to
 needed for cross builds and a qmake-wrapper to make `qmake` use this configuration.
 This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-configure` style the configure script calls `qmake` or a `Makefile` in
-`gnu-makefile` style, respectively.
+`gnu-makefile` style, respectively. This is for Qt5 packages.
+
+- `qmake6` is like `qmake` but for Qt6.
 
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
-for compiling cargo -sys crates. This helper is added by default for packages that use the
-`cargo` build style.
+for compiling cargo -sys crates.
+It also adds a `cargo` wrapper that detects and passes builds through `cargo-auditable`.
+This helper is added by default for packages that use the `cargo` build style.
 
 <a id="functions"></a>
 ### Functions
@@ -1227,8 +1254,8 @@ package accordingly. Additionally, the following functions are available:
 
 - *vopt_feature()* `vopt_feature <option> <property>`
 
-  Same as `vopt_bool`, but uses `-D<property=enabled` and
-	`-D<property>=disabled` respectively. 
+  Same as `vopt_bool`, but uses `-D<property>=enabled` and
+	`-D<property>=disabled` respectively.
 
 The following example shows how to change a source package that uses GNU
 configure to enable a new build option to support PNG images:
@@ -1567,7 +1594,7 @@ be your guidance to decide whether or not to split off a `-doc` subpackage.
 <a id="pkgs_python"></a>
 #### Python packages
 
-Python packages should be built with the `python{,2,3}-module` build style, if possible.
+Python packages should be built with the `python3-module` build style, if possible.
 This sets some environment variables required to allow cross compilation. Support to allow
 building a python module for multiple versions from a single template is also possible.
 The `python3-pep517` build style provides means to build python packages that provide a build-system
@@ -1592,7 +1619,7 @@ The following variables may influence how the python packages are built and conf
 at post-install time:
 
 - `pycompile_module`: By default, files and directories installed into
-`usr/lib/pythonX.X/site-packages`, excluding `*-info` and `*.so`, are byte-compiled
+`usr/lib/pythonX.Y/site-packages`, excluding `*-info` and `*.so`, are byte-compiled
 at install time as python modules.  This variable expects subset of them that
 should be byte-compiled, if default is wrong.  Multiple python modules may be specified separated
 by blanks, Example: `pycompile_module="foo blah"`. If a python module installs a file into
@@ -1608,6 +1635,15 @@ In most cases version is inferred from shebang, install path or build style.
 Only required for some multi-language
 applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
+If `python_version` is set to `ignore`, python-containing shebangs will not be rewritten.
+Use this only if a package should not be using a system version of python.
+
+- `python_extras`: Python module extras to consider when verifying Python module dependencies.
+Can be used to ensure additional dependency sets are checked. Example: `python_extras="all"`.
+
+- `nopyprovides`: if set, don't create `provides` entries for Python modules in the package.
+
+- `noverifypydeps`: if set, don't verify Python module dependencies.
 
 Also, a set of useful variables are defined to use in the templates:
 
@@ -1777,8 +1813,19 @@ executable binary formats, know as binfmts.
 During installation/removal it uses `update-binfmts` from the `binfmt-support` package
 to register/remove entries from the arbitrary executable binary formats database.
 
-To include the trigger use the `binfmts` variable, as the trigger won't do anything unless
-it is defined.
+It is automatically added to packages that contain files in `usr/share/binfmts`.
+These files should be `update-binfmts` format files and will be imported with
+`update-binfmts --import`.
+
+While it is not preferred, the trigger can also be added by using the `binfmts` variable,
+which should contain lines defining binfmts to register:
+
+```
+/path/to/interpreter [update-binfmts binary format specification arguments ...]
+...
+```
+
+See [`update-binfmts(8)`](https://man.voidlinux.org/man8/update-binfmts.8) for more details.
 
 <a id="triggers_dkms"></a>
 #### dkms
@@ -2016,13 +2063,6 @@ During removal it will delete the directory using `rmdir`.
 To include this trigger use the `make_dirs` variable, as the trigger won't do anything
 unless it is defined.
 
-<a id="triggers_openjdk_profile"></a>
-#### openjdk-profile
-
-The openjdk-profile trigger is responsible for creating an entry in /etc/profile.d that
-sets the `JAVA_HOME` environment variable to the currently-selected alternative for
-`/usr/bin/java` on installation. This trigger must be manually requested.
-
 <a id="triggers_pango_module"></a>
 #### pango-modules
 
@@ -2167,7 +2207,7 @@ otherwise the `debug` packages won't have debugging symbols.
 <a id="contributing"></a>
 ### Contributing via git
 
-To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
+To get started, [fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 

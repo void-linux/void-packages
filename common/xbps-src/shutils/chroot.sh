@@ -1,30 +1,29 @@
 # vim: set ts=4 sw=4 et:
 
 install_base_chroot() {
+    local _bootstrap_arch _target_arch="$1"
     [ "$CHROOT_READY" ] && return
-    if [ "$1" = "bootstrap" ]; then
-        unset XBPS_TARGET_PKG XBPS_INSTALL_ARGS
-    else
-        XBPS_TARGET_PKG="$1"
+    if [ "$_target_arch" = "bootstrap" ]; then
+        _target_arch=""
+        unset XBPS_INSTALL_ARGS
     fi
     # binary bootstrap
     msg_normal "xbps-src: installing base-chroot...\n"
-    # XBPS_TARGET_PKG == arch
-    if [ "$XBPS_TARGET_PKG" ]; then
-        _bootstrap_arch="env XBPS_TARGET_ARCH=$XBPS_TARGET_PKG"
+    if [ -n "$_target_arch" ]; then
+        _bootstrap_arch="env XBPS_TARGET_ARCH=$_target_arch"
     fi
-    (export XBPS_MACHINE=$XBPS_TARGET_PKG XBPS_ARCH=$XBPS_TARGET_PKG; chroot_sync_repodata)
+    (export XBPS_MACHINE="$_target_arch" XBPS_ARCH="$_target_arch"; chroot_sync_repodata)
     ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot
     if [ $? -ne 0 ]; then
         msg_error "xbps-src: failed to install base-chroot!\n"
     fi
     # Reconfigure base-files to create dirs/symlinks.
     if xbps-query -r $XBPS_MASTERDIR base-files &>/dev/null; then
-        XBPS_ARCH=$XBPS_TARGET_PKG xbps-reconfigure -r $XBPS_MASTERDIR -f base-files &>/dev/null
+        XBPS_ARCH="$_target_arch" xbps-reconfigure -r $XBPS_MASTERDIR -f base-files &>/dev/null
     fi
 
     msg_normal "xbps-src: installed base-chroot successfully!\n"
-    chroot_prepare $XBPS_TARGET_PKG || msg_error "xbps-src: failed to initialize chroot!\n"
+    chroot_prepare "$_target_arch" || msg_error "xbps-src: failed to initialize chroot!\n"
     chroot_check
     chroot_handler clean
 }
@@ -275,6 +274,7 @@ chroot_sync_repodata() {
     fi
 
     echo "syslog=false" > $confdir/00-xbps-src.conf
+    echo "staging=true" >> $confdir/00-xbps-src.conf
 
     # Copy host repos to the cross root.
     if [ -n "$XBPS_CROSS_BUILD" ]; then
@@ -303,12 +303,16 @@ chroot_sync_repodata() {
         fi
 
         echo "syslog=false" > $crossconfdir/00-xbps-src.conf
+        echo "staging=true" >> $crossconfdir/00-xbps-src.conf
     fi
 
 
     # Copy xbps repository keys to the masterdir.
     mkdir -p $XBPS_MASTERDIR/var/db/xbps/keys
     cp -f $XBPS_COMMONDIR/repo-keys/*.plist $XBPS_MASTERDIR/var/db/xbps/keys
+    if [ -n "$(shopt -s nullglob; echo "$XBPS_DISTDIR"/etc/repo-keys/*.plist)" ]; then
+        cp -f "$XBPS_DISTDIR"/etc/repo-keys/*.plist "$XBPS_MASTERDIR"/var/db/xbps/keys
+    fi
 
     # Make sure to sync index for remote repositories.
     if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then

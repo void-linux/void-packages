@@ -30,6 +30,9 @@ else
 	unset CARGO_BUILD_TARGET
 fi
 
+# prevent cargo stripping debug symbols
+export CARGO_PROFILE_RELEASE_STRIP=false
+
 # For cross-compiling rust -sys crates
 export PKG_CONFIG_ALLOW_CROSS=1
 
@@ -61,3 +64,32 @@ export ZSTD_SYS_USE_PKG_CONFIG=1
 
 # onig-sys
 export RUSTONIG_SYSTEM_LIBONIG=1
+
+# libsqlite3-sys
+export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
+
+# jemalloc-sys
+export JEMALLOC_SYS_WITH_LG_PAGE=16
+
+# libgit2-sys
+export LIBGIT2_NO_VENDOR=1
+
+cat > ${XBPS_WRAPPERDIR}/cargo <<'_EOF'
+#!/bin/sh
+is_auditable() {
+	while [ "$#" != 0 ]; do
+		case "$1" in
+			-*) shift ;;
+			auditable) return 0 ;;
+			*) return 1 ;;
+		esac
+	done
+}
+
+if ! command -v cargo-auditable >/dev/null || is_auditable "$@"; then
+	exec /usr/bin/cargo "$@"
+fi
+exec /usr/bin/cargo auditable "$@"
+_EOF
+
+chmod 755 ${XBPS_WRAPPERDIR}/cargo

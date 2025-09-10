@@ -20,7 +20,7 @@ do_configure() {
 	export AR="gcc-ar"
 
 	# unbuffered output for continuous logging
-	PYTHONUNBUFFERED=1 ${meson_cmd} setup \
+	${meson_cmd} setup \
 		--prefix=/usr \
 		--libdir=/usr/lib${XBPS_TARGET_WORDSIZE} \
 		--libexecdir=/usr/libexec \
@@ -39,6 +39,7 @@ do_configure() {
 		--wrap-mode=nodownload \
 		-Db_lto=true -Db_ndebug=true \
 		-Db_staticpic=true \
+		-Dpkgconfig.relocatable=false \
 		${configure_args} . ${meson_builddir}
 }
 
@@ -51,11 +52,11 @@ do_build() {
 }
 
 do_check() {
-	: ${make_cmd:=ninja}
+	: ${make_cmd:=meson}
 	: ${make_check_target:=test}
 	: ${meson_builddir:=build}
 
-	${make_check_pre} ${make_cmd} -C ${meson_builddir} ${makejobs} ${make_check_args} ${make_check_target}
+	${make_check_pre} ${make_cmd} ${make_check_target} -C ${meson_builddir} ${makejobs} ${make_check_args}
 }
 
 do_install() {

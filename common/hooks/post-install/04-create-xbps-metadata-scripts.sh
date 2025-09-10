@@ -119,9 +119,15 @@ _EOF
 	#
 	# Handle binfmts trigger
 	#
-	if [ -n "${binfmts}" ]; then
+	if [ -n "${binfmts}" ] || [ -d "${PKGDESTDIR}/usr/share/binfmts" ]; then
 		_add_trigger binfmts
+	fi
+	if [ -n "${binfmts}" ]; then
 		echo "export binfmts=\"${binfmts}\"" >> $tmpf
+	fi
+	if [ -d "${PKGDESTDIR}/usr/share/binfmts" ]; then
+		_import_binfmts="$(find "${PKGDESTDIR}/usr/share/binfmts" -type f -printf '%f\n')"
+		echo "export import_binfmts=\"${_import_binfmts}\"" >> $tmpf
 	fi
 	#
 	# Handle GNU Info files.
@@ -268,11 +274,11 @@ _EOF
 	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
 		pycompile_version="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]\+$')"
 		if [ -z "${pycompile_module}" ]; then
-			pycompile_module="$(find ${PKGDESTDIR}/usr/lib/python*/site-packages -mindepth 1 -maxdepth 1 '!' -name '*.egg-info' '!' -name '*.dist-info' '!' -name '*.so' '!' -name '*.pth' -printf '%f ')"
+			pycompile_module="$(find ${PKGDESTDIR}/usr/lib/python*/site-packages* -mindepth 1 -maxdepth 1 '!' -name '*.egg-info' '!' -name '*.dist-info' '!' -name '*.so' '!' -name '*.pth' -printf '%f ')"
 		fi
 	fi
 
-	if [ -n "$python_version" ]; then
+	if [ -n "$python_version" ] && [ "$python_version" != ignore ]; then
 		pycompile_version=${python_version}
 	fi
 

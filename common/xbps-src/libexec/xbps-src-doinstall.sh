@@ -34,7 +34,13 @@ if [ "$SUBPKG_MODE"  = "no" ]; then
     if [ ! -f $XBPS_INSTALL_DONE ] || [ -f $XBPS_INSTALL_DONE -a -n "$XBPS_BUILD_FORCEMODE" ]; then
         mkdir -p $XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/$pkgname-$version
 
-        run_step install "" skip
+        if [ "$metapackage" = yes ]; then
+            optional="optional"
+        else
+            optional=""
+        fi
+
+        run_step install "$optional" skip
 
         touch -f $XBPS_INSTALL_DONE
     fi
@@ -44,7 +50,7 @@ fi
 XBPS_SUBPKG_INSTALL_DONE="${XBPS_STATEDIR}/${PKGNAME}_${XBPS_CROSS_BUILD}_subpkg_install_done"
 
 # If it's a subpkg execute the pkg_install() function.
-if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
+if [ ! -f $XBPS_SUBPKG_INSTALL_DONE -o -n "$XBPS_BUILD_FORCEMODE" ]; then
     if [ "$sourcepkg" != "$PKGNAME" ]; then
         # Source all subpkg environment setup snippets.
         for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
@@ -53,6 +59,10 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
 
         ${PKGNAME}_package
         pkgname=$PKGNAME
+
+        if [ "$build_style" = meta ]; then
+            msg_error "$pkgver: build_style=meta is deprecated, replace with metapackage=yes\n"
+        fi
 
         source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 

@@ -6,7 +6,8 @@ collect_sonames() {
 	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)*$"
 	local _versioned_pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)+$"
 	local _tmpfile=$(mktemp) || exit 1
-	local _mainpkg="$2"
+	local _mainpkg="${2:-}"
+	local _suffix="${3:-}"
 	local _shlib_dir="${XBPS_STATEDIR}/shlib-provides"
 	local _no_soname=$(mktemp) || exit 1
 
@@ -50,8 +51,8 @@ collect_sonames() {
 		echo "$f" >> ${_tmpfile}
 	done
 	if [ -s "${_tmpfile}" ]; then
-		tr '\n' ' ' < "${_tmpfile}" > ${_destdir}/shlib-provides
-		echo >> ${_destdir}/shlib-provides
+		tr '\n' ' ' < "${_tmpfile}" > "${XBPS_STATEDIR}/${pkgname}${_suffix}-shlib-provides"
+		echo >> "${XBPS_STATEDIR}/${pkgname}${_suffix}-shlib-provides"
 		if [ "$_mainpkg" ]; then
 			cp "${_tmpfile}" "${_shlib_dir}/${pkgname}.soname"
 		fi
@@ -84,5 +85,5 @@ hook() {
 	# native pkg
 	collect_sonames ${PKGDESTDIR} $_mainpkg
 	# 32bit pkg
-	collect_sonames ${_destdir32}
+	collect_sonames ${_destdir32} "" -32bit
 }

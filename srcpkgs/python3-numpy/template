@@ -1,7 +1,7 @@
 # Template file for 'python3-numpy'
 pkgname=python3-numpy
-version=1.26.0
-revision=2
+version=2.3.2
+revision=1
 build_style=python3-pep517
 build_helper="meson qemu"
 make_build_args="-Csetup-args=-Ddisable-svml=true
@@ -17,9 +17,9 @@ short_desc="Fast and sophisticated array facility to Python3"
 maintainer="Andrew J. Hesford <ajh@sideband.org>"
 license="BSD-3-Clause"
 homepage="https://www.numpy.org/"
-changelog="https://numpy.org/doc/stable/release.html"
+changelog="https://github.com/numpy/numpy/releases"
 distfiles="${PYPI_SITE}/n/numpy/numpy-${version}.tar.gz"
-checksum=f93fc78fe8bf15afe2b8d6b6499f1c73953169fad1e9a8dd086cdff3190e7fdf
+checksum=e0486a11ec30cdecb53f184d496d1c6a20786c81e55e41640270130056f8ee48
 alternatives="numpy:f2py:/usr/bin/f2py3"
 
 build_options="openblas"
@@ -42,18 +42,13 @@ fi
 post_patch() {
 	case "${XBPS_TARGET_MACHINE}" in
 		armv5tel-musl)
-			cp "${FILESDIR}/fenv-constants.h" numpy/core/src/npymath/
+			cp "${FILESDIR}/fenv-constants.h" numpy/_core/src/npymath/
 			patch -Np0 -i "${FILESDIR}/fenv-constants.patch"
 			;;
 	esac
-
-	if [ "$XBPS_TARGET_LIBC" = musl ] ; then
-		vsed -i 's|"backtrace",||' numpy/core/setup_common.py
-	fi
 }
 
 do_check() {
-	local testjobs="-n $XBPS_MAKEJOBS"
 	local _skip
 
 	case $XBPS_TARGET_MACHINE in
@@ -73,8 +68,22 @@ do_check() {
 		_skip+="or(test_einsum_sums_int16)"
 	fi
 
-	echo python3 runtests.py -- ${testjobs} ${_skip+-k "not(${_skip#or})"}
-	python3 runtests.py -- ${testjobs} ${_skip+-k "not(${_skip#or})"}
+	# The NumPy test helper wants to use setuptools to deploy a test
+	# installation, which installs a broken f2py. Test against the wheel.
+	local testdir="${wrksrc}/.xbps-testdir/$(date +%s)"
+	python3 -m installer --destdir "${testdir}" dist/numpy*.whl
+
+	cd "${testdir}"
+	PATH="${testdir}/usr/bin:${PATH}" PYTHONPATH="${testdir}/${py3_sitelib}" \
+		python3 <<-EOF
+			import numpy
+			numpy.test(
+			    extra_argv=[
+			        '-n', '${XBPS_MAKEJOBS}',
+			        ${_skip+'-k', 'not(${_skip#or})'}
+			    ],
+			)
+			EOF
 }
 
 post_install() {

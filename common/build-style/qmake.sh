@@ -4,17 +4,22 @@
 do_configure() {
 	local qmake
 	local qmake_args
-	local qt
-	if [ -x "/usr/lib/qt5/bin/qmake" ]; then
-		qmake="/usr/lib/qt5/bin/qmake"
+	local qt=${QT:-}
+	local builddir="${wrksrc}/${build_wrksrc}"
+	cd ${builddir}
+	if [ "${QT}" ]; then
+		qt=${QT}
+		if [ ! -x "/usr/lib/${qt}/bin/qmake" ]; then
+			msg_error "${QT} is requested, but not found\n"
+		fi
+	elif [ -x "/usr/lib/qt5/bin/qmake" ]; then
 		qt="qt5"
 	elif [ -x "/usr/lib/qt6/bin/qmake" ]; then
-		qmake="/usr/lib/qt6/bin/qmake"
 		qt="qt6"
-	fi
-	if [ -z "${qmake}" ]; then
+	else
 		msg_error "${pkgver}: Could not find qmake - missing in hostmakedepends?\n"
 	fi
+	qmake="/usr/lib/${qt}/bin/qmake"
 	if [ "$CROSS_BUILD" ]; then
 		case $XBPS_TARGET_MACHINE in
 			i686*) _qt_arch=i386;;
@@ -25,8 +30,8 @@ do_configure() {
 			ppc64*) _qt_arch=power64;;
 			ppc*) _qt_arch=power;;
 		esac
-		mkdir -p "${wrksrc}/.target-spec/linux-g++"
-		cat > "${wrksrc}/.target-spec/linux-g++/qmake.conf" <<_EOF
+		mkdir -p "${builddir}/.target-spec/linux-g++"
+		cat > "${builddir}/.target-spec/linux-g++/qmake.conf" <<_EOF
 MAKEFILE_GENERATOR      = UNIX
 CONFIG                 += incremental no_qt_rpath
 QMAKE_INCREMENTAL_STYLE = sublib
@@ -54,10 +59,10 @@ QMAKE_CXXFLAGS          = ${CXXFLAGS}
 QMAKE_LFLAGS            = ${LDFLAGS}
 load(qt_config)
 _EOF
-		echo "#include \"${XBPS_CROSS_BASE}/usr/lib/${qt}/mkspecs/linux-g++/qplatformdefs.h\"" > "${wrksrc}/.target-spec/linux-g++/qplatformdefs.h"
+		echo "#include \"${XBPS_CROSS_BASE}/usr/lib/${qt}/mkspecs/linux-g++/qplatformdefs.h\"" > "${builddir}/.target-spec/linux-g++/qplatformdefs.h"
 
-		mkdir -p "${wrksrc}/.host-spec/linux-g++"
-		cat > "${wrksrc}/.host-spec/linux-g++/qmake.conf" <<_EOF
+		mkdir -p "${builddir}/.host-spec/linux-g++"
+		cat > "${builddir}/.host-spec/linux-g++/qmake.conf" <<_EOF
 MAKEFILE_GENERATOR      = UNIX
 CONFIG                 += incremental no_qt_rpath
 QMAKE_INCREMENTAL_STYLE = sublib
@@ -84,8 +89,8 @@ QMAKE_CXXFLAGS          = ${CXXFLAGS_host}
 QMAKE_LFLAGS            = ${LDFLAGS_host}
 load(qt_config)
 _EOF
-echo '#include "/usr/lib/${qt}/mkspecs/linux-g++/qplatformdefs.h"' > "${wrksrc}/.host-spec/linux-g++/qplatformdefs.h"
-		cat > "${wrksrc}/qt.conf" <<_EOF
+echo '#include "/usr/lib/${qt}/mkspecs/linux-g++/qplatformdefs.h"' > "${builddir}/.host-spec/linux-g++/qplatformdefs.h"
+		cat > "${builddir}/qt.conf" <<_EOF
 [Paths]
 Sysroot=${XBPS_CROSS_BASE}
 Prefix=/usr
@@ -108,10 +113,10 @@ HostData=/usr/lib/${qt}
 HostBinaries=/usr/lib/${qt}/bin
 HostLibraries=/usr/lib
 HostLibraryExecutables=/usr/lib/${qt}/libexec
-Spec=${wrksrc}/.host-spec/linux-g++
-TargetSpec=${wrksrc}/.target-spec/linux-g++
+Spec=${builddir}/.host-spec/linux-g++
+TargetSpec=${builddir}/.target-spec/linux-g++
 _EOF
-		qmake_args="-qtconf ${wrksrc}/qt.conf PKG_CONFIG_EXECUTABLE=${XBPS_WRAPPERDIR}/${PKG_CONFIG}"
+		qmake_args="-qtconf ${builddir}/qt.conf PKG_CONFIG_EXECUTABLE=${XBPS_WRAPPERDIR}/${PKG_CONFIG}"
 		${qmake} ${qmake_args} \
 			PREFIX=/usr \
 			QT_INSTALL_PREFIX=/usr \
@@ -134,6 +139,7 @@ _EOF
 }
 
 do_build() {
+	cd "${wrksrc}/${build_wrksrc}"
 	: ${make_cmd:=make}
 
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target} \
@@ -141,6 +147,7 @@ do_build() {
 }
 
 do_install() {
+	cd "${wrksrc}/${build_wrksrc}"
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
 

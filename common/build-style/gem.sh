@@ -3,11 +3,12 @@
 #
 do_install() {
 	: ${gem_cmd:=gem}
+	: ${gemname:=${pkgname#ruby-}}
 
 	local _GEMDIR _INSTDIR
 
 	_GEMDIR=$($gem_cmd env gemdir)
-	_INSTDIR=${DESTDIR}/${_GEMDIR}/gems/${pkgname#ruby-}-${version}
+	_INSTDIR=${DESTDIR}/${_GEMDIR}/gems/${gemname}-${version}
 
 	$gem_cmd install \
 		--local \
@@ -16,7 +17,7 @@ do_install() {
 		--ignore-dependencies \
 		--no-document \
 		--verbose \
-		${XBPS_SRCDISTDIR}/${pkgname}-${version}/${pkgname#ruby-}-${version}.gem
+		${XBPS_SRCDISTDIR}/${pkgname}-${version}/${gemname}-${version}.gem
 
 	# Remove cache
 	rm -rf ${DESTDIR}/${_GEMDIR}/cache
@@ -64,5 +65,5 @@ do_install() {
 
 	# Ignore the ~> operator, replace it with >=
 	sed 's|~>|>=|g' \
-		-i ${DESTDIR}/${_GEMDIR}/specifications/${pkgname#ruby-}-${version}.gemspec
+		-i ${DESTDIR}/${_GEMDIR}/specifications/${gemname}-${version}.gemspec
 }

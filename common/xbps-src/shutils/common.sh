@@ -176,10 +176,21 @@ msg_warn_nochroot() {
 
 msg_normal() {
     if [ -z "$XBPS_QUIET" ]; then
-        # normal messages in bold
-        [ -n "$NOCOLORS" ] || printf "\033[1m"
+        # normal messages in bright bold white
+        if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+            # Github CI considers '1m' to be just a font bold
+            [ -n "$NOCOLORS" ] || printf "\033[97m\033[1m"
+        else
+            [ -n "$NOCOLORS" ] || printf "\033[1m"
+        fi
         printf "=> $@"
         [ -n "$NOCOLORS" ] || printf "\033[m"
+    fi
+}
+
+msg_verbose() {
+    if [ -n "$XBPS_VERBOSE" ]; then
+        printf >&2 "$@"
     fi
 }
 
@@ -201,7 +212,12 @@ report_broken() {
 }
 
 msg_normal_append() {
-    [ -n "$NOCOLORS" ] || printf "\033[1m"
+    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+        # Github CI considers '1m' to be just a font bold
+        [ -n "$NOCOLORS" ] || printf "\033[97m\033[1m"
+    else
+        [ -n "$NOCOLORS" ] || printf "\033[1m"
+    fi
     printf "$@"
     [ -n "$NOCOLORS" ] || printf "\033[m"
 }
@@ -485,8 +501,9 @@ setup_pkg() {
 
     # Check if base-chroot is already installed.
     if [ -z "$bootstrap" -a -z "$CHROOT_READY" -a "z$show_problems" != "zignore-problems" ]; then
-        msg_red "${pkg} is not a bootstrap package and cannot be built without it.\n"
-        msg_error "Please install bootstrap packages and try again.\n"
+        msg_red "${pkg} is not a bootstrap package and cannot be built without bootstrapping first.\n"
+        msg_normal "binary bootstrapping for ${XBPS_MACHINE} in ${XBPS_MASTERDIR}...\n"
+        install_base_chroot "$XBPS_MACHINE"
     fi
 
     sourcepkg="${pkgname}"
@@ -507,12 +524,14 @@ setup_pkg() {
 
     pkgver="${pkg}-${version}_${revision}"
 
-    # If build_style() unset, a do_install() function must be defined.
+    # If build_style is unset, a do_install() function must be defined.
     if [ -z "$build_style" ]; then
         # Check that at least do_install() is defined.
-        if ! declare -f do_install >/dev/null; then
+        if [ "$metapackage" != yes ] && ! declare -f do_install >/dev/null && [ "${pkgname}" = "${sourcepkg}" ]; then
             msg_error "$pkgver: missing do_install() function!\n"
         fi
+    elif [ "$build_style" = meta ]; then
+        msg_error "$pkgver: build_style=meta is deprecated, replace with metapackage=yes\n"
     fi
 
     for x in ${hostmakedepends} ${makedepends} ${checkdepends}; do
@@ -523,8 +542,8 @@ setup_pkg() {
 
     FILESDIR=$XBPS_SRCPKGDIR/$sourcepkg/files
     PATCHESDIR=$XBPS_SRCPKGDIR/$sourcepkg/patches
-    DESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${sourcepkg}-${version}
-    PKGDESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${pkg}-${version}
+    DESTDIR=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET:+${XBPS_CROSS_TRIPLET}/}/${sourcepkg}-${version}
+    PKGDESTDIR=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET:+$XBPS_CROSS_TRIPLET/}${pkg}-${version}
 
     export XBPS_ORIG_MAKEJOBS=${XBPS_ORIG_MAKEJOBS:=$XBPS_MAKEJOBS}
     if [ -n "$disable_parallel_build" ]; then

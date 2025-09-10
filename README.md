@@ -40,7 +40,7 @@ See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribut
 - common POSIX utilities included by default in almost all UNIX systems
 - curl(1) - required by `xbps-src update-check`
 
-For bootstrapping additionally:
+For bootstrapping from source additionally:
 - flock(1) - util-linux
 - bsdtar or GNU tar (in that order of preference)
 - install(1) - GNU coreutils
@@ -56,11 +56,17 @@ methods.
 <a name="quick-start"></a>
 ### Quick start
 
-Clone the `void-packages` git repository and install the bootstrap packages:
+Clone the `void-packages` git repository:
 
 ```
 $ git clone https://github.com/void-linux/void-packages.git
 $ cd void-packages
+```
+
+Bootstrapping from binary packages will be done automatically when first building
+a package, but it can be done manually with:
+
+```
 $ ./xbps-src binary-bootstrap
 ```
 
@@ -87,7 +93,7 @@ Once built, the package will be available in `hostdir/binpkgs` or an appropriate
 Alternatively, packages can be installed with the `xi` utility, from the `xtools` package. `xi` takes the repository of the current working directory into account.
 
 ```
-# xi <package_name>
+$ xi <package_name>
 ```
 
 <a name="chroot-methods"></a>
@@ -158,7 +164,8 @@ These packages are installed into the `masterdir` in order to create the contain
 
 The primary and recommended way to set up this container is using the `binary-bootstrap`
 command. This will use pre-existing binary packages, either from remote `xbps` repositories
-or from your local repository.
+or from your local repository. This is done automatically when building packages, if an initialized
+masterdir for the host architecture does not exist.
 
 There is also the `bootstrap` command, which will build all necessary `bootstrap` packages from
 scratch. This is usually not recommended, since those packages are built using your host system's
@@ -217,7 +224,7 @@ The following directory hierarchy is used with a default configuration file:
             |  |- repocache ...
             |  |- sources ...
             |
-            |- masterdir
+            |- masterdir-<arch>
             |  |- builddir -> ...
             |  |- destdir -> ...
             |  |- host -> bind mounted from <hostdir>
@@ -226,7 +233,7 @@ The following directory hierarchy is used with a default configuration file:
 
 The description of these directories is as follows:
 
- - `masterdir`: master directory to be used as rootfs to build/install packages.
+ - `masterdir-<arch>`: master directory to be used as rootfs to build/install packages.
  - `builddir`: to unpack package source tarballs and where packages are built.
  - `destdir`: to install packages, aka **fake destdir**.
  - `hostdir/ccache`: to store ccache data if the `XBPS_CCACHE` option is enabled.
@@ -340,6 +347,9 @@ Each time a binary package is created, a package signature must be created with 
 
 > It is not possible to sign a repository with multiple RSA keys.
 
+If packages in `hostdir/binpkgs` are signed, the key in `.plist` format (as imported by xbps) can be placed
+in `etc/repo-keys/` to prevent xbps-src from prompting to import that key.
+
 <a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages
 
@@ -362,6 +372,10 @@ the package from the desired repository.
 Setup the workers (machines that will compile the code):
 
     # xbps-install -Sy distcc
+
+Update distcc compiler whitelist
+
+    # update-distcc-symlinks
 
 Modify the configuration to allow your local network machines to use distcc (e.g. `192.168.2.0/24`):
 
@@ -443,11 +457,11 @@ Clone the `void-packages` git repository:
 
     $ git clone https://github.com/void-linux/void-packages.git
 
-and `xbps-src` should be fully functional; just start the `bootstrap` process, i.e:
+and `xbps-src` should be fully functional; optionally, start the `bootstrap` process, i.e:
 
     $ ./xbps-src binary-bootstrap
 
-The default masterdir is created in the current working directory, i.e `void-packages/masterdir`.
+The default masterdir is created in the current working directory, i.e. `void-packages/masterdir-<arch>`, where `<arch>` for the default masterdir is is the native xbps architecture.
 
 <a name="remaking-masterdir"></a>
 ### Remaking the masterdir
@@ -472,22 +486,18 @@ Two ways are available to build 32bit packages on x86\_64:
  - native mode with a 32bit masterdir (recommended, used in official repository)
  - cross compilation mode to i686 [target](#cross-compiling)
 
-The canonical mode (native) needs a new x86 `masterdir`:
+The canonical mode (native) needs a new x86 `masterdir`, which is created when building a package for i686:
 
-    $ ./xbps-src -m masterdir-x86 binary-bootstrap i686
-    $ ./xbps-src -m masterdir-x86 ...
+    $ ./xbps-src -A i686 ...
 
 <a name="building-for-musl"></a>
 ### Building packages natively for the musl C library
 
-Canonical way of building packages for same architecture but different C library is through dedicated masterdir.
-To build for x86_64-musl on glibc x86_64 system, prepare a new masterdir with the musl packages:
+The canonical way of building packages for same architecture but different C library is through a dedicated masterdir by using the host architecture flag `-A`.
+To build for x86_64-musl on glibc x86_64 system, use `-A x86_64-musl` in your `xbps-src` invocation.
+This will create and bootstrap a new masterdir called `masterdir-x86_64-musl` that will be used when `-A x86_64-musl` is specified:
 
-    $ ./xbps-src -m masterdir-x86_64-musl binary-bootstrap x86_64-musl
-
-Your new masterdir is now ready to build packages natively for the musl C library:
-
-    $ ./xbps-src -m masterdir-x86_64-musl pkg ...
+    $ ./xbps-src -A x86_64-musl pkg ...
 
 <a name="building-base-system"></a>
 ### Building void base-system from scratch

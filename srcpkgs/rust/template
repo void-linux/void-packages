@@ -8,21 +8,23 @@
 # uploaded to https://repo-default.voidlinux.org/distfiles/
 #
 pkgname=rust
-version=1.72.1
+version=1.88.0
 revision=1
+_llvmver=19
 hostmakedepends="curl pkg-config python3 tar cargo-bootstrap"
-makedepends="libffi-devel ncurses-devel libxml2-devel zlib-devel llvm15"
+makedepends="libffi-devel ncurses-devel libxml2-devel zlib-devel llvm${_llvmver}-devel"
 depends="rust-std gcc"
 short_desc="Safe, concurrent, practical systems language"
 maintainer="Enno Boland <gottox@voidlinux.org>"
-license="MIT, Apache-2.0"
+license="Apache-2.0 OR MIT"
 homepage="https://www.rust-lang.org/"
 distfiles="https://static.rust-lang.org/dist/rustc-${version}-src.tar.gz"
-checksum=7f48845f6a52cdbb5d63fb0528fd5f520eb443275b55f98e328159f86568f895
+checksum=3a97544434848ae3d193d1d6bc83d6f24cb85c261ad95f955fde47ec64cfcfbe
 lib32disabled=yes
 make_check=no # CBA for now
 python_version=3 # needed for python files in rust-src
 
+build_helper="qemu"
 build_options="bindist"
 desc_option_bindist="Generate tarballs for bootstrap"
 
@@ -34,7 +36,7 @@ if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 fi
 
 if [ "$CROSS_BUILD" ]; then
-	hostmakedepends+=" rust llvm15"
+	hostmakedepends+=" rust llvm${_llvmver}-devel"
 	# These are required for building the buildhost's stage0/1
 	hostmakedepends+=" libffi-devel libxml2-devel ncurses-devel zlib-devel"
 else
@@ -49,7 +51,6 @@ _clear_vendor_checksums() {
 }
 
 post_patch() {
-	rm -rf src/llvm-project
 	if [ "$build_option_bindist" ]; then
 		for x in ${FILESDIR}/patches/static-llvm/*.patch; do
 			msg_normal "Applying patch $x\n"
@@ -57,12 +58,14 @@ post_patch() {
 		done
 	fi
 
-	# clear out all the checksum nonsense of patched vendor crates
-	_clear_vendor_checksums libc
-	_clear_vendor_checksums typenum
-	_clear_vendor_checksums cc
-	_clear_vendor_checksums target-lexicon
-	_clear_vendor_checksums tikv-jemallocator
+	# ensure no leftover vendor config remains
+	rm -r .cargo
+
+	cargo update --package cc@1.2.16 --precise 1.2.14
+	(
+		cd src/tools/rustbook
+		cargo update --package cc@1.2.21 --precise 1.2.14
+	)
 }
 
 do_configure() {
@@ -96,7 +99,7 @@ do_configure() {
 	fi
 
 	if [ "$CROSS_BUILD" ]; then
-		_cross_args="--set=target.${RUST_TARGET}.llvm-config=/usr/bin/llvm-config
+		_cross_args="--set=target.${RUST_TARGET}.llvm-config=${XBPS_WRAPPERDIR}/llvm-config-qemu
 		 --set=target.${RUST_TARGET}.crt-static=false
 		 --set=target.${RUST_TARGET}.cc=${CC}
 		 --set=target.${RUST_TARGET}.cxx=${CXX}
@@ -110,11 +113,12 @@ do_configure() {
 		--target="${RUST_TARGET}" \
 		--prefix=/usr \
 		--python=python3 \
-		--enable-vendor \
+		--disable-vendor \
 		--enable-locked-deps \
 		--enable-verbose-tests \
 		--disable-full-bootstrap \
 		--enable-extended \
+		--enable-profiler \
 		--disable-codegen-tests \
 		--disable-dist-src \
 		--${_llvm_shared}-llvm-link-shared \
@@ -128,17 +132,20 @@ do_configure() {
 		--release-description="Void Linux" \
 		--llvm-libunwind=no \
 		--llvm-config=/usr/bin/llvm-config \
-		--tools=clippy,rustdoc,rustfmt \
+		--disable-lld \
+		--disable-llvm-bitcode-linker \
+		--tools=clippy,rustdoc,rustfmt,rust-analyzer-proc-macro-srv \
 		--set="rust.optimize=true" \
 		--set="rust.debug=false" \
 		--set="rust.codegen-units=1" \
 		--set="rust.codegen-units-std=1" \
 		--set="rust.incremental=false" \
-		--set="rust.parallel-compiler=false" \
 		--set="rust.jemalloc=false" \
+		--set="rust.llvm-tools=false" \
 		--set="build.submodules=false" \
 		--set="build.rustc=/usr/bin/rustc" \
 		--set="build.cargo=/usr/bin/cargo" \
+		--set="build.optimized-compiler-builtins=false" \
 		--set="target.${RUST_BUILD}.crt-static=false" \
 		--set="target.${RUST_BUILD}.cc=${CC_host:-$CC}" \
 		--set="target.${RUST_BUILD}.cxx=${CXX_host:-$CXX}" \
@@ -153,6 +160,7 @@ do_configure() {
 # of the cross host.
 do_build() {
 	export RUST_BACKTRACE=1
+	export JEMALLOC_SYS_WITH_LG_PAGE=16
 	export CARGO_HOME="$wrksrc/.cargo"
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 	# prevent sysroot from leaking in

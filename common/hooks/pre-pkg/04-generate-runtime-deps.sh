@@ -40,8 +40,8 @@ store_pkgdestdir_rundeps() {
                      -z "$($XBPS_UHELPER_CMD getpkgname ${_curdep} 2>/dev/null)" ]; then
                     _curdep="${_curdep}>=0"
                 fi
-                printf -- "${_curdep}\n"
-            done | sort | xargs > ${PKGDESTDIR}/rdeps
+                printf "%s " "${_curdep}"
+            done > "${XBPS_STATEDIR}/${pkgname}-rdeps"
         fi
 }
 
@@ -98,7 +98,12 @@ hook() {
     for f in ${verify_deps}; do
         unset _rdep _pkgname _rdepver
 
-        if [ "$(find ${PKGDESTDIR} -name "$f")" ]; then
+        local _findargs="-name"
+        # if SONAME is a path, find should use -wholename
+        if [[ "$f" = */* ]]; then
+            _findargs="-wholename"
+        fi
+        if [ "$(find "${PKGDESTDIR}" $_findargs "$f")" ]; then
             # Ignore libs by current pkg
             echo "   SONAME: $f <-> $pkgname (ignored)"
             continue
@@ -112,7 +117,7 @@ hook() {
             _pkgname=${_pkgname%.nosoname}
             _sdep="${_pkgname}-${version}_${revision}"
         else
-            _rdep="$(awk -v sl="$f" '$1 == sl { print $2; exit; }' "$mapshlibs")"
+            _rdep="$(awk -v sl="$f" -v arch="$XBPS_TARGET_MACHINE" '$1 == sl && ($3 == "" || $3 == "ignore" || $3 == arch) { print $2; exit; }' "$mapshlibs")"
 
             if [ -z "$_rdep" ]; then
                 msg_red_nochroot "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!\n"
@@ -144,6 +149,6 @@ hook() {
     store_pkgdestdir_rundeps
 
     if [ -n "${sorequires}" ]; then
-        echo "${sorequires}" | xargs -n1 | sort | xargs > ${PKGDESTDIR}/shlib-requires
+        echo "${sorequires}" | xargs -n1 | sort | xargs > ${XBPS_STATEDIR}/${pkgname}-shlib-requires
     fi
 }

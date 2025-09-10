@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # build.sh
 
@@ -10,10 +10,10 @@ if [ "$3" = 1 ]; then
 	test="-Q"
 fi
 
-PKGS=$(/hostrepo/xbps-src sort-dependencies $(cat /tmp/templates))
+PKGS=$(./xbps-src $test sort-dependencies $(cat /tmp/templates))
 
 for pkg in ${PKGS}; do
-	/hostrepo/xbps-src -j$(nproc) -s -H "$HOME"/hostdir $arch $test pkg "$pkg"
+	./xbps-src -j$(nproc) -s $arch $test pkg "$pkg"
 	[ $? -eq 1 ] && exit 1
 done
 

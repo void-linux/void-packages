@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=${BUILDPLATFORM} alpine:3.18 AS bootstrap
+FROM --platform=${BUILDPLATFORM} alpine:3.22 AS bootstrap
 ARG TARGETPLATFORM
 ARG MIRROR=https://repo-ci.voidlinux.org
 ARG LIBC

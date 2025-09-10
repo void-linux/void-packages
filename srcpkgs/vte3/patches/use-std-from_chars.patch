@@ -1,0 +1,96 @@
+Source: https://src.fedoraproject.org/rpms/vte291/blob/1a02863e6076133efc38e9ce9e469010ff593c0d/f/0001-Only-use-fast_float-when-std-from_chars-is-insuffici.patch
+Upstream: https://gitlab.gnome.org/GNOME/vte/-/merge_requests/2
+
+From 39557ba02e67af3d6585da96560459bc3b922ca3 Mon Sep 17 00:00:00 2001
+From: Yaakov Selkowitz <yselkowi@redhat.com>
+Date: Wed, 19 Feb 2025 13:43:15 -0500
+Subject: [PATCH] Only use fast_float when std::from_chars is insufficient
+
+When the default C++ standard library provides the necessary support, it
+should be preferred over any supplementary library.  This restores the
+status quo for recent g++ while still supporting clang -stdlib=libc++ and
+older g++.
+---
+ meson.build         | 25 +++++++++++++++++++++++++
+ src/color-parser.cc |  4 ++++
+ src/termprops.hh    |  4 ++++
+ 3 files changed, 33 insertions(+)
+
+diff --git a/meson.build b/meson.build
+index 7b590c33..ab02880a 100644
+--- a/meson.build
++++ b/meson.build
+@@ -675,6 +675,29 @@ config_h.set10('WITH_SYSTEMD', systemd_dep.found())
+ # try compiling a test programme to see if the version is new enough.
+ 
+ if cxx.compiles('''
++    #include <charconv>
++    #include <cstdint>
++    #include <cstring>
++
++    int main(void) {
++      auto str = "1234";
++      auto start = str;
++      auto end = str + strlen(str);
++      auto value = uint64_t{};
++      auto rv = std::from_chars(start, end, value, 16);
++      if (rv.ec != std::errc{} || rv.ptr != end)
++        return 2;
++
++      return 0;
++    }
++    ''',
++    args: [
++      cxx_std_opt,
++    ],
++    name: 'system std::from_chars usability check',
++  )
++  fast_float_dep = dependency('', required: false)
++elif cxx.compiles('''
+     #include <cstdint>
+     #include <cstring>
+     #include <fast_float/fast_float.h>
+@@ -701,6 +724,8 @@ else
+   fast_float_dep = dependency('fast_float', required: true)
+ endif
+ 
++config_h.set10('WITH_FAST_FLOAT', fast_float_dep.found())
++
+ # Write config.h
+ 
+ config_sources = [
+diff --git a/src/color-parser.cc b/src/color-parser.cc
+index 237b4ca7..8d205307 100644
+--- a/src/color-parser.cc
++++ b/src/color-parser.cc
+@@ -29,7 +29,11 @@
+ 
+ #include <glib.h>
+ 
++#if WITH_FAST_FLOAT
+ #include <fast_float/fast_float.h>
++#else
++#define fast_float std
++#endif
+ 
+ #include "color-names.hh"
+ 
+diff --git a/src/termprops.hh b/src/termprops.hh
+index c9253764..0f462acb 100644
+--- a/src/termprops.hh
++++ b/src/termprops.hh
+@@ -35,7 +35,11 @@
+ #include <variant>
+ #include <version>
+ 
++#if WITH_FAST_FLOAT
+ #include <fast_float/fast_float.h>
++#else
++#define fast_float std
++#endif
+ 
+ namespace vte::terminal {
+ 
+-- 
+2.48.1
+

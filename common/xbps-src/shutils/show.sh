@@ -52,9 +52,11 @@ show_pkg_var() {
             _sep="	"
         fi
         if [ -n "$_always_split" ] || [[ "$_value" =~ $'\n' ]]; then
+            set -f
             for i in ${_value}; do
                 [ -n "$i" ] && echo "${_label}:${_sep}${i}"
             done
+            set +f
         else
             echo "${_label}:${_sep}${_value}"
         fi
@@ -62,7 +64,7 @@ show_pkg_var() {
 }
 
 show_pkg_deps() {
-    [ -f "${PKGDESTDIR}/rdeps" ] && cat ${PKGDESTDIR}/rdeps
+    [ -f "${XBPS_STATEDIR}/${pkgname}-rdeps" ] && cat "${XBPS_STATEDIR}/${pkgname}-rdeps"
 }
 
 show_pkg_files() {
@@ -75,7 +77,7 @@ show_avail() {
 
 show_eval_dep() {
     local f x _pkgname _srcpkg found
-    local _dep="$1"
+    local _dep="${1%-32bit}"
     local _host="$2"
     if [ -z "$CROSS_BUILD" ] || [ -z "$_host" ]; then
         # ignore dependency on itself
@@ -92,8 +94,7 @@ show_eval_dep() {
         [[ $_dep == $x ]] && found=1 && break
     done
     [[ $found ]] && return
-    _pkgname=${_dep/-32bit}
-    _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname})
+    _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_dep})
     _srcpkg=${_srcpkg##*/}
     echo $_srcpkg
 }
@@ -117,7 +118,9 @@ show_pkg_build_depends() {
 }
 
 show_pkg_build_deps() {
-    show_pkg_build_depends "${makedepends} $(setup_pkg_depends '' 1 1)" "${hostmakedepends}"
+    local build_depends="${makedepends} $(setup_pkg_depends '' 1 1)"
+    skip_check_step || build_depends+=" ${checkdepends}"
+    show_pkg_build_depends "${build_depends}" "${hostmakedepends}"
 }
 
 show_pkg_hostmakedepends() {
@@ -128,16 +131,21 @@ show_pkg_makedepends() {
     show_pkg_build_depends "${makedepends}" ""
 }
 
+show_pkg_checkdepends() {
+    show_pkg_build_depends "${checkdepends}" ""
+}
+
 show_pkg_build_options() {
-    local f opt desc
+    local f
 
     [ -z "$PKG_BUILD_OPTIONS" ] && return 0
 
     source $XBPS_COMMONDIR/options.description
     msg_normal "$pkgver: the following build options are set:\n"
     for f in ${PKG_BUILD_OPTIONS}; do
-        opt="${f#\~}"
-        eval desc="\${desc_option_${opt}}"
+        local opt="${f#\~}"
+        local descref="desc_option_${opt}"
+        local desc="${!descref-Enable support for $opt}"
         if [[ ${f:0:1} == '~' ]]; then
             echo "   $opt: $desc (OFF)"
         else
@@ -149,9 +157,9 @@ show_pkg_build_options() {
 }
 
 show_pkg_shlib_provides() {
-    [ -f "${PKGDESTDIR}/shlib-provides" ] && cat ${PKGDESTDIR}/shlib-provides
+    [ -f "${XBPS_STATEDIR}/${pkgname}-shlib-provides" ] && cat "${XBPS_STATEDIR}/${pkgname}-shlib-provides"
 }
 
 show_pkg_shlib_requires() {
-    [ -f "${PKGDESTDIR}/shlib-requires" ] && cat ${PKGDESTDIR}/shlib-requires
+    [ -f "${XBPS_STATEDIR}/${pkgname}-shlib-requires" ] && cat "${XBPS_STATEDIR}/${pkgname}-shlib-requires"
 }

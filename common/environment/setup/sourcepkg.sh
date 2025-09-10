@@ -11,7 +11,7 @@ for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 		var="${var#BASH_FUNC_}"
 		unset -f "$var"
 		;;
-	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH)
+	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH | NOCOLORS)
 		# xbps-src specific
 		;;
 	SOURCEFORGE_SITE | NONGNU_SITE | XORG_SITE | DEBIAN_SITE | GNOME_SITE)
@@ -50,6 +50,7 @@ unset -v make_cmd meson_cmd gem_cmd fetch_cmd make_check_pre
 unset -v python_version stackage
 unset -v cmake_builddir meson_builddir
 unset -v meson_crossfile
+unset -v qmake_default_version
 unset -v gemspec
 unset -v go_import_path go_package go_mod_mode
 unset -v patch_args disable_parallel_build disable_parallel_check

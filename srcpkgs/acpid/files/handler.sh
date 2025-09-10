@@ -14,8 +14,8 @@ step_backlight() {
     done
 }
 
-minspeed=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq)
-maxspeed=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq)
+minspeed="/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq"
+maxspeed="/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq"
 setspeed="/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed"
 
 
@@ -44,11 +44,11 @@ case "$1" in
             AC|ACAD|ADP0)
                 case "$4" in
                     00000000)
-                        printf '%s' "$minspeed" >"$setspeed"
+                        cat "$minspeed" >"$setspeed"
                         #/etc/laptop-mode/laptop-mode start
                     ;;
                     00000001)
-                        printf '%s' "$maxspeed" >"$setspeed"
+                        cat "$maxspeed" >"$setspeed"
                         #/etc/laptop-mode/laptop-mode stop
                     ;;
                 esac
