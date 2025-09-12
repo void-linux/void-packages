@@ -3,7 +3,7 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-esr-i18n".
 #
 pkgname=firefox-esr
-version=128.3.1
+version=140.2.0
 revision=1
 build_helper="rust"
 short_desc="Mozilla Firefox web browser - Extended Support Release"
@@ -11,35 +11,47 @@ maintainer="Orphaned <orphan@voidlinux.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.mozilla.org/firefox/"
 distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz"
-checksum=c1f4052f3a88d96a122551d5025053304007f7649886d5e2fdfd1a11ce3d70a8
+checksum=956dce675c3b706d563caf07ed3ca9af632ab830be710dfd4351da78a0a2ef55
 
 lib32disabled=yes
-
+_llvmver=19 # needs to match rust
 hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust
- cargo llvm18 clang18 lld18 nodejs cbindgen nasm which tar"
+ cargo llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which
+ tar xz $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')
+ $(vopt_if wasi wasi-sdk)"
 makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel icu-devel
  pixman-devel libevent-devel libnotify-devel libvpx-devel libwebp-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
- libXdamage-devel freetype-devel
+ libXdamage-devel freetype-devel $(vopt_if wasi wasi-sdk)
  $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
  $(vopt_if pulseaudio pulseaudio-devel) $(vopt_if xscreensaver libXScrnSaver-devel)
  $(vopt_if sndio sndio-devel) $(vopt_if jack jack-devel)"
-depends="nss>=3.72 nspr>=4.32 desktop-file-utils hicolor-icon-theme"
+depends="nss>=3.72 nspr>=4.32 desktop-file-utils hicolor-icon-theme pciutils"
 conflicts="firefox>=0"
 replaces="firefox>=0"
 provides="firefox-${version}_${revision}"
 
-build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland lto clang"
-build_options_default="alsa jack dbus pulseaudio xscreensaver sndio wayland clang"
+build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland lto pgo clang wasi debug"
+build_options_default="alsa jack dbus pulseaudio xscreensaver sndio wayland clang wasi"
+
+if [ "$XBPS_WORDSIZE" != "32" ]; then
+	build_options_default+=" debug"
+fi
 
 desc_option_lto="Enable Link Time Optimization"
+desc_option_pgo="Enable Profile-guided Optimization"
 desc_option_clang="Build with clang"
+desc_option_wasi="Build wasm sandboxed libraries"
 
 case $XBPS_TARGET_MACHINE in
 	armv[56]*) broken="required NEON extensions are not supported on armv6" ;;
 	ppc64*) ;;
 	ppc*) broken="xptcall bitrot" ;;
 esac
+
+if [ "$CROSS_BUILD" -a "$build_option_pgo" ]; then
+	broken="pgo can't be enabled for cross-compilation"
+fi
 
 # we need this because cargo verifies checksums of all files in vendor
 # crates when it builds and gives us no way to override or update the
@@ -65,45 +77,6 @@ post_patch() {
 }
 
 do_build() {
-	if [ "$build_option_clang" ]; then
-		export CC=clang
-		export CXX=clang++
-
-		if [ "$CROSS_BUILD" ]; then
-			mkdir -p wrapper
-
-			local gcc_version=$(gcc -dumpversion)
-			local clang_version=$(clang -dumpversion)
-
-			cat <<-! >"wrapper/${XBPS_TARGET_MACHINE}-clang"
-			#!/bin/sh
-			exec clang \
-				--target="${XBPS_CROSS_TRIPLET}" \
-				--sysroot="${XBPS_CROSS_BASE}" \
-				"\$@"
-			!
-
-			cat <<-! >"wrapper/${XBPS_TARGET_MACHINE}-clang++"
-			#!/bin/sh
-			exec clang++ \
-				--target="${XBPS_CROSS_TRIPLET}" \
-				--sysroot="${XBPS_CROSS_BASE}" \
-				"\$@"
-			!
-
-			chmod +x wrapper/*
-
-			export PATH="${wrksrc}/wrapper:$PATH"
-			export CC=${XBPS_TARGET_MACHINE}-clang
-			export CXX=${XBPS_TARGET_MACHINE}-clang++
-		fi
-
-		export AR=llvm-ar
-		export NM=llvm-nm
-		export HOST_CC=clang
-		export HOST_CXX=clang++
-	fi
-
 	export AS="${CC}"
 	export CFLAGS="-O2"
 	export CXXFLAGS="-O2"
@@ -111,6 +84,15 @@ do_build() {
 	export HOST_CXXFLAGS=""
 	export LDFLAGS="-Wl,-rpath=/usr/lib/firefox"
 	# export LDFLAGS+="-Wl,--threads=${XBPS_MAKEJOBS}"
+
+	if [ "$build_option_clang" ]; then
+		export CC=clang
+		export CXX=clang++
+		export AR=llvm-ar
+		export NM=llvm-nm
+		export HOST_CC=clang
+		export HOST_CXX=clang++
+	fi
 
 	disable_jemalloc() {
 		if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
@@ -145,6 +127,14 @@ do_build() {
 		fi
 	}
 
+	disable_wasi() {
+		if [ "$build_option_wasi" ]; then
+			echo "ac_add_options --with-wasi-sysroot=/usr/share/wasi-sysroot"
+		else
+			echo "ac_add_options --without-wasm-sandboxed-libraries"
+		fi
+	}
+
 	cat <<-! >.mozconfig
 	ac_add_options --prefix=/usr
 	ac_add_options --libdir=/usr/lib
@@ -170,9 +160,7 @@ do_build() {
 	$(disable_elfhack)
 	$(disable_webrtc)
 
-	# XXX: wasi currently not ready
-	# ac_add_options --with-wasi-sysroot=/usr/share/wasi-sysroot
-	ac_add_options --without-wasm-sandboxed-libraries
+	$(disable_wasi)
 
 	ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
 
@@ -201,13 +189,18 @@ do_build() {
 	ac_add_options $(vopt_enable sndio)
 	ac_add_options --enable-default-toolkit=$(vopt_if wayland 'cairo-gtk3-wayland' 'cairo-gtk3')
 
+	mk_add_options MOZ_OBJDIR="${wrksrc}/obj"
+
 	MOZ_APP_REMOTINGNAME=Firefox
 	!
 
-	# work around large debug symbols on 32-bit hosts
-	if [ "$XBPS_WORDSIZE" = "32" ]; then
+	if [ -z "$build_option_debug" ]; then
 		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
 		echo "ac_add_options --disable-debug" >>.mozconfig
+	fi
+
+	# work around large debug symbols on 32-bit hosts
+	if [ "$XBPS_WORDSIZE" = "32" ]; then
 		export LDFLAGS+=" -Wl,--no-keep-memory"
 	fi
 
@@ -221,6 +214,36 @@ do_build() {
 	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
 
 	rm -f old-configure
+
+	if [ "$build_option_pgo" ]; then
+		cp .mozconfig{,.orig}
+		echo "ac_add_options --enable-profile-generate=cross" >> .mozconfig
+
+		./mach build
+		./mach package
+		LLVM_PROFDATA=llvm-profdata \
+		JARLOG_FILE="$PWD/jarlog" \
+		GDK_BACKEND=x11 \
+		LD_LIBRARY_PATH="$PWD/obj/dist/firefox" \
+		XDG_RUNTIME_DIR="$(mktemp -d "${wrksrc}/pgo-runtime-XXXXXX")" \
+		MOZ_ENABLE_WAYLAND=0 \
+			xvfb-run -s "-screen 0 1920x1080x24 -nolisten local" \
+			dbus-run-session -- ./mach python build/pgo/profileserver.py
+
+		test -s merged.profdata
+		test -s jarlog
+
+		./mach clobber objdir
+
+		cp .mozconfig{.orig,}
+		cat <<-! >>.mozconfig
+		ac_add_options --enable-lto=cross,full
+		ac_add_options --enable-profile-use=cross
+		ac_add_options --with-pgo-profile-path=${PWD@Q}/merged.profdata
+		ac_add_options --with-pgo-jarlog=${PWD@Q}/jarlog
+		!
+	fi
+
 	./mach build
 }
 
@@ -229,8 +252,8 @@ do_install() {
 	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
 	DESTDIR="$DESTDIR" ./mach install
 
-	vinstall ${FILESDIR}/vendor.js 644 usr/lib/firefox/browser/defaults/preferences
-	vinstall taskcluster/docker/firefox-snap/firefox.desktop 644 usr/share/applications
+	vinstall "${FILESDIR}/vendor.js" 644 usr/lib/firefox/browser/defaults/preferences
+	vinstall "${FILESDIR}/firefox.desktop" 644 usr/share/applications
 
 	for i in 16x16 22x22 24x24 32x32 48x48 128x128 256x256; do
 		vinstall ${wrksrc}/browser/branding/official/default${i%x*}.png 644 \
