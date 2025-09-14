@@ -1,0 +1,45 @@
+_PASSW_SAVE(){
+local _savef=/etc/${PKGNAME}/SYSDBA.password-$(date +%Y%m%d%H%M%S)
+install -m 600 /dev/null "${_savef}"
+
+cat > "${_savef}" <<-! && echo "See password in file ${_savef}"
+	# This file was created when ${PKGNAME} was installed.
+	# This file should not be readable by other users.
+	# Remember the user password and you can delete this file.
+	user=SYSDBA
+	password=${_pass}
+	!
+[ $? -eq 0 ] && ln -srf "${_savef}" "/etc/${PKGNAME}/SYSDBA.password" || echo 'Something went wrong.'
+}
+
+_PASSW_SET(){
+echo "${PKGNAME}: Post install: Warning! Attempting to set password for user SYSDBA ..."
+
+local _n1=$(expr "${VERSION}" : '\([^.]*\)')
+local _securitydb=/var/lib/${PKGNAME}/system/security${_n1}.fdb
+local _pass=$(head -c 9 /dev/random | base64) # maybe pwgen ?
+
+chmod 660 -- /var/lib/${PKGNAME}/system/security*.fdb
+chown _firebird:_firebird -- /var/lib/${PKGNAME}/system/security*.fdb
+
+chpst -u _firebird:_firebird /usr/lib/${PKGNAME}/bin/isql <<-!
+	CONNECT '${_securitydb}' USER SYSDBA;
+	CREATE USER SYSDBA PASSWORD '${_pass}';
+	!
+
+if [ $? -eq 0 ]; then
+	echo 'Password set successfully.'
+	_PASSW_SAVE
+else
+	echo 'Password set fail.'
+fi
+}
+
+case "${ACTION}" in
+post)
+	if [ "$UPDATE" = "no" ]
+	then
+		_PASSW_SET
+	fi
+	;;
+esac
