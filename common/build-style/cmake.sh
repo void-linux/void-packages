@@ -63,9 +63,7 @@ _EOF
 		# QT_HOST_PATH isn't enough in my system,
 		# which have binfmts support on and off
 		cmake_args+=" -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake"
-		# Unlike Qt6, put this into configure_args, KF6 will requires
-		# its tools in native even if it's not required.
-		# cmake_args+="  -DKF6_HOST_TOOLING=/usr/lib/cmake"
+		cmake_args+="  -DKF6_HOST_TOOLING=/usr/lib/cmake"
 	fi
 
 	if [[ $build_helper = *"qemu"* ]]; then
