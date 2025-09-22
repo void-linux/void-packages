@@ -1,0 +1,202 @@
+From c8e28918aa96c53333ea7019eb24642b7878b548 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 16 Jul 2025 19:06:34 +0200
+Subject: [PATCH] Port to gjs-1.85/girepository-2.0
+
+gjs ported from the stand-alone gobject-introspection-1.0 to the
+new girepository-2.0 library bundled with glib.
+
+Bump the requirements for gjs/glib and adjust to the (fairly minor)
+changes.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3801>
+---
+ .gitlab-ci.yml    |  2 +-
+ meson.build       |  7 +++----
+ src/main.c        | 23 +++++++++++++----------
+ src/run-js-test.c |  9 ++++++---
+ 4 files changed, 23 insertions(+), 18 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 66e1592f33..ce2215032d 100644
+--- a/meson.build
++++ b/meson.build
+@@ -21,9 +21,8 @@ libmutter_test_pc = 'libmutter-test-' + mutter_api_version
+ ecal_req = '>= 3.33.1'
+ eds_req = '>= 3.33.1'
+ gcr_req = '>= 3.90.0'
+-gio_req = '>= 2.79.2'
+-gi_req = '>= 1.49.1'
+-gjs_req = '>= 1.81.2'
++gio_req = '>= 2.85.1'
++gjs_req = '>= 1.85.1'
+ gtk_req = '>= 4.0'
+ mutter_req = '>= 49.beta'
+ polkit_req = '>= 0.100'
+@@ -73,7 +72,7 @@ ecal_dep = dependency('libecal-2.0', version: ecal_req)
+ eds_dep = dependency('libedataserver-1.2', version: eds_req)
+ gcr_dep = dependency('gcr-4', version: gcr_req)
+ gdk_pixbuf_dep = dependency('gdk-pixbuf-2.0')
+-gi_dep = dependency('gobject-introspection-1.0', version: gi_req)
++gi_dep = dependency('girepository-2.0', version: gio_req)
+ gio_dep = dependency('gio-2.0', version: gio_req)
+ gio_unix_dep = dependency('gio-unix-2.0', version: gio_req)
+ gjs_dep = dependency('gjs-1.0', version: gjs_req)
+diff --git a/src/main.c b/src/main.c
+index af4fa8597e..99eca3e3c9 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -13,7 +13,7 @@
+ #include <clutter/clutter.h>
+ #include <glib-unix.h>
+ #include <glib/gi18n-lib.h>
+-#include <girepository.h>
++#include <girepository/girepository.h>
+ #include <meta/meta-context.h>
+ #include <meta/meta-plugin.h>
+ #include <meta/prefs.h>
+@@ -133,7 +133,7 @@ shell_dbus_init (gboolean replace)
+ 
+ #ifdef HAVE_EXE_INTROSPECTION
+ static void
+-maybe_add_rpath_introspection_paths (void)
++maybe_add_rpath_introspection_paths (GIRepository *repo)
+ {
+   ElfW (Dyn) *dyn;
+   ElfW (Dyn) *rpath = NULL;
+@@ -210,8 +210,8 @@ maybe_add_rpath_introspection_paths (void)
+       g_debug ("Prepending RPATH directory '%s' "
+                "to introsepciton library search path",
+                rpath_dir->str);
+-      g_irepository_prepend_search_path (rpath_dir->str);
+-      g_irepository_prepend_library_path (rpath_dir->str);
++      gi_repository_prepend_search_path (repo, rpath_dir->str);
++      gi_repository_prepend_library_path (repo, rpath_dir->str);
+     }
+ }
+ #endif /* HAVE_EXE_INTROSPECTION */
+@@ -219,20 +219,23 @@ maybe_add_rpath_introspection_paths (void)
+ static void
+ shell_introspection_init (void)
+ {
++  g_autoptr (GIRepository) repo = NULL;
+ 
+-  g_irepository_prepend_search_path (MUTTER_TYPELIB_DIR);
+-  g_irepository_prepend_search_path (SHELL_TYPELIB_DIR);
++  repo = gi_repository_dup_default ();
++
++  gi_repository_prepend_search_path (repo, MUTTER_TYPELIB_DIR);
++  gi_repository_prepend_search_path (repo, SHELL_TYPELIB_DIR);
+ 
+   /* We need to explicitly add the directories where the private libraries are
+    * installed to the GIR's library path, so that they can be found at runtime
+    * when linking using DT_RUNPATH (instead of DT_RPATH), which is the default
+    * for some linkers (e.g. gold) and in some distros (e.g. Debian).
+    */
+-  g_irepository_prepend_library_path (MUTTER_TYPELIB_DIR);
+-  g_irepository_prepend_library_path (GNOME_SHELL_PKGLIBDIR);
++  gi_repository_prepend_library_path (repo, MUTTER_TYPELIB_DIR);
++  gi_repository_prepend_library_path (repo, GNOME_SHELL_PKGLIBDIR);
+ 
+ #ifdef HAVE_EXE_INTROSPECTION
+-  maybe_add_rpath_introspection_paths ();
++  maybe_add_rpath_introspection_paths (repo);
+ #endif
+ }
+ 
+@@ -611,7 +614,7 @@ main (int argc, char **argv)
+   context = meta_create_context (WM_NAME);
+   meta_context_add_option_entries (context, gnome_shell_options,
+                                    GETTEXT_PACKAGE);
+-  meta_context_add_option_group (context, g_irepository_get_option_group ());
++  meta_context_add_option_group (context, gi_repository_get_option_group ());
+ 
+   session_mode = (char *) g_getenv ("GNOME_SHELL_SESSION_MODE");
+ 
+diff --git a/src/run-js-test.c b/src/run-js-test.c
+index 4f795252c2..7a539d3a23 100644
+--- a/src/run-js-test.c
++++ b/src/run-js-test.c
+@@ -30,7 +30,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
+-#include <girepository.h>
++#include <girepository/girepository.h>
+ #include <gjs/gjs.h>
+ 
+ #include "shell-global.h"
+@@ -64,6 +64,7 @@ int
+ main (int argc, char **argv)
+ {
+   GOptionContext *context;
++  g_autoptr (GIRepository) repo = NULL;
+   g_autoptr (GError) error = NULL;
+   ShellGlobal *global;
+   GjsContext *js_context;
+@@ -85,8 +86,10 @@ main (int argc, char **argv)
+   global = shell_global_get ();
+   js_context = _shell_global_get_gjs_context (global);
+ 
+-  g_irepository_prepend_search_path (MUTTER_TYPELIB_DIR);
+-  g_irepository_prepend_search_path (SHELL_TYPELIB_DIR);
++  repo = gi_repository_dup_default ();
++
++  gi_repository_prepend_search_path (repo, MUTTER_TYPELIB_DIR);
++  gi_repository_prepend_search_path (repo, SHELL_TYPELIB_DIR);
+ 
+   if (argc < 2)
+     {
+-- 
+GitLab
+From 1132827ce94449e2812dc2339e282423217bbcc6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 12 Aug 2025 03:59:14 +0200
+Subject: [PATCH] shell: Use proper path to include girepository headers
+
+girepository-2.0 headers are inside ${PREFIX}/include/glib-2.0/girepository
+and the pkg-config file provides the glib-2.0 subpath as include
+directory, so we are required to use the full header path, or we may not
+be able to find them.
+
+This is triggered a build failure in debian (with clean setup where no
+libgirepository-1.0 was installed):
+
+  ../src/shell-global.c:19:10: fatal error: girepository.h: No such file or
+  directory
+     19 | #include <girepository.h>
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3837>
+---
+ src/shell-global.c       | 2 +-
+ src/shell-tray-manager.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/shell-global.c b/src/shell-global.c
+index c941701b61..9a6de28e98 100644
+--- a/src/shell-global.c
++++ b/src/shell-global.c
+@@ -16,7 +16,7 @@
+ #include <locale.h>
+ 
+ #include <gio/gio.h>
+-#include <girepository.h>
++#include <girepository/girepository.h>
+ #include <meta/meta-backend.h>
+ #include <meta/meta-context.h>
+ #include <meta/display.h>
+diff --git a/src/shell-tray-manager.c b/src/shell-tray-manager.c
+index ddbd17608a..5455211f28 100644
+--- a/src/shell-tray-manager.c
++++ b/src/shell-tray-manager.c
+@@ -3,7 +3,7 @@
+ #include "config.h"
+ 
+ #include <clutter/clutter.h>
+-#include <girepository.h>
++#include <girepository/girepository.h>
+ #include <meta/display.h>
+ 
+ #include "shell-tray-manager.h"
+-- 
+GitLab
