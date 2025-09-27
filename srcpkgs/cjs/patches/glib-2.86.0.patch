@@ -1,0 +1,821 @@
+From 05656829c5bbce8239fa67eef3c0f7e552a6eb68 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Thu, 11 Sep 2025 23:51:56 +0200
+Subject: [PATCH 1/9] overrides/Gio: Add wrappers for platform-specific Gio
+ functions
+
+GLib will not expose anymore platform specific functions in Gio
+namespace as it used to do when GI Repository 1.0 was used, in order to
+keep retro-compatibility in gjs applications, generate wrappers for
+Gio platform-specific definitions that we used to provide inside the
+main Gio object, but warn the users of these APIs that they should
+migrate to GioUnix or GioWin32 instead.
+---
+ installed-tests/js/testGio.js | 88 +++++++++++++++++++++++++++++++++++
+ modules/core/overrides/Gio.js | 35 ++++++++++++++
+ 2 files changed, 123 insertions(+)
+
+diff --git a/installed-tests/js/testGio.js b/installed-tests/js/testGio.js
+index 908f906b..e74059aa 100644
+--- a/installed-tests/js/testGio.js
++++ b/installed-tests/js/testGio.js
+@@ -4,6 +4,11 @@
+ 
+ const {GLib, Gio, GObject} = imports.gi;
+ 
++let GioUnix;
++try {
++    GioUnix = imports.gi.GioUnix;
++} catch {}
++
+ const Foo = GObject.registerClass({
+     Properties: {
+         boolval: GObject.ParamSpec.boolean('boolval', '', '',
+@@ -390,6 +395,89 @@ describe('Gio.FileEnumerator overrides', function () {
+     });
+ });
+ 
++describe('Gio.DesktopAppInfo fallback', function () {
++    let writerFunc;
++    const requiredVersion =
++        GLib.MAJOR_VERSION > 2 ||
++            (GLib.MAJOR_VERSION === 2 && GLib.MINOR_VERSION >= 86);
++    let keyFile;
++    const desktopFileContent = `[Desktop Entry]
++Version=1.0
++Type=Application
++Name=Some Application
++Exec=${GLib.find_program_in_path('sh')}
++`;
++    beforeAll(function () {
++        // Set up log writer for tests to override
++        writerFunc = jasmine.createSpy('parsed writer func');
++        const writerFuncWrapper = jasmine.createSpy('log writer func', (level, fields) => {
++            const decoder = new TextDecoder('utf-8');
++            const domain = decoder.decode(fields?.GLIB_DOMAIN);
++            const message = `${decoder.decode(fields?.MESSAGE)}`;
++            if (level < GLib.LogLevelFlags.LEVEL_WARNING) {
++                level |= GLib.LogLevelFlags.FLAG_RECURSION;
++                GLib.log_default_handler(domain, level, `${message}\n`, null);
++            }
++            writerFunc(domain, level, message);
++            return GLib.LogWriterOutput.HANDLED;
++        });
++        writerFuncWrapper.and.callThrough();
++        GLib.log_set_writer_func(writerFuncWrapper);
++
++        keyFile = new GLib.KeyFile();
++        keyFile.load_from_data(desktopFileContent, desktopFileContent.length,
++            GLib.KeyFileFlags.NONE);
++    });
++
++    afterAll(function () {
++        GLib.log_set_writer_default();
++    });
++
++    beforeEach(function () {
++        if (!GioUnix)
++            pending('Not supported platform');
++
++        writerFunc.calls.reset();
++    });
++
++    it('can be created using GioUnix', function () {
++        expect(GioUnix.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull();
++        expect(writerFunc).not.toHaveBeenCalled();
++    });
++
++    it('can be created using Gio wrapper', function () {
++        expect(Gio.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull();
++        expect(writerFunc).toHaveBeenCalledWith('Cjs-Console',
++            GLib.LogLevelFlags.LEVEL_WARNING,
++            'Gio.DesktopAppInfo is deprecated, please use GioUnix.DesktopAppInfo instead');
++
++        writerFunc.calls.reset();
++        expect(Gio.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull();
++        expect(writerFunc).not.toHaveBeenCalled();
++    });
++
++    describe('provides platform-independent functions', function () {
++        [Gio, GioUnix].forEach(ns => it(`when created from ${ns.__name__}`, function () {
++            if (!requiredVersion)
++                pending('Installed Gio is not new enough for this test');
++
++            const appInfo = ns.DesktopAppInfo.new_from_keyfile(keyFile);
++            expect(appInfo.get_name()).toBe('Some Application');
++        }));
++    });
++
++    describe('provides unix-only functions', function () {
++        [Gio, GioUnix].forEach(ns => it(`when created from ${ns.__name__}`, function () {
++            if (!requiredVersion)
++                pending('Installed Gio is not new enough for this test');
++
++            const appInfo = ns.DesktopAppInfo.new_from_keyfile(keyFile);
++            expect(appInfo.has_key('Name')).toBeTrue();
++            expect(appInfo.get_string('Name')).toBe('Some Application');
++        }));
++    });
++});
++
+ describe('Non-introspectable file attribute overrides', function () {
+     let numExpectedWarnings, file, info;
+     const flags = [Gio.FileQueryInfoFlags.NONE, null];
+diff --git a/modules/core/overrides/Gio.js b/modules/core/overrides/Gio.js
+index 836d14aa..6bcc20f5 100644
+--- a/modules/core/overrides/Gio.js
++++ b/modules/core/overrides/Gio.js
+@@ -479,9 +479,44 @@ function _warnNotIntrospectable(funcName, replacement) {
+ 
+ function _init() {
+     Gio = this;
++    let GioPlatform = {};
+ 
+     Gio.Application.prototype.runAsync = GLib.MainLoop.prototype.runAsync;
+ 
++    // Redefine Gio functions with platform-specific implementations to be
++    // backward compatible with gi-repository 1.0, however when possible we
++    // notify a deprecation warning, to ensure that the surrounding code is
++    // updated.
++    try {
++        GioPlatform = imports.gi.GioUnix;
++    } catch {
++        try {
++            GioPlatform = imports.gi.GioWin32;
++        } catch {}
++    }
++
++    Object.entries(Object.getOwnPropertyDescriptors(GioPlatform)).forEach(([prop, desc]) => {
++        if (Object.hasOwn(Gio, prop)) {
++            console.debug(`Gio already contains property ${prop}`);
++            Gio[prop] = GioPlatform[prop];
++            return;
++        }
++
++        const newDesc = {
++            enumerable: true,
++            configurable: false,
++            get() {
++                if (!newDesc._deprecationWarningDone) {
++                    console.warn(`Gio.${prop} is deprecated, please use ` +
++                        `${GioPlatform.__name__}.${prop} instead`);
++                    newDesc._deprecationWarningDone = true;
++                }
++                return desc.get?.() ?? desc.value;
++            },
++        };
++        Object.defineProperty(Gio, prop, newDesc);
++    });
++
+     Gio.DBus = {
+         // Namespace some functions
+         get: Gio.bus_get,
+
+From 662f0e82bd51db9d06517e251eccdbc3bab57a8f Mon Sep 17 00:00:00 2001
+From: Philip Chimento <philip.chimento@gmail.com>
+Date: Fri, 12 Sep 2025 00:00:40 +0200
+Subject: [PATCH 2/9] Add JS API wrapping warn_deprecated_once_per_callsite
+
+Expose it in the print module
+
+Co-Authored-By: <marco.trevisan@canonical.com>
+---
+ modules/print.cpp | 58 ++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 57 insertions(+), 1 deletion(-)
+
+diff --git a/modules/print.cpp b/modules/print.cpp
+index 57acdc86..c6aaa264 100644
+--- a/modules/print.cpp
++++ b/modules/print.cpp
+@@ -5,7 +5,11 @@
+ 
+ #include <config.h>
+ 
++#include <stddef.h>  // for size_t
++#include <stdint.h>
++
+ #include <string>
++#include <vector>
+ 
+ #include <glib.h>
+ 
+@@ -21,6 +25,7 @@
+ #include <js/Value.h>
+ #include <jsapi.h>  // for JS_NewPlainObject
+ 
++#include "cjs/deprecation.h"
+ #include "cjs/global.h"
+ #include "cjs/jsapi-util.h"
+ #include "cjs/macros.h"
+@@ -182,6 +187,48 @@ static bool get_pretty_print_function(JSContext*, unsigned argc,
+     return true;
+ }
+ 
++GJS_JSAPI_RETURN_CONVENTION
++static bool warn_deprecated_once_per_callsite(JSContext* cx, unsigned argc,
++                                              JS::Value* vp) {
++    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
++
++    g_assert(args.length() >= 1 &&
++             "warnDeprecatedOncePerCallsite takes at least 1 argument");
++
++    g_assert(
++        args[0].isInt32() &&
++        "warnDeprecatedOncePerCallsite argument 1 must be a message ID number");
++    int32_t message_id = args[0].toInt32();
++    g_assert(
++        message_id >= 0 &&
++        uint32_t(message_id) < GjsDeprecationMessageId::LastValue &&
++        "warnDeprecatedOncePerCallsite argument 1 must be a message ID number");
++
++    if (args.length() == 1) {
++        _gjs_warn_deprecated_once_per_callsite(
++            cx, GjsDeprecationMessageId(message_id));
++        return true;
++    }
++
++    std::vector<std::string> format_args_str;
++    std::vector<const char*> format_args;
++    for (size_t ix = 1; ix < args.length(); ix++) {
++        g_assert(args[ix].isString() &&
++                 "warnDeprecatedOncePerCallsite subsequent arguments must be "
++                 "strings");
++        JS::RootedString v_format_arg{cx, args[ix].toString()};
++        JS::UniqueChars format_arg = JS_EncodeStringToUTF8(cx, v_format_arg);
++        if (!format_arg)
++            return false;
++        format_args_str.emplace_back(format_arg.get());
++        format_args.emplace_back(format_args_str.back().c_str());
++    }
++
++    _gjs_warn_deprecated_once_per_callsite(
++        cx, GjsDeprecationMessageId(message_id), format_args);
++    return true;
++}
++
+ // clang-format off
+ static constexpr JSFunctionSpec funcs[] = {
+     JS_FN("log", gjs_log, 1, GJS_MODULE_PROP_FLAGS),
+@@ -190,13 +237,22 @@ static constexpr JSFunctionSpec funcs[] = {
+     JS_FN("printerr", gjs_printerr, 0, GJS_MODULE_PROP_FLAGS),
+     JS_FN("setPrettyPrintFunction", set_pretty_print_function, 1, GJS_MODULE_PROP_FLAGS),
+     JS_FN("getPrettyPrintFunction", get_pretty_print_function, 1, GJS_MODULE_PROP_FLAGS),
++    JS_FN("warnDeprecatedOncePerCallsite", warn_deprecated_once_per_callsite, 1,
++        GJS_MODULE_PROP_FLAGS),
+     JS_FS_END};
+ // clang-format on
+ 
++static constexpr JSPropertySpec props[] = {
++    JSPropertySpec::int32Value("PLATFORM_SPECIFIC_TYPELIB",
++        GJS_MODULE_PROP_FLAGS,
++        GjsDeprecationMessageId::PlatformSpecificTypelib),
++    JS_PS_END};
++
+ bool gjs_define_print_stuff(JSContext* context,
+                             JS::MutableHandleObject module) {
+     module.set(JS_NewPlainObject(context));
+     if (!module)
+         return false;
+-    return JS_DefineFunctions(context, module, funcs);
++    return JS_DefineFunctions(context, module, funcs) &&
++           JS_DefineProperties(context, module, props);
+ }
+
+From c70848678ed62e901750657f8f12711fcbee604e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 12 Sep 2025 00:21:10 +0200
+Subject: [PATCH 3/9] overrides/Gio: Use print's warnDeprecatedOncePerCallsite
+ to warn
+
+Re-use the C definition to warn when using a deprecated namespace
+instead of doing the same in pure JS.
+---
+ installed-tests/js/testGio.js | 45 +++++++++++++----------------------
+ modules/core/overrides/Gio.js |  8 +++----
+ 2 files changed, 19 insertions(+), 34 deletions(-)
+
+diff --git a/installed-tests/js/testGio.js b/installed-tests/js/testGio.js
+index e74059aa..f67aec42 100644
+--- a/installed-tests/js/testGio.js
++++ b/installed-tests/js/testGio.js
+@@ -396,7 +396,6 @@ describe('Gio.FileEnumerator overrides', function () {
+ });
+ 
+ describe('Gio.DesktopAppInfo fallback', function () {
+-    let writerFunc;
+     const requiredVersion =
+         GLib.MAJOR_VERSION > 2 ||
+             (GLib.MAJOR_VERSION === 2 && GLib.MINOR_VERSION >= 86);
+@@ -409,51 +408,39 @@ Exec=${GLib.find_program_in_path('sh')}
+ `;
+     beforeAll(function () {
+         // Set up log writer for tests to override
+-        writerFunc = jasmine.createSpy('parsed writer func');
+-        const writerFuncWrapper = jasmine.createSpy('log writer func', (level, fields) => {
+-            const decoder = new TextDecoder('utf-8');
+-            const domain = decoder.decode(fields?.GLIB_DOMAIN);
+-            const message = `${decoder.decode(fields?.MESSAGE)}`;
+-            if (level < GLib.LogLevelFlags.LEVEL_WARNING) {
+-                level |= GLib.LogLevelFlags.FLAG_RECURSION;
+-                GLib.log_default_handler(domain, level, `${message}\n`, null);
+-            }
+-            writerFunc(domain, level, message);
+-            return GLib.LogWriterOutput.HANDLED;
+-        });
+-        writerFuncWrapper.and.callThrough();
+-        GLib.log_set_writer_func(writerFuncWrapper);
+-
+         keyFile = new GLib.KeyFile();
+         keyFile.load_from_data(desktopFileContent, desktopFileContent.length,
+             GLib.KeyFileFlags.NONE);
+     });
+ 
+-    afterAll(function () {
+-        GLib.log_set_writer_default();
+-    });
+-
+     beforeEach(function () {
+         if (!GioUnix)
+             pending('Not supported platform');
+ 
+-        writerFunc.calls.reset();
++        if (!requiredVersion)
++            pending('Installed Gio is not new enough for this test');
+     });
+ 
++    function expectDeprecationWarning(testFunction) {
++        if (!requiredVersion)
++            pending('Installed Gio is not new enough for this test');
++
++        GLib.test_expect_message('Cjs', GLib.LogLevelFlags.LEVEL_WARNING,
++            '*Gio.DesktopAppInfo has been moved to a separate platform-specific library. ' +
++            'Please update your code to use GioUnix.DesktopAppInfo instead*');
++        testFunction();
++        GLib.test_assert_expected_messages_internal('Cjs', 'testGio.js', 0,
++            'Gio.DesktopAppInfo expectWarnsOnNewerGio');
++    }
++
+     it('can be created using GioUnix', function () {
+         expect(GioUnix.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull();
+-        expect(writerFunc).not.toHaveBeenCalled();
+     });
+ 
+     it('can be created using Gio wrapper', function () {
++        expectDeprecationWarning(() =>
++            expect(Gio.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull());
+         expect(Gio.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull();
+-        expect(writerFunc).toHaveBeenCalledWith('Cjs-Console',
+-            GLib.LogLevelFlags.LEVEL_WARNING,
+-            'Gio.DesktopAppInfo is deprecated, please use GioUnix.DesktopAppInfo instead');
+-
+-        writerFunc.calls.reset();
+-        expect(Gio.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull();
+-        expect(writerFunc).not.toHaveBeenCalled();
+     });
+ 
+     describe('provides platform-independent functions', function () {
+diff --git a/modules/core/overrides/Gio.js b/modules/core/overrides/Gio.js
+index 6bcc20f5..f5c24fc6 100644
+--- a/modules/core/overrides/Gio.js
++++ b/modules/core/overrides/Gio.js
+@@ -4,6 +4,7 @@
+ var GLib = imports.gi.GLib;
+ var CjsPrivate = imports.gi.CjsPrivate;
+ var Signals = imports.signals;
++const { warnDeprecatedOncePerCallsite, PLATFORM_SPECIFIC_TYPELIB } = imports._print;
+ var Gio;
+ 
+ // Ensures that a Gio.UnixFDList being passed into or out of a DBus method with
+@@ -506,11 +507,8 @@ function _init() {
+             enumerable: true,
+             configurable: false,
+             get() {
+-                if (!newDesc._deprecationWarningDone) {
+-                    console.warn(`Gio.${prop} is deprecated, please use ` +
+-                        `${GioPlatform.__name__}.${prop} instead`);
+-                    newDesc._deprecationWarningDone = true;
+-                }
++                warnDeprecatedOncePerCallsite(PLATFORM_SPECIFIC_TYPELIB,
++                    `Gio.${prop}`, `${GioPlatform.__name__}.${prop}`);
+                 return desc.get?.() ?? desc.value;
+             },
+         };
+
+From 1c797a9619af6c39d6b9fe47961408c6aaf13f18 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 12 Sep 2025 00:28:09 +0200
+Subject: [PATCH 4/9] cjs/deprecation: Use a larger deprecation stack for JS
+ invoked requests
+
+When using warnDeprecatedOncePerCallsite() from JS we need to use a
+larger stack to track the call site, otherwise we may end up considering
+the same call site for different actual callers.
+
+In fact when using this in Gio.js override the call site is always the
+same, but we care about where that function is being invoked from.
+---
+ cjs/deprecation.cpp           | 19 +++++++++++--------
+ cjs/deprecation.h             |  5 +++--
+ installed-tests/js/testGio.js | 23 +++++++++++++++++------
+ modules/print.cpp             |  4 ++--
+ 4 files changed, 33 insertions(+), 18 deletions(-)
+
+diff --git a/cjs/deprecation.cpp b/cjs/deprecation.cpp
+index 9c4e44d9..fca66ff7 100644
+--- a/cjs/deprecation.cpp
++++ b/cjs/deprecation.cpp
+@@ -81,10 +81,10 @@ struct hash<DeprecationEntry> {
+ static std::unordered_set<DeprecationEntry> logged_messages;
+ 
+ GJS_JSAPI_RETURN_CONVENTION
+-static JS::UniqueChars get_callsite(JSContext* cx) {
++static JS::UniqueChars get_callsite(JSContext* cx, unsigned max_frames) {
+     JS::RootedObject stack_frame(cx);
+     if (!JS::CaptureCurrentStack(cx, &stack_frame,
+-                                 JS::StackCapture(JS::MaxFrames(1))) ||
++                                 JS::StackCapture(JS::MaxFrames(max_frames))) ||
+         !stack_frame)
+         return nullptr;
+ 
+@@ -98,8 +98,9 @@ static JS::UniqueChars get_callsite(JSContext* cx) {
+ 
+ static void warn_deprecated_unsafe_internal(JSContext* cx,
+                                             const GjsDeprecationMessageId id,
+-                                            const char* msg) {
+-    JS::UniqueChars callsite(get_callsite(cx));
++                                            const char* msg,
++                                            unsigned max_frames) {
++    JS::UniqueChars callsite(get_callsite(cx, max_frames));
+     DeprecationEntry entry(id, callsite.get());
+     if (!logged_messages.count(entry)) {
+         JS::UniqueChars stack_dump =
+@@ -113,13 +114,15 @@ static void warn_deprecated_unsafe_internal(JSContext* cx,
+  * stack dump API and not the "safe" gjs_dumpstack() which can only print to
+  * stdout or stderr. Do not use this function during GC, for example. */
+ void _gjs_warn_deprecated_once_per_callsite(JSContext* cx,
+-                                            const GjsDeprecationMessageId id) {
+-    warn_deprecated_unsafe_internal(cx, id, messages[id]);
++                                            const GjsDeprecationMessageId id,
++                                            unsigned max_frames) {
++    warn_deprecated_unsafe_internal(cx, id, messages[id], max_frames);
+ }
+ 
+ void _gjs_warn_deprecated_once_per_callsite(
+     JSContext* cx, GjsDeprecationMessageId id,
+-    const std::vector<const char*>& args) {
++    const std::vector<const char*>& args,
++    unsigned max_frames) {
+     // In C++20, use std::format() for this
+     std::string_view format_string{messages[id]};
+     std::stringstream message;
+@@ -149,5 +152,5 @@ void _gjs_warn_deprecated_once_per_callsite(
+     message << format_string.substr(copied, std::string::npos);
+ 
+     std::string message_formatted = message.str();
+-    warn_deprecated_unsafe_internal(cx, id, message_formatted.c_str());
++    warn_deprecated_unsafe_internal(cx, id, message_formatted.c_str(), max_frames);
+ }
+diff --git a/cjs/deprecation.h b/cjs/deprecation.h
+index a59613d3..7a767803 100644
+--- a/cjs/deprecation.h
++++ b/cjs/deprecation.h
+@@ -21,10 +21,11 @@ enum GjsDeprecationMessageId : unsigned {
+ };
+ 
+ void _gjs_warn_deprecated_once_per_callsite(JSContext* cx,
+-                                            GjsDeprecationMessageId message);
++                                            GjsDeprecationMessageId message,
++                                            unsigned max_frames = 1);
+ 
+ void _gjs_warn_deprecated_once_per_callsite(
+     JSContext* cx, GjsDeprecationMessageId id,
+-    const std::vector<const char*>& args);
++    const std::vector<const char*>& args, unsigned max_frames = 1);
+ 
+ #endif  // GJS_DEPRECATION_H_
+diff --git a/installed-tests/js/testGio.js b/installed-tests/js/testGio.js
+index f67aec42..b92d3749 100644
+--- a/installed-tests/js/testGio.js
++++ b/installed-tests/js/testGio.js
+@@ -440,7 +440,8 @@ Exec=${GLib.find_program_in_path('sh')}
+     it('can be created using Gio wrapper', function () {
+         expectDeprecationWarning(() =>
+             expect(Gio.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull());
+-        expect(Gio.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull();
++        expectDeprecationWarning(() =>
++            expect(Gio.DesktopAppInfo.new_from_keyfile(keyFile)).not.toBeNull());
+     });
+ 
+     describe('provides platform-independent functions', function () {
+@@ -448,8 +449,13 @@ Exec=${GLib.find_program_in_path('sh')}
+             if (!requiredVersion)
+                 pending('Installed Gio is not new enough for this test');
+ 
+-            const appInfo = ns.DesktopAppInfo.new_from_keyfile(keyFile);
+-            expect(appInfo.get_name()).toBe('Some Application');
++            const maybeExpectDeprecationWarning = ns === Gio
++                ? expectDeprecationWarning : tf => tf();
++
++            maybeExpectDeprecationWarning(() => {
++                const appInfo = ns.DesktopAppInfo.new_from_keyfile(keyFile);
++                expect(appInfo.get_name()).toBe('Some Application');
++            });
+         }));
+     });
+ 
+@@ -458,9 +464,14 @@ Exec=${GLib.find_program_in_path('sh')}
+             if (!requiredVersion)
+                 pending('Installed Gio is not new enough for this test');
+ 
+-            const appInfo = ns.DesktopAppInfo.new_from_keyfile(keyFile);
+-            expect(appInfo.has_key('Name')).toBeTrue();
+-            expect(appInfo.get_string('Name')).toBe('Some Application');
++            const maybeExpectDeprecationWarning = ns === Gio
++                ? expectDeprecationWarning : tf => tf();
++
++            maybeExpectDeprecationWarning(() => {
++                const appInfo = ns.DesktopAppInfo.new_from_keyfile(keyFile);
++                expect(appInfo.has_key('Name')).toBeTrue();
++                expect(appInfo.get_string('Name')).toBe('Some Application');
++            });
+         }));
+     });
+ });
+diff --git a/modules/print.cpp b/modules/print.cpp
+index c6aaa264..9f029ef8 100644
+--- a/modules/print.cpp
++++ b/modules/print.cpp
+@@ -206,7 +206,7 @@ static bool warn_deprecated_once_per_callsite(JSContext* cx, unsigned argc,
+ 
+     if (args.length() == 1) {
+         _gjs_warn_deprecated_once_per_callsite(
+-            cx, GjsDeprecationMessageId(message_id));
++            cx, GjsDeprecationMessageId(message_id), 2);
+         return true;
+     }
+ 
+@@ -225,7 +225,7 @@ static bool warn_deprecated_once_per_callsite(JSContext* cx, unsigned argc,
+     }
+ 
+     _gjs_warn_deprecated_once_per_callsite(
+-        cx, GjsDeprecationMessageId(message_id), format_args);
++        cx, GjsDeprecationMessageId(message_id), format_args, 2);
+     return true;
+ }
+ 
+
+From a20d35bcc95a2b0c03fcea88dc62825899069256 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 12 Sep 2025 00:31:30 +0200
+Subject: [PATCH 5/9] overrides/Gio: Use Platform prefix for platform-only
+ symbols
+
+In previous versions of GLib, platform-specific symbols such as
+GUnixMountMonitor were mapped in the Gio namespace as Gio.UnixMountMonitor,
+while since commit 05656829 we create wrappers such as
+Gio.MountMonitor.
+
+This is not correct, and does not serve the initial purpose of providing
+a backward compatible wrapper.
+
+So, use the same logic that we had before: if the GType of a symbol starts
+with G{Unix,Win32} we use the platform specific name as prefix of the
+wrapper type, so that it will be Gio.{Unix,Win32}TypeName
+---
+ modules/core/overrides/Gio.js | 21 ++++++++++++++-------
+ 1 file changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/modules/core/overrides/Gio.js b/modules/core/overrides/Gio.js
+index f5c24fc6..e16e8fdc 100644
+--- a/modules/core/overrides/Gio.js
++++ b/modules/core/overrides/Gio.js
+@@ -496,23 +496,30 @@ function _init() {
+         } catch {}
+     }
+ 
++    const platformName = `${GioPlatform?.__name__?.slice(3 /* 'Gio'.length */)}`;
+     Object.entries(Object.getOwnPropertyDescriptors(GioPlatform)).forEach(([prop, desc]) => {
+-        if (Object.hasOwn(Gio, prop)) {
+-            console.debug(`Gio already contains property ${prop}`);
+-            Gio[prop] = GioPlatform[prop];
++        let genericProp = prop;
++
++        const originalValue = GioPlatform[prop];
++        const gtypeName = originalValue.$gtype?.name;
++        if (gtypeName?.startsWith(`G${platformName}`))
++            genericProp = `${platformName}${prop}`;
++
++        if (Object.hasOwn(Gio, genericProp)) {
++            console.debug(`Gio already contains property ${genericProp}`);
++            Gio[genericProp] = originalValue;
+             return;
+         }
+ 
+-        const newDesc = {
++        Object.defineProperty(Gio, genericProp, {
+             enumerable: true,
+             configurable: false,
+             get() {
+                 warnDeprecatedOncePerCallsite(PLATFORM_SPECIFIC_TYPELIB,
+-                    `Gio.${prop}`, `${GioPlatform.__name__}.${prop}`);
++                    `Gio.${genericProp}`, `${GioPlatform.__name__}.${prop}`);
+                 return desc.get?.() ?? desc.value;
+             },
+-        };
+-        Object.defineProperty(Gio, prop, newDesc);
++        });
+     });
+ 
+     Gio.DBus = {
+
+From 48b6fbc95f85ff518efb11bd744e524447b2b5e7 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 12 Sep 2025 00:34:48 +0200
+Subject: [PATCH 6/9] gi/function: Implement name property for functions
+
+JS functions have a name properties by default, but we did not implement
+it for our function wrappers.
+
+Given that there's no a defined specification for it and that it can be
+used for debugging purposes, use it to store the original C function
+name.
+---
+ gi/function.cpp | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/gi/function.cpp b/gi/function.cpp
+index 11a47797..c2d308fd 100644
+--- a/gi/function.cpp
++++ b/gi/function.cpp
+@@ -116,6 +116,9 @@ class Function : public CWrapper<Function> {
+     GJS_JSAPI_RETURN_CONVENTION
+     static bool get_length(JSContext* cx, unsigned argc, JS::Value* vp);
+ 
++    GJS_JSAPI_RETURN_CONVENTION
++    static bool get_name(JSContext* cx, unsigned argc, JS::Value* vp);
++
+     GJS_JSAPI_RETURN_CONVENTION
+     static bool to_string(JSContext* cx, unsigned argc, JS::Value* vp);
+ 
+@@ -1251,6 +1254,16 @@ bool Function::get_length(JSContext* cx, unsigned argc, JS::Value* vp) {
+     return true;
+ }
+ 
++bool Function::get_name(JSContext* cx, unsigned argc, JS::Value* vp) {
++    GJS_CHECK_WRAPPER_PRIV(cx, argc, vp, rec, this_obj, Function, priv);
++
++    if (priv->m_info.type() == GI_INFO_TYPE_FUNCTION)
++        return gjs_string_from_utf8(cx, g_function_info_get_symbol(priv->m_info),
++                                    rec.rval());
++
++    return gjs_string_from_utf8(cx, priv->format_name().c_str(), rec.rval());
++}
++
+ bool Function::to_string(JSContext* context, unsigned argc, JS::Value* vp) {
+     GJS_CHECK_WRAPPER_PRIV(context, argc, vp, rec, this_obj, Function, priv);
+     return priv->to_string_impl(context, rec.rval());
+@@ -1302,6 +1315,7 @@ const JSClassOps Function::class_ops = {
+ 
+ const JSPropertySpec Function::proto_props[] = {
+     JS_PSG("length", &Function::get_length, JSPROP_PERMANENT),
++    JS_PSG("name", &Function::get_name, JSPROP_PERMANENT),
+     JS_STRING_SYM_PS(toStringTag, "GIRepositoryFunction", JSPROP_READONLY),
+     JS_PS_END};
+ 
+
+From a6dd522bff4b479985046894f8ad0c607f383723 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 12 Sep 2025 00:35:56 +0200
+Subject: [PATCH 7/9] overrides/Gio: Use Platform prefix for platform-only
+ functions
+
+In case a platform-only function is being mapped inside the Gio
+namespace and that has a platform-specific prefix, then we should use it
+inside the more generic Gio namespace.
+
+This is preserving the pre-girepository-2.0 behavior
+---
+ installed-tests/js/testIntrospection.js | 16 ++++++++++++++++
+ modules/core/overrides/Gio.js           |  4 ++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/installed-tests/js/testIntrospection.js b/installed-tests/js/testIntrospection.js
+index de76bd64..f9c0f35b 100644
+--- a/installed-tests/js/testIntrospection.js
++++ b/installed-tests/js/testIntrospection.js
+@@ -232,6 +232,22 @@ describe('Backwards compatibility for GLib/Gio platform specific GIRs', function
+             'Expected deprecation message for Gio.Unix -> GioUnix');
+     });
+ 
++    it('GioUnix functions are looked up in GioUnix, not Gio', function () {
++        if (skip) {
++            pending('GioUnix required for this test');
++            return;
++        }
++
++        GLib.test_expect_message('Cjs', GLib.LogLevelFlags.LEVEL_WARNING,
++            '*Gio.unix_mounts_get*GioUnix.mounts_get*instead*');
++
++        expect(imports.gi.Gio.unix_mounts_get.name).toBe('g_unix_mounts_get');
++
++        GLib.test_assert_expected_messages_internal('Cjs',
++            'testIntrospection.js', 0,
++            'Expected deprecation message for Gio.Unix -> GioUnix');
++    });
++
+     it("doesn't print the message if the type isn't resolved directly", function () {
+         if (skip) {
+             pending('GioUnix required for this test');
+diff --git a/modules/core/overrides/Gio.js b/modules/core/overrides/Gio.js
+index e16e8fdc..eaa12db8 100644
+--- a/modules/core/overrides/Gio.js
++++ b/modules/core/overrides/Gio.js
+@@ -497,6 +497,7 @@ function _init() {
+     }
+ 
+     const platformName = `${GioPlatform?.__name__?.slice(3 /* 'Gio'.length */)}`;
++    const platformNameLower = platformName.toLowerCase();
+     Object.entries(Object.getOwnPropertyDescriptors(GioPlatform)).forEach(([prop, desc]) => {
+         let genericProp = prop;
+ 
+@@ -504,6 +505,9 @@ function _init() {
+         const gtypeName = originalValue.$gtype?.name;
+         if (gtypeName?.startsWith(`G${platformName}`))
+             genericProp = `${platformName}${prop}`;
++        else if (originalValue instanceof Function &&
++            originalValue.name.startsWith(`g_${platformNameLower}_`))
++            genericProp = `${platformNameLower}_${prop}`;
+ 
+         if (Object.hasOwn(Gio, genericProp)) {
+             console.debug(`Gio already contains property ${genericProp}`);
+
+From 98e1e39c73a4dcc25fbfe64917ba883c244b5a85 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 12 Sep 2025 00:37:36 +0200
+Subject: [PATCH 8/9] overrides/Gio: Enable platform-specific wrappers only on
+ newer GLib
+
+---
+ modules/core/overrides/Gio.js | 21 ++++++++++++---------
+ 1 file changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/modules/core/overrides/Gio.js b/modules/core/overrides/Gio.js
+index eaa12db8..27041a1a 100644
+--- a/modules/core/overrides/Gio.js
++++ b/modules/core/overrides/Gio.js
+@@ -484,16 +484,19 @@ function _init() {
+ 
+     Gio.Application.prototype.runAsync = GLib.MainLoop.prototype.runAsync;
+ 
+-    // Redefine Gio functions with platform-specific implementations to be
+-    // backward compatible with gi-repository 1.0, however when possible we
+-    // notify a deprecation warning, to ensure that the surrounding code is
+-    // updated.
+-    try {
+-        GioPlatform = imports.gi.GioUnix;
+-    } catch {
++    if (GLib.MAJOR_VERSION > 2 ||
++        (GLib.MAJOR_VERSION === 2 && GLib.MINOR_VERSION >= 86)) {
++        // Redefine Gio functions with platform-specific implementations to be
++        // backward compatible with gi-repository 1.0, however when possible we
++        // notify a deprecation warning, to ensure that the surrounding code is
++        // updated.
+         try {
+-            GioPlatform = imports.gi.GioWin32;
+-        } catch {}
++            GioPlatform = imports.gi.GioUnix;
++        } catch {
++            try {
++                GioPlatform = imports.gi.GioWin32;
++            } catch {}
++        }
+     }
+ 
+     const platformName = `${GioPlatform?.__name__?.slice(3 /* 'Gio'.length */)}`;
+
+From bb14bb403fac85ddca4abb101a1abef065f81153 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 12 Sep 2025 00:47:57 +0200
+Subject: [PATCH 9/9] modules/package: Fix checking interface properties
+
+GObject.type_default_interface_ref() is no longer
+introspectable for some reason, but as it is deprecated
+in favor of GObject.type_default_interface_get() anyway,
+use that instead.
+---
+ modules/script/package.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/script/package.js b/modules/script/package.js
+index cc308f8d..9e5d217d 100644
+--- a/modules/script/package.js
++++ b/modules/script/package.js
+@@ -285,7 +285,7 @@ function checkSymbol(lib, ver, symbol) {
+     // GObject property
+     let pspec = null;
+     if (GObject.type_is_a(obj.$gtype, GObject.TYPE_INTERFACE)) {
+-        let iface = GObject.type_default_interface_ref(obj.$gtype);
++        let iface = GObject.type_default_interface_get(obj.$gtype);
+         pspec = GObject.Object.interface_find_property(iface, sym);
+     } else if (GObject.type_is_a(obj.$gtype, GObject.TYPE_OBJECT)) {
+         pspec = GObject.Object.find_property.call(obj.$gtype, sym);
