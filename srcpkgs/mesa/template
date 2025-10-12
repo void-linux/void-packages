@@ -1,9 +1,14 @@
 # Template file for 'mesa'
 pkgname=mesa
-version=25.1.3
+version=25.1.9
 revision=1
 build_style=meson
 _llvmver=19
+_syn_version=2.0.68
+_proc_macro_version=1.0.86
+_quote_version=1.0.33
+_unicode_ident_version=1.0.12
+_paste_version=1.0.14
 #Disable LTO flag should be present, see https://gitlab.freedesktop.org/mesa/mesa/-/issues/6911
 configure_args="-Dglvnd=true -Dgbm=enabled -Degl=enabled
  -Dgles1=enabled -Dgles2=enabled -Dglx=dri
@@ -23,8 +28,23 @@ maintainer="Orphaned <orphan@voidlinux.org>"
 license="MIT, LGPL-2.1-or-later"
 homepage="https://www.mesa3d.org/"
 changelog="https://docs.mesa3d.org/relnotes.html"
-distfiles="https://mesa3d.org/archive/mesa-${version}.tar.xz"
-checksum=ffcb6cadb5fd356d56008e6308641dfe4b2929f30139f6585436ca6e3cddba7f
+distfiles="https://mesa3d.org/archive/mesa-${version}.tar.xz
+ https://crates.io/api/v1/crates/syn/${_syn_version}/download>syn-${_syn_version}.tar.gz
+ https://crates.io/api/v1/crates/proc-macro2/${_proc_macro_version}/download>proc-macro2-${_proc_macro_version}.tar.gz
+ https://crates.io/api/v1/crates/quote/${_quote_version}/download>quote-${_quote_version}.tar.gz
+ https://crates.io/api/v1/crates/unicode-ident/${_unicode_ident_version}/download>unicode-ident-${_unicode_ident_version}.tar.gz
+ https://crates.io/api/v1/crates/paste/${_paste_version}/download>paste-${_paste_version}.tar.gz"
+checksum="412df33a1bb3c785ed698555a3972118a37c458e7accf6ae53f4bb87b3db454a
+ 901fa70d88b9d6c98022e23b4136f9f3e54e4662c3bc1bd1d84a42a9a0f0c1e9
+ 5e719e8df665df0d1c8fbfd238015744736151d4445ec0836b8e628aae103b77
+ 5267fca4496028628a95160fc423a33e8b2e6af8a5302579e322e4b520293cae
+ 3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b
+ de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
+skip_extraction="syn-${_syn_version}.tar.gz
+ proc-macro2-${_proc_macro_version}.tar.gz
+ quote-${_quote_version}.tar.gz
+ unicode-ident-${_unicode_ident_version}.tar.gz
+ paste-${_paste_version}.tar.gz"
 
 build_helper="qemu"
 build_options="wayland"
@@ -78,6 +98,14 @@ case "$XBPS_TARGET_MACHINE" in
 		;;
 esac
 
+# Direct3D 12 for Hyper-V GPU-P / WSLg. This relies on additional
+# closed-source drivers which are only available on 64-bit glibc.
+case "$XBPS_TARGET_MACHINE" in
+	aarch64|x86_64)
+		_have_d3d12=yes
+		;;
+esac
+
 if [ "$_have_llvmpipe" ]; then
 	subpackages+=" mesa-vulkan-lavapipe"
 	_vulkan_drivers+=",swrast"
@@ -114,6 +142,9 @@ if [ "$_have_nv" ]; then
 		# transitional dummy packages
 		subpackages+=" mesa-tegra-dri"
 	fi
+	_vulkan_drivers+=",nouveau"
+	hostmakedepends+=" cbindgen"
+	subpackages+=" mesa-vulkan-nouveau"
 	# transitional dummy packages
 	subpackages+=" mesa-nouveau-dri"
 fi
@@ -122,8 +153,8 @@ if [ "$_have_arm" ]; then
 	_have_vulkan=yes
 	_have_opencl=yes
 	_gallium_drivers+=",v3d,vc4,freedreno,etnaviv,lima,panfrost,asahi"
-	_vulkan_drivers+=",broadcom,freedreno,asahi"
-	subpackages+=" mesa-vulkan-broadcom mesa-vulkan-freedreno"
+	_vulkan_drivers+=",broadcom,freedreno,panfrost,asahi"
+	subpackages+=" mesa-vulkan-broadcom mesa-vulkan-freedreno mesa-vulkan-panfrost"
 	# transitional dummy packages
 	subpackages+=" mesa-kmsro-dri mesa-v3d-dri mesa-vc4-dri"
 	subpackages+=" mesa-etnaviv-dri mesa-freedreno-dri"
@@ -165,6 +196,11 @@ else
 	configure_args+=" -Dgallium-vdpau=disabled -Dgallium-va=disabled"
 fi
 
+if [ "$_have_d3d12" ]; then
+	_gallium_drivers+=",d3d12"
+	makedepends+=" DirectX-Headers"
+fi
+
 # empty values introduced by leading comma are not allowed; the whole enumeration can be empty
 # _gallium_drivers is not affected by this problem
 _vulkan_drivers=${_vulkan_drivers/=,/=}
@@ -194,6 +230,21 @@ case "$XBPS_TARGET_MACHINE" in
 	ppc64le*) configure_args+=" -Dpower8=true" ;;
 	ppc*) configure_args+=" -Dpower8=false" ;;
 esac
+
+_prepare_subproject() {
+	local subname=$1
+	local subversion=$2
+	vsrcextract -C subprojects/${subname}-${subversion} ${subname}-${subversion}.tar.gz
+	cp subprojects/packagefiles/${subname}/meson.build subprojects/${subname}-${subversion}
+}
+
+post_extract() {
+	_prepare_subproject syn ${_syn_version}
+	_prepare_subproject proc-macro2 ${_proc_macro_version}
+	_prepare_subproject quote ${_quote_version}
+	_prepare_subproject unicode-ident ${_unicode_ident_version}
+	_prepare_subproject paste ${_paste_version}
+}
 
 post_configure() {
 	if [ "$CROSS_BUILD" ]; then
@@ -335,6 +386,14 @@ mesa-vulkan-intel_package() {
 	}
 }
 
+mesa-vulkan-nouveau_package() {
+	short_desc="Mesa Nouveau Vulkan driver"
+	pkg_install() {
+		vmove "usr/share/vulkan/icd.d/nouveau*.json"
+		vmove "usr/lib/libvulkan_nouveau*.so"
+	}
+}
+
 mesa-vulkan-radeon_package() {
 	short_desc="Mesa Radeon Vulkan driver"
 	pkg_install() {
@@ -357,6 +416,14 @@ mesa-vulkan-freedreno_package() {
 	pkg_install() {
 		vmove "usr/share/vulkan/icd.d/freedreno_icd*.json"
 		vmove "usr/lib/libvulkan_freedreno.so"
+	}
+}
+
+mesa-vulkan-panfrost_package() {
+	short_desc="Mesa Panfrost Vulkan driver"
+	pkg_install() {
+		vmove "usr/share/vulkan/icd.d/panfrost_icd*.json"
+		vmove "usr/lib/libvulkan_panfrost.so"
 	}
 }
 
@@ -429,7 +496,7 @@ mesa-nouveau-dri_package() {
 	short_desc="Mesa DRI drivers for NVIDIA GPUs (transitional dummy package)"
 	depends="mesa-dri"
 	if [ "$_have_hwdec" ]; then
-		depends+=" mesa-vaapi mesa-vdpau"
+		depends+=" mesa-vaapi mesa-vdpau mesa-vulkan-nouveau"
 	fi
 }
 
