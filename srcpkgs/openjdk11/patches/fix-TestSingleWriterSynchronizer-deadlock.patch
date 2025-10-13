@@ -1,0 +1,65 @@
+From efe6ad59e834d82dfaaacdd093c32438eec88ba6 Mon Sep 17 00:00:00 2001
+From: Kim Barrett <kbarrett@openjdk.org>
+Date: Mon, 10 Sep 2018 19:18:04 -0400
+Subject: [PATCH] 8210511: TestSingleWriterSynchronizer can deadlock
+
+Check for safepoints in test loops.
+
+Reviewed-by: coleenp, eosterlund
+---
+ .../utilities/test_singleWriterSynchronizer.cpp  | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/test/hotspot/gtest/utilities/test_singleWriterSynchronizer.cpp b/test/hotspot/gtest/utilities/test_singleWriterSynchronizer.cpp
+index f01a55b3ccad1..6428ee7b1a5ea 100644
+--- a/test/hotspot/gtest/utilities/test_singleWriterSynchronizer.cpp
++++ b/test/hotspot/gtest/utilities/test_singleWriterSynchronizer.cpp
+@@ -54,13 +54,16 @@ class SingleWriterSynchronizerTestReader : public JavaTestThread {
+   {}
+ 
+   virtual void main_run() {
+-    uintx iterations = 0;
++    size_t iterations = 0;
++    size_t values_changed = 0;
+     while (OrderAccess::load_acquire(_continue_running) != 0) {
++      { ThreadBlockInVM tbiv(this); } // Safepoint check outside critical section.
+       ++iterations;
+       SingleWriterSynchronizer::CriticalSection cs(_synchronizer);
+       uintx value = OrderAccess::load_acquire(_synchronized_value);
++      uintx new_value = value;
+       for (uint i = 0; i < reader_iterations; ++i) {
+-        uintx new_value = OrderAccess::load_acquire(_synchronized_value);
++        new_value = OrderAccess::load_acquire(_synchronized_value);
+         // A reader can see either the value it first read after
+         // entering the critical section, or that value + 1.  No other
+         // values are possible.
+@@ -68,8 +71,12 @@ class SingleWriterSynchronizerTestReader : public JavaTestThread {
+           ASSERT_EQ((value + 1), new_value);
+         }
+       }
++      if (value != new_value) {
++        ++values_changed;
++      }
+     }
+-    tty->print_cr("reader iterations: " UINTX_FORMAT, iterations);
++    tty->print_cr("reader iterations: " SIZE_FORMAT ", changes: " SIZE_FORMAT,
++                  iterations, values_changed);
+   }
+ };
+ 
+@@ -93,13 +100,14 @@ class SingleWriterSynchronizerTestWriter : public JavaTestThread {
+     while (OrderAccess::load_acquire(_continue_running) != 0) {
+       ++*_synchronized_value;
+       _synchronizer->synchronize();
++      { ThreadBlockInVM tbiv(this); } // Safepoint check.
+     }
+     tty->print_cr("writer iterations: " UINTX_FORMAT, *_synchronized_value);
+   }
+ };
+ 
+ const uint nreaders = 5;
+-const uint milliseconds_to_run = 3000;
++const uint milliseconds_to_run = 1000;
+ 
+ TEST_VM(TestSingleWriterSynchronizer, stress) {
+   Semaphore post;

@@ -1,0 +1,52 @@
+Source: https://github.com/vtrlx/LuaGObject/commit/54d90bfd38c4562ddd619f1f2e14130fc68ec702
+
+From 54d90bfd38c4562ddd619f1f2e14130fc68ec702 Mon Sep 17 00:00:00 2001
+From: Victoria Lacroix <victoria@vtrlx.ca>
+Date: Mon, 22 Sep 2025 10:02:10 -0400
+Subject: [PATCH] Fix GLib 2.86 regression
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+GLib 2.86 removed the GObject.TypeClass.ref() function, replacing it
+with GObject.TypeClass.get()—this commit makes it so .get() is used in
+GLib >= 2.86, while still preserving the old behaviour on GLib < 2.86.
+---
+ LuaGObject/ffi.lua | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/LuaGObject/ffi.lua b/LuaGObject/ffi.lua
+index 799f68e5..0695b0be 100644
+--- a/lgi/ffi.lua
++++ b/lgi/ffi.lua
+@@ -76,18 +76,27 @@ end
+ 
+ -- Creates new enum/flags table with all values from specified gtype.
+ function ffi.load_enum(gtype, name)
+-   local GObject = core.repo.GObject
++   local GLib, GObject = core.repo.GLib, core.repo.GObject
+    local is_flags = GObject.Type.is_a(gtype, GObject.Type.FLAGS)
+    local enum_component = component.create(
+       gtype, is_flags and enum.bitflags_mt or enum.enum_mt, name)
+-   local type_class = GObject.TypeClass.ref(gtype)
++   local type_class
++   -- GLib >= 2.86 deprecates GObject.TypeClass.ref() in favour of .get()
++   if GLib.check_version(2, 86, 0) then
++      type_class = GObject.TypeClass.ref(gtype)
++   else
++      type_class = GObject.TypeClass.get(gtype)
++   end
+    local enum_class = core.record.cast(
+       type_class, is_flags and GObject.FlagsClass or GObject.EnumClass)
+    for i = 0, enum_class.n_values - 1 do
+       local val = core.record.fromarray(enum_class.values, i)
+       enum_component[core.upcase(val.value_nick):gsub('%-', '_')] = val.value
+    end
+-   type_class:unref()
++   -- For GLib versions below 2.86, type_class was ref'd and needs to be unref'd
++   if GLib.check_version(2, 86, 0) then
++      type_class:unref()
++   end
+    return enum_component
+ end
+ 
