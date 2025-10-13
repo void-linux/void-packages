@@ -1,6 +1,6 @@
 #!/bin/bash
 # Usage: $0 <firefox|firefox-esr|thunderbird>
-# Copyright (c) 2019 Danh Doan
+# Copyright (c) 2019-2025 Danh Doan
 # All rights reserved.
 #
 # Permission to use, copy, modify, and/or distribute this software for any
@@ -16,19 +16,21 @@
 
 pkg=${1:-firefox}
 tmpldir="$pkg-i18n"
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
 
 case "${pkg}" in
 firefox-esr) esr=esr ;;
 firefox) : ;;
-thunderbird) : ;;
+thunderbird) esr=esr ;;
 *)
 	echo "Usage: $0 <firefox|firefox-esr|thunderbird>" >&2
 	exit 1
 	;;
 esac
 
-tmpoldfile="$(mktemp)"
-tmpnewfile="$(mktemp)"
+tmpoldfile="$(mktemp --suffix=.old)"
+tmpnewfile="$(mktemp --suffix=.new)"
 
 xoldlangexpr="^_languages="
 
@@ -37,9 +39,10 @@ source "${tmpldir}/template"
 
 xlistold() {
 	for _lang in "${_languages[@]}"; do
-		_locale="${_lang%%\"*}"
+		_locale="${_lang%% *}"
 		[ $_locale ] && echo "$_locale"
-	done
+	done |
+	sort
 }
 
 xlink () {
@@ -49,7 +52,7 @@ xlink () {
 
 xnewlang () {
 	lang=$1
-	padded=$(printf '%-7s' $lang)
+	padded=$(printf '%-12s' $lang)
 	xoldexpr=$xoldlangexpr
 	xoldlangexpr="'$lang \+\""
 	grep -q "'$lang \+\"" "$tmpldir/template" && return 0
@@ -62,10 +65,11 @@ xnewlang () {
 
 xprocessnew() {
 	while read -r lang; do
-		printf '%-7s\n' $lang >&3
+		printf '%s\n' $lang >&3
 		xlink $lang
 		xnewlang $lang
-	done
+	done 3>&1 1>&2 |
+	sort
 }
 
 xcleanlang() {
@@ -76,14 +80,15 @@ xcleanlang() {
 	done
 }
 
-xlistold >| "$tmpoldfile"
+xlistold > "$tmpoldfile"
 
-curl "https://ftp.mozilla.org/pub/${pkg%-esr}/releases/$version$esr/linux-x86_64/xpi/" \
-	| grep -o 'xpi/[a-z]\+\(-[A-Z]\+\)\?' \
-	| cut -d/ -f2 \
-	| xprocessnew 3>$tmpnewfile
+echo curl "https://ftp.mozilla.org/pub/${pkg%-esr}/releases/$version$esr/linux-x86_64/xpi/" >&2
+curl "https://ftp.mozilla.org/pub/${pkg%-esr}/releases/$version$esr/linux-x86_64/xpi/" |
+	grep -o 'xpi/[a-z]\+\(-[a-zA-Z]\+\)\?' |
+	cut -d/ -f2 |
+	xprocessnew >"$tmpnewfile"
 
-grep -vF -f $tmpnewfile $tmpoldfile \
-	| xcleanlang
+comm -13 "$tmpnewfile" "$tmpoldfile" |
+	xcleanlang
 
 rm -rf $tmpoldfile $tmpnewfile
