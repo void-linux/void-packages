@@ -1,0 +1,124 @@
+From ce52c5f96106ae5747171663a46831f21aa52d95 Mon Sep 17 00:00:00 2001
+From: KrIr17 <elendil.krir17@gmail.com>
+Date: Sun, 6 Jul 2025 15:42:13 +0200
+Subject: [PATCH] Fix building with Poppler 25.07.0
+
+Fix building issues with
+
+1. [`GfxState::shift()`](https://gitlab.freedesktop.org/poppler/poppler/-/commit/71bf5552d448a6fdb666f2b61764b61ca197617d)
+
+2. [`FoFiTrueType::make` and `FoFiType1C::make`](FoFiTrueType::make)
+
+3. Fix typo from 5c4c6d116dae5250d75d34a45f0d9220824d2e20
+---
+ src/extension/internal/pdfinput/pdf-parser.cpp   |  4 ++--
+ .../pdfinput/poppler-cairo-font-engine.cpp       | 16 +++++++++++-----
+ .../internal/pdfinput/poppler-transition-api.h   | 14 ++++++++++++++
+ 3 files changed, 27 insertions(+), 7 deletions(-)
+
+--- a/src/extension/internal/pdfinput/pdf-parser.cpp
++++ b/src/extension/internal/pdfinput/pdf-parser.cpp
+@@ -2313,11 +2313,11 @@ void PdfParser::doShowText(GooString *s)
+         state->textTransformDelta(originX, originY, &tOriginX, &tOriginY);
+ 
+         // In Gfx.cc this is drawChar(...)
+-        builder->addChar(state, state->getCurX() + riseX, state->getCurY() + riseY,
++        builder->addChar(state, state->_POPPLER_GET_CUR_TEXT_X() + riseX, state->_POPPLER_GET_CUR_TEXT_Y() + riseY,
+                          dx, dy, ax, ay, tOriginX, tOriginY, code, n, u, uLen);
+ 
+         // Move onto next unicode character.
+-        state->shift(tdx, tdy);
++        state->_POPPLER_TEXT_SHIFT_WITH_USER_COORDS(tdx, tdy);
+         p += n;
+         len -= n;
+     }
+--- a/src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp
++++ b/src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp
+@@ -315,7 +315,11 @@ CairoFreeTypeFont *CairoFreeTypeFont::cr
+ #endif
+     char **enc;
+     const char *name;
++#if POPPLER_CHECK_VERSION(25, 7, 0)
++    std::unique_ptr<FoFiType1C> ff1c;
++#else
+     FoFiType1C *ff1c;
++#endif
+     std::optional<FreeTypeFontFace> font_face;
+     std::vector<int> codeToGID;
+     bool substitute = false;
+@@ -426,7 +430,7 @@ CairoFreeTypeFont *CairoFreeTypeFont::cr
+                 FoFiTrueType *ff;
+ #endif
+                 if (!font_data.empty()) {
+-                    ff = FoFiTrueType::make((fontchar)font_data.data(), font_data.size(), 0);
++                    ff = _POPPLER_FOFI_TRUETYPE_MAKE(font_data, 0);
+                 } else {
+                     ff = FoFiTrueType::load(fileName.c_str(), 0);
+                 }
+@@ -456,7 +460,7 @@ CairoFreeTypeFont *CairoFreeTypeFont::cr
+             FoFiTrueType *ff;
+ #endif
+             if (!font_data.empty()) {
+-                ff = FoFiTrueType::make((fontchar)font_data.data(), font_data.size(), 0);
++                ff = _POPPLER_FOFI_TRUETYPE_MAKE(font_data, 0);
+             } else {
+                 ff = FoFiTrueType::load(fileName.c_str(), 0);
+             }
+@@ -490,7 +494,7 @@ CairoFreeTypeFont *CairoFreeTypeFont::cr
+         case fontCIDType0C:
+             if (!useCIDs) {
+                 if (!font_data.empty()) {
+-                    ff1c = FoFiType1C::make((fontchar)font_data.data(), font_data.size());
++                    ff1c = _POPPLER_FOFI_TYPE1C_MAKE(font_data);
+                 } else {
+                     ff1c = FoFiType1C::load(fileName.c_str());
+                 }
+@@ -503,7 +507,9 @@ CairoFreeTypeFont *CairoFreeTypeFont::cr
+                     codeToGID.insert(codeToGID.begin(), src, src + n);
+                     gfree(src);
+ #endif
++#if !(POPPLER_CHECK_VERSION(25, 7, 0))
+                     delete ff1c;
++#endif
+                 }
+             }
+ 
+@@ -539,13 +545,13 @@ CairoFreeTypeFont *CairoFreeTypeFont::cr
+                     FoFiTrueType *ff;
+ #endif
+                     if (!font_data.empty()) {
+-                        ff = FoFiTrueType::make((fontchar)font_data.data(), font_data.size(), 0);
++                        ff = _POPPLER_FOFI_TRUETYPE_MAKE(font_data, 0);
+                     } else {
+                         ff = FoFiTrueType::load(fileName.c_str(), 0);
+                     }
+                     if (ff) {
+                         if (ff->isOpenTypeCFF()) {
+-                            auto src = ff1c->_POPPLER_GET_CID_TO_GID_MAP(&n);
++                            auto src = ff->_POPPLER_GET_CID_TO_GID_MAP(&n);
+ #if POPPLER_CHECK_VERSION(25,2,0)
+                             codeToGID = std::move(src);
+ #else
+--- a/src/extension/internal/pdfinput/poppler-transition-api.h
++++ b/src/extension/internal/pdfinput/poppler-transition-api.h
+@@ -15,6 +15,20 @@
+ #include <glib/poppler-features.h>
+ #include <poppler/UTF.h>
+ 
++#if POPPLER_CHECK_VERSION(25, 7, 0)
++#define _POPPLER_TEXT_SHIFT_WITH_USER_COORDS(dx, dy) textShiftWithUserCoords(dx, dy)
++#define _POPPLER_FOFI_TRUETYPE_MAKE(font_data, faceIndex) FoFiTrueType::make(std::span(font_data), faceIndex)
++#define _POPPLER_FOFI_TYPE1C_MAKE(font_data) FoFiType1C::make(std::span(font_data))
++#define _POPPLER_GET_CUR_TEXT_X() getCurTextX()
++#define _POPPLER_GET_CUR_TEXT_Y() getCurTextY()
++#else
++#define _POPPLER_TEXT_SHIFT_WITH_USER_COORDS(dx, dy) shift(dx, dy)
++#define _POPPLER_FOFI_TRUETYPE_MAKE(font_data, faceIndex) FoFiTrueType::make((fontchar)font_data.data(), font_data.size(), faceIndex)
++#define _POPPLER_FOFI_TYPE1C_MAKE(font_data) FoFiType1C::make((fontchar)font_data.data(), font_data.size())
++#define _POPPLER_GET_CUR_TEXT_X() getCurX()
++#define _POPPLER_GET_CUR_TEXT_Y() getCurY()
++#endif
++
+ #if POPPLER_CHECK_VERSION(25, 6, 0)
+ #define _POPPLER_DECLARE_TRANSFER_FUNCTION_VECTOR(name) std::vector<std::unique_ptr<Function>> name(4)
+ #define _POPPLER_DELETE_TRANSFER_FUNCTION(name) name.reset()
