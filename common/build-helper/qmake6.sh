@@ -97,6 +97,8 @@ exec /usr/lib/qt6/bin/qmake \
 	QMAKE_LFLAGS+="\${LDFLAGS}" \
 	CONFIG+=no_qt_rpath
 _EOF
+	ln -sf /usr/lib/qt6/bin/qtpaths6 "$XBPS_WRAPPERDIR/qtpaths6"
+	ln -sf /usr/lib/qt6/bin/qtpaths6 "$XBPS_WRAPPERDIR/qtpaths-qt6"
 fi
 chmod 755 ${XBPS_WRAPPERDIR}/qmake6
 cp -p ${XBPS_WRAPPERDIR}/qmake{6,-qt6}
