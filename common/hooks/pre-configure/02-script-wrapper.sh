@@ -225,6 +225,7 @@ hook() {
 	generic_wrapper imlib2-config
 	generic_wrapper libmikmod-config
 	generic_wrapper pcre-config
+	generic_wrapper pcre2-config
 	generic_wrapper net-snmp-config
 	generic_wrapper wx-config
 	generic_wrapper wx-config-3.0
