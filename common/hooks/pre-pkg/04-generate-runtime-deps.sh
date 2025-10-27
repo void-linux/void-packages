@@ -111,11 +111,11 @@ hook() {
         elif _pkgname="$(cd "$_shlib_dir" && grep -F -l -x "$f" *.soname 2>/dev/null)"; then
             # If that library has SONAME, add it to shlibs-requires, too.
             _pkgname=${_pkgname%.soname}
-            _sdep="${_pkgname}-${version}_${revision}"
+            _sdep="${_pkgname}>=${version}_${revision}"
             sorequires+="${f} "
         elif _pkgname="$(cd "$_shlib_dir" && grep -F -l -x "$f" *.nosoname 2>/dev/null)"; then
             _pkgname=${_pkgname%.nosoname}
-            _sdep="${_pkgname}-${version}_${revision}"
+            _sdep="${_pkgname}>=${version}_${revision}"
         else
             _rdep="$(awk -v sl="$f" -v arch="$XBPS_TARGET_MACHINE" '$1 == sl && ($3 == "" || $3 == "ignore" || $3 == arch) { print $2; exit; }' "$mapshlibs")"
 
