@@ -45,9 +45,30 @@ store_pkgdestdir_rundeps() {
         fi
 }
 
+parse_shlib_needed() {
+    while read -r f; do
+        lf=${f#${PKGDESTDIR}}
+	    if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
+		    msg_normal "Skipping dependency scan for ${lf}\n"
+		    continue
+	    fi
+        read -n4 elfmagic < "$f"
+        if [ "$elfmagic" = $'\177ELF' ]; then
+            $OBJDUMP -p "$f" |
+            awk '
+                /NEEDED/{print $2;}
+                /Qt_5_PRIVATE_API/{next;}
+                /Qt_[0-9]*_PRIVATE_API/{print $NF;}
+            '
+        fi
+    done
+}
+
 hook() {
     local depsftmp f lf j mapshlibs sorequires _curdep elfmagic broken_shlibs verify_deps
     local _shlib_dir="${XBPS_STATEDIR}/shlib-provides"
+
+    local Qt_6_PRIVATE_API=6.10.0
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -68,28 +89,7 @@ hook() {
         verify_deps+=" ${f}"
     done
 
-    exec 3<&0 # save stdin
-    exec < $depsftmp
-    while read -r f; do
-        lf=${f#${PKGDESTDIR}}
-	    if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
-		    msg_normal "Skipping dependency scan for ${lf}\n"
-		    continue
-	    fi
-        read -n4 elfmagic < "$f"
-        if [ "$elfmagic" = $'\177ELF' ]; then
-            for nlib in $($OBJDUMP -p "$f"|awk '/NEEDED/{print $2}'); do
-                [ -z "$verify_deps" ] && verify_deps="$nlib" && continue
-                found=0
-                for j in ${verify_deps}; do
-                    [[ $j == $nlib ]] && found=1 && break
-                done
-                [[ $found -eq 0 ]] && verify_deps="$verify_deps $nlib"
-            done
-        fi
-    done
-    exec 0<&3 # restore stdin
-    rm -f $depsftmp
+    verify_deps=$(parse_shlib_needed <"$depsftmp" | sort | uniq)
 
     #
     # Add required run time packages by using required shlibs resolved
@@ -98,11 +98,23 @@ hook() {
     for f in ${verify_deps}; do
         unset _rdep _pkgname _rdepver
 
+        case "$f" in
+        Qt_*_PRIVATE_API)
+            eval "f=lib${f}.\${$f}"
+            ;;
+        esac
+
         local _findargs="-name"
         # if SONAME is a path, find should use -wholename
         if [[ "$f" = */* ]]; then
             _findargs="-wholename"
         fi
+        case " $shlib_provides " in
+        *" $f "*)
+            echo "   SONAME: $f <-> $pkgname (ignored)"
+            continue
+            ;;
+        esac
         if [ "$(find "${PKGDESTDIR}" $_findargs "$f")" ]; then
             # Ignore libs by current pkg
             echo "   SONAME: $f <-> $pkgname (ignored)"
