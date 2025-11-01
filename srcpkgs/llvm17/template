@@ -1,11 +1,19 @@
 # Template file for 'llvm17'
 pkgname=llvm17
 version=17.0.6
-revision=5
+revision=6
 build_wrksrc=llvm
 build_style=cmake
+_llvm_prefix=lib/llvm/17
+_llvm_mandir=usr/${_llvm_prefix}/share/man
+_llvm_bindir=usr/${_llvm_prefix}/bin
+_llvm_datadir=usr/${_llvm_prefix}/share
+_llvm_incdir=usr/${_llvm_prefix}/include
+_llvm_libdir=usr/${_llvm_prefix}/lib
+_llvm_libexecdir=usr/${_llvm_prefix}/libexec
 configure_args="
  -DCMAKE_BUILD_TYPE=Release -Wno-dev
+ -DCMAKE_INSTALL_PREFIX=/usr/${_llvm_prefix}
  -DENABLE_LINKER_BUILD_ID=YES
  -DLIBCXX_CXX_ABI=libcxxabi
  -DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=YES
@@ -13,6 +21,8 @@ configure_args="
  -DLIBCXXABI_ENABLE_STATIC_UNWINDER=YES
  -DLIBOMP_ENABLE_SHARED=YES
  -DLIBOMP_INSTALL_ALIASES=NO
+ -DOPENMP_INSTALL_LIBDIR=lib
+ -DOFFLOAD_INSTALL_LIBDIR=lib
  -DLLVM_INCLUDE_DOCS=YES
  -DLLVM_BUILD_DOCS=YES
  -DLLVM_ENABLE_SPHINX=YES
@@ -130,6 +140,17 @@ if [ -z "$CROSS_BUILD" ]; then
 	makedepends+=" lua53-devel "
 fi
 
+_vlink_libs() {
+	local _files="$1"
+	local _f
+	for _f in $DESTDIR/$_files; do
+		local _base=$(basename "${_f}")
+		ln -s llvm/17/lib/${_base} ${DESTDIR}/usr/lib
+		vmove ${_llvm_libdir}/${_base}
+		vmove usr/lib/${_base}
+	done
+}
+
 post_patch() {
 	if [ "$build_option_lldb" ]; then
 		if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
@@ -181,16 +202,16 @@ pre_configure() {
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
-		configure_args+=" -DLLVM_NATIVE_TOOL_DIR=/usr/bin"
-		configure_args+=" -DLLVM_TABLEGEN=/usr/bin/llvm-tblgen"
-		configure_args+=" -DCLANG_TABLEGEN=/usr/bin/clang-tblgen"
-		configure_args+=" -DMLIR_TABLEGEN=/usr/bin/mlir-tblgen"
-		configure_args+=" -DMLIR_PDLL_TABLEGEN=/usr/bin/mlir-pdll"
-		configure_args+=" -DMLIR_LINALG_ODS_YAML_GEN=/usr/bin/mlir-linalg-ods-yaml-gen"
-		configure_args+=" -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=/usr/bin/clang-tidy-confusable-chars-gen"
-		configure_args+=" -DCLANG_PSEUDO_GEN=/usr/bin/clang-pseudo-gen"
-		configure_args+=" -DLLVM_CONFIG_PATH=/usr/bin/llvm-config"
-		configure_args+=" -DLLDB_TABLEGEN_EXE=/usr/bin/lldb-tblgen"
+		configure_args+=" -DLLVM_NATIVE_TOOL_DIR=/${_llvm_bindir}"
+		configure_args+=" -DLLVM_TABLEGEN=/${_llvm_bindir}/llvm-tblgen"
+		configure_args+=" -DCLANG_TABLEGEN=/${_llvm_bindir}/clang-tblgen"
+		configure_args+=" -DMLIR_TABLEGEN=/${_llvm_bindir}/mlir-tblgen"
+		configure_args+=" -DMLIR_PDLL_TABLEGEN=/${_llvm_bindir}/mlir-pdll"
+		configure_args+=" -DMLIR_LINALG_ODS_YAML_GEN=/${_llvm_bindir}/mlir-linalg-ods-yaml-gen"
+		configure_args+=" -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=/${_llvm_bindir}/clang-tidy-confusable-chars-gen"
+		configure_args+=" -DCLANG_PSEUDO_GEN=/${_llvm_bindir}/clang-pseudo-gen"
+		configure_args+=" -DLLVM_CONFIG_PATH=/${_llvm_bindir}/llvm-config"
+		configure_args+=" -DLLDB_TABLEGEN_EXE=/${_llvm_bindir}/lldb-tblgen"
 	fi
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -241,22 +262,157 @@ post_install() {
 	# Required for multilib.
 	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
 		for _header in llvm-config; do
-			mv ${DESTDIR}/usr/include/llvm/Config/${_header}{,-64}.h
+			mv ${DESTDIR}/${_llvm_incdir}/llvm/Config/${_header}{,-64}.h
 			vinstall ${FILESDIR}/llvm-Config-${_header}.h 644 \
-				usr/include/llvm/Config ${_header}.h
+				${_llvm_incdir}/Config ${_header}.h
 		done
 	fi
 
 	# Remove llvm-config-host in cross builds.
 	if [ "$CROSS_BUILD" ]; then
-		rm -f ${DESTDIR}/usr/bin/llvm-config-host
+		rm -f ${DESTDIR}/${_llvm_bindir}/llvm-config-host
 	fi
 
 	rm -rf ${DESTDIR}/usr/share/gdb
 
 	# Can this be disabled some other way?
 	rm -rf ${DESTDIR}/usr/lib64
+
+	vmkdir usr/lib/clang
+	ln -s ../llvm/17/lib/clang/17 ${DESTDIR}/usr/lib/clang/17
 }
+
+_llvm_alts=(
+	bin/FileCheck share/man/man1/FileCheck.1
+	bin/UnicodeNameMappingGenerator
+	bin/bugpoint share/man/man1/bugpoint.1
+	bin/count
+	bin/dsymutil share/man/man1/dsymutil.1
+	bin/intercept-build
+	bin/llc
+	bin/lli
+	bin/lli-child-target
+	bin/llvm-PerfectShuffle
+	bin/llvm-addr2line
+	bin/llvm-ar
+	bin/llvm-as
+	bin/llvm-bcanalyzer
+	bin/llvm-bitcode-strip
+	bin/llvm-c-test
+	bin/llvm-cat
+	bin/llvm-cfi-verify
+	bin/llvm-cgdata
+	bin/llvm-config
+	bin/llvm-cov
+	bin/llvm-cvtres
+	bin/llvm-cxxdump
+	bin/llvm-cxxfilt
+	bin/llvm-cxxmap
+	bin/llvm-debuginfo-analyzer
+	bin/llvm-debuginfod
+	bin/llvm-debuginfod-find
+	bin/llvm-diff
+	bin/llvm-dis
+	bin/llvm-dlltool
+	bin/llvm-dwarfdump
+	bin/llvm-dwarfutil
+	bin/llvm-dwp
+	bin/llvm-exegesis
+	bin/llvm-extract
+	bin/llvm-gsymutil
+	bin/llvm-ifs
+	bin/llvm-install-name-tool
+	bin/llvm-jitlink
+	bin/llvm-jitlink-executor
+	bin/llvm-lib
+	bin/llvm-libtool-darwin
+	bin/llvm-link
+	bin/llvm-lipo
+	bin/llvm-lto
+	bin/llvm-lto2
+	bin/llvm-mc
+	bin/llvm-mca
+	bin/llvm-ml
+	bin/llvm-modextract
+	bin/llvm-mt
+	bin/llvm-nm
+	bin/llvm-objcopy
+	bin/llvm-objdump
+	bin/llvm-opt-report share/man/man1/llvm-opt-report.1
+	bin/llvm-otool
+	bin/llvm-pdbutil
+	bin/llvm-profdata   share/man/man1/llvm-profdata.1
+	bin/llvm-profgen    share/man/man1/llvm-profgen.1
+	bin/llvm-ranlib     share/man/man1/llvm-ranlib.1
+	bin/llvm-rc
+	bin/llvm-readelf    share/man/man1/llvm-readelf.1
+	bin/llvm-readobj    share/man/man1/llvm-readobj.1
+	bin/llvm-remark-size-diff
+	bin/llvm-reduce     share/man/man1/llvm-reduce.1
+	bin/llvm-remarkutil share/man/man1/llvm-remarkutil.1
+	bin/llvm-rtdyld
+	bin/llvm-sim
+	bin/llvm-size        share/man/man1/llvm-size.1
+	bin/llvm-split
+	bin/llvm-stress      share/man/man1/llvm-stress.1
+	bin/llvm-strings     share/man/man1/llvm-strings.1
+	bin/llvm-strip       share/man/man1/llvm-strip.1
+	bin/llvm-symbolizer  share/man/man1/llvm-symbolizer.1
+	bin/llvm-tblgen      share/man/man1/llvm-tblgen.1
+	bin/llvm-tli-checker share/man/man1/llvm-tli-checker.1
+	bin/llvm-undname
+	bin/llvm-windres
+	bin/llvm-xray
+	bin/not
+	bin/obj2yaml
+	bin/opt share/man/man1/opt.1
+	bin/sancov
+	bin/sanstats
+	bin/split-file
+	bin/verify-uselistorder
+	bin/yaml-bench
+	bin/yaml2obj
+	share/man/man1/lit.1
+	share/man/man1/llc.1
+	share/man/man1/lldb-tblgen.1
+	share/man/man1/lli.1
+	share/man/man1/llvm-addr2line.1
+	share/man/man1/llvm-ar.1
+	share/man/man1/llvm-as.1
+	share/man/man1/llvm-bcanalyzer.1
+	share/man/man1/llvm-config.1
+	share/man/man1/llvm-cov.1
+	share/man/man1/llvm-cxxfilt.1
+	share/man/man1/llvm-cxxmap.1
+	share/man/man1/llvm-debuginfo-analyzer.1
+	share/man/man1/llvm-diff.1
+	share/man/man1/llvm-dis.1
+	share/man/man1/llvm-dwarfdump.1
+	share/man/man1/llvm-dwarfutil.1
+	share/man/man1/llvm-exegesis.1
+	share/man/man1/llvm-extract.1
+	share/man/man1/llvm-ifs.1
+	share/man/man1/llvm-install-name-tool.1
+	share/man/man1/llvm-lib.1
+	share/man/man1/llvm-libtool-darwin.1
+	share/man/man1/llvm-link.1
+	share/man/man1/llvm-lipo.1
+	share/man/man1/llvm-locstats.1
+	share/man/man1/llvm-mc.1
+	share/man/man1/llvm-mca.1
+	share/man/man1/llvm-nm.1
+	share/man/man1/llvm-objcopy.1
+	share/man/man1/llvm-objdump.1
+	share/man/man1/llvm-otool.1
+	share/man/man1/llvm-pdbutil.1
+	share/man/man1/llvm-remark-size-diff.1
+	share/man/man1/tblgen.1
+)
+
+alternatives=$(:)
+for _alt in "${_llvm_alts[@]}"; do
+	alternatives+=" llvm:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+done
 
 clang17_package() {
 	lib32disabled=yes
@@ -268,34 +424,54 @@ clang17_package() {
 	conflicts="clang15>=0"
 	short_desc+=" - C language family frontend"
 	homepage="https://clang.llvm.org/"
+	_clang17_files=(
+		bin/clang-17
+		bin/clang
+		bin/clang++
+		bin/clang-cl
+		bin/clang-cpp
+		bin/clang-check
+		bin/clang-extdef-mapping
+		bin/clang-format
+		bin/clang-linker-wrapper
+		bin/clang-offload-bundler
+		bin/clang-offload-packager
+		bin/clang-refactor
+		bin/clang-rename
+		bin/clang-repl
+		bin/clang-scan-deps
+		bin/clang-tblgen
+		bin/c-index-test
+		bin/diagtool
+		bin/amdgpu-arch
+		bin/nvptx-arch
+		bin/hmaptool
+		bin/git-clang-format
+		lib/LLVMgold.so
+		share/man/man1/clang.1
+		share/man/man1/diagtool.1
+		share/man/man1/clang-tblgen.1
+	)
+
+	for _alt in "${_clang17_files[@]}"; do
+		alternatives+=" clang:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
+
+	if [ "$build_option_polly" ]; then
+		alternatives+="
+		 clang:/usr/lib/LLVMPolly.so:/${_llvm_libdir}/LLVMPolly.so
+		 clang:/usr/share/man/man1/polly.1:/${_llvm_mandir}/man1/polly1.1
+		"
+	fi
+
 	pkg_install() {
-		vmove usr/bin/clang-17
-		vmove usr/bin/clang
-		vmove usr/bin/clang++
-		vmove usr/bin/clang-cl
-		vmove usr/bin/clang-cpp
-		vmove usr/bin/clang-check
-		vmove usr/bin/clang-extdef-mapping
-		vmove usr/bin/clang-format
-		vmove usr/bin/clang-linker-wrapper
-		vmove usr/bin/clang-offload-bundler
-		vmove usr/bin/clang-offload-packager
-		vmove usr/bin/clang-refactor
-		vmove usr/bin/clang-rename
-		vmove usr/bin/clang-repl
-		vmove usr/bin/clang-scan-deps
-		vmove usr/bin/clang-tblgen
-		vmove usr/bin/c-index-test
-		vmove usr/bin/diagtool
-		vmove usr/bin/amdgpu-arch
-		vmove usr/bin/nvptx-arch
-		vmove usr/bin/hmaptool
-		vmove usr/bin/git-clang-format
-		vmove usr/share/man/man1/clang.1
-		vmove usr/share/man/man1/diagtool.1
+		for _bin in "${_clang17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_bin}
+		done
+
 		if [ "$build_option_polly" ]; then
-			vmove usr/lib/LLVMPolly.so
-			vmove usr/share/man/man1/polly.1
+			vmove ${_llvm_libdir}/LLVMPolly.so
+			vmove ${_llvm_mandir}/man1/polly.1
 		fi
 	}
 }
@@ -305,7 +481,8 @@ clang17-headers_package() {
 	short_desc+=" - C language family frontend - Headers"
 	homepage="https://clang.llvm.org/"
 	pkg_install() {
-		vmove usr/lib/clang/17/include
+		vmove ${_llvm_libdir}/clang/17/include
+		vmove usr/lib/clang
 	}
 }
 
@@ -325,21 +502,21 @@ clang17-devel_package() {
 	short_desc+=" - C language family frontend - development Files"
 	homepage="https://clang.llvm.org/"
 	pkg_install() {
-		vmove usr/include/clang
-		vmove usr/include/clang-c
-		vmove usr/lib/libear
-		vmove usr/lib/cmake/clang
-		vmove "usr/lib/libclang*.a"
-		vmove "usr/lib/libclang*.so"
-		vmove usr/share/clang
+		vmove ${_llvm_incdir}/clang
+		vmove ${_llvm_incdir}/clang-c
+		vmove ${_llvm_libdir}/libear
+		vmove ${_llvm_libdir}/cmake/clang
+		vmove "${_llvm_libdir}/libclang*.a"
+		vmove "${_llvm_libdir}/libclang*.so"
+		vmove ${_llvm_datadir}/clang
 		if [ "$build_option_clang_tools_extra" ]; then
-			vmove usr/include/clang-tidy
-			vmove usr/lib/libfindAllSymbols.a
+			vmove ${_llvm_incdir}/clang-tidy
+			vmove ${_llvm_libdir}/libfindAllSymbols.a
 		fi
 		if [ "$build_option_polly" ]; then
-			vmove usr/include/polly
-			vmove usr/lib/cmake/polly
-			vmove "usr/lib/libPolly*.a"
+			vmove ${_llvm_incdir}/polly
+			vmove ${_llvm_libdir}/cmake/polly
+			vmove "${_llvm_libdir}/libPolly*.a"
 		fi
 	}
 }
@@ -348,7 +525,7 @@ libclang17_package() {
 	depends="clang17-headers>=${version}_${revision}"
 	short_desc+=" - C frontend library"
 	pkg_install() {
-		vmove "usr/lib/libclang.so.*"
+		_vlink_libs "${_llvm_libdir}/libclang.so.*"
 	}
 }
 
@@ -356,7 +533,7 @@ libclang-cpp17_package() {
 	depends="clang17-headers>=${version}_${revision}"
 	short_desc+=" - C frontend library (C++ interface)"
 	pkg_install() {
-		vmove "usr/lib/libclang-cpp.so.*"
+		_vlink_libs "${_llvm_libdir}/libclang-cpp.so.*"
 	}
 }
 
@@ -366,21 +543,29 @@ clang-analyzer17_package() {
 	homepage="https://clang-analyzer.llvm.org/"
 	pycompile_dirs="usr/share/scan-view"
 	conflicts="clang-analyzer15>=0"
+	_clang_analyzer17_files=(
+		share/scan-view
+		share/scan-build
+		lib/libscanbuild
+		libexec/analyze-c++
+		libexec/analyze-cc
+		libexec/intercept-c++
+		libexec/intercept-cc
+		libexec/c++-analyzer
+		libexec/ccc-analyzer
+		share/man/man1/scan-build.1
+		bin/analyze-build
+		bin/scan-build
+		bin/scan-build-py
+		bin/scan-view
+	)
+	for _alt in "${_clang_analyzer17_files[@]}"; do
+		alternatives+=" clang-analyzer:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
 	pkg_install() {
-		vmove usr/share/scan-view
-		vmove usr/share/scan-build
-		vmove usr/lib/libscanbuild
-		vmove usr/libexec/analyze-c++
-		vmove usr/libexec/analyze-cc
-		vmove usr/libexec/intercept-c++
-		vmove usr/libexec/intercept-cc
-		vmove usr/libexec/c++-analyzer
-		vmove usr/libexec/ccc-analyzer
-		vmove usr/share/man/man1/scan-build.1
-		vmove usr/bin/analyze-build
-		vmove usr/bin/scan-build
-		vmove usr/bin/scan-build-py
-		vmove usr/bin/scan-view
+		for _f in "${_clang_analyzer17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_f}
+		done
 	}
 }
 
@@ -390,23 +575,32 @@ clang-tools-extra17_package() {
 	short_desc+=" - Extra Clang tools"
 	homepage="https://clang.llvm.org/extra/"
 	conflicts="clang-tools-extra15>=0"
+	_clang_tools_extra17_files=(
+		bin/clang-apply-replacements
+		bin/clang-change-namespace
+		bin/clang-doc
+		bin/clang-include-cleaner
+		bin/clang-include-fixer
+		bin/clang-move
+		bin/clang-pseudo
+		bin/clang-query
+		bin/clang-reorder-fields
+		bin/clang-tidy
+		bin/clangd
+		bin/find-all-symbols
+		bin/modularize
+		bin/pp-trace
+		bin/run-clang-tidy
+		share/man/man1/extraclangtools.1
+	)
+	for _alt in "${_clang_tools_extra17_files[@]}"; do
+		alternatives+=" clang-tools-extra:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
 	pkg_install() {
-		vmove usr/bin/clang-apply-replacements
-		vmove usr/bin/clang-change-namespace
-		vmove usr/bin/clang-doc
-		vmove usr/bin/clang-include-cleaner
-		vmove usr/bin/clang-include-fixer
-		vmove usr/bin/clang-move
-		vmove usr/bin/clang-pseudo
-		vmove usr/bin/clang-query
-		vmove usr/bin/clang-reorder-fields
-		vmove usr/bin/clang-tidy
-		vmove usr/bin/clangd
-		vmove usr/bin/find-all-symbols
-		vmove usr/bin/modularize
-		vmove usr/bin/pp-trace
-		vmove usr/bin/run-clang-tidy
-		vmove usr/share/man/man1/extraclangtools.1
+		vlicense ${wrksrc}/clang-tools-extra/LICENSE.TXT
+		for _f in "${_clang_tools_extra17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_f}
+		done
 	}
 }
 
@@ -416,17 +610,25 @@ llvm-bolt17_package() {
 	short_desc+=" - post-link optimizer"
 	homepage="https://github.com/llvm/llvm-project/tree/main/bolt"
 	depends="clang17>=${version}_${revision}"
+	_llvm_bolt17_files=(
+		bin/llvm-bolt
+		bin/perf2bolt
+		bin/llvm-boltdiff
+		bin/merge-fdata
+		bin/llvm-bolt-heatmap
+	)
+	for _alt in "${_llvm_bolt17_files[@]}"; do
+		alternatives+=" llvm-bolt:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
 	pkg_install() {
-		vmove usr/bin/llvm-bolt
-		vmove usr/bin/perf2bolt
-		vmove usr/bin/llvm-boltdiff
-		vmove usr/bin/merge-fdata
-		vmove usr/bin/llvm-bolt-heatmap
-		case "$XBPS_TARGET_MACHINE" in
-			x86_64*) vmove usr/lib/libbolt_rt_instr.a
-				 vmove usr/lib/libbolt_rt_hugify.a
-				;;
-		esac
+		vlicense ${wrksrc}/bolt/LICENSE.TXT
+		for _f in "${_llvm_bolt17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_f}
+		done
+		if [ -z "$CROSS_BUILD" ]; then
+			vmove ${_llvm_libdir}/libbolt_rt_instr.a
+			vmove ${_llvm_libdir}/libbolt_rt_hugify.a
+		fi
 	}
 }
 
@@ -435,15 +637,24 @@ lldb17_package() {
 	short_desc+=" - LLDB debugger"
 	homepage="https://lldb.llvm.org/"
 	conflicts="lldb15>=0"
+	_lldb17_files=(
+		bin/lldb
+		bin/lldb-argdumper
+		bin/lldb-instr
+		bin/lldb-server
+		bin/lldb-vscode
+	)
+	if [ -z "$CROSS_BUILD" ]; then
+		_lldb17_files+=("lib/lua/5.3/lldb.so")
+	fi
+	for _alt in "${_lldb17_files[@]}"; do
+		alternatives+=" lldb:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
 	pkg_install() {
-		vmove usr/bin/lldb
-		vmove usr/bin/lldb-argdumper
-		vmove usr/bin/lldb-instr
-		vmove usr/bin/lldb-server
-		vmove usr/bin/lldb-vscode
-		if [ -z "$CROSS_BUILD" ]; then
-			vmove /usr/lib/lua/5.3/lldb.so
-		fi
+		vlicense ${wrksrc}/lldb/LICENSE.TXT
+		for _f in "${_lldb17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_f}
+		done
 	}
 }
 
@@ -453,8 +664,8 @@ lldb17-devel_package() {
 	short_desc+=" - LLDB debugger - development files"
 	conflicts="lldb15-devel>=0"
 	pkg_install() {
-		vmove usr/include/lldb
-		vmove "usr/lib/liblldb*.so"
+		vmove ${_llvm_incdir}/lldb
+		vmove "${_llvm_libdir}/liblldb*.so"
 	}
 }
 
@@ -462,7 +673,7 @@ liblldb17_package() {
 	lib32disabled=yes
 	short_desc+=" - LLDB debugger - runtime library"
 	pkg_install() {
-		vmove "usr/lib/liblldb*.so.*"
+		_vlink_libs "${_llvm_libdir}/liblldb*.so.*"
 	}
 }
 
@@ -471,12 +682,21 @@ lld17_package() {
 	short_desc+=" - linker"
 	homepage="https://lld.llvm.org"
 	conflicts="lld15>=0"
+	_lld17_files=(
+		bin/lld
+		bin/lld-link
+		bin/ld.lld
+		bin/ld64.lld
+		bin/wasm-ld
+	)
+	for _alt in "${_lld17_files[@]}"; do
+		alternatives+=" lld:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
 	pkg_install() {
-		vmove usr/bin/lld
-		vmove usr/bin/lld-link
-		vmove usr/bin/ld.lld
-		vmove usr/bin/ld64.lld
-		vmove usr/bin/wasm-ld
+		vlicense ${wrksrc}/lld/LICENSE.TXT
+		for _f in "${_lld17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_f}
+		done
 	}
 }
 
@@ -487,9 +707,9 @@ lld17-devel_package() {
 	depends="lld17>=${version}_${revision} llvm17>=${version}_${revision}"
 	conflicts="lld15-devel>=0"
 	pkg_install() {
-		vmove usr/include/lld
-		vmove usr/lib/cmake/lld
-		vmove "usr/lib/liblld*.a"
+		vmove ${_llvm_incdir}/lld
+		vmove ${_llvm_libdir}/cmake/lld
+		vmove "${_llvm_libdir}/liblld*.a"
 	}
 }
 
@@ -497,9 +717,28 @@ mlir17_package() {
 	lib32disabled=yes
 	short_desc+=" - multi-level IR compiler framework"
 	homepage="https://mlir.llvm.org/"
+	_mlir17_files=(
+		bin/mlir-cpu-runner
+		bin/mlir-linalg-ods-yaml-gen
+		bin/mlir-lsp-server
+		bin/mlir-opt
+		bin/mlir-pdll
+		bin/mlir-pdll-lsp-server
+		bin/mlir-reduce
+		bin/mlir-tblgen
+		bin/mlir-translate
+		bin/tblgen-lsp-server
+		share/man/man1/mlir-tblgen.1
+	)
+	for _alt in "${_mlir17_files[@]}"; do
+		alternatives+=" mlir:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
 	pkg_install() {
-		vmove "usr/lib/libMLIR*.so.*"
-		vmove "usr/lib/libmlir*.so.*"
+		for _f in "${_mlir17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_f}
+		done
+		_vlink_libs "${_llvm_libdir}/libMLIR*.so.*"
+		_vlink_libs "${_llvm_libdir}/libmlir*.so.*"
 	}
 }
 
@@ -509,23 +748,12 @@ mlir17-devel_package() {
 	homepage="https://mlir.llvm.org/"
 	depends="mlir17>=${version}_${revision} llvm17>=${version}_${revision}"
 	pkg_install() {
-		vmove usr/bin/mlir-cpu-runner
-		vmove usr/bin/mlir-linalg-ods-yaml-gen
-		vmove usr/bin/mlir-lsp-server
-		vmove usr/bin/mlir-opt
-		vmove usr/bin/mlir-pdll
-		vmove usr/bin/mlir-pdll-lsp-server
-		vmove usr/bin/mlir-reduce
-		vmove usr/bin/mlir-tblgen
-		vmove usr/bin/mlir-translate
-		vmove usr/bin/tblgen-lsp-server
-		vmove usr/include/mlir
-		vmove usr/include/mlir-c
-		vmove usr/lib/cmake/mlir
-		vmove "usr/lib/libMLIR*"
-		vmove "usr/lib/objects-Release/obj.MLIR*"
-		vmove "usr/lib/libmlir*"
-		vmove usr/share/man/man1/mlir-tblgen.1
+		vmove ${_llvm_incdir}/mlir
+		vmove ${_llvm_incdir}/mlir-c
+		vmove ${_llvm_libdir}/cmake/mlir
+		vmove "${_llvm_libdir}/libMLIR*"
+		vmove "${_llvm_libdir}/objects-Release/obj.MLIR*"
+		vmove "${_llvm_libdir}/libmlir*"
 	}
 }
 
@@ -534,9 +762,24 @@ flang17_package() {
 	short_desc+=" - Fortran language frontend"
 	homepage="https://flang.llvm.org/"
 	depends="mlir17>=${version}_${revision}"
+	_flang17_files=(
+		bin/flang-new
+		bin/flang-to-external-fc
+		bin/bbc
+		bin/f18-parse-demo
+		bin/fir-opt
+		bin/tco
+	)
+	for _alt in "${_flang17_files[@]}"; do
+		alternatives+=" flang:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
 	pkg_install() {
-		vmove usr/bin/flang-new
-		vmove usr/bin/flang-to-external-fc
+		for _f in "${_flang17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_f}
+		done
+		vmove "${_llvm_libdir}/libflang*.a"
+		vmove "${_llvm_libdir}/libFortran*.a"
+		vmove "${_llvm_incdir}/flang/*.mod"
 	}
 }
 
@@ -546,23 +789,38 @@ flang17-devel_package() {
 	homepage="https://flang.llvm.org/"
 	depends="flang17>=${version}_${revision} llvm17>=${version}_${revision}"
 	pkg_install() {
-		vmove usr/bin/bbc
-		vmove usr/bin/f18-parse-demo
-		vmove usr/bin/fir-opt
-		vmove usr/bin/tco
-		vmove usr/include/flang
-		vmove usr/lib/cmake/flang
-		vmove "usr/lib/libflang*.a"
-		vmove "usr/lib/libFIR*.a"
-		vmove "usr/lib/libHLFIR*.a"
-		vmove "usr/lib/libFortran*.a"
+		vmove ${_llvm_incdir}/flang
+		vmove ${_llvm_libdir}/cmake/flang
+		vmove "${_llvm_libdir}/libFIR*.a"
+		vmove "${_llvm_libdir}/libHLFIR*.a"
 	}
 }
 
 libomp17_package() {
 	short_desc+=" - Clang OpenMP support library"
+	_libomp17_files=(
+		lib/libomp.so
+	)
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*|aarch64*|riscv64*)
+			_libomp17_files+=("lib/libompd.so")
+		;;
+	esac
+	if [ "$build_option_offload" ]; then
+		_libomp17_files+=("bin/llvm-omp-device-info")
+		_libomp17_files+=("bin/llvm-omp-kernel-replay")
+		_libomp17_files+=("lib/libomptarget.so")
+	fi
+	for _alt in "${_libomp17_files[@]}"; do
+		alternatives+=" libomp:/usr/${_alt}:/usr/${_llvm_prefix}/${_alt}"
+	done
 	pkg_install() {
-		vmove "usr/lib/libomp*.so.*"
+		for _f in "${_libomp17_files[@]}"; do
+			vmove usr/${_llvm_prefix}/${_f}
+		done
+		if [ "$build_option_offload" ]; then
+			_vlink_libs "${_llvm_libdir}/libomp*.so*"
+		fi
 	}
 }
 
@@ -570,43 +828,33 @@ libomp17-devel_package() {
 	short_desc+=" - Clang OpenMP support library - development files"
 	depends="libomp17>=${version}_${revision} llvm17>=${version}_${revision}"
 	pkg_install() {
-		if [ -f "${DESTDIR}/usr/bin/llvm-omp-device-info" ]; then
-			vmove usr/bin/llvm-omp-device-info
+		if [ -f "${DESTDIR}/${_llvm_libdir}/libarcher.so" ]; then
+			vmove "${_llvm_libdir}/libarcher*.so"
 		fi
-		if [ -f "${DESTDIR}/usr/bin/llvm-omp-kernel-replay" ]; then
-			vmove usr/bin/llvm-omp-kernel-replay
-		fi
-		if [ -f "${DESTDIR}/usr/lib/libarcher.so" ]; then
-			vmove "usr/lib/libarcher*.so"
-		fi
-		if [ -f "${DESTDIR}/usr/lib/libarcher_static.a" ]; then
-			vmove "usr/lib/libarcher*.a"
-		fi
-		vmove "usr/lib/libomp*.so"
-		vmove usr/lib/cmake/openmp
-		if [ -f "${DESTDIR}/usr/share/man/man1/llvmopenmp.1" ]; then
-			vmove usr/share/man/man1/llvmopenmp.1
+		if [ -f "${DESTDIR}/${_llvm_libdir}/libarcher_static.a" ]; then
+			vmove "${_llvm_libdir}/libarcher*.a"
 		fi
 
-		case "$XBPS_TARGET_MACHINE" in
-			x86_64*)
-				vmove "usr/lib/libomptarget*.bc"
-				vmove "usr/lib/libomp*.a"
-			;;
-		esac
+		vmove ${_llvm_libdir}/cmake/openmp
+
+		if [ "$build_option_offload" ]; then
+			vmove "${_llvm_libdir}/libomptarget*.bc"
+			vmove "${_llvm_libdir}/libomp*.a"
+		fi
 	}
 }
 
 compiler-rt17_package() {
 	short_desc+=" - runtime libraries"
 	homepage="https://compiler-rt.llvm.org/"
+	depends="clang17-headers>=${version}_${revision}"
 	pkg_install() {
-		vmove usr/lib/clang/17/lib
-		if [ -d "${DESTDIR}/usr/lib/clang/17/bin" ]; then
-			vmove usr/lib/clang/17/bin
+		vmove ${_llvm_libdir}/clang/17/lib
+		if [ -d "${DESTDIR}/${_llvm_libdir}/clang/17/bin" ]; then
+			vmove ${_llvm_libdir}/clang/17/bin
 		fi
-		if [ -d "${DESTDIR}/usr/lib/clang/17/share" ]; then
-			vmove usr/lib/clang/17/share
+		if [ -d "${DESTDIR}/${_llvm_libdir}/clang/17/share" ]; then
+			vmove ${_llvm_libdir}/clang/17/share
 		fi
 	}
 }
@@ -614,14 +862,14 @@ compiler-rt17_package() {
 libllvm17_package() {
 	short_desc+=" - library"
 	pkg_install() {
-		vmove "usr/lib/libLLVM-*.so*"
+		_vlink_libs "${_llvm_libdir}/libLLVM-*.so"
 	}
 }
 
 llvm17-doc_package() {
 	short_desc+=" - documentation"
 	pkg_install() {
-		vmove usr/share/doc
+		vmove ${_llvm_datadir}/doc
 	}
 }
 
@@ -639,13 +887,13 @@ llvm17-devel_package() {
 		depends+=" clang17-devel>=${version}_${revision} "
 	fi
 	pkg_install() {
-		vmove usr/lib/libLLVM.so
-		vmove usr/lib/libLTO.so
-		vmove usr/lib/libRemarks.so
-		vmove usr/include/llvm
-		vmove usr/include/llvm-c
-		vmove "usr/lib/libLLVM*.a"
-		vmove usr/lib/cmake/llvm
+		vmove ${_llvm_libdir}/libLLVM.so
+		vmove ${_llvm_libdir}/libLTO.so
+		vmove ${_llvm_libdir}/libRemarks.so
+		vmove ${_llvm_incdir}/llvm
+		vmove ${_llvm_incdir}/llvm-c
+		vmove "${_llvm_libdir}/libLLVM*.a"
+		vmove ${_llvm_libdir}/cmake/llvm
 	}
 }
 
@@ -654,8 +902,12 @@ llvm17-cross-tools_package() {
 	short_desc+=" - build tools for cross compiling LLVM"
 	depends="lldb17-devel>=${version}_${revision} llvm17-devel>=${version}_${revision}"
 	pkg_install() {
-		vmove usr/bin/lldb-tblgen
-		vmove usr/bin/clang-tidy-confusable-chars-gen
-		vmove usr/bin/clang-pseudo-gen
+		vmkdir ${_llvm_bindir}
+		vcopy build/bin/clang-tidy-confusable-chars-gen ${_llvm_bindir}
+		vcopy build/bin/clang-pseudo-gen ${_llvm_bindir}
+
+		if [ "$build_option_lldb" ]; then
+			vcopy build/bin/lldb-tblgen ${_llvm_bindir}
+		fi
 	}
 }
