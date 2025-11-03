@@ -49,7 +49,7 @@ parse_shlib_needed() {
     while read -r f; do
         lf=${f#${PKGDESTDIR}}
 	    if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
-		    msg_normal "Skipping dependency scan for ${lf}\n"
+		    msg_normal "Skipping dependency scan for ${lf}\n" >&3
 		    continue
 	    fi
         read -n4 elfmagic < "$f"
@@ -67,6 +67,7 @@ parse_shlib_needed() {
 hook() {
     local depsftmp f lf j mapshlibs sorequires _curdep elfmagic broken_shlibs verify_deps
     local _shlib_dir="${XBPS_STATEDIR}/shlib-provides"
+    local _shlibtmp
 
     local Qt_6_PRIVATE_API=6.10.0
 
@@ -89,7 +90,11 @@ hook() {
         verify_deps+=" ${f}"
     done
 
-    verify_deps=$(parse_shlib_needed <"$depsftmp" | sort | uniq)
+    _shlibtmp=$(mktemp) || exit 1
+    parse_shlib_needed 3>&1 >"$_shlibtmp" <"$depsftmp"
+    rm -f "$depsftmp"
+    verify_deps=$(sort <"$_shlibtmp" | uniq)
+    rm -f "$_shlibtmp"
 
     #
     # Add required run time packages by using required shlibs resolved
