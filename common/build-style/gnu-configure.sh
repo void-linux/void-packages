@@ -10,9 +10,10 @@ do_configure() {
 
 do_build() {
 	: ${make_cmd:=make}
+	: ${make_verbose:=V=1}
 
 	export lt_cv_sys_lib_dlsearch_path_spec="/usr/lib64 /usr/lib32 /usr/lib /lib /usr/local/lib"
-	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
+	${make_cmd} ${makejobs} ${XBPS_VERBOSE+${make_verbose}} ${make_build_args} ${make_build_target}
 }
 
 do_check() {
@@ -29,13 +30,15 @@ do_check() {
 
 	: ${make_cmd:=make}
 	: ${make_check_target:=check}
+	: ${make_verbose:=V=1}
 
-	${make_check_pre} ${make_cmd} ${makejobs} ${make_check_args} ${make_check_target}
+	${make_check_pre} ${make_cmd} ${makejobs} ${XBPS_VERBOSE+${make_verbose}} ${make_check_args} ${make_check_target}
 }
 
 do_install() {
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
+	: ${make_verbose:=V=1}
 
-	${make_cmd} DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
+	${make_cmd} ${XBPS_VERBOSE+${make_verbose}} DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
 }

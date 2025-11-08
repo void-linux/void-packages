@@ -93,12 +93,22 @@ _EOF
 do_build() {
 	: ${make_cmd:=ninja}
 
+	case "$make_cmd" in
+	ninja) : ${make_verbose:=-v} ;;
+	make) : ${make_verbose:=VERBOSE=1} ;;
+	esac
+
 	cd ${cmake_builddir:=build}
-	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
+	${make_cmd} ${makejobs} ${XBPS_VERBOSE+${make_verbose}} ${make_build_args} ${make_build_target}
 }
 
 do_check() {
 	: ${make_cmd:=ninja}
+
+	case "$make_cmd" in
+	ninja) : ${make_verbose:=-v} ;;
+	make) : ${make_verbose:=VERBOSE=1} ;;
+	esac
 
 	cd ${cmake_builddir:=build}
 
@@ -128,13 +138,18 @@ do_check() {
 
 	: ${make_check_target:=test}
 
-	${make_check_pre} ${make_cmd} ${makejobs} ${make_check_args} ${make_check_target}
+	${make_check_pre} ${make_cmd} ${makejobs} ${XBPS_VERBOSE+${make_verbose}} ${make_check_args} ${make_check_target}
 }
 
 do_install() {
 	: ${make_cmd:=ninja}
 	: ${make_install_target:=install}
 
+	case "$make_cmd" in
+	ninja) : ${make_verbose:=-v} ;;
+	make) : ${make_verbose:=VERBOSE=1} ;;
+	esac
+
 	cd ${cmake_builddir:=build}
-	DESTDIR=${DESTDIR} ${make_cmd} ${make_install_args} ${make_install_target}
+	DESTDIR=${DESTDIR} ${make_cmd} ${XBPS_VERBOSE+${make_verbose}} ${make_install_args} ${make_install_target}
 }
