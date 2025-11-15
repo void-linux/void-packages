@@ -1,0 +1,389 @@
+diff --git a/include/xsimd/arch/common/xsimd_common_details.hpp b/include/xsimd/arch/common/xsimd_common_details.hpp
+index efe01806b..a16415d5b 100644
+--- a/include/xsimd/arch/common/xsimd_common_details.hpp
++++ b/include/xsimd/arch/common/xsimd_common_details.hpp
+@@ -111,6 +111,39 @@ namespace xsimd
+ 
+         namespace detail
+         {
++            // Prevent -ffast-math from reassociating arithmetic across this
++            // point.  Always pass the raw register (.data), not a batch.
++            // The const char* argument documents *why* the barrier exists
++            // at each call site; it is unused at runtime.
++            //
++            // Uses the tightest register-class constraint for the target so
++            // the value stays in its native SIMD register (no spill):
++            //   x86  (SSE/AVX/AVX-512) : "+x"  – XMM / YMM / ZMM
++            //   ARM  (NEON / SVE)      : "+w"  – vector / SVE Z-reg
++            //   PPC  (VSX)             : "+wa" – VS register
++            //   other / MSVC           : address + memory clobber (fallback)
++            template <class T, class A>
++            XSIMD_INLINE void reassociation_barrier(T& x, A const&, const char*) noexcept
++            {
++#if XSIMD_WITH_INLINE_ASM
++#if !XSIMD_WITH_EMULATED && !defined(__EMSCRIPTEN__)
++#if XSIMD_WITH_SSE2
++                __asm__ volatile("" : "+x"(x));
++#elif XSIMD_WITH_NEON || XSIMD_WITH_SVE
++                __asm__ volatile("" : "+w"(x));
++#elif XSIMD_WITH_VSX
++                __asm__ volatile("" : "+wa"(x));
++#else
++                __asm__ volatile("" : : "r"(&x) : "memory");
++#endif
++#else
++                __asm__ volatile("" : : "r"(&x) : "memory");
++#endif
++#else
++                (void)x;
++#endif
++            }
++
+             template <class F, class A, class T, class... Batches>
+             XSIMD_INLINE batch<T, A> apply(F&& func, batch<T, A> const& self, batch<T, A> const& other) noexcept
+             {
+diff --git a/include/xsimd/arch/common/xsimd_common_math.hpp b/include/xsimd/arch/common/xsimd_common_math.hpp
+index f84883405..cc33110fe 100644
+--- a/include/xsimd/arch/common/xsimd_common_math.hpp
++++ b/include/xsimd/arch/common/xsimd_common_math.hpp
+@@ -878,6 +878,7 @@ namespace xsimd
+                 {
+                     batch_type k = nearbyint(a);
+                     x = (a - k) * constants::log_2<batch_type>();
++                    detail::reassociation_barrier(x.data, A {}, "keep reduced exponent ordered before finalize");
+                     return k;
+                 }
+ 
+@@ -937,7 +938,10 @@ namespace xsimd
+         template <class A, class T>
+         XSIMD_INLINE batch<T, A> exp10(batch<T, A> const& self, requires_arch<common>) noexcept
+         {
+-            return detail::exp<detail::exp10_tag>(self);
++            using batch_type = batch<T, A>;
++            batch_type out = detail::exp<detail::exp10_tag>(self);
++            detail::reassociation_barrier(out.data, A {}, "prevent folding exp10 for literal inputs");
++            return out;
+         }
+ 
+         // exp2
+@@ -1494,6 +1498,7 @@ namespace xsimd
+             batch_type R = t2 + t1;
+             batch_type hfsq = batch_type(0.5) * f * f;
+             batch_type dk = to_float(k);
++            detail::reassociation_barrier(dk.data, A {}, "keep compensated k conversion before split log(2) scaling");
+             batch_type r = fma(dk, constants::log_2hi<batch_type>(), fma(s, (hfsq + R), dk * constants::log_2lo<batch_type>()) - hfsq + f);
+ #ifdef __FAST_MATH__
+             return r;
+@@ -1525,6 +1530,7 @@ namespace xsimd
+             hx += 0x3ff00000 - 0x3fe6a09e;
+             k += (hx >> 20) - 0x3ff;
+             batch_type dk = to_float(k);
++            detail::reassociation_barrier(dk.data, A {}, "keep compensated k conversion before split log(2) scaling");
+             hx = (hx & i_type(0x000fffff)) + 0x3fe6a09e;
+             x = ::xsimd::bitwise_cast<double>(hx << 32 | (i_type(0xffffffff) & ::xsimd::bitwise_cast<int_type>(x)));
+ 
+@@ -1705,6 +1711,7 @@ namespace xsimd
+             batch_type t2 = z * detail::horner<batch_type, 0x3f2aaaaa, 0x3e91e9ee>(w);
+             batch_type R = t2 + t1;
+             batch_type dk = to_float(k);
++            detail::reassociation_barrier(dk.data, A {}, "prevent distributing multiplies through compensated exponent conversion");
+             batch_type hfsq = batch_type(0.5) * f * f;
+             batch_type hibits = f - hfsq;
+             hibits &= ::xsimd::bitwise_cast<float>(i_type(0xfffff000));
+@@ -1752,10 +1759,11 @@ namespace xsimd
+ #endif
+             hx += 0x3ff00000 - 0x3fe6a09e;
+             k += (hx >> 20) - 0x3ff;
++            batch_type dk = to_float(k);
++            detail::reassociation_barrier(dk.data, A {}, "prevent distributing multiplies through compensated exponent conversion");
+             hx = (hx & i_type(0x000fffff)) + 0x3fe6a09e;
+             x = ::xsimd::bitwise_cast<double>(hx << 32 | (i_type(0xffffffff) & ::xsimd::bitwise_cast<int_type>(x)));
+             batch_type f = --x;
+-            batch_type dk = to_float(k);
+             batch_type s = f / (batch_type(2.) + f);
+             batch_type z = s * s;
+             batch_type w = z * z;
+@@ -1818,6 +1826,7 @@ namespace xsimd
+             batch_type R = t2 + t1;
+             batch_type hfsq = batch_type(0.5) * f * f;
+             batch_type dk = to_float(k);
++            detail::reassociation_barrier(dk.data, A {}, "prevent distributing multiplies through compensated exponent conversion");
+             /* correction term ~ log(1+x)-log(u), avoid underflow in c/u */
+             batch_type c = select(batch_bool_cast<float>(k >= i_type(2)), batch_type(1.) - (uf - self), self - (uf - batch_type(1.))) / uf;
+             batch_type r = fma(dk, constants::log_2hi<batch_type>(), fma(s, (hfsq + R), dk * constants::log_2lo<batch_type>() + c) - hfsq + f);
+@@ -1853,6 +1862,7 @@ namespace xsimd
+             batch_type t2 = z * detail::horner<batch_type, 0x3fe5555555555593ll, 0x3fd2492494229359ll, 0x3fc7466496cb03dell, 0x3fc2f112df3e5244ll>(w);
+             batch_type R = t2 + t1;
+             batch_type dk = to_float(k);
++            detail::reassociation_barrier(dk.data, A {}, "prevent distributing multiplies through compensated exponent conversion");
+             batch_type r = fma(dk, constants::log_2hi<batch_type>(), fma(s, hfsq + R, dk * constants::log_2lo<batch_type>() + c) - hfsq + f);
+ #ifdef __FAST_MATH__
+             return r;
+@@ -1900,17 +1910,9 @@ namespace xsimd
+                 batch_type s = bitofsign(self);
+                 batch_type v = self ^ s;
+                 batch_type t2n = constants::twotonmb<batch_type>();
+-                // Under fast-math, reordering is possible and the compiler optimizes d
+-                // to v. That's not what we want, so prevent compiler optimization here.
+-                // FIXME: it may be better to emit a memory barrier here (?).
+-#ifdef __FAST_MATH__
+                 batch_type d0 = v + t2n;
+-                asm volatile("" ::"r"(&d0) : "memory");
++                detail::reassociation_barrier(d0.data, A {}, "prevent collapsing (v + 2^n) - 2^n back to v");
+                 batch_type d = d0 - t2n;
+-#else
+-                batch_type d0 = v + t2n;
+-                batch_type d = d0 - t2n;
+-#endif
+                 return s ^ select(v < t2n, d, v);
+             }
+         }
+@@ -2192,12 +2194,16 @@ namespace xsimd
+         template <class A>
+         XSIMD_INLINE batch<float, A> remainder(batch<float, A> const& self, batch<float, A> const& other, requires_arch<common>) noexcept
+         {
+-            return fnma(nearbyint(self / other), other, self);
++            batch<float, A> q = nearbyint(self / other);
++            detail::reassociation_barrier(q.data, A {}, "prevent pulling multiply back through rounded quotient");
++            return fnma(q, other, self);
+         }
+         template <class A>
+         XSIMD_INLINE batch<double, A> remainder(batch<double, A> const& self, batch<double, A> const& other, requires_arch<common>) noexcept
+         {
+-            return fnma(nearbyint(self / other), other, self);
++            batch<double, A> q = nearbyint(self / other);
++            detail::reassociation_barrier(q.data, A {}, "prevent pulling multiply back through rounded quotient");
++            return fnma(q, other, self);
+         }
+         template <class A, class T, class = std::enable_if_t<std::is_integral<T>::value>>
+         XSIMD_INLINE batch<T, A> remainder(batch<T, A> const& self, batch<T, A> const& other, requires_arch<common>) noexcept
+diff --git a/include/xsimd/arch/common/xsimd_common_trigo.hpp b/include/xsimd/arch/common/xsimd_common_trigo.hpp
+index 78c1ea30e..463a9f842 100644
+--- a/include/xsimd/arch/common/xsimd_common_trigo.hpp
++++ b/include/xsimd/arch/common/xsimd_common_trigo.hpp
+@@ -551,33 +551,45 @@ namespace xsimd
+                     {
+                         auto test = x > constants::pio4<B>();
+                         xr = x - constants::pio2_1<B>();
++                        detail::reassociation_barrier(xr.data, typename B::arch_type {}, "ordered pio2 subtraction");
+                         xr -= constants::pio2_2<B>();
++                        detail::reassociation_barrier(xr.data, typename B::arch_type {}, "ordered pio2 subtraction");
+                         xr -= constants::pio2_3<B>();
++                        detail::reassociation_barrier(xr.data, typename B::arch_type {}, "ordered pio2 subtraction");
+                         xr = select(test, xr, x);
+                         return select(test, B(1.), B(0.));
+                     }
+                     else if (all(x <= constants::twentypi<B>()))
+                     {
+                         B xi = nearbyint(x * constants::twoopi<B>());
++                        detail::reassociation_barrier(xi.data, typename B::arch_type {}, "preserve quadrant selection");
+                         xr = fnma(xi, constants::pio2_1<B>(), x);
++                        detail::reassociation_barrier(xr.data, typename B::arch_type {}, "compensated range reduction");
+                         xr -= xi * constants::pio2_2<B>();
++                        detail::reassociation_barrier(xr.data, typename B::arch_type {}, "compensated range reduction");
+                         xr -= xi * constants::pio2_3<B>();
++                        detail::reassociation_barrier(xr.data, typename B::arch_type {}, "compensated range reduction");
+                         return quadrant(xi);
+                     }
+                     else if (all(x <= constants::mediumpi<B>()))
+                     {
+                         B fn = nearbyint(x * constants::twoopi<B>());
++                        detail::reassociation_barrier(fn.data, typename B::arch_type {}, "multi-term range reduction");
+                         B r = x - fn * constants::pio2_1<B>();
++                        detail::reassociation_barrier(r.data, typename B::arch_type {}, "multi-term range reduction");
+                         B w = fn * constants::pio2_1t<B>();
+                         B t = r;
+                         w = fn * constants::pio2_2<B>();
+                         r = t - w;
++                        detail::reassociation_barrier(r.data, typename B::arch_type {}, "multi-term range reduction");
+                         w = fn * constants::pio2_2t<B>() - ((t - r) - w);
+                         t = r;
+                         w = fn * constants::pio2_3<B>();
+                         r = t - w;
++                        detail::reassociation_barrier(r.data, typename B::arch_type {}, "multi-term range reduction");
+                         w = fn * constants::pio2_3t<B>() - ((t - r) - w);
+                         xr = r - w;
++                        detail::reassociation_barrier(xr.data, typename B::arch_type {}, "multi-term range reduction");
+                         return quadrant(fn);
+                     }
+                     else
+diff --git a/include/xsimd/arch/xsimd_avx2.hpp b/include/xsimd/arch/xsimd_avx2.hpp
+index 1eecabf7f..24799e962 100644
+--- a/include/xsimd/arch/xsimd_avx2.hpp
++++ b/include/xsimd/arch/xsimd_avx2.hpp
+@@ -552,13 +552,7 @@ namespace xsimd
+                                                  0xFFFF, 0xFFFF, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0x0000, 0x0000);
+                 __m256i xL = _mm256_or_si256(_mm256_and_si256(mask, x), _mm256_andnot_si256(mask, _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)))); //  2^52
+                 __m256d f = _mm256_sub_pd(_mm256_castsi256_pd(xH), _mm256_set1_pd(19342813118337666422669312.)); //  2^84 + 2^52
+-                // With -ffast-math, the compiler may reassociate (xH-C)+xL into
+-                // xH+(xL-C). Since xL<<C this causes catastrophic cancellation.
+-                // The asm barrier forces f into a register before the add, blocking
+-                // the reorder. It emits zero instructions.
+-#if defined(__GNUC__)
+-                __asm__ volatile("" : "+x"(f));
+-#endif
++                detail::reassociation_barrier(f, A {}, "prevent (xH-C)+xL -> xH+(xL-C)");
+                 return _mm256_add_pd(f, _mm256_castsi256_pd(xL));
+             }
+ 
+@@ -574,10 +568,7 @@ namespace xsimd
+                                                  0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000);
+                 __m256i xL = _mm256_or_si256(_mm256_and_si256(mask, x), _mm256_andnot_si256(mask, _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)))); //  2^52
+                 __m256d f = _mm256_sub_pd(_mm256_castsi256_pd(xH), _mm256_set1_pd(442726361368656609280.)); //  3*2^67 + 2^52
+-                // See above: prevent -ffast-math from reassociating (xH-C)+xL.
+-#if defined(__GNUC__)
+-                __asm__ volatile("" : "+x"(f));
+-#endif
++                detail::reassociation_barrier(f, A {}, "prevent (xH-C)+xL -> xH+(xL-C)");
+                 return _mm256_add_pd(f, _mm256_castsi256_pd(xL));
+             }
+         }
+diff --git a/include/xsimd/arch/xsimd_common_fwd.hpp b/include/xsimd/arch/xsimd_common_fwd.hpp
+index 74bcd2351..8ca6f7d1f 100644
+--- a/include/xsimd/arch/xsimd_common_fwd.hpp
++++ b/include/xsimd/arch/xsimd_common_fwd.hpp
+@@ -101,6 +101,9 @@ namespace xsimd
+         // Forward declarations for pack-level helpers
+         namespace detail
+         {
++            template <class T, class A>
++            XSIMD_INLINE void reassociation_barrier(T& x, A const&, const char*) noexcept;
++
+             template <typename T, T... Vs>
+             XSIMD_INLINE constexpr bool is_identity() noexcept;
+             template <typename T, class A, T... Vs>
+@@ -115,7 +118,6 @@ namespace xsimd
+             XSIMD_INLINE constexpr bool is_only_from_lo(batch_constant<T, A, Vs...>) noexcept;
+             template <typename T, class A, T... Vs>
+             XSIMD_INLINE constexpr bool is_only_from_hi(batch_constant<T, A, Vs...>) noexcept;
+-
+         }
+     }
+ }
+diff --git a/include/xsimd/arch/xsimd_sse2.hpp b/include/xsimd/arch/xsimd_sse2.hpp
+index e95cbbc83..548a5a170 100644
+--- a/include/xsimd/arch/xsimd_sse2.hpp
++++ b/include/xsimd/arch/xsimd_sse2.hpp
+@@ -716,6 +716,7 @@ namespace xsimd
+                 __m128i mask = _mm_setr_epi16(0xFFFF, 0xFFFF, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0x0000, 0x0000);
+                 __m128i xL = _mm_or_si128(_mm_and_si128(mask, x), _mm_andnot_si128(mask, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)))); //  2^52
+                 __m128d f = _mm_sub_pd(_mm_castsi128_pd(xH), _mm_set1_pd(19342813118337666422669312.)); //  2^84 + 2^52
++                detail::reassociation_barrier(f, A {}, "prevent (xH-C)+xL -> xH+(xL-C)");
+                 return _mm_add_pd(f, _mm_castsi128_pd(xL));
+             }
+ 
+@@ -730,6 +731,7 @@ namespace xsimd
+                 __m128i mask = _mm_setr_epi16(0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000);
+                 __m128i xL = _mm_or_si128(_mm_and_si128(mask, x), _mm_andnot_si128(mask, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)))); //  2^52
+                 __m128d f = _mm_sub_pd(_mm_castsi128_pd(xH), _mm_set1_pd(442726361368656609280.)); //  3*2^67 + 2^52
++                detail::reassociation_barrier(f, A {}, "prevent (xH-C)+xL -> xH+(xL-C)");
+                 return _mm_add_pd(f, _mm_castsi128_pd(xL));
+             }
+ 
+diff --git a/include/xsimd/arch/xsimd_sse4_1.hpp b/include/xsimd/arch/xsimd_sse4_1.hpp
+index 358a6b33b..5002ed7dd 100644
+--- a/include/xsimd/arch/xsimd_sse4_1.hpp
++++ b/include/xsimd/arch/xsimd_sse4_1.hpp
+@@ -62,13 +62,7 @@ namespace xsimd
+                 xH = _mm_add_epi64(xH, _mm_castpd_si128(_mm_set1_pd(442721857769029238784.))); //  3*2^67
+                 __m128i xL = _mm_blend_epi16(x, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)), 0x88); //  2^52
+                 __m128d f = _mm_sub_pd(_mm_castsi128_pd(xH), _mm_set1_pd(442726361368656609280.)); //  3*2^67 + 2^52
+-                // With -ffast-math, the compiler may reassociate (xH-C)+xL into
+-                // xH+(xL-C). Since xL<<C this causes catastrophic cancellation.
+-                // The asm barrier forces f into a register before the add, blocking
+-                // the reorder. It emits zero instructions.
+-#if defined(__GNUC__)
+-                __asm__ volatile("" : "+x"(f));
+-#endif
++                detail::reassociation_barrier(f, A {}, "prevent (xH-C)+xL -> xH+(xL-C)");
+                 return _mm_add_pd(f, _mm_castsi128_pd(xL));
+             }
+ 
+@@ -80,10 +74,7 @@ namespace xsimd
+                 xH = _mm_or_si128(xH, _mm_castpd_si128(_mm_set1_pd(19342813113834066795298816.))); //  2^84
+                 __m128i xL = _mm_blend_epi16(x, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)), 0xcc); //  2^52
+                 __m128d f = _mm_sub_pd(_mm_castsi128_pd(xH), _mm_set1_pd(19342813118337666422669312.)); //  2^84 + 2^52
+-                // See above: prevent -ffast-math from reassociating (xH-C)+xL.
+-#if defined(__GNUC__)
+-                __asm__ volatile("" : "+x"(f));
+-#endif
++                detail::reassociation_barrier(f, A {}, "prevent (xH-C)+xL -> xH+(xL-C)");
+                 return _mm_add_pd(f, _mm_castsi128_pd(xL));
+             }
+         }
+diff --git a/include/xsimd/config/xsimd_config.hpp b/include/xsimd/config/xsimd_config.hpp
+index 742dc70fc..249beb05d 100644
+--- a/include/xsimd/config/xsimd_config.hpp
++++ b/include/xsimd/config/xsimd_config.hpp
+@@ -44,6 +44,27 @@
+ #define XSIMD_TARGET_X86 0
+ #endif
+ 
++/**
++ * @ingroup xsimd_config_macro
++ *
++ * Set to 1 if GNU-style inline assembly is available, to 0 otherwise.
++ */
++/* Use __clang__ || __GNUC__ for GNU-style inline asm. clang-cl runs in
++ * MSVC-compatibility mode and does not define __GNUC__ by default, but it
++ * still defines __clang__. Clang documents __asm__/__asm__ support and broad
++ * GCC-extension compatibility:
++ * https://clang.llvm.org/docs/LanguageExtensions.html
++ * Clang only emits __GNUC__ when GNUCVersion != 0:
++ * https://raw.githubusercontent.com/llvm/llvm-project/main/clang/lib/Frontend/InitPreprocessor.cpp
++ * and GNUCVersion defaults to 0:
++ * https://raw.githubusercontent.com/llvm/llvm-project/main/clang/include/clang/Basic/LangOptions.def
++ */
++#if defined(__clang__) || defined(__GNUC__)
++#define XSIMD_WITH_INLINE_ASM 1
++#else
++#define XSIMD_WITH_INLINE_ASM 0
++#endif
++
+ /**
+  * @ingroup xsimd_config_macro
+  *
+diff --git a/include/xsimd/config/xsimd_cpu_features_x86.hpp b/include/xsimd/config/xsimd_cpu_features_x86.hpp
+index 4ed361f46..e9b03b8e5 100644
+--- a/include/xsimd/config/xsimd_cpu_features_x86.hpp
++++ b/include/xsimd/config/xsimd_cpu_features_x86.hpp
+@@ -533,7 +533,7 @@ namespace xsimd
+             __cpuid(buf, leaf);
+             std::memcpy(reg.data(), buf, sizeof(buf));
+ 
+-#elif defined(__GNUC__) || defined(__clang__)
++#elif XSIMD_WITH_INLINE_ASM
+ 
+ #if defined(__i386__) && defined(__PIC__)
+             // %ebx may be the PIC register
+@@ -561,7 +561,7 @@ namespace xsimd
+ #error "_MSC_VER < 1400 is not supported"
+ #endif
+ 
+-#elif defined(__GNUC__)
++#elif XSIMD_WITH_INLINE_ASM
+             x86_reg32_t xcr0 = {};
+             __asm__(
+                 "xorl %%ecx, %%ecx\n"
+diff --git a/test/test_xsimd_api.cpp b/test/test_xsimd_api.cpp
+index 87386eb5e..17a5ab9e2 100644
+--- a/test/test_xsimd_api.cpp
++++ b/test/test_xsimd_api.cpp
+@@ -591,12 +591,16 @@ struct xsimd_api_float_types_functions
+     void test_exp()
+     {
+         value_type val(2);
++#ifdef __FAST_MATH__
++        CHECK_EQ(extract(xsimd::exp(T(val))), doctest::Approx(std::exp(val)));
++#else
+         CHECK_EQ(extract(xsimd::exp(T(val))), std::exp(val));
++#endif
+     }
+     void test_exp10()
+     {
+         value_type val(2);
+-#ifdef EMSCRIPTEN
++#if defined(EMSCRIPTEN) || defined(__FAST_MATH__)
+         CHECK_EQ(extract(xsimd::exp10(T(val))), doctest::Approx(std::pow(value_type(10), val)));
+ #else
+         CHECK_EQ(extract(xsimd::exp10(T(val))), std::pow(value_type(10), val));
