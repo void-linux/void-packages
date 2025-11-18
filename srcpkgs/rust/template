@@ -8,18 +8,19 @@
 # uploaded to https://repo-default.voidlinux.org/distfiles/
 #
 pkgname=rust
-version=1.88.0
+version=1.91.1
 revision=1
-_llvmver=19
+_change_id=146435
+_llvmver=21
 hostmakedepends="curl pkg-config python3 tar cargo-bootstrap"
-makedepends="libffi-devel ncurses-devel libxml2-devel zlib-devel llvm${_llvmver}-devel"
+makedepends="libffi-devel ncurses-devel libxml2-devel libzstd-devel zlib-devel llvm${_llvmver}-devel"
 depends="rust-std gcc"
 short_desc="Safe, concurrent, practical systems language"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="Apache-2.0 OR MIT"
 homepage="https://www.rust-lang.org/"
 distfiles="https://static.rust-lang.org/dist/rustc-${version}-src.tar.gz"
-checksum=3a97544434848ae3d193d1d6bc83d6f24cb85c261ad95f955fde47ec64cfcfbe
+checksum=38dce205d39f61571261f0444237a1ce9efecb970e760d8ec4d957af5b445723
 lib32disabled=yes
 make_check=no # CBA for now
 python_version=3 # needed for python files in rust-src
@@ -58,14 +59,11 @@ post_patch() {
 		done
 	fi
 
-	# ensure no leftover vendor config remains
-	rm -r .cargo
+	# xbps-src replaces config.sub files.
+	_clear_vendor_checksums onig_sys-69.9.1
 
-	cargo update --package cc@1.2.16 --precise 1.2.14
-	(
-		cd src/tools/rustbook
-		cargo update --package cc@1.2.21 --precise 1.2.14
-	)
+	# ensure no leftover vendor config remains
+	# rm -r .cargo
 }
 
 do_configure() {
@@ -99,12 +97,18 @@ do_configure() {
 	fi
 
 	if [ "$CROSS_BUILD" ]; then
-		_cross_args="--set=target.${RUST_TARGET}.llvm-config=${XBPS_WRAPPERDIR}/llvm-config-qemu
+		_cross_args="
+		 --set=target.${RUST_TARGET}.llvm-config=${XBPS_WRAPPERDIR}/llvm-config-qemu
 		 --set=target.${RUST_TARGET}.crt-static=false
 		 --set=target.${RUST_TARGET}.cc=${CC}
 		 --set=target.${RUST_TARGET}.cxx=${CXX}
 		 --set=target.${RUST_TARGET}.ar=${AR}
 		 --set=target.${RUST_TARGET}.linker=${CC}"
+	fi
+
+	# cross bootstrap with docs is currently broken in 1.91.0
+	if [ "$CROSS_BUILD" ]; then
+		_docs="disable"
 	fi
 
 	./configure \
@@ -113,7 +117,9 @@ do_configure() {
 		--target="${RUST_TARGET}" \
 		--prefix=/usr \
 		--python=python3 \
-		--disable-vendor \
+		--enable-option-checking \
+		--enable-vendor \
+		--enable-local-rust \
 		--enable-locked-deps \
 		--enable-verbose-tests \
 		--disable-full-bootstrap \
@@ -135,6 +141,8 @@ do_configure() {
 		--disable-lld \
 		--disable-llvm-bitcode-linker \
 		--tools=clippy,rustdoc,rustfmt,rust-analyzer-proc-macro-srv \
+		--set="change-id=${_change_id}" \
+		--set="rust.deny-warnings=false" \
 		--set="rust.optimize=true" \
 		--set="rust.debug=false" \
 		--set="rust.codegen-units=1" \
@@ -155,20 +163,27 @@ do_configure() {
 		${_cross_args}
 }
 
-# Set the correct CFLAGS for the build host, we have to compile libbacktrace
-# for it during stage1. Otherwise it attemps to use CFLAGS, which are the CFLAGS
-# of the cross host.
 do_build() {
 	export RUST_BACKTRACE=1
 	export JEMALLOC_SYS_WITH_LG_PAGE=16
-	export CARGO_HOME="$wrksrc/.cargo"
+	export CARGO_HOME="/host/cargo"
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-	# prevent sysroot from leaking in
-	export RUSTFLAGS=""
+
+	# 1. prevent sysroot from leaking in by removing it from RUSTFLAGS.
+	# 2. Make the std debugging symbols point to rust-src.
+	export RUSTFLAGS="--remap-path-prefix=library=/usr/lib/rustlib/src/rust/library"
+
+	# unset CFLAGS, CXXFLAGS and LDFLAGS to work around
+	# cc-rs, which adds them to the target specific flags,
+	# causing cross compilation to break if CFLAGS are target
+	# specific.
 	env CFLAGS_${RUST_BUILD}="${CFLAGS_host}" \
 		CXXFLAGS_${RUST_BUILD}="${CXXFLAGS_host}" \
+		LDFLAGS_${RUST_BUILD}="${LDFLAGS_host}" \
 		CFLAGS_${RUST_TARGET}="${CFLAGS}" \
 		CXXFLAGS_${RUST_TARGET}="${CXXFLAGS}" \
+		LDFLAGS_${RUST_TARGET}="${LDFLAGS}" \
+		CFLAGS="" CXXFLAGS="" LDFLAGS="" \
 		python3 x.py dist --jobs $XBPS_MAKEJOBS
 }
 
@@ -204,8 +219,10 @@ do_install() {
 	 -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
 	tar xf build/dist/rustc-dev-${version}-${RUST_TARGET}.tar.gz \
 	 -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
-	tar xf build/dist/rust-docs-${version}-${RUST_TARGET}.tar.gz \
-	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
+	if [ -z "$CROSS_BUILD" ]; then
+		tar xf build/dist/rust-docs-${version}-${RUST_TARGET}.tar.gz \
+		 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
+	fi
 	tar xf build/dist/rust-src-${version}.tar.gz \
 	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
 	tar xf build/dist/rustfmt-${version}-${RUST_TARGET}.tar.gz \
@@ -217,7 +234,12 @@ do_install() {
 	vlicense LICENSE-APACHE
 	vlicense LICENSE-MIT
 
+	# move from a non-compliant path
+	mv "${DESTDIR}/usr/etc/target-spec-json-schema.json" \
+		"${DESTDIR}/usr/share/rust/target-spec-json-schema.json"
+
 	cd ${DESTDIR}/usr/lib
+
 	# symlinks instead of copies
 	rm *.so
 	ln -sf rustlib/${RUST_TARGET}/lib/*.so .
