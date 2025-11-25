@@ -58,11 +58,12 @@ depends="binutils libgcc-devel-${version}_${revision}
 checkdepends="dejagnu"
 subpackages="libgcc libgomp libgomp-devel libatomic libatomic-devel"
 
-build_options="ada gnatboot gdcbin"
+build_options="ada gnatboot bindist gccbin"
 build_options_default="ada"
 desc_option_ada="Enable Ada build"
 desc_option_gnatboot="Enable Ada bootstrap using adacore.com binaries"
-desc_option_gdcbin="Enable gdc build from our prebuilt gdc"
+desc_option_gccbin="Enable gdc and Ada build from our prebuilt gcc"
+desc_option_bindist="Build bindist to build gcc"
 
 _have_gccgo=yes
 _have_libquadmath=no
@@ -127,7 +128,7 @@ if [ "$_have_gdc" = yes ]; then
 fi
 
 subpackages+=" libstdc++-devel libstdc++ libgcc-devel"
-if [ "$build_option_gnatboot" -o "$build_option_ada" ]; then
+if [ "$build_option_gnatboot" -o "$build_option_ada" -o "$build_option_bindist" ]; then
 	subpackages+=" gcc-ada libada-devel libada"
 fi
 
@@ -180,7 +181,12 @@ case "$XBPS_TARGET_MACHINE" in
 		;;
 esac
 case "$XBPS_TARGET_MACHINE" in
-	mips*) ;;
+	mip*hf*) ;;
+	mips*)
+		# not enough GOT space for local GOT entries
+		CFLAGS+=" -mxgot"
+		LDFLAGS+=" -mxgot"
+		;;
 	riscv*) ;;
 	x86_64*|i686) subpackages+=" libitm libitm-devel";;
 	*) subpackages+=" libitm libitm-devel";;
@@ -192,19 +198,26 @@ if [ "$CROSS_BUILD" ]; then
 	fi
 fi
 
+if [ "$build_option_bindist" ]; then
+	hostmakedepends+=" gcc-ada"
+	_opt_dir="/opt/${_triplet}"
+elif [ "$build_option_gccbin" ]; then
+	_opt_dir="/opt/${_triplet}"
+fi
+
 if [ "$_have_gdc" != yes ]; then
 	: skip gdc
 elif [ "$CROSS_BUILD" ]; then
-	if [ "$build_option_gdcbin" ]; then
-		broken="gdcbin only works with native build"
+	if [ "$build_option_gccbin" ]; then
+		broken="option gccbin only works with native build"
 	fi
 	hostmakedepends+=" gcc-gdc"
 	export GDC_FOR_BUILD="gdc"
 	export GDC="${_triplet}-gdc"
 	export GDC_FOR_TARGET="${_triplet}-gdc"
-	nocross="requires $_triplet-gdc"
-elif [ "$build_option_gdcbin" ]; then
-	hostmakedepends+=" gcc-gdc-bin"
+elif [ "$build_option_gccbin" ]; then
+	hostmakedepends+=" gcc-bindist"
+	broken="not uploaded yet"
 else
 	hostmakedepends+=" gcc11-gdc"
 	export GDC=gdc-11
@@ -332,11 +345,17 @@ do_configure() {
 	export LDFLAGS="${LDFLAGS//-no-pie/}"
 	export GDCFLAGS_FOR_TARGET="$CFLAGS"
 
-	_args+=" --prefix=/usr"
-	_args+=" --mandir=/usr/share/man"
-	_args+=" --infodir=/usr/share/info"
-	_args+=" --libexecdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
-	_args+=" --libdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+	if [ "$build_option_bindist" ]; then
+		_args+=" --prefix=$_opt_dir"
+		_args+=" --libexecdir=$_opt_dir/lib"
+		_args+=" --libdir=$_opt_dir/lib"
+	else
+		_args+=" --prefix=/usr"
+		_args+=" --mandir=/usr/share/man"
+		_args+=" --infodir=/usr/share/info"
+		_args+=" --libexecdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+		_args+=" --libdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+	fi
 	_args+=" --enable-threads=posix"
 	_args+=" --enable-__cxa_atexit"
 	_args+=" --disable-multilib"
@@ -359,7 +378,29 @@ do_configure() {
 
 	mkdir -p build
 	cd build
-	if [ "$build_option_gnatboot" ]; then
+	if [ "$build_option_gccbin" ]; then
+		_args+=" --enable-languages=${_langs},ada"
+		CONFIG_SHELL=/bin/bash \
+		PATH="$PATH:${_opt_dir}/bin" \
+			${wrksrc}/configure ${_args}
+	elif [ "$build_option_bindist" ]; then
+		_args+=" --disable-multilib"
+		_args+=" --disable-libstdcxx-pch"
+		_args+=" --disable-libssp"
+		_args+=" --disable-libsanitizer"
+		_args+=" --disable-fixed-point"
+		_args+=" --disable-bootstrap"
+		_args+=" --disable-libunwind-exceptions"
+		_args+=" --disable-target-libiberty"
+		_args+=" --disable-vtable-verify"
+		_args+=" --disable-libitm"
+		_args+=" --disable-libgomp"
+		_args+=" --disable-libmpx"
+		_args+=" --disable-libmudflap"
+		_args+=" --enable-languages=${_langs},ada"
+		CONFIG_SHELL=/bin/bash \
+			${wrksrc}/configure ${_args}
+	elif [ "$build_option_gnatboot" ]; then
 		# file-prefix-map isn't supported in gcc6
 		export CFLAGS="${CFLAGS/-ffile-prefix-map=$wrksrc=./}"
 		export CXXFLAGS="${CXXFLAGS/-ffile-prefix-map=$wrksrc=./}"
@@ -405,6 +446,24 @@ do_install() {
 		done
 	fi
 	make -C build DESTDIR=${DESTDIR} install
+
+	if [ "$build_option_bindist" ]; then
+		ln -s "${_patchver}" \
+			${DESTDIR}${_opt_dir}/lib/gcc/${_triplet}/${_minorver}
+		ln -s "${_patchver}" \
+			${DESTDIR}${_opt_dir}/include/c++/${_minorver}
+		rm -f ${DESTDIR}/${_opt_dir}/lib/gcc/${_triplet}/{_patchver}/include-fixed/bits/statx.h
+		mkdir -p ${XBPS_SRCDISTDIR}/distfiles
+		msg_normal "Creating distfiles ...\n"
+		bsdtar -C "${DESTDIR}" -c --zstd \
+			--options zstd:compression-level=22 \
+			-f ${XBPS_SRCDISTDIR}/distfiles/${_triplet}-gcc-${version}.tar.zst \
+			opt
+		msg_normal "Generated ${_triplet}-gcc-${version}.tar.zst\n"
+		msg_normal "SHA256: $($XBPS_DIGEST_CMD ${XBPS_SRCDISTDIR}/distfiles/${_triplet}-gcc-${version}.tar.zst)\n"
+		exit 1
+	fi
+
 
 	# Make version a symlink of major version to make all versions
 	# from the same series work automagically.
