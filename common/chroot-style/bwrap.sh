@@ -18,6 +18,14 @@ if [ -z "$MASTERDIR" -o -z "$DISTDIR" ]; then
 	exit 1
 fi
 
-exec bwrap --bind "$MASTERDIR" / --ro-bind "$DISTDIR" /void-packages \
-	 --dev /dev --tmpfs /tmp --proc /proc \
-	${HOSTDIR:+--bind "$HOSTDIR" /host} $EXTRA_ARGS "$@"
+if [ -z "$XBPS_TEMP_MASTERDIR" ]; then
+	exec bwrap --bind "$MASTERDIR" / \
+		--ro-bind "$DISTDIR" /void-packages \
+		--dev /dev --tmpfs /tmp --proc /proc \
+		${HOSTDIR:+--bind "$HOSTDIR" /host} ${EXTRA_ARGS} "$@"
+else
+	exec bwrap --overlay-src "$MASTERDIR" --tmp-overlay / \
+		--ro-bind "$DISTDIR" /void-packages \
+		--dev /dev --tmpfs /tmp --proc /proc \
+		${HOSTDIR:+--bind "$HOSTDIR" /host} ${EXTRA_ARGS} "$@"
+fi

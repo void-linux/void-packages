@@ -1,0 +1,44 @@
+From aadcaf8c9d47d41ee4d2d2be3f63709e2c86aeaf Mon Sep 17 00:00:00 2001
+From: Victor Kareh <vkareh@redhat.com>
+Date: Thu, 25 Sep 2025 13:10:59 -0400
+Subject: [PATCH] metar: Support SPECI report data
+
+Since AviationWeather updated their API, they now return two report
+types: METAR (standard hourly repors) and SPECI (special intermediate
+reports). We can parse those out from the response since the format is
+similar, and the only thing that changes is the prefix.
+---
+ libmateweather/weather-metar.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/libmateweather/weather-metar.c b/libmateweather/weather-metar.c
+index 48edece..a64b438 100644
+--- a/libmateweather/weather-metar.c
++++ b/libmateweather/weather-metar.c
+@@ -526,9 +526,15 @@ metar_finish (GObject *source, GAsyncResult *result, gpointer data)
+     response_body = g_bytes_get_data (bytes, &len);
+     end = response_body + len;
+ 
++    /* Try METAR first, then SPECI */
+     searchkey = g_strdup_printf ("<raw_text>METAR %s", loc->code);
+     p = xstrnstr (response_body, len, searchkey);
+     g_free (searchkey);
++    if (!p) {
++        searchkey = g_strdup_printf ("<raw_text>SPECI %s", loc->code);
++        p = xstrnstr (response_body, len, searchkey);
++        g_free (searchkey);
++    }
+     if (p) {
+         p += WEATHER_LOCATION_CODE_LEN + 11;
+         endtag = xstrnstr (p, end - p, "</raw_text>");
+@@ -538,7 +544,9 @@ metar_finish (GObject *source, GAsyncResult *result, gpointer data)
+             metar = g_strndup (p, end - p);
+         success = metar_parse (metar, info);
+         g_free (metar);
+-    } else if (!xstrnstr (response_body, len, "aviationweather.gov")) {
++    }
++
++    if (!success && !xstrnstr (response_body, len, "aviationweather.gov")) {
+         /* The response doesn't even seem to have come from NOAA...
+          * most likely it is a wifi hotspot login page. Call that a
+          * network error.

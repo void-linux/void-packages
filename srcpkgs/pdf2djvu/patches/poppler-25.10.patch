@@ -1,0 +1,63 @@
+--- a/pdf-unicode.cc
++++ b/pdf-unicode.cc
+@@ -49,7 +49,11 @@ std::string pdf::string_as_utf8(const pd
+      */
+     const static uint32_t replacement_character = 0xFFFD;
+     const char *cstring = pdf::get_c_string(string);
++#if POPPLER_VERSION >= 251000
++    size_t clength = string->size();
++#else
+     size_t clength = string->getLength();
++#endif
+     std::ostringstream stream;
+     if (clength >= 2 && (cstring[0] & 0xFF) == 0xFE && (cstring[1] & 0xFF) == 0xFF) {
+         /* UTF-16-BE Byte Order Mark */
+--- a/pdf-backend.cc
++++ b/pdf-backend.cc
+@@ -139,6 +139,17 @@ pdf::Document::Document(const std::strin
+     throw LoadError();
+ }
+ 
++static std::string html_color(const std::array<double, 4> &rgba)
++{
++  std::ostringstream stream;
++  stream << "#";
++  for (int i = 0; i < 3; i++)
++    stream
++      << std::setw(2) << std::setfill('0') << std::hex
++      << static_cast<int>(rgba[i] * 0xFF);
++  return stream.str();
++}
++
+ static std::string html_color(const double rgb[])
+ {
+   std::ostringstream stream;
+@@ -156,6 +167,19 @@ static std::string html_color(double r,
+   return html_color(rgb);
+ }
+ 
++static void cmyk_to_rgb(const std::array<double,4> &cmyk, double rgb[])
++{
++  static pdf::gfx::DeviceCmykColorSpace cmyk_space;
++  pdf::gfx::Color cmyk_cc;
++  pdf::gfx::RgbColor rgb_cc;
++  for (int i = 0; i < 4; i++)
++    cmyk_cc.c[i] = pdf::gfx::double_as_color_component(cmyk[i]);
++  cmyk_space.getRGB(&cmyk_cc, &rgb_cc);
++  rgb[0] = pdf::gfx::color_component_as_double(rgb_cc.r);
++  rgb[1] = pdf::gfx::color_component_as_double(rgb_cc.g);
++  rgb[2] = pdf::gfx::color_component_as_double(rgb_cc.b);
++}
++
+ static void cmyk_to_rgb(const double cmyk[], double rgb[])
+ {
+   static pdf::gfx::DeviceCmykColorSpace cmyk_space;
+@@ -181,7 +205,7 @@ static bool annotations_callback(pdf::an
+     border_colors.push_back("");
+     return true;
+   }
+-  const double *values = color->getValues();
++  const auto &values = color->getValues();
+   switch (color->getSpace())
+   {
+   case pdf::ant::Color::colorTransparent:

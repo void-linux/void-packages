@@ -37,6 +37,10 @@ hook() {
         return 0
     fi
 
+    case " qt6-base " in
+    *" ${sourcepkg} "*) return 0 ;;
+    esac
+
     _list=$(get_qt_private)
     for _shlib in $_list; do
         msg_normal "${pkgver}: requires PRIVATE_API from $_shlib\n"

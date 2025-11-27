@@ -1,0 +1,224 @@
+From c0b44ccc04df35a9a23ca9be3e05f5d3a5428f6f Mon Sep 17 00:00:00 2001
+From: matthiakl <t-m.42@mailpost.spdns.org>
+Date: Sun, 23 Mar 2025 09:17:47 +0000
+Subject: [PATCH] Update asio interfaces (GH #6665 / CB #5025)
+
+Co-authored-by: matthiakl <t-m.42@mailpost.spdns.org>
+Co-authored-by: Widelands Bunnybot <bunnybot@widelands.org>
+Co-authored-by: matthiakl <t-m.42@mailpost.spdns.org>
+Co-committed-by: matthiakl <t-m.42@mailpost.spdns.org>
+---
+ src/network/bufferedconnection.cc    | 16 ++++++++--------
+ src/network/bufferedconnection.h     |  4 ++--
+ src/network/nethost.cc               | 12 ++++++------
+ src/network/nethost.h                |  4 ++--
+ src/network/network.cc               | 14 +++++++-------
+ src/network/network_lan_promotion.cc |  4 ++--
+ src/network/network_lan_promotion.h  |  2 +-
+ 7 files changed, 28 insertions(+), 28 deletions(-)
+
+diff --git a/src/network/bufferedconnection.cc b/src/network/bufferedconnection.cc
+index 715c2baf5c2..389360526c3 100644
+--- a/src/network/bufferedconnection.cc
++++ b/src/network/bufferedconnection.cc
+@@ -141,12 +141,12 @@ void BufferedConnection::close() {
+ 		verb_log_info("[BufferedConnection] Closing network socket.");
+ 	}
+ 	// Stop the thread
+-	io_service_.stop();
+-	// Not sure if that is required, wait up to one second for the io_service to stop
+-	for (int i = 0; i < 1000 && !io_service_.stopped(); i++) {
++	io_context_.stop();
++	// Not sure if that is required, wait up to one second for the io_context to stop
++	for (int i = 0; i < 1000 && !io_context_.stopped(); i++) {
+ 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+ 	}
+-	assert(io_service_.stopped());
++	assert(io_context_.stopped());
+ 	if (asio_thread_.joinable()) {
+ 		try {
+ 			asio_thread_.join();
+@@ -334,7 +334,7 @@ void BufferedConnection::reduce_send_buffer(asio::ip::tcp::socket& socket) {
+ }
+ 
+ BufferedConnection::BufferedConnection(const NetAddress& host)
+-   : socket_(io_service_), currently_sending_(false) {
++   : socket_(io_context_), currently_sending_(false) {
+ 
+ 	const asio::ip::tcp::endpoint destination(host.ip, host.port);
+ 
+@@ -353,7 +353,7 @@ BufferedConnection::BufferedConnection(const NetAddress& host)
+ 		asio_thread_ = std::thread([this]() {
+ 			// The output might actually be messed up if it collides with the main thread...
+ 			verb_log_info("[BufferedConnection] Starting networking thread\n");
+-			io_service_.run();
++			io_context_.run();
+ 			verb_log_info("[BufferedConnection] Stopping networking thread\n");
+ 		});
+ 	} else {
+@@ -364,7 +364,7 @@ BufferedConnection::BufferedConnection(const NetAddress& host)
+ 	}
+ }
+ 
+-BufferedConnection::BufferedConnection() : socket_(io_service_) {
++BufferedConnection::BufferedConnection() : socket_(io_context_) {
+ }
+ 
+ void BufferedConnection::notify_connected() {
+@@ -379,7 +379,7 @@ void BufferedConnection::notify_connected() {
+ 	asio_thread_ = std::thread([this]() {
+ 		// The output might actually be messed up if it collides with the main thread...
+ 		verb_log_info("[BufferedConnection] Starting networking thread");
+-		io_service_.run();
++		io_context_.run();
+ 		verb_log_info("[BufferedConnection] Stopping networking thread");
+ 	});
+ }
+diff --git a/src/network/bufferedconnection.h b/src/network/bufferedconnection.h
+index 71f9bdfd6a0..c47b994500b 100644
+--- a/src/network/bufferedconnection.h
++++ b/src/network/bufferedconnection.h
+@@ -314,8 +314,8 @@ class BufferedConnection {
+ 	/// Each packet in the queue is a vector of uint8_t.
+ 	std::map<uint8_t, std::queue<std::vector<uint8_t>>> buffers_to_send_;
+ 
+-	/// An io_service needed by asio. Primarily needed for asynchronous operations.
+-	asio::io_service io_service_;
++	/// An io_context needed by asio. Primarily needed for asynchronous operations.
++	asio::io_context io_context_;
+ 
+ 	/// The socket that connects us to the host.
+ 	asio::ip::tcp::socket socket_;
+diff --git a/src/network/nethost.cc b/src/network/nethost.cc
+index 16b08454929..25e369ef3c1 100644
+--- a/src/network/nethost.cc
++++ b/src/network/nethost.cc
+@@ -67,11 +67,11 @@ bool NetHost::is_connected(const ConnectionId id) const {
+ void NetHost::stop_listening() {
+ 
+ 	// Stop the thread
+-	io_service_.stop();
+-	for (int i = 0; i < 1000 && !io_service_.stopped(); i++) {
++	io_context_.stop();
++	for (int i = 0; i < 1000 && !io_context_.stopped(); i++) {
+ 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+ 	}
+-	assert(io_service_.stopped());
++	assert(io_context_.stopped());
+ 	if (asio_thread_.joinable()) {
+ 		try {
+ 			asio_thread_.join();
+@@ -183,7 +183,7 @@ void NetHost::start_accepting(
+ 	});
+ }
+ 
+-NetHost::NetHost(const uint16_t port) : acceptor_v4_(io_service_), acceptor_v6_(io_service_) {
++NetHost::NetHost(const uint16_t port) : acceptor_v4_(io_context_), acceptor_v6_(io_context_) {
+ 
+ 	if (open_acceptor(&acceptor_v4_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port))) {
+ 		verb_log_info("[NetHost] Opening a listening IPv4 socket on TCP port %u", port);
+@@ -198,7 +198,7 @@ NetHost::NetHost(const uint16_t port) : acceptor_v4_(io_service_), acceptor_v6_(
+ 
+ 	asio_thread_ = std::thread([this]() {
+ 		verb_log_info("[NetHost] Starting networking thread");
+-		io_service_.run();
++		io_context_.run();
+ 		verb_log_info("[NetHost] Stopping networking thread");
+ 	});
+ }
+@@ -214,7 +214,7 @@ bool NetHost::open_acceptor(asio::ip::tcp::acceptor* acceptor,
+ 			acceptor->set_option(option_v6only);
+ 		}
+ 		acceptor->bind(endpoint);
+-		acceptor->listen(asio::socket_base::max_connections);
++		acceptor->listen(asio::socket_base::max_listen_connections);
+ 		return true;
+ 	} catch (const std::system_error&) {
+ 		return false;
+diff --git a/src/network/nethost.h b/src/network/nethost.h
+index 86fe4f920d5..7d17502b9d4 100644
+--- a/src/network/nethost.h
++++ b/src/network/nethost.h
+@@ -101,8 +101,8 @@ class NetHost : public NetHostInterface {
+ 	std::map<NetHostInterface::ConnectionId, std::unique_ptr<BufferedConnection>> clients_;
+ 	/// The next client id that will be used
+ 	NetHostInterface::ConnectionId next_id_{1};
+-	/// An io_service needed by asio. Primary needed for async operations.
+-	asio::io_service io_service_;
++	/// An io_context needed by asio. Primary needed for async operations.
++	asio::io_context io_context_;
+ 	/// The acceptor we get IPv4 connection requests to.
+ 	asio::ip::tcp::acceptor acceptor_v4_;
+ 	/// The acceptor we get IPv6 connection requests to.
+diff --git a/src/network/network.cc b/src/network/network.cc
+index f945b28b665..1c142f1f846 100644
+--- a/src/network/network.cc
++++ b/src/network/network.cc
+@@ -30,17 +30,17 @@ bool do_resolve(const asio::ip::tcp& protocol,
+                 uint16_t port) {
+ 	assert(addr != nullptr);
+ 	try {
+-		asio::io_service io_service;
+-		asio::ip::tcp::resolver resolver(io_service);
+-		asio::ip::tcp::resolver::query query(protocol, hostname, as_string(port));
+-		asio::ip::tcp::resolver::iterator iter = resolver.resolve(query);
+-		if (iter == asio::ip::tcp::resolver::iterator()) {
++		asio::io_context io_context;
++		asio::ip::tcp::resolver resolver(io_context);
++		asio::ip::tcp::resolver::results_type iter =
++		   resolver.resolve(protocol, hostname, as_string(port));
++		if (iter.empty()) {
+ 			// Resolution failed
+ 			log_err("Could not resolve network name '%s:%u' to %s-address\n", hostname.c_str(), port,
+ 			        ((protocol == asio::ip::tcp::v4()) ? "IPv4" : "IPv6"));
+ 			return false;
+ 		}
+-		addr->ip = iter->endpoint().address();
++		addr->ip = iter.begin()->endpoint().address();
+ 		addr->port = port;
+ 		verb_log_info("Resolved network name '%s:%u' to %s", hostname.c_str(), port,
+ 		              addr->ip.to_string().c_str());
+@@ -64,7 +64,7 @@ bool NetAddress::resolve_to_v6(NetAddress* addr, const std::string& hostname, ui
+ 
+ bool NetAddress::parse_ip(NetAddress* addr, const std::string& ip, uint16_t port) {
+ 	std::error_code ec;
+-	asio::ip::address new_addr = asio::ip::address::from_string(ip, ec);
++	asio::ip::address new_addr = asio::ip::make_address(ip, ec);
+ 	if (ec) {
+ 		return false;
+ 	}
+diff --git a/src/network/network_lan_promotion.cc b/src/network/network_lan_promotion.cc
+index 5e8e8f6b912..7cdbf1962ec 100644
+--- a/src/network/network_lan_promotion.cc
++++ b/src/network/network_lan_promotion.cc
+@@ -75,7 +75,7 @@ int get_ip_version(const asio::ip::udp& version) {
+  * On Apple we have to specify the interface, forcing us to send our message over all interfaces we
+  * can find.
+  */
+-LanBase::LanBase(uint16_t port) : socket_v4(io_service), socket_v6(io_service) {
++LanBase::LanBase(uint16_t port) : socket_v4(io_context), socket_v6(io_context) {
+ 
+ #ifndef _WIN32
+ 	// Iterate over all interfaces. If they support IPv4, store the broadcast-address
+@@ -252,7 +252,7 @@ bool LanBase::broadcast(void const* const buf, size_t const len, uint16_t const
+ 	                             asio::ip::udp::socket& socket, const std::string& address) -> bool {
+ 		if (socket.is_open()) {
+ 			std::error_code ec;
+-			asio::ip::udp::endpoint destination(asio::ip::address::from_string(address), port);
++			asio::ip::udp::endpoint destination(asio::ip::make_address(address), port);
+ 			socket.send_to(asio::buffer(buf, len), destination, 0, ec);
+ 			if (!ec) {
+ 				return true;
+diff --git a/src/network/network_lan_promotion.h b/src/network/network_lan_promotion.h
+index dc1ccbadbc3..a227043ccf8 100644
+--- a/src/network/network_lan_promotion.h
++++ b/src/network/network_lan_promotion.h
+@@ -135,7 +135,7 @@ struct LanBase {
+ 	void close_socket(asio::ip::udp::socket* socket);
+ 
+ 	/// No idea what this does. I think it is only really used when asynchronous operations are done.
+-	asio::io_service io_service;
++	asio::io_context io_context;
+ 	/// The socket for IPv4.
+ 	asio::ip::udp::socket socket_v4;
+ 	/// The socket for IPv6.
