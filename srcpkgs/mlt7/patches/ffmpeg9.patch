@@ -1,0 +1,149 @@
+# https://github.com/OpenMandrivaAssociation/mlt/blob/master/mlt-7.40.0-ffmpeg9.patch
+diff --git a/src/modules/avformat/consumer_avformat.c b/src/modules/avformat/consumer_avformat.c
+index d5ab5f1cd..cebd89f0e 100644
+--- a/src/modules/avformat/consumer_avformat.c
++++ b/src/modules/avformat/consumer_avformat.c
+@@ -629,7 +629,8 @@ static void apply_properties(void *obj, mlt_properties properties, int flags)
+                 || (opt_name[0] == 'a' && (flags & AV_OPT_FLAG_AUDIO_PARAM))))
+             opt = av_opt_find(obj, ++opt_name, NULL, flags, search_flags);
+         // Apply option if found
+-        if (opt && strcmp(opt_name, "channel_layout") && strcmp(opt_name, "frame_duration"))
++        if (opt && strcmp(opt_name, "channel_layout") && strcmp(opt_name, "frame_duration")
++            && strcmp(opt_name, "dc"))
+             av_opt_set(obj, opt_name, mlt_properties_get_value(properties, i), search_flags);
+     }
+ }
+@@ -680,7 +681,6 @@ static int pick_sample_fmt(mlt_properties properties, const AVCodec *codec)
+ {
+     int sample_fmt = AV_SAMPLE_FMT_S16;
+     const char *format = mlt_properties_get(properties, "mlt_audio_format");
+-    const int *p = codec->sample_fmts;
+     const char *sample_fmt_str = mlt_properties_get(properties, "sample_fmt");
+
+     if (sample_fmt_str)
+@@ -699,13 +699,29 @@ static int pick_sample_fmt(mlt_properties properties, const AVCodec *codec)
+         else if (!strcmp(format, "float"))
+             sample_fmt = AV_SAMPLE_FMT_FLTP;
+     }
++#if LIBAVCODEC_VERSION_INT >= ((61 << 16) + (13 << 8) + 100)
++    const enum AVSampleFormat *sample_fmts = NULL;
++    avcodec_get_supported_config(NULL,
++                                 codec,
++                                 AV_CODEC_CONFIG_SAMPLE_FORMAT,
++                                 0,
++                                 (const void **) &sample_fmts,
++                                 NULL);
++    const int *p = (const int *) sample_fmts;
++#else
++    const int *p = codec->sample_fmts;
++#endif
+     // check if codec supports our mlt_audio_format
+-    for (; *p != -1; p++) {
++    for (; p && *p != -1; p++) {
+         if (*p == sample_fmt)
+             return sample_fmt;
+     }
+     // no match - pick first one we support
++#if LIBAVCODEC_VERSION_INT >= ((61 << 16) + (13 << 8) + 100)
++    for (p = (const int *) sample_fmts; p && *p != -1; p++) {
++#else
+     for (p = codec->sample_fmts; *p != -1; p++) {
++#endif
+         switch (*p) {
+         case AV_SAMPLE_FMT_U8:
+         case AV_SAMPLE_FMT_S16:
+@@ -980,9 +996,25 @@ static AVStream *add_video_stream(mlt_consumer consumer,
+         c->framerate = av_inv_q(c->time_base);
+
+         // Default to the codec's first pix_fmt if possible.
++#if LIBAVCODEC_VERSION_INT >= ((61 << 16) + (13 << 8) + 100)
++        {
++            const enum AVPixelFormat *video_pix_fmts = NULL;
++            if (codec)
++                avcodec_get_supported_config(NULL,
++                                             codec,
++                                             AV_CODEC_CONFIG_PIX_FORMAT,
++                                             0,
++                                             (const void **) &video_pix_fmts,
++                                             NULL);
++            c->pix_fmt = pix_fmt ? av_get_pix_fmt(pix_fmt)
++                         : codec ? (video_pix_fmts ? video_pix_fmts[0] : AV_PIX_FMT_YUV422P)
++                                 : AV_PIX_FMT_YUV420P;
++        }
++#else
+         c->pix_fmt = pix_fmt ? av_get_pix_fmt(pix_fmt)
+                      : codec ? (codec->pix_fmts ? codec->pix_fmts[0] : AV_PIX_FMT_YUV422P)
+                              : AV_PIX_FMT_YUV420P;
++#endif
+
+         if (AV_PIX_FMT_VAAPI == c->pix_fmt) {
+             int result = init_vaapi(properties, c);
+@@ -1082,7 +1114,9 @@ static AVStream *add_video_stream(mlt_consumer consumer,
+         c->rc_override_count = i;
+         if (!c->rc_initial_buffer_occupancy)
+             c->rc_initial_buffer_occupancy = c->rc_buffer_size * 3 / 4;
++#if LIBAVCODEC_VERSION_INT < ((62 << 16) + (25 << 8) + 100)
+         c->intra_dc_precision = mlt_properties_get_int(properties, "dc") - 8;
++#endif
+
+         // Setup dual-pass
+         i = mlt_properties_get_int(properties, "pass");
+@@ -1199,6 +1233,26 @@ static int open_video(mlt_properties properties,
+                          AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM);
+     }
+
++#if LIBAVCODEC_VERSION_INT >= ((61 << 16) + (13 << 8) + 100)
++    if (codec) {
++        const enum AVPixelFormat *pix_fmts = NULL;
++        avcodec_get_supported_config(NULL,
++                                     codec,
++                                     AV_CODEC_CONFIG_PIX_FORMAT,
++                                     0,
++                                     (const void **) &pix_fmts,
++                                     NULL);
++        if (pix_fmts) {
++            const enum AVPixelFormat *p = pix_fmts;
++            for (; *p != -1; p++) {
++                if (*p == video_enc->pix_fmt)
++                    break;
++            }
++            if (*p == -1)
++                video_enc->pix_fmt = pix_fmts[0];
++        }
++    }
++#else
+     if (codec && codec->pix_fmts) {
+         const enum AVPixelFormat *p = codec->pix_fmts;
+         for (; *p != -1; p++) {
+@@ -1208,6 +1262,7 @@ static int open_video(mlt_properties properties,
+         if (*p == -1)
+             video_enc->pix_fmt = codec->pix_fmts[0];
+     }
++#endif
+
+     const AVPixFmtDescriptor *srcDesc = av_pix_fmt_desc_get(video_enc->pix_fmt);
+     if (srcDesc->flags & AV_PIX_FMT_FLAG_RGB) {
+diff --git a/src/modules/avformat/consumer_avformat.yml b/src/modules/avformat/consumer_avformat.yml
+index 989466b55..f3644206c 100644
+--- a/src/modules/avformat/consumer_avformat.yml
++++ b/src/modules/avformat/consumer_avformat.yml
+@@ -3,7 +3,7 @@ type: consumer
+ identifier: avformat
+ title: FFmpeg Output
+ version: 7
+-copyright: Copyright (C) 2003-2019 Meltytech, LLC
++copyright: Copyright (C) 2003-2026 Meltytech, LLC
+ license: LGPL
+ language: en
+ url: http://www.ffmpeg.org/
+@@ -452,6 +452,10 @@ parameters:
+   - identifier: dc
+     title: Intra DC precision
+     type: integer
++    description: >
++      Sets intra_dc_precision for MPEG-2 encoding. The value is offset by 8,
++      so the default of 8 means precision 0 (8-bit). Only relevant for
++      MPEG-2; ignored on FFmpeg 8.0 and later.
+     default: 8
+
+   - identifier: muxdelay
