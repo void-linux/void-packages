@@ -1,0 +1,60 @@
+# HG changeset patch
+# User Torsten Jager <t.jager@gmx.de>
+# Date 1675683900 -3600
+#      Mon Feb 06 12:45:00 2023 +0100
+# Node ID 0a786d63bbdb2d780a9231f6772e84e743c72014
+# Parent  b0a36ed8ec8f3f2de545502b93ec846561168b64
+Try to silence some cast align warnings 4.
+
+diff -r b0a36ed8ec8f -r 0a786d63bbdb src/combined/ffmpeg/ff_video_decoder.c
+--- a/src/combined/ffmpeg/ff_video_decoder.c	Mon Feb 06 12:44:55 2023 +0100
++++ b/src/combined/ffmpeg/ff_video_decoder.c	Mon Feb 06 12:45:00 2023 +0100
+@@ -1398,7 +1398,7 @@
+ #if defined(AV_PIX_FMT_YUV420P9) || defined(AV_PIX_FMT_YUV420P10)
+ static void ff_get_deep_color (uint8_t *src, int sstride, uint8_t *dest, int dstride,
+   int width, int height, uint8_t *tab) {
+-  uint16_t *p = (uint16_t *) src;
++  uint16_t *p = (uint16_t *)ASSUME_ALIGNED_2 (src, 2);
+   uint8_t  *q = dest;
+   int       spad = sstride / 2 - width;
+   int       dpad = dstride - width;
+@@ -1804,22 +1804,24 @@
+ #ifdef XFF_AVCODEC_SUB_ID
+         this->context->sub_id = _X_BE_32(&this->buf[30]);
+ #endif
+-        this->context->extradata_size = this->size - 26;
+-	if (this->context->extradata_size < 8) {
+-	  this->context->extradata_size= 8;
+-	  this->context->extradata = calloc(1, this->context->extradata_size +
+-                                            AV_INPUT_BUFFER_PADDING_SIZE);
+-          ((uint32_t *)this->context->extradata)[0] = 0;
+-	  if (codec_type == BUF_VIDEO_RV10)
+-	     ((uint32_t *)this->context->extradata)[1] = 0x10000000;
+-	  else
+-	     ((uint32_t *)this->context->extradata)[1] = 0x10003001;
++        if (this->size < 8 + 26) {
++          uint32_t *b = calloc (1, 8 + AV_INPUT_BUFFER_PADDING_SIZE);
++          if (b) {
++            this->context->extradata_size = 8;
++            this->context->extradata = (uint8_t *)b;
++            b[0] = 0;
++            if (codec_type == BUF_VIDEO_RV10)
++              b[1] = 0x10000000;
++            else
++              b[1] = 0x10003001;
++          }
+ 	} else {
+-          this->context->extradata = malloc(this->context->extradata_size +
+-                                            AV_INPUT_BUFFER_PADDING_SIZE);
+-	  memcpy(this->context->extradata, this->buf + 26,
+-	         this->context->extradata_size);
+-          memset(this->context->extradata + this->context->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
++          this->context->extradata = malloc (this->size - 26 + AV_INPUT_BUFFER_PADDING_SIZE);
++          if (this->context->extradata) {
++            this->context->extradata_size = this->size - 26;
++            memcpy (this->context->extradata, this->buf + 26, this->context->extradata_size);
++            memset (this->context->extradata + this->context->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
++          }
+ 	}
+ 
+ 	xprintf(this->stream->xine, XINE_VERBOSITY_LOG,
