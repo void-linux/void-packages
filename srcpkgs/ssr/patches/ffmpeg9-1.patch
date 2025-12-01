@@ -1,0 +1,97 @@
+From 7b34810081657c521163e390a1fd3aa499076495 Mon Sep 17 00:00:00 2001
+From: Maarten Baert <maarten-baert@hotmail.com>
+Date: Sat, 5 Oct 2024 12:44:45 +0200
+Subject: [PATCH] Clean up new ffmpeg compatibility code
+
+---
+ src/AV/Output/AudioEncoder.cpp | 19 +++++++++----------
+ src/AV/Output/Synchronizer.cpp |  7 ++++---
+ src/Global.h                   |  2 ++
+ 3 files changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/src/AV/Output/AudioEncoder.cpp b/src/AV/Output/AudioEncoder.cpp
+index 225c07e3..df578544 100644
+--- a/src/AV/Output/AudioEncoder.cpp
++++ b/src/AV/Output/AudioEncoder.cpp
+@@ -70,7 +70,11 @@
+ }
+
+ unsigned int AudioEncoder::GetChannels() {
++#if SSR_USE_AV_CHANNEL_LAYOUT
+ 	return GetCodecContext()->ch_layout.nb_channels;
++#else
++	return GetCodecContext()->channels;
++#endif
+ }
+
+ unsigned int AudioEncoder::GetSampleRate() {
+@@ -107,11 +111,12 @@
+ 	}
+
+ 	codec_context->bit_rate = bit_rate;
+-    if(channels == 1) {
+-        av_channel_layout_from_mask(&codec_context->ch_layout, AV_CH_LAYOUT_MONO);
+-    } else {
+-        av_channel_layout_from_mask(&codec_context->ch_layout, AV_CH_LAYOUT_STEREO);
+-    }
++	#if SSR_USE_AV_CHANNEL_LAYOUT
++  av_channel_layout_default(&codec_context->ch_layout, channels);
++	#else
++	codec_context->channels = channels;
++	codec_context->channel_layout = (channels == 1)? AV_CH_LAYOUT_MONO : AV_CH_LAYOUT_STEREO;
++	#endif
+ 	codec_context->sample_rate = sample_rate;
+ 	codec_context->time_base.num = 1;
+ 	codec_context->time_base.den = sample_rate;
+@@ -161,10 +166,10 @@
+ 		assert((unsigned int) frame->GetFrame()->nb_samples == GetFrameSize());
+ #endif
+ #if SSR_USE_AVFRAME_CHANNELS
+-#if LIBAVCODEC_VERSION_MAJOR < 61
+-	assert(frame->GetFrame()->channels == GetCodecContext()->channels);
+-#else
++#if SSR_USE_AV_CHANNEL_LAYOUT
+ 	assert(frame->GetFrame()->ch_layout.nb_channels == GetCodecContext()->ch_layout.nb_channels);
++#else
++	assert(frame->GetFrame()->channels == GetCodecContext()->channels);
+ #endif
+ #endif
+ #if SSR_USE_AVFRAME_SAMPLE_RATE
+diff --git a/src/AV/Output/Synchronizer.cpp b/src/AV/Output/Synchronizer.cpp
+index b4f91593..3b57a885 100644
+--- a/src/AV/Output/Synchronizer.cpp
++++ b/src/AV/Output/Synchronizer.cpp
+@@ -27,6 +27,7 @@ along with SimpleScreenRecorder.  If not, see <http://www.gnu.org/licenses/>.
+ #include "AudioEncoder.h"
+ #include "SampleCast.h"
+ #include "SyncDiagram.h"
++#include <libavutil/channel_layout.h>
+
+ // The amount of filtering applied to audio timestamps to reduce noise. Higher values reduce timestamp noise (and associated drift correction),
+ // but if the value is too high, it will take more time to detect gaps.
+@@ -180,7 +181,11 @@
+ 	frame->GetFrame()->nb_samples = samples;
+ #endif
+ #if SSR_USE_AVFRAME_CHANNELS
+-	frame->GetFrame()->ch_layout.nb_channels = channels;
++#if SSR_USE_AV_CHANNEL_LAYOUT
++	av_channel_layout_default(&frame->GetFrame()->ch_layout, channels);
++#else
++	frame->GetFrame()->channels = channels;
++#endif
+ #endif
+ #if SSR_USE_AVFRAME_SAMPLE_RATE
+ 	frame->GetFrame()->sample_rate = sample_rate;
+diff --git a/src/Global.h b/src/Global.h
+index baa898ce..a6633e3a 100644
+--- a/src/Global.h
++++ b/src/Global.h
+@@ -257,6 +257,8 @@ inline void atomic_thread_fence_replacement(memory_order) {
+ // avformat_free_context: lavf 52.96.0 / 52.96.0
+ #define SSR_USE_AVFORMAT_FREE_CONTEXT              TEST_AV_VERSION(LIBAVFORMAT, 52, 96, 52, 96)
+
++// AVChannelLayout, ch_layout: lavc 59.24.100 / ???
++#define SSR_USE_AV_CHANNEL_LAYOUT                  TEST_AV_VERSION(LIBAVCODEC, 59, 24, 999, 999)
+ // av_codec_iterate: lavc 58.10.100 / ???
+ #define SSR_USE_AV_CODEC_ITERATE                   TEST_AV_VERSION(LIBAVCODEC, 58, 10, 999, 999)
+ // av_lockmgr_register deprecated: lavc 58.9.100 / ???
