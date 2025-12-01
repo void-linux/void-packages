@@ -1,0 +1,134 @@
+--- a/src/FFmpegReader.cpp
++++ b/src/FFmpegReader.cpp
+@@ -670,9 +670,7 @@
+ }
+
+ void FFmpegReader::UpdateAudioInfo() {
+-	// Set default audio channel layout (if needed)
+-	if (AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channel_layout == 0)
+-		AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channel_layout = av_get_default_channel_layout(AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channels);
++   av_channel_layout_default(&aStream->codecpar->ch_layout, aStream->codecpar->ch_layout.nb_channels);
+
+ 	if (info.sample_rate > 0) {
+ 		// Skip init - if info struct already populated
+@@ -683,8 +681,8 @@
+ 	info.has_audio = true;
+ 	info.file_size = pFormatCtx->pb ? avio_size(pFormatCtx->pb) : -1;
+ 	info.acodec = aCodecCtx->codec->name;
+-	info.channels = AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channels;
+-	info.channel_layout = (ChannelLayout) AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channel_layout;
++	info.channels = AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->ch_layout.nb_channels;
++	info.channel_layout = (ChannelLayout) AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->ch_layout.u.mask;
+ 	info.sample_rate = AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->sample_rate;
+ 	info.audio_bit_rate = AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->bit_rate;
+ 	if (info.audio_bit_rate <= 0) {
+@@ -1594,12 +1592,12 @@
+ 		// determine how many samples were decoded
+ 		int plane_size = -1;
+ 		data_size = av_samples_get_buffer_size(&plane_size,
+-											   AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channels,
++											   AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->ch_layout.nb_channels,
+ 											   audio_frame->nb_samples,
+ 											   (AVSampleFormat) (AV_GET_SAMPLE_FORMAT(aStream, aCodecCtx)), 1);
+
+ 		// Calculate total number of samples
+-		packet_samples = audio_frame->nb_samples * AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channels;
++		packet_samples = audio_frame->nb_samples * AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->ch_layout.nb_channels;
+ 	} else {
+ 		if (audio_frame) {
+ 			// Free audio frame
+@@ -1662,8 +1660,8 @@
+
+ 	// setup resample context
+ 	avr = SWR_ALLOC();
+-	av_opt_set_int(avr, "in_channel_layout", AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channel_layout, 0);
+-	av_opt_set_int(avr, "out_channel_layout", AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->channel_layout, 0);
++	av_opt_set_chlayout(avr, "in_channel_layout", &AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->ch_layout, 0);
++	av_opt_set_chlayout(avr, "out_channel_layout", &AV_GET_CODEC_ATTRIBUTES(aStream, aCodecCtx)->ch_layout, 0);
+ 	av_opt_set_int(avr, "in_sample_fmt", AV_GET_SAMPLE_FORMAT(aStream, aCodecCtx), 0);
+ 	av_opt_set_int(avr, "out_sample_fmt", AV_SAMPLE_FMT_S16, 0);
+ 	av_opt_set_int(avr, "in_sample_rate", info.sample_rate, 0);
+
+--- a/src/FFmpegWriter.cpp
++++ b/src/FFmpegWriter.cpp
+@@ -1113,7 +1113,6 @@
+
+ 	// Set the sample parameters
+ 	c->bit_rate = info.audio_bit_rate;
+-	c->channels = info.channels;
+
+ 	// Set valid sample rate (or throw error)
+ 	if (codec->supported_samplerates) {
+@@ -1133,19 +1132,17 @@
+
+ 	// Set a valid number of channels (or throw error)
+ 	const uint64_t channel_layout = info.channel_layout;
+-	if (codec->channel_layouts) {
++	if (codec->ch_layouts) {
+ 		int i;
+-		for (i = 0; codec->channel_layouts[i] != 0; i++)
+-			if (channel_layout == codec->channel_layouts[i]) {
++		for (i = 0; codec->ch_layouts[i].nb_channels != 0; i++)
++			if (channel_layout == codec->ch_layouts[i].u.mask) {
+ 				// Set valid channel layout
+-				c->channel_layout = channel_layout;
++				c->ch_layout.u.mask = channel_layout;
+ 				break;
+ 			}
+-		if (codec->channel_layouts[i] == 0)
+-			throw InvalidChannels("An invalid channel layout was detected (i.e. MONO / STEREO).", path);
+ 	} else
+-		// Set valid channel layout
+-		c->channel_layout = channel_layout;
++		// Set valid channel layout // zlice - anyway???
++		c->ch_layout.u.mask = channel_layout;
+
+ 	// Choose a valid sample_fmt
+ 	if (codec->sample_fmts) {
+@@ -1175,9 +1172,9 @@
+ 		"FFmpegWriter::add_audio_stream",
+ 		"c->codec_id", c->codec_id,
+ 		"c->bit_rate", c->bit_rate,
+-		"c->channels", c->channels,
++		"c->channels", c->ch_layout.nb_channels,
+ 		"c->sample_fmt", c->sample_fmt,
+-		"c->channel_layout", c->channel_layout,
++		"c->channel_layout", c->ch_layout.u.mask,
+ 		"c->sample_rate", c->sample_rate);
+
+ 	return st;
+@@ -1878,9 +1875,8 @@
+
+ 			// Create output frame (and allocate arrays)
+ 			frame_final->nb_samples = audio_input_frame_size;
+-			frame_final->channels = info.channels;
+ 			frame_final->format = audio_codec_ctx->sample_fmt;
+-			frame_final->channel_layout = info.channel_layout;
++			frame_final->ch_layout.u.mask = info.channel_layout;
+ 			av_samples_alloc(frame_final->data, frame_final->linesize, info.channels,
+ 				frame_final->nb_samples, audio_codec_ctx->sample_fmt, 0);
+
+@@ -1929,7 +1925,7 @@
+ 			frame_final->nb_samples = audio_input_frame_size;
+
+ 			// Fill the final_frame AVFrame with audio (non planar)
+-			avcodec_fill_audio_frame(frame_final, audio_codec_ctx->channels,
++			avcodec_fill_audio_frame(frame_final, audio_codec_ctx->ch_layout.nb_channels,
+ 				audio_codec_ctx->sample_fmt, (uint8_t *) final_samples,
+ 				audio_encoder_buffer_size, 0);
+ 		}
+
+diff --git a/src/FFmpegWriter.cpp b/src/FFmpegWriter.cpp
+index 79cbc21c6..41a341df0 100644
+--- a/src/FFmpegWriter.cpp
++++ b/src/FFmpegWriter.cpp
+@@ -1499,7 +1499,7 @@ void FFmpegWriter::open_video(AVFormatContext *oc, AVStream *st) {
+ 		switch (video_codec_ctx->codec_id) {
+ 			case AV_CODEC_ID_H264:
+ 				video_codec_ctx->max_b_frames = 0;  // At least this GPU doesn't support b-frames
+-				video_codec_ctx->profile = FF_PROFILE_H264_BASELINE | FF_PROFILE_H264_CONSTRAINED;
++				video_codec_ctx->profile = AV_PROFILE_H264_BASELINE | AV_PROFILE_H264_BASELINE;
+ 				av_opt_set(video_codec_ctx->priv_data, "preset", "slow", 0);
+ 				av_opt_set(video_codec_ctx->priv_data, "tune", "zerolatency", 0);
+ 				av_opt_set(video_codec_ctx->priv_data, "vprofile", "baseline", AV_OPT_SEARCH_CHILDREN);
+
