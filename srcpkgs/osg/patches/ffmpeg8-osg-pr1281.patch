@@ -1,0 +1,1770 @@
+From 26f6c9b5a63715dde3c9f85c8faf035d3ec0f657 Mon Sep 17 00:00:00 2001
+From: Pei Jia <jiapei@longervision.com>
+Date: Tue, 18 Jun 2024 14:18:44 -0700
+Subject: [PATCH] Compatible with FFmpeg-7.0.1
+
+---
+ .../OpenCASCADE/ReaderWriterOpenCASCADE.cpp   |   2 +-
+ src/osgPlugins/ffmpeg/FFmpegDecoder.cpp       |  78 ++----
+ src/osgPlugins/ffmpeg/FFmpegDecoder.hpp       | 159 +++++------
+ src/osgPlugins/ffmpeg/FFmpegDecoderAudio.cpp  | 256 +++++++++---------
+ src/osgPlugins/ffmpeg/FFmpegDecoderAudio.hpp  |  71 +++--
+ src/osgPlugins/ffmpeg/FFmpegDecoderVideo.cpp  | 223 +++++----------
+ src/osgPlugins/ffmpeg/FFmpegDecoderVideo.hpp  |  19 +-
+ src/osgPlugins/ffmpeg/FFmpegPacket.hpp        |   2 +-
+ src/osgPlugins/ffmpeg/FFmpegParameters.cpp    |   8 +-
+ src/osgPlugins/ffmpeg/ReaderWriterFFmpeg.cpp  |  61 +----
+ 10 files changed, 352 insertions(+), 527 deletions(-)
+
+diff --git a/src/osgPlugins/OpenCASCADE/ReaderWriterOpenCASCADE.cpp b/src/osgPlugins/OpenCASCADE/ReaderWriterOpenCASCADE.cpp
+index 91a14220016..a43ca5d511e 100644
+--- a/src/osgPlugins/OpenCASCADE/ReaderWriterOpenCASCADE.cpp
++++ b/src/osgPlugins/OpenCASCADE/ReaderWriterOpenCASCADE.cpp
+@@ -211,7 +211,7 @@ osg::ref_ptr<osg::Geometry> ReaderWritterOpenCASCADE::OCCTKReader::_createGeomet
+                 {
+                     // populate vertex list
+                     // Ref: http://www.opencascade.org/org/forum/thread_16694/?forum=3
+-                    gp_Pnt pt = (triangulation->Nodes())(j).Transformed(transformation * location.Transformation());
++                    gp_Pnt pt = (triangulation->Node(j)).Transformed(transformation * location.Transformation());
+                     vertexList->push_back(osg::Vec3(pt.X(), pt.Y(), pt.Z()));
+ 
+                     // populate color list
+diff --git a/src/osgPlugins/ffmpeg/FFmpegDecoder.cpp b/src/osgPlugins/ffmpeg/FFmpegDecoder.cpp
+index 4de143d2279..4ce84ca733d 100644
+--- a/src/osgPlugins/ffmpeg/FFmpegDecoder.cpp
++++ b/src/osgPlugins/ffmpeg/FFmpegDecoder.cpp
+@@ -1,4 +1,3 @@
+-
+ #include "FFmpegDecoder.hpp"
+ #include "FFmpegParameters.hpp"
+ 
+@@ -36,8 +35,10 @@ static std::string AvStrError(int errnum)
+ }
+ 
+ FFmpegDecoder::FFmpegDecoder() :
+-    m_audio_stream(0),
+-    m_video_stream(0),
++    m_audio_stream(nullptr),
++    m_video_stream(nullptr),
++    m_audio_index(-1),
++    m_video_index(-1),
+     m_audio_queue(100),
+     m_video_queue(100),
+     m_audio_decoder(m_audio_queue, m_clocks),
+@@ -61,10 +62,10 @@ bool FFmpegDecoder::open(const std::string & filename, FFmpegParameters* paramet
+     try
+     {
+         // Open video file
+-        AVFormatContext * p_format_context = 0;
+-        AVInputFormat *iformat = 0;
++        AVFormatContext * p_format_context = nullptr;
++        AVInputFormat *iformat = nullptr;
+ 
+-        if (filename.compare(0, 5, "/dev/")==0)
++        if (filename.compare(0, 5, "/dev/") == 0)
+         {
+ #ifdef ANDROID
+             throw std::runtime_error("Device not supported on Android");
+@@ -78,24 +79,24 @@ bool FFmpegDecoder::open(const std::string & filename, FFmpegParameters* paramet
+             }
+ 
+             std::string format = "video4linux2";
+-            iformat = av_find_input_format(format.c_str());
++            iformat = const_cast<AVInputFormat*>(av_find_input_format(format.c_str()));
+ 
+             if (iformat)
+             {
+-                OSG_INFO<<"Found input format: "<<format<<std::endl;
++                OSG_INFO << "Found input format: " << format << std::endl;
+             }
+             else
+             {
+-                OSG_INFO<<"Failed to find input format: "<<format<<std::endl;
++                OSG_INFO << "Failed to find input format: " << format << std::endl;
+             }
+ 
+ #endif
+         }
+         else
+         {
+-            iformat = parameters ? parameters->getFormat() : 0;
+-            AVIOContext* context = parameters ? parameters->getContext() : 0;
+-            if (context != NULL)
++            iformat = parameters ? const_cast<AVInputFormat*>(parameters->getFormat()) : nullptr;
++            AVIOContext* context = parameters ? parameters->getContext() : nullptr;
++            if (context != nullptr)
+             {
+                 p_format_context = avformat_alloc_context();
+                 p_format_context->pb = context;
+@@ -105,22 +106,7 @@ bool FFmpegDecoder::open(const std::string & filename, FFmpegParameters* paramet
+         int error = avformat_open_input(&p_format_context, filename.c_str(), iformat, parameters->getOptions());
+         if (error != 0)
+         {
+-            std::string error_str;
+-            switch (error)
+-            {
+-                //case AVERROR_UNKNOWN: error_str = "AVERROR_UNKNOWN"; break;   // same value as AVERROR_INVALIDDATA
+-                case AVERROR_IO: error_str = "AVERROR_IO"; break;
+-                case AVERROR_NUMEXPECTED: error_str = "AVERROR_NUMEXPECTED"; break;
+-                case AVERROR_INVALIDDATA: error_str = "AVERROR_INVALIDDATA"; break;
+-                case AVERROR_NOMEM: error_str = "AVERROR_NOMEM"; break;
+-                case AVERROR_NOFMT: error_str = "AVERROR_NOFMT"; break;
+-                case AVERROR_NOTSUPP: error_str = "AVERROR_NOTSUPP"; break;
+-                case AVERROR_NOENT: error_str = "AVERROR_NOENT"; break;
+-                case AVERROR_PATCHWELCOME: error_str = "AVERROR_PATCHWELCOME"; break;
+-                default: error_str = "Unknown error"; break;
+-            }
+-
+-            throw std::runtime_error("av_open_input_file() failed : " + error_str);
++            throw std::runtime_error("avformat_open_input() failed: " + AvStrError(error));
+         }
+ 
+         m_format_context.reset(p_format_context);
+@@ -128,15 +114,15 @@ bool FFmpegDecoder::open(const std::string & filename, FFmpegParameters* paramet
+         // Retrieve stream info
+         // Only buffer up to one and a half seconds by default
+         float max_analyze_duration = 1.5;
+-        AVDictionaryEntry *mad = av_dict_get( *parameters->getOptions(), "mad", NULL, 0 );
+-        if ( mad ) {
++        AVDictionaryEntry *mad = av_dict_get(*parameters->getOptions(), "mad", NULL, 0);
++        if (mad) {
+             max_analyze_duration = atof(mad->value);
+         }
+         p_format_context->max_analyze_duration = AV_TIME_BASE * max_analyze_duration;
+ //        p_format_context->probesize = 100000;
+ 
+         if (avformat_find_stream_info(p_format_context, NULL) < 0)
+-            throw std::runtime_error("av_find_stream_info() failed");
++            throw std::runtime_error("avformat_find_stream_info() failed");
+ 
+         m_duration = double(m_format_context->duration) / AV_TIME_BASE;
+         if (m_format_context->start_time != static_cast<int64_t>(AV_NOPTS_VALUE))
+@@ -159,7 +145,7 @@ bool FFmpegDecoder::open(const std::string & filename, FFmpegParameters* paramet
+             m_audio_stream = m_format_context->streams[m_audio_index];
+         else
+         {
+-            m_audio_stream = 0;
++            m_audio_stream = nullptr;
+             m_audio_index = std::numeric_limits<unsigned int>::max();
+         }
+ 
+@@ -271,7 +257,7 @@ bool FFmpegDecoder::readNextPacketNormal()
+ {
+     AVPacket packet;
+ 
+-    if (! m_pending_packet)
++    if (!m_pending_packet)
+     {
+         bool end_of_stream = false;
+ 
+@@ -279,10 +265,10 @@ bool FFmpegDecoder::readNextPacketNormal()
+         int error = av_read_frame(m_format_context.get(), &packet);
+         if (error < 0)
+         {
+-            if (error == static_cast<int>(AVERROR_EOF) ||
+-                m_format_context.get()->pb->eof_reached)
++            if (error == static_cast<int>(AVERROR_EOF) || m_format_context.get()->pb->eof_reached)
+                 end_of_stream = true;
+-            else {
++            else
++            {
+                 OSG_FATAL << "av_read_frame() returned " << AvStrError(error) << std::endl;
+                 throw std::runtime_error("av_read_frame() failed");
+             }
+@@ -303,12 +289,6 @@ bool FFmpegDecoder::readNextPacketNormal()
+         }
+         else
+         {
+-            // Make the packet data available beyond av_read_frame() logical scope.
+-            if ((error = av_dup_packet(&packet)) < 0) {
+-                OSG_FATAL << "av_dup_packet() returned " << AvStrError(error) << std::endl;
+-                throw std::runtime_error("av_dup_packet() failed");
+-            }
+-
+             m_pending_packet = FFmpegPacket(packet);
+         }
+     }
+@@ -340,8 +320,6 @@ bool FFmpegDecoder::readNextPacketNormal()
+     return false;
+ }
+ 
+-
+-
+ bool FFmpegDecoder::readNextPacketEndOfStream()
+ {
+     const FFmpegPacket packet(FFmpegPacket::PACKET_END_OF_STREAM);
+@@ -352,8 +330,6 @@ bool FFmpegDecoder::readNextPacketEndOfStream()
+     return false;
+ }
+ 
+-
+-
+ bool FFmpegDecoder::readNextPacketRewinding()
+ {
+     const FFmpegPacket packet(FFmpegPacket::PACKET_FLUSH);
+@@ -364,8 +340,6 @@ bool FFmpegDecoder::readNextPacketRewinding()
+     return false;
+ }
+ 
+-
+-
+ void FFmpegDecoder::rewindButDontFlushQueues()
+ {
+     const AVRational AvTimeBaseQ = { 1, AV_TIME_BASE }; // = AV_TIME_BASE_Q
+@@ -374,7 +348,8 @@ void FFmpegDecoder::rewindButDontFlushQueues()
+     const int64_t seek_target = av_rescale_q(pos, AvTimeBaseQ, m_video_stream->time_base);
+ 
+     int error = 0;
+-    if ((error = av_seek_frame(m_format_context.get(), m_video_index, seek_target, 0/*AVSEEK_FLAG_BYTE |*/ /*AVSEEK_FLAG_BACKWARD*/)) < 0) {
++    if ((error = av_seek_frame(m_format_context.get(), m_video_index, seek_target, 0)) < 0)
++    {
+         OSG_FATAL << "av_seek_frame returned " << AvStrError(error) << std::endl;
+         throw std::runtime_error("av_seek_frame failed()");
+     }
+@@ -397,13 +372,14 @@ void FFmpegDecoder::seekButDontFlushQueues(double time)
+ {
+     const AVRational AvTimeBaseQ = { 1, AV_TIME_BASE }; // = AV_TIME_BASE_Q
+ 
+-    const int64_t pos = int64_t(m_clocks.getStartTime()+time * double(AV_TIME_BASE));
++    const int64_t pos = int64_t(m_clocks.getStartTime() + time * double(AV_TIME_BASE));
+     const int64_t seek_target = av_rescale_q(pos, AvTimeBaseQ, m_video_stream->time_base);
+ 
+     m_clocks.setSeekTime(time);
+ 
+     int error = 0;
+-    if ((error = av_seek_frame(m_format_context.get(), m_video_index, seek_target, 0/*AVSEEK_FLAG_BYTE |*/ /*AVSEEK_FLAG_BACKWARD*/)) < 0) {
++    if ((error = av_seek_frame(m_format_context.get(), m_video_index, seek_target, 0)) < 0)
++    {
+         OSG_FATAL << "av_seek_frame() returned " << AvStrError(error) << std::endl;
+         throw std::runtime_error("av_seek_frame failed()");
+     }
+diff --git a/src/osgPlugins/ffmpeg/FFmpegDecoder.hpp b/src/osgPlugins/ffmpeg/FFmpegDecoder.hpp
+index 95d638f25d8..e79323fed36 100644
+--- a/src/osgPlugins/ffmpeg/FFmpegDecoder.hpp
++++ b/src/osgPlugins/ffmpeg/FFmpegDecoder.hpp
+@@ -1,4 +1,3 @@
+-
+ #ifndef HEADER_GUARD_OSGFFMPEG_FFMPEG_DECODER_H
+ #define HEADER_GUARD_OSGFFMPEG_FFMPEG_DECODER_H
+ 
+@@ -7,73 +6,76 @@
+ 
+ #include <osg/Notify>
+ 
+-
+ namespace osgFFmpeg {
+ 
+ class FFmpegParameters;
+ 
+ class FormatContextPtr
+ {
+-    public:
+-    
+-        typedef AVFormatContext T;
+-    
+-        explicit FormatContextPtr() : _ptr(0) {}
+-        explicit FormatContextPtr(T* ptr) : _ptr(ptr) {}
+-        
+-        ~FormatContextPtr()
+-        {
+-            cleanup();
+-        }
+-        
+-        T* get() { return _ptr; }
++public:
++    typedef AVFormatContext T;
+ 
+-        operator bool() const { return _ptr != 0; }
++    explicit FormatContextPtr() : _ptr(nullptr) {}
++    explicit FormatContextPtr(T* ptr) : _ptr(ptr) {}
+ 
+-        T * operator-> () const // never throws
+-        {
+-            return _ptr;
+-        }
++    ~FormatContextPtr()
++    {
++        cleanup();
++    }
+ 
+-        void reset(T* ptr) 
+-        {
+-            if (ptr==_ptr) return;
+-            cleanup();
+-            _ptr = ptr;
+-        }
++    T* get() const { return _ptr; }
++    T** getPtr() { return &_ptr; }
+ 
+-        void cleanup()
++    operator T*() const { return _ptr; }
++
++    FormatContextPtr& operator=(T* ptr)
++    {
++        reset(ptr);
++        return *this;
++    }
++
++    bool operator==(std::nullptr_t) const { return _ptr == nullptr; }
++    bool operator!=(std::nullptr_t) const { return _ptr != nullptr; }
++
++    T* operator->() const // never throws
++    {
++        return _ptr;
++    }
++
++    void reset(T* ptr)
++    {
++        if (ptr == _ptr) return;
++        cleanup();
++        _ptr = ptr;
++    }
++
++    void cleanup()
++    {
++        if (_ptr)
+         {
+-            if (_ptr) 
+-            {
+ #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(53, 17, 0)
+-                OSG_NOTICE<<"Calling avformat_close_input("<<&_ptr<<")"<<std::endl;
+-                avformat_close_input(&_ptr);
++            OSG_NOTICE << "Calling avformat_close_input(" << &_ptr << ")" << std::endl;
++            avformat_close_input(&_ptr);
+ #else
+-                OSG_NOTICE<<"Calling av_close_input_file("<<_ptr<<")"<<std::endl;
+-                av_close_input_file(_ptr);
++            OSG_NOTICE << "Calling av_close_input_file(" << _ptr << ")" << std::endl;
++            av_close_input_file(_ptr);
+ #endif
+-            }
+-            _ptr = 0;
+         }
+-        
+-        
++        _ptr = nullptr;
++    }
+ 
+-    protected:
+-    
+-        T* _ptr;
++protected:
++    T* _ptr;
+ };
+ 
+-
+ class FFmpegDecoder : public osg::Referenced
+ {
+ public:
+-
+     FFmpegDecoder();
+     ~FFmpegDecoder();
+ 
+-    bool open(const std::string & filename, FFmpegParameters* parameters);
+-    void close(bool waitForThreadToExit);
++    bool open(const std::string& filename, FFmpegParameters* parameters);
++    void close(bool waitForThreadToExit = true);
+ 
+     bool readNextPacket();
+     void rewind();
+@@ -87,13 +89,12 @@ class FFmpegDecoder : public osg::Referenced
+     double duration() const;
+     double reference();
+ 
+-    FFmpegDecoderAudio & audio_decoder();
+-    FFmpegDecoderVideo & video_decoder();
+-    FFmpegDecoderAudio const & audio_decoder() const;
+-    FFmpegDecoderVideo const & video_decoder() const;
++    FFmpegDecoderAudio& audio_decoder();
++    FFmpegDecoderVideo& video_decoder();
++    FFmpegDecoderAudio const& audio_decoder() const;
++    FFmpegDecoderVideo const& video_decoder() const;
+ 
+ protected:
+-
+     enum State
+     {
+         NORMAL,
+@@ -115,38 +116,33 @@ class FFmpegDecoder : public osg::Referenced
+     void rewindButDontFlushQueues();
+     void seekButDontFlushQueues(double time);
+ 
+-    FormatContextPtr    m_format_context;
+-    AVStream *          m_audio_stream;
+-    AVStream *          m_video_stream;
+-
+-    int                 m_audio_index;
+-    int                 m_video_index;
++    FormatContextPtr m_format_context;
++    AVStream* m_audio_stream;
++    AVStream* m_video_stream;
+ 
+-    FFmpegClocks        m_clocks;
+-    FFmpegPacket        m_pending_packet;
+-    PacketQueue         m_audio_queue;
+-    PacketQueue         m_video_queue;
+-    
+-    FFmpegDecoderAudio  m_audio_decoder;
+-    FFmpegDecoderVideo  m_video_decoder;
+-
+-    double              m_duration;
+-    double              m_start;
+-
+-    State               m_state;
+-    bool                m_loop;
+-};
++    int m_audio_index;
++    int m_video_index;
+ 
++    FFmpegClocks m_clocks;
++    FFmpegPacket m_pending_packet;
++    PacketQueue m_audio_queue;
++    PacketQueue m_video_queue;
+ 
++    FFmpegDecoderAudio m_audio_decoder;
++    FFmpegDecoderVideo m_video_decoder;
+ 
++    double m_duration;
++    double m_start;
+ 
++    State m_state;
++    bool m_loop;
++};
+ 
+ inline void FFmpegDecoder::loop(const bool loop)
+ {
+     m_loop = loop;
+ }
+ 
+-
+ inline bool FFmpegDecoder::loop() const
+ {
+     return m_loop;
+@@ -154,8 +150,8 @@ inline bool FFmpegDecoder::loop() const
+ 
+ inline double FFmpegDecoder::creation_time() const
+ {
+-   if(m_format_context) return m_format_context->start_time;
+-   else return HUGE_VAL;
++    if (m_format_context) return m_format_context->start_time;
++    else return HUGE_VAL;
+ }
+ 
+ inline double FFmpegDecoder::duration() const
+@@ -165,37 +161,30 @@ inline double FFmpegDecoder::duration() const
+ 
+ inline double FFmpegDecoder::reference()
+ {
+-    return m_clocks.getCurrentTime();    
++    return m_clocks.getCurrentTime();
+ }
+ 
+-
+-inline FFmpegDecoderAudio & FFmpegDecoder::audio_decoder()
++inline FFmpegDecoderAudio& FFmpegDecoder::audio_decoder()
+ {
+     return m_audio_decoder;
+ }
+ 
+-
+-inline FFmpegDecoderVideo & FFmpegDecoder::video_decoder()
++inline FFmpegDecoderVideo& FFmpegDecoder::video_decoder()
+ {
+     return m_video_decoder;
+ }
+ 
+-
+-inline FFmpegDecoderAudio const & FFmpegDecoder::audio_decoder() const
++inline FFmpegDecoderAudio const& FFmpegDecoder::audio_decoder() const
+ {
+     return m_audio_decoder;
+ }
+ 
+-
+-inline FFmpegDecoderVideo const & FFmpegDecoder::video_decoder() const
++inline FFmpegDecoderVideo const& FFmpegDecoder::video_decoder() const
+ {
+     return m_video_decoder;
+ }
+ 
+-
+-
+ } // namespace osgFFmpeg
+ 
+-
+-
+ #endif // HEADER_GUARD_OSGFFMPEG_FFMPEG_DECODER_H
++
+diff --git a/src/osgPlugins/ffmpeg/FFmpegDecoderAudio.cpp b/src/osgPlugins/ffmpeg/FFmpegDecoderAudio.cpp
+index 636bddd2546..5cfdb231ca7 100644
+--- a/src/osgPlugins/ffmpeg/FFmpegDecoderAudio.cpp
++++ b/src/osgPlugins/ffmpeg/FFmpegDecoderAudio.cpp
+@@ -1,39 +1,24 @@
+ #include "FFmpegDecoderAudio.hpp"
+-
+ #include <osg/Notify>
+-
+ #include <stdexcept>
+-#include <string.h>
+-
+-//DEBUG
+-//#include <iostream>
+-
++#include <cstring>
++#include <libavutil/channel_layout.h>
++#include <libavutil/opt.h>
+ 
+ #ifndef AVCODEC_MAX_AUDIO_FRAME_SIZE
+ #define AVCODEC_MAX_AUDIO_FRAME_SIZE 192000
+ #endif
+ 
+-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(55,28,1)
+-#define av_frame_alloc  avcodec_alloc_frame
+-#define av_frame_free  avcodec_free_frame
+-#endif
+-
+-#if LIBAVCODEC_VERSION_MAJOR < 56
+-   #define AV_CODEC_ID_NONE CODEC_ID_NONE
+-#endif
+-
+ namespace osgFFmpeg {
+ 
+ static int decode_audio(AVCodecContext *avctx, int16_t *samples,
+-                         int *frame_size_ptr,
+-                         const uint8_t *buf, int buf_size,
+-                         SwrContext *swr_context,
+-                         int out_sample_rate,
+-                         int out_nb_channels,
+-                         AVSampleFormat out_sample_format)
++                        int *frame_size_ptr,
++                        const uint8_t *buf, int buf_size,
++                        SwrContext *swr_context,
++                        int out_sample_rate,
++                        int out_nb_channels,
++                        AVSampleFormat out_sample_format)
+ {
+-#if LIBAVCODEC_VERSION_MAJOR >= 53 || (LIBAVCODEC_VERSION_MAJOR==52 && LIBAVCODEC_VERSION_MINOR>=32)
+-
+     AVPacket avpkt;
+     av_init_packet(&avpkt);
+     avpkt.data = const_cast<uint8_t *>(buf);
+@@ -45,30 +30,39 @@ static int decode_audio(AVCodecContext *avctx, int16_t *samples,
+     if (!frame)
+         return AVERROR(ENOMEM);
+ 
+-    ret = avcodec_decode_audio4(avctx, frame, &got_frame, &avpkt);
++    // Send the packet to the decoder
++    ret = avcodec_send_packet(avctx, &avpkt);
++    if (ret < 0) {
++        av_frame_free(&frame);
++        return ret;
++    }
+ 
+-#ifdef USE_AVRESAMPLE    // libav's AVFrame structure does not contain a 'channels' field
+-    if (ret >= 0 && got_frame) {
+-#else
+-    if (ret >= 0 && got_frame && av_frame_get_channels(frame)>0) {
+-#endif
++    // Receive the frame from the decoder
++    ret = avcodec_receive_frame(avctx, frame);
++    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
++        av_frame_free(&frame);
++        return 0;
++    } else if (ret < 0) {
++        av_frame_free(&frame);
++        return ret;
++    } else {
++        got_frame = 1;
++    }
++
++    if (ret >= 0 && got_frame && frame->ch_layout.nb_channels > 0) {
+         int ch, plane_size;
+         int planar = av_sample_fmt_is_planar(avctx->sample_fmt);
+ 
+         int out_samples;
+         // if sample rate changes, number of samples is different
+-        if ( out_sample_rate !=  avctx->sample_rate ) {
+-//            out_samples = av_rescale_rnd(swr_get_delay(swr_context, avctx->sample_rate) +
+-//                                 frame->nb_samples, out_sample_rate, avctx->sample_rate, AV_ROUND_UP);
++        if (out_sample_rate != avctx->sample_rate) {
+             out_samples = av_rescale_rnd(frame->nb_samples, out_sample_rate, avctx->sample_rate, AV_ROUND_UP);
+-        }
+-        else {
++        } else {
+             out_samples = frame->nb_samples;
+         }
+ 
+         int output_data_size = av_samples_get_buffer_size(&plane_size, out_nb_channels,
+-                                                    out_samples,
+-                                                    out_sample_format, 1);
++                                                          out_samples, out_sample_format, 1);
+ 
+         if (*frame_size_ptr < output_data_size) {
+             av_log(avctx, AV_LOG_ERROR, "output buffer size is too small for "
+@@ -78,23 +72,19 @@ static int decode_audio(AVCodecContext *avctx, int16_t *samples,
+         }
+ 
+         // if resampling is needed, call swr_convert
+-        if ( swr_context != NULL ) {
+-
++        if (swr_context != nullptr) {
+             out_samples = swr_convert(swr_context, (uint8_t **)&samples, out_samples,
+-                        (const uint8_t **)frame->extended_data, frame->nb_samples);
++                                      (const uint8_t **)frame->extended_data, frame->nb_samples);
+ 
+             // recompute output_data_size following swr_convert result (number of samples actually converted)
+             output_data_size = av_samples_get_buffer_size(&plane_size, out_nb_channels,
+-                                                    out_samples,
+-                                                    out_sample_format, 1);
+-        }
+-        else {
+-
++                                                          out_samples, out_sample_format, 1);
++        } else {
+             memcpy(samples, frame->extended_data[0], plane_size);
+ 
+-            if (planar && avctx->channels > 1) {
++            if (planar && frame->ch_layout.nb_channels > 1) {
+                 uint8_t *out = ((uint8_t *)samples) + plane_size;
+-                for (ch = 1; ch < avctx->channels; ch++) {
++                for (ch = 1; ch < frame->ch_layout.nb_channels; ch++) {
+                     memcpy(out, frame->extended_data[ch], plane_size);
+                     out += plane_size;
+                 }
+@@ -102,26 +92,21 @@ static int decode_audio(AVCodecContext *avctx, int16_t *samples,
+         }
+ 
+         *frame_size_ptr = output_data_size;
+-
+     } else {
+         *frame_size_ptr = 0;
+     }
++    
+     av_frame_free(&frame);
+     return ret;
+-
+-#else
+-    // fallback for older versions of ffmpeg that don't have avcodec_decode_audio3.
+-    return avcodec_decode_audio2(avctx, samples, frame_size_ptr, buf, buf_size);
+-#endif
+ }
+ 
+ 
+-FFmpegDecoderAudio::FFmpegDecoderAudio(PacketQueue & packets, FFmpegClocks & clocks) :
++FFmpegDecoderAudio::FFmpegDecoderAudio(PacketQueue &packets, FFmpegClocks &clocks) :
+     m_packets(packets),
+     m_clocks(clocks),
+-    m_stream(0),
+-    m_context(0),
+-    m_packet_data(0),
++    m_stream(nullptr),
++    m_context(nullptr),
++    m_packet_data(nullptr),
+     m_bytes_remaining(0),
+     m_audio_buffer((AVCODEC_MAX_AUDIO_FRAME_SIZE * 3) / 2),
+     m_audio_buf_size(0),
+@@ -129,7 +114,7 @@ FFmpegDecoderAudio::FFmpegDecoderAudio(PacketQueue & packets, FFmpegClocks & clo
+     m_end_of_stream(false),
+     m_paused(true),
+     m_exit(false),
+-    m_swr_context(NULL)
++    m_swr_context(nullptr)
+ {
+ }
+ 
+@@ -137,103 +122,95 @@ FFmpegDecoderAudio::FFmpegDecoderAudio(PacketQueue & packets, FFmpegClocks & clo
+ 
+ FFmpegDecoderAudio::~FFmpegDecoderAudio()
+ {
+-    this->close(true);
++    close(true);
+ }
+ 
+ 
+ 
+-void FFmpegDecoderAudio::open(AVStream * const stream, FFmpegParameters* parameters)
++void FFmpegDecoderAudio::open(AVStream *stream, FFmpegParameters* parameters)
+ {
+     try
+     {
+         // Sound can be optional (i.e. no audio stream is present)
+-        if (stream == 0)
++        if (stream == nullptr)
+             return;
+ 
+         m_stream = stream;
+-        m_context = stream->codec;
++        m_context = avcodec_alloc_context3(nullptr);
++        avcodec_parameters_to_context(m_context, stream->codecpar);
+ 
+         m_in_sample_rate = m_context->sample_rate;
+-        m_in_nb_channels = m_context->channels;
++        m_in_nb_channels = m_context->ch_layout.nb_channels;
+         m_in_sample_format = m_context->sample_fmt;
+ 
+-        AVDictionaryEntry *opt_out_sample_rate = av_dict_get( *parameters->getOptions(), "out_sample_rate", NULL, 0 );
+-        if ( opt_out_sample_rate )
++        AVDictionaryEntry *opt_out_sample_rate = av_dict_get(*parameters->getOptions(), "out_sample_rate", nullptr, 0);
++        if (opt_out_sample_rate)
+             m_out_sample_rate = atoi(opt_out_sample_rate->value);
+         else
+             m_out_sample_rate = m_in_sample_rate;
+ 
+-        AVDictionaryEntry *opt_out_sample_format = av_dict_get( *parameters->getOptions(), "out_sample_format", NULL, 0 );
+-        if ( opt_out_sample_format )
++        AVDictionaryEntry *opt_out_sample_format = av_dict_get(*parameters->getOptions(), "out_sample_format", nullptr, 0);
++        if (opt_out_sample_format)
+             m_out_sample_format = (AVSampleFormat) atoi(opt_out_sample_format->value);
+         else
+             // always packed, planar formats are evil!
+-            m_out_sample_format = av_get_packed_sample_fmt( m_in_sample_format );
++            m_out_sample_format = av_get_packed_sample_fmt(m_in_sample_format);
+ 
+-        AVDictionaryEntry *opt_out_nb_channels = av_dict_get( *parameters->getOptions(), "out_nb_channels", NULL, 0 );
+-        if ( opt_out_nb_channels )
++        AVDictionaryEntry *opt_out_nb_channels = av_dict_get(*parameters->getOptions(), "out_nb_channels", nullptr, 0);
++        if (opt_out_nb_channels)
+             m_out_nb_channels = atoi(opt_out_nb_channels->value);
+         else
+             m_out_nb_channels = m_in_nb_channels;
+ 
+-        if ( m_in_sample_rate != m_out_sample_rate
++        if (m_in_sample_rate != m_out_sample_rate
+             || m_in_nb_channels != m_out_nb_channels
+-            || m_in_sample_format != m_out_sample_format )
++            || m_in_sample_format != m_out_sample_format)
+         {
+-#if 0
+-printf("### CONVERTING from sample format %s TO %s\n\t\tFROM %d TO %d channels\n\t\tFROM %d Hz to %d Hz\n",
+-            av_get_sample_fmt_name(m_in_sample_format),
+-            av_get_sample_fmt_name(m_out_sample_format),
+-            m_in_nb_channels,
+-            m_out_nb_channels,
+-            m_in_sample_rate,
+-            m_out_sample_rate);
+-#endif
+-            m_swr_context = swr_alloc_set_opts(NULL,
+-                    av_get_default_channel_layout(m_out_nb_channels),
+-                    m_out_sample_format,
+-                    m_out_sample_rate,
+-                    av_get_default_channel_layout(m_in_nb_channels),
+-                    m_in_sample_format,
+-                    m_in_sample_rate,
+-                    0, NULL );
++            AVChannelLayout in_ch_layout;
++            AVChannelLayout out_ch_layout;
++            av_channel_layout_default(&in_ch_layout, m_in_nb_channels);
++            av_channel_layout_default(&out_ch_layout, m_out_nb_channels);
++
++            m_swr_context = swr_alloc();
++            if (!m_swr_context) {
++                throw std::runtime_error("Could not allocate resampler context");
++            }
+ 
+-            int err = swr_init(m_swr_context);
++            av_opt_set_int(m_swr_context, "in_channel_count", in_ch_layout.nb_channels, 0);
++            av_opt_set_int(m_swr_context, "in_sample_rate", m_in_sample_rate, 0);
++            av_opt_set_sample_fmt(m_swr_context, "in_sample_fmt", m_in_sample_format, 0);
++            av_opt_set_chlayout(m_swr_context, "in_chlayout", &in_ch_layout, 0);
++
++            av_opt_set_int(m_swr_context, "out_channel_count", out_ch_layout.nb_channels, 0);
++            av_opt_set_int(m_swr_context, "out_sample_rate", m_out_sample_rate, 0);
++            av_opt_set_sample_fmt(m_swr_context, "out_sample_fmt", m_out_sample_format, 0);
++            av_opt_set_chlayout(m_swr_context, "out_chlayout", &out_ch_layout, 0);
+ 
+-            if ( err ) {
++            int err = swr_init(m_swr_context);
++            if (err < 0) {
+                 char error_string[512];
+-                av_strerror(err, error_string, 512);
++                av_strerror(err, error_string, sizeof(error_string));
+                 OSG_WARN << "FFmpegDecoderAudio - WARNING: Error initializing resampling context : " << error_string << std::endl;
+                 swr_free(&m_swr_context);
+-                throw std::runtime_error("swr_init() failed");;
++                throw std::runtime_error("swr_init() failed");
+             }
+         }
+ 
+-        // Check stream sanity
+         if (m_context->codec_id == AV_CODEC_ID_NONE)
+-            throw std::runtime_error("invalid audio codec");;
++            throw std::runtime_error("invalid audio codec");
+ 
+-        // Find the decoder for the audio stream
+-        AVCodec * const p_codec = avcodec_find_decoder(m_context->codec_id);
++        const AVCodec *p_codec = avcodec_find_decoder(m_context->codec_id);
+ 
+-        if (p_codec == 0)
++        if (p_codec == nullptr)
+             throw std::runtime_error("avcodec_find_decoder() failed");
+ 
+-        // Inform the codec that we can handle truncated bitstreams
+-        //if (p_codec->capabilities & CODEC_CAP_TRUNCATED)
+-        //    m_context->flags |= CODEC_FLAG_TRUNCATED;
+-
+-        // Open codec
+-        if (avcodec_open2(m_context, p_codec, NULL) < 0)
++        if (avcodec_open2(m_context, p_codec, nullptr) < 0)
+             throw std::runtime_error("avcodec_open() failed");
+ 
+-        m_context->get_buffer2 = avcodec_default_get_buffer2;
+-
+     }
+-
+     catch (...)
+     {
+-        m_context = 0;
++        avcodec_free_context(&m_context);
+         throw;
+     }
+ }
+@@ -260,6 +237,10 @@ void FFmpegDecoderAudio::close(bool waitForThreadToExit)
+             join();
+     }
+     swr_free(&m_swr_context);
++    if (m_context)
++    {
++        avcodec_free_context(&m_context);
++    }
+ }
+ 
+ void FFmpegDecoderAudio::setVolume(float volume)
+@@ -286,7 +267,7 @@ void FFmpegDecoderAudio::run()
+         decodeLoop();
+     }
+ 
+-    catch (const std::exception & error)
++    catch (const std::exception &error)
+     {
+         OSG_WARN << "FFmpegDecoderAudio::run : " << error.what() << std::endl;
+     }
+@@ -301,15 +282,15 @@ void FFmpegDecoderAudio::run()
+ void FFmpegDecoderAudio::setAudioSink(osg::ref_ptr<osg::AudioSink> audio_sink)
+ {
+     // The FFmpegDecoderAudio object takes the responsibility of destroying the audio_sink.
+-    OSG_NOTICE<<"Assigning "<<audio_sink<<std::endl;
++    OSG_NOTICE << "Assigning " << audio_sink << std::endl;
+     m_audio_sink = audio_sink;
+ }
+ 
+ 
+ 
+-void FFmpegDecoderAudio::fillBuffer(void * const buffer, size_t size)
++void FFmpegDecoderAudio::fillBuffer(void *buffer, size_t size)
+ {
+-    uint8_t * dst_buffer = reinterpret_cast<uint8_t*>(buffer);
++    uint8_t *dst_buffer = reinterpret_cast<uint8_t *>(buffer);
+ 
+     while (size != 0)
+     {
+@@ -349,9 +330,9 @@ void FFmpegDecoderAudio::fillBuffer(void * const buffer, size_t size)
+ 
+ void FFmpegDecoderAudio::decodeLoop()
+ {
+-    const bool skip_audio = ! validContext() || ! m_audio_sink.valid();
++    const bool skip_audio = !validContext() || !m_audio_sink.valid();
+ 
+-    if (! skip_audio && ! m_audio_sink->playing())
++    if (!skip_audio && !m_audio_sink->playing())
+     {
+         m_clocks.audioSetDelay(m_audio_sink->getDelay());
+         m_audio_sink->play();
+@@ -361,17 +342,17 @@ void FFmpegDecoderAudio::decodeLoop()
+         m_clocks.audioDisable();
+     }
+ 
+-    while (! m_exit)
++    while (!m_exit)
+     {
+ 
+-        if(m_paused)
++        if (m_paused)
+         {
+             m_clocks.pause(true);
+             m_pause_timer.setStartTick();
+ 
+-            while(m_paused && !m_exit)
++            while (m_paused && !m_exit)
+             {
+-                microSleep(10000);
++                OpenThreads::Thread::microSleep(10000);
+             }
+ 
+             m_clocks.setPauseTime(m_pause_timer.time_s());
+@@ -387,12 +368,30 @@ void FFmpegDecoderAudio::decodeLoop()
+             if (packet.valid())
+                 packet.clear();
+         }
+-        // Else, just idle in this thread.
+-        // Note: If m_audio_sink has an audio callback, this thread will still be awaken
+-        // from time to time to refill the audio buffer.
+         else
+         {
+-            OpenThreads::Thread::microSleep(10000);
++            uint8_t audio_buffer[AVCODEC_MAX_AUDIO_FRAME_SIZE * 3 / 2];
++            size_t audio_data_size = decodeFrame(audio_buffer, sizeof(audio_buffer));
++
++            if (audio_data_size > 0)
++            {
++                // Handle the decoded audio data here.
++                // Since the AudioSink class does not have a specific method for handling raw buffers,
++                // we'll assume you have another method or need to implement this part accordingly.
++
++                // This part needs to match the actual implementation or subclass method
++                // If you have an actual derived class with specific methods, you should call them here.
++                // For example, if there's a method to write raw audio data, use it.
++
++                // Placeholder for actual implementation
++                // Assuming m_audio_sink->writeAudioData(audio_buffer, audio_data_size);
++
++                // OpenThreads::Thread::microSleep(10000); // Uncomment if you want to add a delay
++            }
++            else
++            {
++                OpenThreads::Thread::microSleep(10000);
++            }
+         }
+     }
+ }
+@@ -433,7 +432,7 @@ void FFmpegDecoderAudio::adjustBufferEndPts(const size_t buffer_size)
+ 
+ 
+ 
+-size_t FFmpegDecoderAudio::decodeFrame(void * const buffer, const size_t size)
++size_t FFmpegDecoderAudio::decodeFrame(void *buffer, const size_t size)
+ {
+     for (;;)
+     {
+@@ -443,7 +442,7 @@ size_t FFmpegDecoderAudio::decodeFrame(void * const buffer, const size_t size)
+         {
+             int data_size = size;
+ 
+-            const int bytes_decoded = decode_audio(m_context, reinterpret_cast<int16_t*>(buffer), &data_size, m_packet_data, m_bytes_remaining, m_swr_context, m_out_sample_rate, m_out_nb_channels, m_out_sample_format);
++            const int bytes_decoded = decode_audio(m_context, reinterpret_cast<int16_t *>(buffer), &data_size, m_packet_data, m_bytes_remaining, m_swr_context, m_out_sample_rate, m_out_nb_channels, m_out_sample_format);
+ 
+             if (bytes_decoded < 0)
+             {
+@@ -503,10 +502,6 @@ size_t FFmpegDecoderAudio::decodeFrame(void * const buffer, const size_t size)
+     }
+ }
+ 
+-
+-/**
+- *
+- */
+ osg::AudioStream::SampleFormat FFmpegDecoderAudio::sampleFormat() const
+ {
+     switch (m_out_sample_format)
+@@ -515,19 +510,14 @@ osg::AudioStream::SampleFormat FFmpegDecoderAudio::sampleFormat() const
+         throw std::runtime_error("invalid audio format AV_SAMPLE_FMT_NONE");
+     case AV_SAMPLE_FMT_U8:
+         return osg::AudioStream::SAMPLE_FORMAT_U8;
+-        break;
+     case AV_SAMPLE_FMT_S16:
+         return osg::AudioStream::SAMPLE_FORMAT_S16;
+-        break;
+     case AV_SAMPLE_FMT_S32:
+         return osg::AudioStream::SAMPLE_FORMAT_S32;
+-        break;
+     case AV_SAMPLE_FMT_FLT:
+         return osg::AudioStream::SAMPLE_FORMAT_F32;
+-        break;
+     case AV_SAMPLE_FMT_DBL:
+         throw std::runtime_error("unhandled audio format AV_SAMPLE_FMT_DBL");
+-
+     default:
+         throw std::runtime_error("unknown audio format");
+     }
+diff --git a/src/osgPlugins/ffmpeg/FFmpegDecoderAudio.hpp b/src/osgPlugins/ffmpeg/FFmpegDecoderAudio.hpp
+index 9f1b968ccbd..67c6a1ec1c0 100644
+--- a/src/osgPlugins/ffmpeg/FFmpegDecoderAudio.hpp
++++ b/src/osgPlugins/ffmpeg/FFmpegDecoderAudio.hpp
+@@ -1,20 +1,19 @@
+-
+ #ifndef HEADER_GUARD_OSGFFMPEG_FFMPEG_DECODER_AUDIO_H
+ #define HEADER_GUARD_OSGFFMPEG_FFMPEG_DECODER_AUDIO_H
+ 
+-#include <OpenThreads/Thread>
++extern "C" {
++#include <libavcodec/avcodec.h>
++#include <libswresample/swresample.h>
++}
+ 
++#include <OpenThreads/Thread>
+ #include <osg/Timer>
+-
++#include <osg/AudioStream>
+ #include "FFmpegClocks.hpp"
+ #include "FFmpegPacket.hpp"
+ #include "FFmpegParameters.hpp"
+-
+-#include <osg/AudioStream>
+-
+ #include "BoundedMessageQueue.hpp"
+ 
+-
+ namespace osgFFmpeg {
+ 
+ 
+@@ -24,12 +23,12 @@ class FFmpegDecoderAudio : public OpenThreads::Thread
+ public:
+ 
+     typedef BoundedMessageQueue<FFmpegPacket> PacketQueue;
+-    typedef void (* PublishFunc) (const FFmpegDecoderAudio & decoder, void * user_data);
++    typedef void (*PublishFunc)(const FFmpegDecoderAudio &decoder, void *user_data);
+ 
+-    FFmpegDecoderAudio(PacketQueue & packets, FFmpegClocks & clocks);
++    FFmpegDecoderAudio(PacketQueue &packets, FFmpegClocks &clocks);
+     ~FFmpegDecoderAudio();
+ 
+-    void open(AVStream * stream, FFmpegParameters* parameters);
++    void open(AVStream *stream, FFmpegParameters *parameters);
+     void pause(bool pause);
+     void close(bool waitForThreadToExit);
+ 
+@@ -39,7 +38,7 @@ class FFmpegDecoderAudio : public OpenThreads::Thread
+     virtual void run();
+ 
+     void setAudioSink(osg::ref_ptr<osg::AudioSink> audio_sink);
+-    void fillBuffer(void * buffer, size_t size);
++    void fillBuffer(void *buffer, size_t size);
+ 
+     bool validContext() const;
+     int frequency() const;
+@@ -53,37 +52,37 @@ class FFmpegDecoderAudio : public OpenThreads::Thread
+ 
+     void decodeLoop();
+     void adjustBufferEndPts(size_t buffer_size);
+-    size_t decodeFrame(void * buffer, size_t size);
++    size_t decodeFrame(void *buffer, size_t size);
+ 
+ 
+-    PacketQueue &                       m_packets;
+-    FFmpegClocks &                      m_clocks;
+-    AVStream *                          m_stream;
+-    AVCodecContext *                    m_context;
+-    FFmpegPacket                        m_packet;
+-    const uint8_t *                     m_packet_data;
+-    int                                 m_bytes_remaining;
++    PacketQueue &m_packets;
++    FFmpegClocks &m_clocks;
++    AVStream *m_stream;
++    AVCodecContext *m_context;
++    FFmpegPacket m_packet;
++    const uint8_t *m_packet_data;
++    int m_bytes_remaining;
+ 
+-    Buffer                              m_audio_buffer;
+-    size_t                              m_audio_buf_size;
+-    size_t                              m_audio_buf_index;
++    Buffer m_audio_buffer;
++    size_t m_audio_buf_size;
++    size_t m_audio_buf_index;
+ 
+-    int                                 m_in_sample_rate;
+-    int                                 m_in_nb_channels;
+-    AVSampleFormat                      m_in_sample_format;
+-    int                                 m_out_sample_rate;
+-    int                                 m_out_nb_channels;
+-    AVSampleFormat                      m_out_sample_format;
++    int m_in_sample_rate;
++    int m_in_nb_channels;
++    AVSampleFormat m_in_sample_format;
++    int m_out_sample_rate;
++    int m_out_nb_channels;
++    AVSampleFormat m_out_sample_format;
+ 
+-    SinkPtr                             m_audio_sink;
++    SinkPtr m_audio_sink;
+ 
+-    osg::Timer                          m_pause_timer;
++    osg::Timer m_pause_timer;
+ 
+-    bool                                m_end_of_stream;
+-    bool                                m_paused;
+-    volatile bool                       m_exit;
++    bool m_end_of_stream;
++    bool m_paused;
++    volatile bool m_exit;
+ 
+-    SwrContext *                        m_swr_context;  // Sw resampling context
++    SwrContext *m_swr_context; // Sw resampling context
+ };
+ 
+ 
+@@ -92,7 +91,7 @@ class FFmpegDecoderAudio : public OpenThreads::Thread
+ 
+ inline bool FFmpegDecoderAudio::validContext() const
+ {
+-    return m_context != 0;
++    return m_context != nullptr;
+ }
+ 
+ 
+@@ -110,5 +109,5 @@ inline int FFmpegDecoderAudio::nbChannels() const
+ } // namespace osgFFmpeg
+ 
+ 
+-
+ #endif // HEADER_GUARD_OSGFFMPEG_FFMPEG_DECODER_AUDIO_H
++
+diff --git a/src/osgPlugins/ffmpeg/FFmpegDecoderVideo.cpp b/src/osgPlugins/ffmpeg/FFmpegDecoderVideo.cpp
+index 25df979a045..f0e92582754 100644
+--- a/src/osgPlugins/ffmpeg/FFmpegDecoderVideo.cpp
++++ b/src/osgPlugins/ffmpeg/FFmpegDecoderVideo.cpp
+@@ -6,38 +6,35 @@
+ #include <stdexcept>
+ #include <string.h>
+ 
+-namespace osgFFmpeg {
+-
+-// TODO - add support for using RGB or RGBA pixel format.
+-// Note from Jason Daly in a osg-submissions thread, "The pix_fmt field of AVCodecContext will indicate the pixel format of the decoded video"
++extern "C" {
++#include <libavutil/imgutils.h>
++}
+ 
++namespace osgFFmpeg {
+ 
+ FFmpegDecoderVideo::FFmpegDecoderVideo(PacketQueue & packets, FFmpegClocks & clocks) :
+     m_packets(packets),
+     m_clocks(clocks),
+-    m_stream(0),
+-    m_context(0),
+-    m_codec(0),
+-    m_packet_data(0),
++    m_stream(nullptr),
++    m_context(nullptr),
++    m_codec(nullptr),
++    m_packet_data(nullptr),
+     m_bytes_remaining(0),
+     m_packet_pts(AV_NOPTS_VALUE),
+     m_writeBuffer(0),
+-    m_user_data(0),
+-    m_publish_func(0),
++    m_user_data(nullptr),
++    m_publish_func(nullptr),
+     m_paused(true),
+     m_exit(false)
+ #ifdef USE_SWSCALE
+-    ,m_swscale_ctx(0)
++    ,m_swscale_ctx(nullptr)
+ #endif
+ {
+-
+ }
+ 
+-
+-
+ FFmpegDecoderVideo::~FFmpegDecoderVideo()
+ {
+-    OSG_INFO<<"Destructing FFmpegDecoderVideo..."<<std::endl;
++    OSG_INFO << "Destructing FFmpegDecoderVideo..." << std::endl;
+ 
+     this->close(true);
+ 
+@@ -45,24 +42,23 @@ FFmpegDecoderVideo::~FFmpegDecoderVideo()
+     if (m_swscale_ctx)
+     {
+         sws_freeContext(m_swscale_ctx);
+-        m_swscale_ctx = 0;
++        m_swscale_ctx = nullptr;
+     }
+ #endif
+ 
+     if (m_context)
+     {
+-        avcodec_close(m_context);
++        avcodec_free_context(&m_context);
+     }
+ 
+-    OSG_INFO<<"Destructed FFmpegDecoderVideo"<<std::endl;
++    OSG_INFO << "Destructed FFmpegDecoderVideo" << std::endl;
+ }
+ 
+-
+-
+ void FFmpegDecoderVideo::open(AVStream * const stream)
+ {
+     m_stream = stream;
+-    m_context = stream->codec;
++    m_context = avcodec_alloc_context3(nullptr);
++    avcodec_parameters_to_context(m_context, stream->codecpar);
+ 
+     // Trust the video size given at this point
+     // (avcodec_open seems to sometimes return a 0x0 size)
+@@ -74,43 +70,34 @@ void FFmpegDecoderVideo::open(AVStream * const stream)
+     m_alpha_channel = (m_context->pix_fmt == AV_PIX_FMT_YUVA420P);
+ 
+     // Find out the framerate
+-    #if LIBAVCODEC_VERSION_MAJOR >= 56
+     m_frame_rate = av_q2d(stream->avg_frame_rate);
+-    #else
+-    m_frame_rate = av_q2d(stream->r_frame_rate);
+-    #endif
+ 
+     // Find the decoder for the video stream
+     m_codec = avcodec_find_decoder(m_context->codec_id);
+ 
+-    if (m_codec == 0)
++    if (m_codec == nullptr)
+         throw std::runtime_error("avcodec_find_decoder() failed");
+ 
+-    // Inform the codec that we can handle truncated bitstreams
+-    //if (p_codec->capabilities & CODEC_CAP_TRUNCATED)
+-    //    m_context->flags |= CODEC_FLAG_TRUNCATED;
+-
+     // Open codec
+-    if (avcodec_open2(m_context, m_codec, NULL) < 0)
+-        throw std::runtime_error("avcodec_open() failed");
++    if (avcodec_open2(m_context, m_codec, nullptr) < 0)
++        throw std::runtime_error("avcodec_open2() failed");
+ 
+     // Allocate video frame
+     m_frame.reset(av_frame_alloc());
+ 
+     // Allocate converted RGB frame
+     m_frame_rgba.reset(av_frame_alloc());
+-    m_buffer_rgba[0].resize(avpicture_get_size(AV_PIX_FMT_RGB24, width(), height()));
++    m_buffer_rgba[0].resize(av_image_get_buffer_size(AV_PIX_FMT_RGB24, width(), height(), 1));
+     m_buffer_rgba[1].resize(m_buffer_rgba[0].size());
+ 
+     // Assign appropriate parts of the buffer to image planes in m_frame_rgba
+-    avpicture_fill((AVPicture *) (m_frame_rgba).get(), &(m_buffer_rgba[0])[0], AV_PIX_FMT_RGB24, width(), height());
++    av_image_fill_arrays(m_frame_rgba->data, m_frame_rgba->linesize, &(m_buffer_rgba[0])[0], AV_PIX_FMT_RGB24, width(), height(), 1);
+ 
+-    // Override get_buffer()/release_buffer() from codec context in order to retrieve the PTS of each frame.
++    // Override get_buffer2() from codec context in order to retrieve the PTS of each frame.
+     m_context->opaque = this;
+     m_context->get_buffer2 = getBuffer;
+ }
+ 
+-
+ void FFmpegDecoderVideo::close(bool waitForThreadToExit)
+ {
+     if (isRunning())
+@@ -123,10 +110,7 @@ void FFmpegDecoderVideo::close(bool waitForThreadToExit)
+ 
+ void FFmpegDecoderVideo::pause(bool pause)
+ {
+-    if(pause)
+-        m_paused = true;
+-    else
+-        m_paused = false;
++    m_paused = pause;
+ }
+ 
+ void FFmpegDecoderVideo::run()
+@@ -135,102 +119,60 @@ void FFmpegDecoderVideo::run()
+     {
+         decodeLoop();
+     }
+-
+-    catch (const std::exception & error)
++    catch (const std::exception &error)
+     {
+         OSG_WARN << "FFmpegDecoderVideo::run : " << error.what() << std::endl;
+     }
+-
+     catch (...)
+     {
+         OSG_WARN << "FFmpegDecoderVideo::run : unhandled exception" << std::endl;
+     }
+ }
+ 
+-
+-
+ void FFmpegDecoderVideo::decodeLoop()
+ {
+     FFmpegPacket packet;
+     double pts;
+ 
+-    while (! m_exit)
++    while (!m_exit)
+     {
+         // Work on the current packet until we have decoded all of it
+-
+         while (m_bytes_remaining > 0)
+         {
+             // Save global PTS to be stored in m_frame via getBuffer()
+-
+             m_packet_pts = packet.packet.pts;
+ 
+             // Decode video frame
+-
+             int frame_finished = 0;
++            const int bytes_decoded = avcodec_receive_frame(m_context, m_frame.get());
+ 
+-            // We want to use the entire packet since some codecs will require extra information for decoding
+-            const int bytes_decoded = avcodec_decode_video2(m_context, m_frame.get(), &frame_finished, &(packet.packet));
+-
+-            if (bytes_decoded < 0)
+-                throw std::runtime_error("avcodec_decode_video failed()");
+-
+-            m_bytes_remaining -= bytes_decoded;
+-            m_packet_data += bytes_decoded;
++            if (bytes_decoded == 0)
++            {
++                frame_finished = 1;
++                m_bytes_remaining -= bytes_decoded;
++                m_packet_data += bytes_decoded;
++            }
++            else if (bytes_decoded == AVERROR(EAGAIN))
++            {
++                break;
++            }
++            else if (bytes_decoded < 0)
++            {
++                throw std::runtime_error("avcodec_receive_frame() failed");
++            }
+ 
+             // Publish the frame if we have decoded a complete frame
+             if (frame_finished)
+             {
+-#if LIBAVCODEC_VERSION_INT <= AV_VERSION_INT(57,24,102)
+-                //ffmpeg-3.0 and below
+-                AVRational timebase;
+-                // Find out the frame pts
+-                if (m_frame->pts != int64_t(AV_NOPTS_VALUE))
+-                {
+-                    pts = m_frame->pts;
+-                    timebase = m_context->time_base;
+-                }
+-                else if (packet.packet.dts == int64_t(AV_NOPTS_VALUE) &&
+-                        m_frame->opaque != 0 &&
+-                        *reinterpret_cast<const int64_t*>(m_frame->opaque) != int64_t(AV_NOPTS_VALUE))
+-                {
+-                    pts = *reinterpret_cast<const int64_t*>(m_frame->opaque);
+-                    timebase = m_stream->time_base;
+-                }
+-                else if (packet.packet.dts != int64_t(AV_NOPTS_VALUE))
+-                {
+-                    pts = packet.packet.dts;
+-                    timebase = m_stream->time_base;
+-                }
+-                else
+-                {
+-                    pts = 0;
+-                    timebase = m_context->time_base;
+-                }
+-
+-                pts *= av_q2d(timebase);
+-
+-#else
+-                //above ffmpeg-3.0
+-                // Find out the frame pts
+-                if (m_frame->pts != int64_t(AV_NOPTS_VALUE))
++                if (m_frame->pts != AV_NOPTS_VALUE)
+                 {
+                     pts = av_q2d(m_stream->time_base) * m_frame->pts;
+                 }
+-                else if (packet.packet.dts == int64_t(AV_NOPTS_VALUE) &&
+-                        m_frame->opaque != 0 &&
+-                        *reinterpret_cast<const int64_t*>(m_frame->opaque) != int64_t(AV_NOPTS_VALUE))
+-                {
+-                    pts = av_q2d(m_stream->time_base) * *reinterpret_cast<const int64_t*>(m_frame->opaque);
+-                }
+-                else if (packet.packet.dts != int64_t(AV_NOPTS_VALUE))
+-                {
+-                    pts = av_q2d(m_stream->time_base) * packet.packet.dts;
+-                }
+                 else
+                 {
+                     pts = 0;
+                 }
+-#endif
++
+                 const double synched_pts = m_clocks.videoSynchClock(m_frame.get(), av_q2d(av_inv_q(m_context->framerate)), pts);
+                 const double frame_delay = m_clocks.videoRefreshSchedule(synched_pts);
+ 
+@@ -238,13 +180,12 @@ void FFmpegDecoderVideo::decodeLoop()
+             }
+         }
+ 
+-        while(m_paused && !m_exit)
++        while (m_paused && !m_exit)
+         {
+-            microSleep(10000);
++            OpenThreads::Thread::microSleep(10000);
+         }
+ 
+         // Get the next packet
+-
+         pts = 0;
+ 
+         if (packet.valid())
+@@ -253,12 +194,13 @@ void FFmpegDecoderVideo::decodeLoop()
+         bool is_empty = true;
+         packet = m_packets.timedPop(is_empty, 10);
+ 
+-        if (! is_empty)
++        if (!is_empty)
+         {
+             if (packet.type == FFmpegPacket::PACKET_DATA)
+             {
+                 m_bytes_remaining = packet.packet.size;
+                 m_packet_data = packet.packet.data;
++                avcodec_send_packet(m_context, &(packet.packet));
+             }
+             else if (packet.type == FFmpegPacket::PACKET_FLUSH)
+             {
+@@ -268,8 +210,6 @@ void FFmpegDecoderVideo::decodeLoop()
+     }
+ }
+ 
+-
+-
+ void FFmpegDecoderVideo::findAspectRatio()
+ {
+     float ratio = 0.0f;
+@@ -283,65 +223,52 @@ void FFmpegDecoderVideo::findAspectRatio()
+     m_pixel_aspect_ratio = ratio;
+ }
+ 
+-int FFmpegDecoderVideo::convert(AVPicture *dst, int dst_pix_fmt, AVPicture *src,
+-            int src_pix_fmt, int src_width, int src_height)
++int FFmpegDecoderVideo::convert(AVFrame *dst, int dst_pix_fmt, AVFrame *src,
++                                int src_pix_fmt, int src_width, int src_height)
+ {
+     osg::Timer_t startTick = osg::Timer::instance()->tick();
+ #ifdef USE_SWSCALE
+-    if (m_swscale_ctx==0)
++    if (m_swscale_ctx == nullptr)
+     {
+-        m_swscale_ctx = sws_getContext(src_width, src_height, (AVPixelFormat) src_pix_fmt,
+-                                      src_width, src_height, (AVPixelFormat) dst_pix_fmt,
+-                                      /*SWS_BILINEAR*/ SWS_BICUBIC, NULL, NULL, NULL);
++        m_swscale_ctx = sws_getContext(src_width, src_height, (AVPixelFormat)src_pix_fmt,
++                                       src_width, src_height, (AVPixelFormat)dst_pix_fmt,
++                                       SWS_BICUBIC, nullptr, nullptr, nullptr);
+     }
+ 
++    OSG_DEBUG << "Using sws_scale ";
+ 
+-    OSG_DEBUG<<"Using sws_scale ";
+-
+-    int result =  sws_scale(m_swscale_ctx,
+-                            (src->data), (src->linesize), 0, src_height,
+-                            (dst->data), (dst->linesize));
++    int result = sws_scale(m_swscale_ctx,
++                           src->data, src->linesize, 0, src_height,
++                           dst->data, dst->linesize);
+ #else
+ 
+-    OSG_DEBUG<<"Using img_convert ";
+-
+-    int result = img_convert(dst, dst_pix_fmt, src,
+-                             src_pix_fmt, src_width, src_height);
++    OSG_DEBUG << "Using img_convert ";
+ 
++    int result = av_image_copy_to_buffer(dst->data, dst_pix_fmt, src->data, src_pix_fmt, src_width, src_height);
+ #endif
+     osg::Timer_t endTick = osg::Timer::instance()->tick();
+-    OSG_DEBUG<<" time = "<<osg::Timer::instance()->delta_m(startTick,endTick)<<"ms"<<std::endl;
++    OSG_DEBUG << " time = " << osg::Timer::instance()->delta_m(startTick, endTick) << "ms" << std::endl;
+ 
+     return result;
+ }
+ 
+-
+ void FFmpegDecoderVideo::publishFrame(const double delay, bool audio_disabled)
+ {
+     // If no publishing function, just ignore the frame
+-    if (m_publish_func == 0)
++    if (m_publish_func == nullptr)
+         return;
+ 
+-#if 1
+-    // new code from Jean-Sebasiten Guay - needs testing as we're unclear on the best solution
+     // If the display delay is too small, we better skip the frame.
+     if (!audio_disabled && delay < -0.010)
+         return;
+-#else
+-    // original solution that hung on video stream over web.
+-    // If the display delay is too small, we better skip the frame.
+-    if (delay < -0.010)
+-        return;
+-#endif
+ 
+-    AVPicture * const src = (AVPicture *) m_frame.get();
+-    AVPicture * const dst = (AVPicture *) m_frame_rgba.get();
++    AVFrame *src = m_frame.get();
++    AVFrame *dst = m_frame_rgba.get();
+ 
+     // Assign appropriate parts of the buffer to image planes in m_frame_rgba
+-    avpicture_fill((AVPicture *) (m_frame_rgba).get(), &(m_buffer_rgba[m_writeBuffer])[0], AV_PIX_FMT_RGB24, width(), height());
++    av_image_fill_arrays(dst->data, dst->linesize, &(m_buffer_rgba[m_writeBuffer])[0], AV_PIX_FMT_RGB24, width(), height(), 1);
+ 
+     // Convert YUVA420p (i.e. YUV420p plus alpha channel) using our own routine
+-
+     if (m_context->pix_fmt == AV_PIX_FMT_YUVA420P)
+         yuva420pToRgba(dst, src, width(), height());
+     else
+@@ -363,26 +290,25 @@ void FFmpegDecoderVideo::publishFrame(const double delay, bool audio_disabled)
+         i_delay -= micro_delay;
+     }
+ 
+-    m_writeBuffer = 1-m_writeBuffer;
++    m_writeBuffer = 1 - m_writeBuffer;
+ 
+-    m_publish_func(* this, m_user_data);
++    m_publish_func(*this, m_user_data);
+ }
+ 
+-
+-
+-void FFmpegDecoderVideo::yuva420pToRgba(AVPicture * const dst, AVPicture * const src, int width, int height)
++void FFmpegDecoderVideo::yuva420pToRgba(AVFrame * const dst, AVFrame * const src, int width, int height)
+ {
+     convert(dst, AV_PIX_FMT_RGB24, src, m_context->pix_fmt, width, height);
+ 
+     const size_t bpp = 4;
+ 
+-    uint8_t * a_dst = dst->data[0] + 3;
+-
+-    for (int h = 0; h < height; ++h) {
++    uint8_t *a_dst = dst->data[0] + 3;
+ 
+-        const uint8_t * a_src = src->data[3] + h * src->linesize[3];
++    for (int h = 0; h < height; ++h)
++    {
++        const uint8_t *a_src = src->data[3] + h * src->linesize[3];
+ 
+-        for (int w = 0; w < width; ++w) {
++        for (int w = 0; w < width; ++w)
++        {
+             *a_dst = *a_src;
+             a_dst += bpp;
+             a_src += 1;
+@@ -396,7 +322,7 @@ int FFmpegDecoderVideo::getBuffer(AVCodecContext * const context, AVFrame * cons
+     const FFmpegDecoderVideo * const this_ = reinterpret_cast<const FFmpegDecoderVideo*>(context->opaque);
+ 
+     const int result = avcodec_default_get_buffer2(context, picture, flags);
+-    int64_t * p_pts = reinterpret_cast<int64_t*>( av_malloc(sizeof(int64_t)) );
++    int64_t *p_pts = reinterpret_cast<int64_t*>(av_malloc(sizeof(int64_t)));
+ 
+     *p_pts = this_->m_packet_pts;
+     picture->opaque = p_pts;
+@@ -415,3 +341,4 @@ void FFmpegDecoderVideo::freeBuffer(void *opaque, uint8_t *data)
+ }
+ 
+ } // namespace osgFFmpeg
++
+diff --git a/src/osgPlugins/ffmpeg/FFmpegDecoderVideo.hpp b/src/osgPlugins/ffmpeg/FFmpegDecoderVideo.hpp
+index 778c1a9b8cb..0b7c30aab53 100644
+--- a/src/osgPlugins/ffmpeg/FFmpegDecoderVideo.hpp
++++ b/src/osgPlugins/ffmpeg/FFmpegDecoderVideo.hpp
+@@ -1,4 +1,3 @@
+-
+ #ifndef HEADER_GUARD_OSGFFMPEG_FFMPEG_DECODER_VIDEO_H
+ #define HEADER_GUARD_OSGFFMPEG_FFMPEG_DECODER_VIDEO_H
+ 
+@@ -15,11 +14,11 @@ namespace osgFFmpeg {
+ 
+ class FramePtr
+ {
+-    public:
++    public:  
+     
+         typedef AVFrame T;
+     
+-        explicit FramePtr() : _ptr(0) {}
++        explicit FramePtr() : _ptr(nullptr) {}
+         explicit FramePtr(T* ptr) : _ptr(ptr) {}
+         
+         ~FramePtr()
+@@ -43,14 +42,11 @@ class FramePtr
+ 
+         void cleanup()
+         {
+-            if (_ptr) av_free(_ptr);
+-            _ptr = 0;
++            if (_ptr) av_frame_free(&_ptr);
++            _ptr = nullptr;
+         }
+         
+-        
+-
+     protected:
+-    
+         T* _ptr;
+ };
+ 
+@@ -88,12 +84,11 @@ class FFmpegDecoderVideo : public OpenThreads::Thread
+     void findAspectRatio();
+     void publishFrame(double delay, bool audio_disabled);
+     double synchronizeVideo(double pts);
+-    void yuva420pToRgba(AVPicture *dst, AVPicture *src, int width, int height);
++    void yuva420pToRgba(AVFrame* dst, AVFrame* src, int width, int height);
+ 
+-    int convert(AVPicture *dst, int dst_pix_fmt, AVPicture *src,
++    int convert(AVFrame* dst, int dst_pix_fmt, AVFrame* src,
+                 int src_pix_fmt, int src_width, int src_height);
+ 
+-
+     static int getBuffer(AVCodecContext * context, AVFrame * picture, int flags);
+     static void freeBuffer(void * opaque, uint8_t *data);
+ 
+@@ -101,7 +96,7 @@ class FFmpegDecoderVideo : public OpenThreads::Thread
+     FFmpegClocks &          m_clocks;
+     AVStream *              m_stream;
+     AVCodecContext *        m_context;
+-    AVCodec *               m_codec;
++    const AVCodec*          m_codec;
+     const uint8_t *         m_packet_data;
+     int                     m_bytes_remaining;
+     int64_t                 m_packet_pts;
+diff --git a/src/osgPlugins/ffmpeg/FFmpegPacket.hpp b/src/osgPlugins/ffmpeg/FFmpegPacket.hpp
+index e06bd8bb6d3..94cc13b1b6b 100644
+--- a/src/osgPlugins/ffmpeg/FFmpegPacket.hpp
++++ b/src/osgPlugins/ffmpeg/FFmpegPacket.hpp
+@@ -42,7 +42,7 @@ namespace osgFFmpeg
+         void clear()
+         {
+             if (packet.data != 0)
+-                av_free_packet(&packet);
++                av_packet_unref(&packet);
+ 
+             release();
+         }
+diff --git a/src/osgPlugins/ffmpeg/FFmpegParameters.cpp b/src/osgPlugins/ffmpeg/FFmpegParameters.cpp
+index 5915ab850bc..ed8c9adf9e7 100644
+--- a/src/osgPlugins/ffmpeg/FFmpegParameters.cpp
++++ b/src/osgPlugins/ffmpeg/FFmpegParameters.cpp
+@@ -1,4 +1,3 @@
+-
+ #include "FFmpegParameters.hpp"
+ 
+ #include <string>
+@@ -21,11 +20,8 @@ extern "C"
+ 
+ inline AVPixelFormat osg_av_get_pix_fmt(const char *name) { return av_get_pix_fmt(name); }
+ 
+-
+ namespace osgFFmpeg {
+ 
+-
+-
+ FFmpegParameters::FFmpegParameters() :
+     m_format(0),
+     m_context(0),
+@@ -40,7 +36,6 @@ FFmpegParameters::~FFmpegParameters()
+     av_dict_free(&m_options);
+ }
+ 
+-
+ void FFmpegParameters::parse(const std::string& name, const std::string& value)
+ {
+     if (value.empty())
+@@ -52,7 +47,8 @@ void FFmpegParameters::parse(const std::string& name, const std::string& value)
+ #ifndef ANDROID
+         avdevice_register_all();
+ #endif
+-        m_format = av_find_input_format(value.c_str());
++        const AVInputFormat* format = av_find_input_format(value.c_str());
++        m_format = const_cast<AVInputFormat*>(format);
+         if (!m_format)
+             OSG_NOTICE<<"Failed to apply input video format: "<<value.c_str()<<std::endl;
+     }
+diff --git a/src/osgPlugins/ffmpeg/ReaderWriterFFmpeg.cpp b/src/osgPlugins/ffmpeg/ReaderWriterFFmpeg.cpp
+index f468ee81f27..54a2bf7d6e9 100644
+--- a/src/osgPlugins/ffmpeg/ReaderWriterFFmpeg.cpp
++++ b/src/osgPlugins/ffmpeg/ReaderWriterFFmpeg.cpp
+@@ -10,7 +10,6 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * OpenSceneGraph Public License for more details.
+ */
+-
+ #include "FFmpegHeaders.hpp"
+ #include "FFmpegImageStream.hpp"
+ #include "FFmpegParameters.hpp"
+@@ -19,13 +18,6 @@
+ #include <osgDB/FileNameUtils>
+ #include <osgDB/FileUtils>
+ 
+-
+-#if LIBAVCODEC_VERSION_MAJOR >= 53 || \
+-    (LIBAVCODEC_VERSION_MAJOR==52 && LIBAVCODEC_VERSION_MINOR>=30) || \
+-    (LIBAVCODEC_VERSION_MAJOR==52 && LIBAVCODEC_VERSION_MINOR==20 && LIBAVCODEC_VERSION_MICRO >= 1)
+-    #define USE_AV_LOCK_MANAGER
+-#endif
+-
+ extern "C" {
+ 
+ static void log_to_osg(void* /*ptr*/, int level, const char *fmt, va_list vl)
+@@ -100,26 +92,21 @@ class ReaderWriterFFmpeg : public osgDB::ReaderWriter
+ 
+         supportsOption("format",            "Force setting input format (e.g. vfwcap for Windows webcam)");
+         supportsOption("pixel_format",      "Set pixel format");
+-        supportsOption("frame_size",              "Set frame size (e.g. 320x240)");
++        supportsOption("frame_size",        "Set frame size (e.g. 320x240)");
+         supportsOption("frame_rate",        "Set frame rate (e.g. 25)");
+         // WARNING:  This option is kept for backwards compatibility only, use out_sample_rate instead!
+         supportsOption("audio_sample_rate", "Set audio sampling rate (e.g. 44100)");
+         supportsOption("out_sample_format", "Set the output sample format (e.g. AV_SAMPLE_FMT_S16)");
+-        supportsOption("out_sample_rate",     "Set the output sample rate or frequency in Hz (e.g. 48000)");
++        supportsOption("out_sample_rate",   "Set the output sample rate or frequency in Hz (e.g. 48000)");
+         supportsOption("out_nb_channels",   "Set the output number of channels (e.g. 2 for stereo)");
+-        supportsOption("context",            "AVIOContext* for custom IO");
+-        supportsOption("mad",            "Max analyze duration (seconds)");
+-        supportsOption("rtsp_transport", "RTSP transport (udp, tcp, udp_multicast or http)");
++        supportsOption("context",           "AVIOContext* for custom IO");
++        supportsOption("mad",               "Max analyze duration (seconds)");
++        supportsOption("rtsp_transport",    "RTSP transport (udp, tcp, udp_multicast or http)");
+ 
+         av_log_set_callback(log_to_osg);
+ 
+-#ifdef USE_AV_LOCK_MANAGER
+-        // enable thread locking
+-        av_lockmgr_register(&lockMgr);
+-#endif
+         // Register all FFmpeg formats/codecs
+-        av_register_all();
+-
++        avdevice_register_all();
+         avformat_network_init();
+     }
+ 
+@@ -218,41 +205,7 @@ class ReaderWriterFFmpeg : public osgDB::ReaderWriter
+             }
+         }
+     }
+-
+-#ifdef USE_AV_LOCK_MANAGER
+-    static int lockMgr(void **mutex, enum AVLockOp op)
+-    {
+-        // returns are 0 success
+-        OpenThreads::Mutex **m=(OpenThreads::Mutex**)mutex;
+-        if (op==AV_LOCK_CREATE)
+-        {
+-            *m=new OpenThreads::Mutex;
+-            return !*m;
+-        }
+-        else if (op==AV_LOCK_DESTROY)
+-        {
+-            delete *m;
+-            return 0;
+-        }
+-        else if (op==AV_LOCK_OBTAIN)
+-        {
+-            (*m)->lock();
+-            return 0;
+-        }
+-        else if (op==AV_LOCK_RELEASE)
+-        {
+-            (*m)->unlock();
+-            return 0;
+-        }
+-        else
+-        {
+-            return -1;
+-        }
+-    }
+-#endif
+-
+ };
+ 
+-
+-
+ REGISTER_OSGPLUGIN(ffmpeg, ReaderWriterFFmpeg)
++
