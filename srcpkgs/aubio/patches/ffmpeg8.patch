@@ -1,0 +1,348 @@
+from current git file vs 49 release (2025-dec)
+--- a/src/io/source_avcodec.c
++++ b/src/io/source_avcodec.c
+@@ -24,11 +24,7 @@
+
+ #include <libavcodec/avcodec.h>
+ #include <libavformat/avformat.h>
+-#if defined(HAVE_SWRESAMPLE)
+ #include <libswresample/swresample.h>
+-#elif defined(HAVE_AVRESAMPLE)
+-#include <libavresample/avresample.h>
+-#endif
+ #include <libavutil/opt.h>
+
+ // determine whether we use libavformat from ffmpeg or from libav
+@@ -56,6 +52,12 @@
+ #define av_packet_unref av_free_packet
+ #endif
+
++#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(57,28,100)
++//#warning "libavutil < 57.28.100 is deprecated"
++#else
++#define LIBAVUTIL_HAS_CH_LAYOUT
++#endif
++
+ #include "aubio_priv.h"
+ #include "fvec.h"
+ #include "fmat.h"
+@@ -64,8 +66,14 @@
+
+ #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(56, 56, 0)
+ #define AUBIO_AVCODEC_MAX_BUFFER_SIZE FF_MIN_BUFFER_SIZE
+-#else
++#elif LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 40, 100)
+ #define AUBIO_AVCODEC_MAX_BUFFER_SIZE AV_INPUT_BUFFER_MIN_SIZE
++#else
++#define AUBIO_AVCODEC_MAX_BUFFER_SIZE 16384
++#endif
++
++#if LIBAVCODEC_VERSION_MAJOR >= 59
++#define FF_API_LAVF_AVCTX 1
+ #endif
+
+ struct _aubio_source_avcodec_t {
+@@ -82,12 +90,12 @@
+   AVFormatContext *avFormatCtx;
+   AVCodecContext *avCodecCtx;
+   AVFrame *avFrame;
++#if FF_API_INIT_PACKET
++  AVPacket *avPacket;
++#else
+   AVPacket avPacket;
+-#ifdef HAVE_AVRESAMPLE
+-  AVAudioResampleContext *avr;
+-#elif defined(HAVE_SWRESAMPLE)
+-  SwrContext *avr;
+ #endif
++  SwrContext *avr;
+   smpl_t *output;
+   uint_t read_samples;
+   uint_t read_index;
+@@ -122,11 +130,15 @@
+   AVFormatContext *avFormatCtx = NULL;
+   AVCodecContext *avCodecCtx = NULL;
+   AVFrame *avFrame = NULL;
++#if FF_API_INIT_PACKET
++  AVPacket *avPacket = NULL;
++#endif
+   sint_t selected_stream = -1;
+ #if FF_API_LAVF_AVCTX
+   AVCodecParameters *codecpar;
+ #endif
+-  AVCodec *codec;
++
++  const AVCodec *codec;
+   uint_t i;
+   int err;
+   if (path == NULL) {
+@@ -259,7 +271,11 @@
+
+   /* get input specs */
+   s->input_samplerate = avCodecCtx->sample_rate;
++#ifdef LIBAVUTIL_HAS_CH_LAYOUT
++  s->input_channels   = avCodecCtx->ch_layout.nb_channels;
++#else
+   s->input_channels   = avCodecCtx->channels;
++#endif
+   //AUBIO_DBG("input_samplerate: %d\n", s->input_samplerate);
+   //AUBIO_DBG("input_channels: %d\n", s->input_channels);
+
+@@ -277,8 +293,17 @@
+   avFrame = av_frame_alloc();
+   if (!avFrame) {
+     AUBIO_ERR("source_avcodec: Could not allocate frame for (%s)\n", s->path);
++    goto beach;
+   }
+
++#if FF_API_INIT_PACKET
++  avPacket = av_packet_alloc();
++  if (!avPacket) {
++    AUBIO_ERR("source_avcodec: Could not allocate packet for (%s)\n", s->path);
++    goto beach;
++  }
++#endif
++
+   /* allocate output for avr */
+   s->output = (smpl_t *)av_malloc(AUBIO_AVCODEC_MAX_BUFFER_SIZE
+       * sizeof(smpl_t));
+@@ -289,6 +314,9 @@
+   s->avFormatCtx = avFormatCtx;
+   s->avCodecCtx = avCodecCtx;
+   s->avFrame = avFrame;
++#if FF_API_INIT_PACKET
++  s->avPacket = avPacket;
++#endif
+
+   aubio_source_avcodec_reset_resampler(s);
+
+@@ -312,16 +340,27 @@
+   // create or reset resampler to/from mono/multi-channel
+   if ( s->avr == NULL ) {
+     int err;
++    SwrContext *avr = swr_alloc();
++#ifdef LIBAVUTIL_HAS_CH_LAYOUT
++    AVChannelLayout input_layout;
++    AVChannelLayout output_layout;
++    av_channel_layout_default(&input_layout, s->input_channels);
++    av_channel_layout_default(&output_layout, s->input_channels);
++
++#if LIBSWRESAMPLE_VERSION_INT < AV_VERSION_INT (4, 5, 100)
++    av_opt_set_chlayout(avr, "in_channel_layout",  &input_layout,        0);
++    av_opt_set_chlayout(avr, "out_channel_layout", &output_layout,       0);
++#else
++    av_opt_set_chlayout(avr, "in_chlayout",  &input_layout,        0);
++    av_opt_set_chlayout(avr, "out_chlayout", &output_layout,       0);
++#endif
++#else
+     int64_t input_layout = av_get_default_channel_layout(s->input_channels);
+     int64_t output_layout = av_get_default_channel_layout(s->input_channels);
+-#ifdef HAVE_AVRESAMPLE
+-    AVAudioResampleContext *avr = avresample_alloc_context();
+-#elif defined(HAVE_SWRESAMPLE)
+-    SwrContext *avr = swr_alloc();
+-#endif /* HAVE_AVRESAMPLE || HAVE_SWRESAMPLE */
+
+     av_opt_set_int(avr, "in_channel_layout",  input_layout,              0);
+     av_opt_set_int(avr, "out_channel_layout", output_layout,             0);
++#endif
+     av_opt_set_int(avr, "in_sample_rate",     s->input_samplerate,       0);
+     av_opt_set_int(avr, "out_sample_rate",    s->samplerate,             0);
+     av_opt_set_int(avr, "in_sample_fmt",      s->avCodecCtx->sample_fmt, 0);
+@@ -332,11 +371,7 @@
+ #endif
+     // TODO: use planar?
+     //av_opt_set_int(avr, "out_sample_fmt",     AV_SAMPLE_FMT_FLTP,      0);
+-#ifdef HAVE_AVRESAMPLE
+-    if ( ( err = avresample_open(avr) ) < 0)
+-#elif defined(HAVE_SWRESAMPLE)
+     if ( ( err = swr_init(avr) ) < 0)
+-#endif /* HAVE_AVRESAMPLE || HAVE_SWRESAMPLE */
+     {
+       char errorstr[256];
+       av_strerror (err, errorstr, sizeof(errorstr));
+@@ -354,36 +389,34 @@
+   AVFormatContext *avFormatCtx = s->avFormatCtx;
+   AVCodecContext *avCodecCtx = s->avCodecCtx;
+   AVFrame *avFrame = s->avFrame;
+-  AVPacket avPacket = s->avPacket;
+-#ifdef HAVE_AVRESAMPLE
+-  AVAudioResampleContext *avr = s->avr;
+-#elif defined(HAVE_SWRESAMPLE)
++#if FF_API_INIT_PACKET
++  AVPacket *avPacket = s->avPacket;
++#else
++  AVPacket *avPacket = &s->avPacket;
++#endif
+   SwrContext *avr = s->avr;
+-#endif /* HAVE_AVRESAMPLE || HAVE_SWRESAMPLE */
+   int got_frame = 0;
+-#ifdef HAVE_AVRESAMPLE
+-  int in_linesize = 0;
+-  int in_samples = avFrame->nb_samples;
+-  int out_linesize = 0;
+-  int max_out_samples = AUBIO_AVCODEC_MAX_BUFFER_SIZE;
+-  int out_samples = 0;
+-#elif defined(HAVE_SWRESAMPLE)
+   int in_samples = avFrame->nb_samples;
++#ifdef LIBAVUTIL_HAS_CH_LAYOUT
++  int max_out_samples = AUBIO_AVCODEC_MAX_BUFFER_SIZE / avCodecCtx->ch_layout.nb_channels;
++#else
+   int max_out_samples = AUBIO_AVCODEC_MAX_BUFFER_SIZE / avCodecCtx->channels;
++#endif
+   int out_samples = 0;
+-#endif /* HAVE_AVRESAMPLE || HAVE_SWRESAMPLE */
+   smpl_t *output = s->output;
+ #ifndef FF_API_LAVF_AVCTX
+   int len = 0;
+ #else
+   int ret = 0;
+ #endif
+-  av_init_packet (&avPacket);
++#ifndef FF_API_INIT_PACKET
++  av_init_packet (avPacket);
++#endif
+   *read_samples = 0;
+
+   do
+   {
+-    int err = av_read_frame (avFormatCtx, &avPacket);
++    int err = av_read_frame (avFormatCtx, avPacket);
+     if (err == AVERROR_EOF) {
+       s->eof = 1;
+       goto beach;
+@@ -396,10 +429,10 @@
+       s->eof = 1;
+       goto beach;
+     }
+-  } while (avPacket.stream_index != s->selected_stream);
++  } while (avPacket->stream_index != s->selected_stream);
+
+ #if FF_API_LAVF_AVCTX
+-  ret = avcodec_send_packet(avCodecCtx, &avPacket);
++  ret = avcodec_send_packet(avCodecCtx, avPacket);
+   if (ret < 0 && ret != AVERROR_EOF) {
+     AUBIO_ERR("source_avcodec: error when sending packet for %s\n", s->path);
+     goto beach;
+@@ -422,7 +455,7 @@
+     }
+   }
+ #else
+-  len = avcodec_decode_audio4(avCodecCtx, avFrame, &got_frame, &avPacket);
++  len = avcodec_decode_audio4(avCodecCtx, avFrame, &got_frame, avPacket);
+
+   if (len < 0) {
+     AUBIO_ERR("source_avcodec: error while decoding %s\n", s->path);
+@@ -436,33 +469,27 @@
+   }
+
+ #if LIBAVUTIL_VERSION_MAJOR > 52
+-  if (avFrame->channels != (sint_t)s->input_channels) {
++#ifdef LIBAVUTIL_HAS_CH_LAYOUT
++  int frame_channels = avFrame->ch_layout.nb_channels;
++#else
++  int frame_channels = avFrame->channels;
++#endif
++  if (frame_channels != (sint_t)s->input_channels) {
+     AUBIO_WRN ("source_avcodec: trying to read from %d channel(s),"
+         "but configured for %d; is '%s' corrupt?\n",
+-        avFrame->channels, s->input_channels, s->path);
++        frame_channels, s->input_channels, s->path);
+     goto beach;
+   }
+ #else
+ #warning "avutil < 53 is deprecated, crashes might occur on corrupt files"
+ #endif
+
+-#ifdef HAVE_AVRESAMPLE
+-  in_linesize = 0;
+-  av_samples_get_buffer_size(&in_linesize, avCodecCtx->channels,
+-      avFrame->nb_samples, avCodecCtx->sample_fmt, 1);
+   in_samples = avFrame->nb_samples;
+-  out_linesize = 0;
+   max_out_samples = AUBIO_AVCODEC_MAX_BUFFER_SIZE;
+-  out_samples = avresample_convert ( avr,
+-        (uint8_t **)&output, out_linesize, max_out_samples,
+-        (uint8_t **)avFrame->data, in_linesize, in_samples);
+-#elif defined(HAVE_SWRESAMPLE)
+-  in_samples = avFrame->nb_samples;
+-  max_out_samples = AUBIO_AVCODEC_MAX_BUFFER_SIZE / avCodecCtx->channels;
++  if (frame_channels > 0) max_out_samples /= frame_channels;
+   out_samples = swr_convert( avr,
+       (uint8_t **)&output, max_out_samples,
+       (const uint8_t **)avFrame->data, in_samples);
+-#endif /* HAVE_AVRESAMPLE || HAVE_SWRESAMPLE */
+   if (out_samples < 0) {
+     AUBIO_WRN("source_avcodec: error while resampling %s (%d)\n",
+         s->path, out_samples);
+@@ -472,7 +499,7 @@
+   *read_samples = out_samples;
+
+ beach:
+-  av_packet_unref(&avPacket);
++  av_packet_unref(avPacket);
+ }
+
+ void aubio_source_avcodec_do(aubio_source_avcodec_t * s, fvec_t * read_data,
+@@ -596,19 +623,13 @@
+   s->eof = 0;
+   s->read_index = 0;
+   s->read_samples = 0;
+-#ifdef HAVE_AVRESAMPLE
+-  // reset the AVAudioResampleContext
+-  avresample_close(s->avr);
+-  avresample_open(s->avr);
+-#elif defined(HAVE_SWRESAMPLE)
+   swr_close(s->avr);
+   swr_init(s->avr);
+-#endif
+   return ret;
+ }
+
+ uint_t aubio_source_avcodec_get_duration (aubio_source_avcodec_t * s) {
+-  if (s && &(s->avFormatCtx) != NULL) {
++  if (s && s->avFormatCtx != NULL) {
+     int64_t duration = s->avFormatCtx->duration;
+     return s->samplerate * ((uint_t)duration / 1e6 );
+   }
+@@ -617,13 +638,8 @@
+
+ uint_t aubio_source_avcodec_close(aubio_source_avcodec_t * s) {
+   if (s->avr != NULL) {
+-#ifdef HAVE_AVRESAMPLE
+-    avresample_close( s->avr );
+-    av_free ( s->avr );
+-#elif defined(HAVE_SWRESAMPLE)
+     swr_close ( s->avr );
+     swr_free ( &s->avr );
+-#endif
+   }
+   s->avr = NULL;
+   if (s->avCodecCtx != NULL) {
+@@ -638,7 +654,13 @@
+     avformat_close_input(&s->avFormatCtx);
+     s->avFormatCtx = NULL;
+   }
++#if FF_API_INIT_PACKET
++  if (s->avPacket) {
++    av_packet_unref(s->avPacket);
++  }
++#else
+   av_packet_unref(&s->avPacket);
++#endif
+   return AUBIO_OK;
+ }
+
+@@ -653,6 +675,12 @@
+     av_frame_free( &(s->avFrame) );
+   }
+   s->avFrame = NULL;
++#if FF_API_INIT_PACKET
++  if (s->avPacket != NULL) {
++    av_packet_free( &(s->avPacket) );
++  }
++  s->avPacket = NULL;
++#endif
+   if (s->path) {
+     AUBIO_FREE(s->path);
+   }
