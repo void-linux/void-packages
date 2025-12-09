@@ -367,7 +367,7 @@ The following variables are defined by `xbps-src` and can be used on any templat
 
 - `makejobs` Set to `-jX` if `XBPS_MAKEJOBS` is defined, to allow parallel jobs with `GNU make`.
 
-- `sourcepkg`  Set to the to main package name, can be used to match the main package
+- `sourcepkg`  Set to the main package name, can be used to match the main package
 rather than additional binary package names.
 
 - `CHROOT_READY`  Set if the target chroot (masterdir) is ready for chroot builds.
