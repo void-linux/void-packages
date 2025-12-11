@@ -1,0 +1,96 @@
+From b60d81745016b5f20d4c6aec6d073b8a6f3e499c Mon Sep 17 00:00:00 2001
+From: mike kowalski <michal_kowalski@hotmail.com>
+Date: Tue, 2 Sep 2025 07:17:25 -0700
+Subject: [PATCH] Fix build with poppler 25.09.0
+
+API changes: double* -> std::array necessitates fixes in Inkscape.
+The goal is to make it build with older poppler versions too.
+---
+ src/extension/internal/pdfinput/pdf-parser.cpp                | 3 +--
+ src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp | 2 +-
+ src/extension/internal/pdfinput/poppler-utils.cpp             | 4 ++++
+ src/extension/internal/pdfinput/poppler-utils.h               | 4 ++++
+ src/extension/internal/pdfinput/svg-builder.cpp               | 4 ++--
+ 5 files changed, 12 insertions(+), 5 deletions(-)
+
+--- a/src/extension/internal/pdfinput/pdf-parser.cpp
++++ b/src/extension/internal/pdfinput/pdf-parser.cpp
+@@ -1650,12 +1650,11 @@ void PdfParser::doFunctionShFill1(GfxFun
+   GfxColor color0M, color1M, colorM0, colorM1, colorMM;
+   GfxColor colors2[4];
+   double functionColorDelta = colorDeltas[pdfFunctionShading-1];
+-  const double *matrix;
+   double xM, yM;
+   int nComps, i, j;
+ 
+   nComps = shading->getColorSpace()->getNComps();
+-  matrix = shading->getMatrix();
++  const auto& matrix = shading->getMatrix();
+ 
+   // compare the four corner colors
+   for (i = 0; i < 4; ++i) {
+--- a/src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp
++++ b/src/extension/internal/pdfinput/poppler-cairo-font-engine.cpp
+@@ -632,7 +632,7 @@ static cairo_status_t _init_type3_glyph(
+ 
+     info = (type3_font_info_t *)cairo_font_face_get_user_data(cairo_scaled_font_get_font_face(scaled_font),
+                                                               &type3_font_key);
+-    const double *mat = info->font->getFontBBox();
++    const auto& mat = info->font->getFontBBox();
+     extents->ascent = mat[3];   /* y2 */
+     extents->descent = -mat[3]; /* -y1 */
+     extents->height = extents->ascent + extents->descent;
+--- a/src/extension/internal/pdfinput/poppler-utils.cpp
++++ b/src/extension/internal/pdfinput/poppler-utils.cpp
+@@ -38,6 +38,10 @@ Geom::Affine ctmToAffine(const double *c
+     return Geom::Affine(ctm[0], ctm[1], ctm[2], ctm[3], ctm[4], ctm[5]);
+ }
+ 
++Geom::Affine ctmToAffine(const std::array<double, 6>& ctm) {
++    return ctmToAffine(ctm.data());
++}
++
+ void ctmout(const char *label, const double *ctm)
+ {
+     std::cout << "C:" << label << ":" << ctm[0] << "," << ctm[1] << "," << ctm[2] << "," << ctm[3] << "," << ctm[4]
+--- a/src/extension/internal/pdfinput/poppler-utils.h
++++ b/src/extension/internal/pdfinput/poppler-utils.h
+@@ -13,6 +13,7 @@
+ #ifndef POPPLER_UTILS_H
+ #define POPPLER_UTILS_H
+ 
++#include <array>
+ #include <map>
+ #include <memory>
+ #include <string>
+@@ -36,7 +37,10 @@ class Ref;
+ class XRef;
+ 
+ Geom::Affine stateToAffine(GfxState *state);
++// this function is for Poppler older than v25.09.0
+ Geom::Affine ctmToAffine(const double *ctm);
++// this flavor is for Poppler v25.09.0 and above
++Geom::Affine ctmToAffine(const std::array<double, 6>& ctm);
+ 
+ void ctmout(const char *label, const double *ctm);
+ void affout(const char *label, Geom::Affine affine);
+--- a/src/extension/internal/pdfinput/svg-builder.cpp
++++ b/src/extension/internal/pdfinput/svg-builder.cpp
+@@ -1027,7 +1027,7 @@ gchar *SvgBuilder::_createTilingPattern(
+     pattern_node->setAttribute("patternUnits", "userSpaceOnUse");
+     // Set pattern tiling
+     // FIXME: don't ignore XStep and YStep
+-    const double *bbox = tiling_pattern->getBBox();
++    const auto& bbox = tiling_pattern->getBBox();
+     pattern_node->setAttributeSvgDouble("x", 0.0);
+     pattern_node->setAttributeSvgDouble("y", 0.0);
+     pattern_node->setAttributeSvgDouble("width", bbox[2] - bbox[0]);
+@@ -1257,7 +1257,7 @@ void SvgBuilder::updateFont(GfxState *st
+ 
+     auto new_font_size = state->getFontSize();
+     if (font->getType() == fontType3) {
+-        const double *font_matrix = font->getFontMatrix();
++        const auto& font_matrix = font->getFontMatrix();
+         if (font_matrix[0] != 0.0) {
+             new_font_size *= font_matrix[3] / font_matrix[0];
+         }
