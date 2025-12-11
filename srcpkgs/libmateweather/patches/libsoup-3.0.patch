@@ -1,24 +1,11 @@
-From 52487e56c267328d45f1867cef0e4f4d7e4e6aa7 Mon Sep 17 00:00:00 2001
+From 188583592f87043d0cd13f8239e9d099580e3c59 Mon Sep 17 00:00:00 2001
 From: Đoàn Trần Công Danh <congdanhqx@gmail.com>
 Date: Mon, 4 Mar 2024 23:47:37 +0700
-Subject: [PATCH] Port to libsoup-3.0
+Subject: [PATCH 1/2] Port to libsoup-3.0
 
 ---
- .build.yml                                   | 10 ++--
- configure.ac                                 |  6 ++-
- libmateweather/mateweather-uninstalled.pc.in |  2 +-
- libmateweather/mateweather.pc.in             |  2 +-
- libmateweather/weather-bom.c                 | 36 ++++++++-----
- libmateweather/weather-iwin.c                | 37 ++++++++-----
- libmateweather/weather-met.c                 | 34 ++++++++----
- libmateweather/weather-metar.c               | 56 ++++++++++++++------
- libmateweather/weather-priv.h                |  6 ++-
- libmateweather/weather-wx.c                  | 53 +++++++++---------
- libmateweather/weather.c                     |  7 +--
- 11 files changed, 156 insertions(+), 93 deletions(-)
-
 diff --git a/configure.ac b/configure.ac
-index 133108e..d9fcf9c 100644
+index e0ca7be..0e8b9ad 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -8,6 +8,7 @@ AC_CONFIG_AUX_DIR([build-aux])
@@ -317,10 +304,10 @@ index 164e9f2..7022abb 100644
  
      info->requests_pending++;
 diff --git a/libmateweather/weather-metar.c b/libmateweather/weather-metar.c
-index 7bc24fc..d470822 100644
+index 4698a07..a2d1f5f 100644
 --- a/libmateweather/weather-metar.c
 +++ b/libmateweather/weather-metar.c
-@@ -486,43 +486,60 @@ metar_parse (gchar *metar, WeatherInfo *info)
+@@ -486,43 +486,59 @@ metar_parse (gchar *metar, WeatherInfo *info)
  }
  
  static void
@@ -370,17 +357,16 @@ index 7bc24fc..d470822 100644
  
      loc = info->location;
  
-     searchkey = g_strdup_printf ("<raw_text>%s", loc->code);
--    p = strstr (msg->response_body->data, searchkey);
--    g_free (searchkey);
-+
 +    response_body = g_bytes_get_data (bytes, &len);
 +    end = response_body + len;
 +
+     searchkey = g_strdup_printf ("<raw_text>METAR %s", loc->code);
+-    p = strstr (msg->response_body->data, searchkey);
 +    p = xstrnstr (response_body, len, searchkey);
+     g_free (searchkey);
      if (p) {
          p += WEATHER_LOCATION_CODE_LEN + 11;
-         endtag = strstr (p, "</raw_text>");
+-        endtag = strstr (p, "</raw_text>");
 +        endtag = xstrnstr (p, end - p, "</raw_text>");
          if (endtag)
              metar = g_strndup (p, endtag - p);
@@ -394,7 +380,7 @@ index 7bc24fc..d470822 100644
          /* The response doesn't even seem to have come from NOAA...
           * most likely it is a wifi hotspot login page. Call that a
           * network error.
-@@ -531,7 +548,8 @@ metar_finish (SoupSession *session, SoupMessage *msg, gpointer data)
+@@ -531,7 +547,8 @@ metar_finish (SoupSession *session, SoupMessage *msg, gpointer data)
      }
  
      info->valid = success;
@@ -404,7 +390,7 @@ index 7bc24fc..d470822 100644
  }
  
  /* Read current conditions and fill in info structure */
-@@ -540,6 +558,7 @@ metar_start_open (WeatherInfo *info)
+@@ -540,6 +557,7 @@ metar_start_open (WeatherInfo *info)
  {
      WeatherLocation *loc;
      SoupMessage *msg;
@@ -412,23 +398,23 @@ index 7bc24fc..d470822 100644
  
      g_return_if_fail (info != NULL);
      info->valid = info->network_error = FALSE;
-@@ -549,8 +568,7 @@ metar_start_open (WeatherInfo *info)
+@@ -549,8 +567,7 @@ metar_start_open (WeatherInfo *info)
          return;
      }
  
 -    msg = soup_form_request_new (
--        "GET", "https://aviationweather.gov/cgi-bin/data/dataserver.php",
+-        "GET", "https://aviationweather.gov/api/data/dataserver",
 +    query = soup_form_encode (
          "dataSource", "metars",
          "requestType", "retrieve",
          "format", "xml",
-@@ -559,7 +577,11 @@ metar_start_open (WeatherInfo *info)
+@@ -559,7 +576,11 @@ metar_start_open (WeatherInfo *info)
          "fields", "raw_text",
          "stationString", loc->code,
          NULL);
 -    soup_session_queue_message (info->session, msg, metar_finish, info);
 +    msg = soup_message_new_from_encoded_form (
-+        "GET", "https://aviationweather.gov/cgi-bin/data/dataserver.php",
++        "GET", "https://aviationweather.gov/api/data/dataserver",
 +        query);
 +    soup_session_send_and_read_async (info->session, msg, G_PRIORITY_DEFAULT,
 +                                      NULL, metar_finish, info);

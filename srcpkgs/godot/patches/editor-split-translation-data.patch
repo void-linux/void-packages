@@ -1,0 +1,125 @@
+From c93f55533d3d81bdee8f60bf3c0f03141865b909 Mon Sep 17 00:00:00 2001
+From: Haoyu Qiu <timothyqiu32@gmail.com>
+Date: Wed, 17 Sep 2025 23:10:51 +0800
+Subject: [PATCH] Editor: Generate translation data in separate cpp files
+
+---
+ editor/SCsub              | 41 +++++++++++++--------------------------
+ editor/editor_builders.py | 29 +++++++++++++++++----------
+ 2 files changed, 33 insertions(+), 37 deletions(-)
+
+diff --git a/editor/SCsub b/editor/SCsub
+index 6e2f1f2a9660..8e7bb70e54ce 100644
+--- a/editor/SCsub
++++ b/editor/SCsub
+@@ -56,36 +56,23 @@ if env.editor_build:
+     # ratio (20% for the editor UI, 10% for the class reference).
+     # Generated with `make include-list` for each resource.
+ 
+-    # Editor translations
+-    env.CommandNoCache(
+-        "#editor/translations/editor_translations.gen.h",
+-        Glob("#editor/translations/editor/*"),
+-        env.Run(editor_builders.make_translations_header),
+-    )
+-
+-    # Property translations
+-    env.CommandNoCache(
+-        "#editor/translations/property_translations.gen.h",
+-        Glob("#editor/translations/properties/*"),
+-        env.Run(editor_builders.make_translations_header),
+-    )
+-
+-    # Documentation translations
+-    env.CommandNoCache(
+-        "#editor/translations/doc_translations.gen.h",
+-        Glob("#doc/translations/*"),
+-        env.Run(editor_builders.make_translations_header),
+-    )
+-
+-    # Extractable translations
+-    env.CommandNoCache(
+-        "#editor/translations/extractable_translations.gen.h",
+-        Glob("#editor/translations/extractable/*"),
+-        env.Run(editor_builders.make_translations_header),
+-    )
++    translation_targets = {
++        "#editor/translations/editor_translations.gen.cpp": Glob("#editor/translations/editor/*"),
++        "#editor/translations/property_translations.gen.cpp": Glob("#editor/translations/properties/*"),
++        "#editor/translations/doc_translations.gen.cpp": Glob("#doc/translations/*"),
++        "#editor/translations/extractable_translations.gen.cpp": Glob("#editor/translations/extractable/*"),
++    }
++    for target_cpp, sources in translation_targets.items():
++        target_h = os.path.splitext(target_cpp)[0] + ".h"
++        env.CommandNoCache(
++            [target_h, target_cpp],
++            sources,
++            env.Run(editor_builders.make_translations),
++        )
+ 
+     env.add_source_files(env.editor_sources, "*.cpp")
+     env.add_source_files(env.editor_sources, gen_exporters)
++    env.add_source_files(env.editor_sources, translation_targets.keys())
+ 
+     SConscript("animation/SCsub")
+     SConscript("asset_library/SCsub")
+diff --git a/editor/editor_builders.py b/editor/editor_builders.py
+index 7916130472ad..1eaab1018298 100644
+--- a/editor/editor_builders.py
++++ b/editor/editor_builders.py
+@@ -68,8 +68,10 @@ def make_doc_header(target, source, env):
+ """)
+ 
+ 
+-def make_translations_header(target, source, env):
+-    category = os.path.basename(str(target[0])).split("_")[0]
++def make_translations(target, source, env):
++    target_h, target_cpp = str(target[0]), str(target[1])
++
++    category = os.path.basename(target_h).split("_")[0]
+     sorted_paths = sorted([src.abspath for src in source], key=lambda path: os.path.splitext(os.path.basename(path))[0])
+ 
+     xl_names = []
+@@ -77,7 +79,7 @@ def make_translations_header(target, source, env):
+     if not msgfmt:
+         methods.print_warning("msgfmt not found, using .po files instead of .mo")
+ 
+-    with methods.generated_wrapper(str(target[0])) as file:
++    with methods.generated_wrapper(target_cpp) as file:
+         for path in sorted_paths:
+             name = os.path.splitext(os.path.basename(path))[0]
+             # msgfmt erases non-translated messages, so avoid using it if exporting the POT.
+@@ -120,14 +122,9 @@ def make_translations_header(target, source, env):
+             xl_names.append([name, len(buffer), decomp_size])
+ 
+         file.write(f"""\
+-struct {category.capitalize()}TranslationList {{
+-	const char* lang;
+-	int comp_size;
+-	int uncomp_size;
+-	const unsigned char* data;
+-}};
++#include "{target_h}"
+ 
+-inline constexpr {category.capitalize()}TranslationList _{category}_translations[] = {{
++const {category.capitalize()}TranslationList _{category}_translations[] = {{
+ """)
+ 
+         for x in xl_names:
+@@ -136,4 +133,16 @@ def make_translations_header(target, source, env):
+         file.write("""\
+ 	{ nullptr, 0, 0, nullptr },
+ };
++""")
++
++    with methods.generated_wrapper(target_h) as file:
++        file.write(f"""\
++struct {category.capitalize()}TranslationList {{
++	const char* lang;
++	int comp_size;
++	int uncomp_size;
++	const unsigned char* data;
++}};
++
++extern const {category.capitalize()}TranslationList _{category}_translations[];
+ """)

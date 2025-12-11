@@ -1,0 +1,624 @@
+From 8c4769e27b71ead73863c896ef9702add73cba8e Mon Sep 17 00:00:00 2001
+From: Luca Matei Pintilie <luca@lucamatei.com>
+Date: Tue, 29 Jul 2025 15:52:16 +0200
+Subject: [PATCH 1/2] Revert "Replace a useless shared_ptr by a unique_ptr"
+
+This reverts commit 248e25c22fc15105d2a9db695ddb93ed5a8e0802.
+
+In preparation for the botan 3 update `IrcClient` must be made into a
+`shared_ptr`, which will then allow us to pass a `shared_ptr` of
+callbacks to `Botan::TLS::Client`
+---
+ src/bridge/bridge.cpp | 10 +++++-----
+ src/bridge/bridge.hpp |  6 +++---
+ 2 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/src/bridge/bridge.cpp b/src/bridge/bridge.cpp
+index e7f334f..728a8d7 100644
+--- a/src/bridge/bridge.cpp
++++ b/src/bridge/bridge.cpp
+@@ -63,7 +63,7 @@ void Bridge::shutdown(const std::string& exit_message)
+ {
+   for (auto& pair: this->irc_clients)
+   {
+-    std::unique_ptr<IrcClient>& irc = pair.second;
++    std::shared_ptr<IrcClient>& irc = pair.second;
+     irc->send_quit_command(exit_message);
+   }
+ }
+@@ -134,11 +134,11 @@ IrcClient* Bridge::make_irc_client(const std::string& hostname, const std::strin
+           realname = this->get_bare_jid();
+         }
+       this->irc_clients.emplace(hostname,
+-                                std::make_unique<IrcClient>(this->poller, hostname,
++                                std::make_shared<IrcClient>(this->poller, hostname,
+                                                             nickname, username,
+                                                             realname, jid.domain,
+                                                             *this));
+-      std::unique_ptr<IrcClient>& irc = this->irc_clients.at(hostname);
++      std::shared_ptr<IrcClient> irc = this->irc_clients.at(hostname);
+       return irc.get();
+     }
+ }
+@@ -1146,12 +1146,12 @@ void Bridge::trigger_on_irc_message(const std::string& irc_hostname, const IrcMe
+     }
+ }
+ 
+-std::unordered_map<std::string, std::unique_ptr<IrcClient>>& Bridge::get_irc_clients()
++std::unordered_map<std::string, std::shared_ptr<IrcClient>>& Bridge::get_irc_clients()
+ {
+   return this->irc_clients;
+ }
+ 
+-const std::unordered_map<std::string, std::unique_ptr<IrcClient>>& Bridge::get_irc_clients() const
++const std::unordered_map<std::string, std::shared_ptr<IrcClient>>& Bridge::get_irc_clients() const
+ {
+   return this->irc_clients;
+ }
+diff --git a/src/bridge/bridge.hpp b/src/bridge/bridge.hpp
+index a7aef3d..e9e5473 100644
+--- a/src/bridge/bridge.hpp
++++ b/src/bridge/bridge.hpp
+@@ -226,8 +226,8 @@ public:
+    * iq_responder_callback_t and remove the callback from the list.
+    */
+   void trigger_on_irc_message(const std::string& irc_hostname, const IrcMessage& message);
+-  std::unordered_map<std::string, std::unique_ptr<IrcClient>>& get_irc_clients();
+-  const std::unordered_map<std::string, std::unique_ptr<IrcClient>>& get_irc_clients() const;
++  std::unordered_map<std::string, std::shared_ptr<IrcClient>>& get_irc_clients();
++  const std::unordered_map<std::string, std::shared_ptr<IrcClient>>& get_irc_clients() const;
+   std::set<char> get_chantypes(const std::string& hostname) const;
+ #ifdef USE_DATABASE
+   void set_record_history(const bool val);
+@@ -260,7 +260,7 @@ private:
+    * One IrcClient for each IRC server we need to be connected to.
+    * The pointer is shared by the bridge and the poller.
+    */
+-  std::unordered_map<std::string, std::unique_ptr<IrcClient>> irc_clients;
++  std::unordered_map<std::string, std::shared_ptr<IrcClient>> irc_clients;
+   /**
+    * To communicate back with the XMPP component
+    */
+-- 
+2.47.3
+
+
+From e4d32f939240ed726e9981e42c0dc251cd9879da Mon Sep 17 00:00:00 2001
+From: Luca Matei Pintilie <luca@lucamatei.com>
+Date: Mon, 28 Jul 2025 12:10:58 +0200
+Subject: [PATCH 2/2] biboumi: Update botan to version 3
+
+The botan dependency has introduced a number of breaking changes with
+version 3, a couple of which impact biboumi as well
+
+This patch makes biboumi compatible with botan 3 and drops support for
+botan 2 at the same time
+
+As a consequence of the botan dependency update, C++ version has to be
+upgraded to C++ 20
+
+https://botan.randombit.net/handbook/migration_guide.html
+---
+ CMakeLists.txt                      |  2 +-
+ README.rst                          |  2 +-
+ cmake/Modules/FindBOTAN.cmake       | 81 ++++++++++++++++++-----------
+ doc/install.rst                     |  4 +-
+ docker/test/alpine/Dockerfile       |  2 +-
+ docker/test/debian/Dockerfile       |  2 +-
+ docker/test/fedora/Dockerfile       |  1 +
+ src/irc/irc_client.cpp              |  2 +-
+ src/network/credentials_manager.cpp |  2 +-
+ src/network/credentials_manager.hpp |  2 +-
+ src/network/tcp_socket_handler.cpp  | 59 +++++++++++----------
+ src/network/tcp_socket_handler.hpp  | 15 +++---
+ src/network/tls_policy.cpp          | 55 +++++++++++++++++++-
+ src/network/tls_policy.hpp          |  6 +++
+ 14 files changed, 161 insertions(+), 74 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4755f78..387d8df 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -30,7 +30,7 @@ find_library(LIBUBSAN NAMES ubsan libubsan.so.0)
+ #
+ ## Set various debug flags (instrumentation libs, coverage, …)
+ #
+-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1y -pedantic -Wall -Wextra -Wconversion -fvisibility=hidden -fvisibility-inlines-hidden")
++set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -pedantic -Wall -Wextra -Wconversion -fvisibility=hidden -fvisibility-inlines-hidden")
+ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fprofile-arcs -ftest-coverage --coverage")
+ endif()
+diff --git a/README.rst b/README.rst
+index b23d46d..895e277 100644
+--- a/README.rst
++++ b/README.rst
+@@ -5,7 +5,7 @@ Biboumi is an XMPP gateway that connects to IRC servers and translates
+ between the two protocols. It can be used to access IRC channels using any
+ XMPP client as if these channels were XMPP MUCs.
+ 
+-It is written in modern C++14 and makes great efforts to have as little
++It is written in modern C++20 and makes great efforts to have as little
+ dependencies and to be as simple as possible.
+ 
+ The goal is to provide a way to access most of IRC features using any XMPP
+diff --git a/cmake/Modules/FindBOTAN.cmake b/cmake/Modules/FindBOTAN.cmake
+index 3f223e2..d63996b 100644
+--- a/cmake/Modules/FindBOTAN.cmake
++++ b/cmake/Modules/FindBOTAN.cmake
+@@ -5,40 +5,63 @@
+ #   BOTAN_FOUND  -  True if library and include directory are found
+ # If set to TRUE, the following are also defined:
+ #   BOTAN_INCLUDE_DIRS  -  The directory where to find the header file
+-#   BOTAN_LIBRARIES  -  Where to find the library file
+-#
+-# For conveniance, these variables are also set. They have the same values
+-# than the variables above.  The user can thus choose his/her prefered way
+-# to write them.
+-#   BOTAN_LIBRARY
+-#   BOTAN_INCLUDE_DIR
++#   BOTAN_LIBRARIES  -  Where to find the library files
+ #
+ # This file is in the public domain
++# Copied and modified from
++# https://github.com/vistle/vistle/blob/master/cmake/Modules/FindBOTAN.cmake
+ 
+-include(FindPkgConfig)
++include(FindPackageHandleStandardArgs)
+ 
+-if(NOT BOTAN_FOUND)
+-  pkg_check_modules(BOTAN botan-2)
++set(BOTAN_VERSIONS botan-3)
++set(BOTAN_NAMES botan-3 botan)
++set(BOTAN_NAMES_DEBUG botand-3 botand)
++
++find_path(
++    BOTAN_INCLUDE_DIR
++    NAMES botan/build.h
++    PATH_SUFFIXES ${BOTAN_VERSIONS}
++    DOC "The Botan include directory")
++if(BOTAN_INCLUDE_DIR)
++    file(READ "${BOTAN_INCLUDE_DIR}/botan/build.h" build)
++    string(REGEX MATCH "BOTAN_VERSION_MAJOR ([0-9]*)" _ ${build})
++    set(BOTAN_VERSION_MAJOR ${CMAKE_MATCH_1})
++    string(REGEX MATCH "BOTAN_VERSION_MINOR ([0-9]*)" _ ${build})
++    set(BOTAN_VERSION_MINOR ${CMAKE_MATCH_1})
++    string(REGEX MATCH "BOTAN_VERSION_PATCH ([0-9]*)" _ ${build})
++    set(BOTAN_VERSION_PATCH ${CMAKE_MATCH_1})
++    set(BOTAN_VERSION "${BOTAN_VERSION_MAJOR}.${BOTAN_VERSION_MINOR}.${BOTAN_VERSION_PATCH}")
+ endif()
+ 
+-if(NOT BOTAN_FOUND)
+-  find_path(BOTAN_INCLUDE_DIRS NAMES botan/botan.h
+-      PATH_SUFFIXES botan-2
+-      DOC "The botan include directory")
+-
+-  find_library(BOTAN_LIBRARIES NAMES botan botan-2
+-      DOC "The botan library")
+-
+-  # Use some standard module to handle the QUIETLY and REQUIRED arguments, and
+-  # set BOTAN_FOUND to TRUE if these two variables are set.
+-  include(FindPackageHandleStandardArgs)
+-  find_package_handle_standard_args(BOTAN REQUIRED_VARS BOTAN_LIBRARIES BOTAN_INCLUDE_DIRS)
+-
+-  if(BOTAN_FOUND)
+-    set(BOTAN_LIBRARY ${BOTAN_LIBRARIES} CACHE INTERNAL "")
+-    set(BOTAN_INCLUDE_DIR ${BOTAN_INCLUDE_DIRS} CACHE INTERNAL "")
+-    set(BOTAN_FOUND ${BOTAN_FOUND} CACHE INTERNAL "")
+-  endif()
++find_library(
++    BOTAN_LIBRARY
++    NAMES ${BOTAN_NAMES}
++    PATH_SUFFIXES release/lib lib
++    DOC "The Botan (release) library")
++if(MSVC)
++    find_library(
++        BOTAN_LIBRARY_DEBUG
++        NAMES ${BOTAN_NAMES_DEBUG}
++        PATH_SUFFIXES debug/lib lib
++        DOC "The Botan debug library")
++    find_package_handle_standard_args(
++        BOTAN
++        REQUIRED_VARS BOTAN_LIBRARY BOTAN_LIBRARY_DEBUG BOTAN_INCLUDE_DIR
++        VERSION_VAR BOTAN_VERSION)
++else()
++    find_package_handle_standard_args(
++        BOTAN
++        REQUIRED_VARS BOTAN_LIBRARY BOTAN_INCLUDE_DIR
++        VERSION_VAR BOTAN_VERSION)
+ endif()
+ 
+-mark_as_advanced(BOTAN_INCLUDE_DIRS BOTAN_LIBRARIES)
++if(BOTAN_FOUND)
++    set(BOTAN_INCLUDE_DIRS ${BOTAN_INCLUDE_DIR})
++    if(MSVC)
++        set(BOTAN_LIBRARIES optimized ${BOTAN_LIBRARY} debug ${BOTAN_LIBRARY_DEBUG})
++    else()
++        set(BOTAN_LIBRARIES ${BOTAN_LIBRARY})
++    endif()
++endif()
++
++mark_as_advanced(BOTAN_INCLUDE_DIR BOTAN_LIBRARY BOTAN_LIBRARY_DEBUG)
+diff --git a/doc/install.rst b/doc/install.rst
+index 685511d..743647d 100644
+--- a/doc/install.rst
++++ b/doc/install.rst
+@@ -20,7 +20,7 @@ biboumi by having all dependencies.
+ Tools:
+ ~~~~~~
+ 
+-- A C++14 compiler (clang >= 3.4 or gcc >= 5.0 for example)
++- A C++20 compiler (clang >= 14 or gcc >= 11.2 for example)
+ - CMake
+ - sphinx (optional) to build the documentation
+ 
+@@ -51,7 +51,7 @@ udns_ (optional, but recommended)
+  performances when connecting to a big number of IRC servers at the same
+  time.
+ 
+-libbotan_ 2.x (optional, but recommended)
++libbotan_ 3.x (optional, but recommended)
+  Provides TLS support. Without it, IRC connections are all made in
+  plain-text mode.
+ 
+diff --git a/docker/test/alpine/Dockerfile b/docker/test/alpine/Dockerfile
+index ac1ecb1..8ce5d4d 100644
+--- a/docker/test/alpine/Dockerfile
++++ b/docker/test/alpine/Dockerfile
+@@ -16,7 +16,7 @@ udns-dev \
+ expat-dev \
+ libidn-dev \
+ sqlite-dev \
+-botan-dev \
++botan3-dev \
+ util-linux-dev \
+ libgcrypt-dev \
+ postgresql-dev \
+diff --git a/docker/test/debian/Dockerfile b/docker/test/debian/Dockerfile
+index 98e8dd8..3483c2d 100644
+--- a/docker/test/debian/Dockerfile
++++ b/docker/test/debian/Dockerfile
+@@ -16,7 +16,7 @@ libudns-dev \
+ libexpat1-dev \
+ libidn11-dev \
+ libsqlite3-dev \
+-libbotan-2-dev \
++libbotan-3-dev \
+ libsystemd-dev \
+ uuid-dev \
+ libgcrypt20-dev \
+diff --git a/docker/test/fedora/Dockerfile b/docker/test/fedora/Dockerfile
+index 237af15..a74ab9d 100644
+--- a/docker/test/fedora/Dockerfile
++++ b/docker/test/fedora/Dockerfile
+@@ -5,6 +5,7 @@ FROM fedora:latest
+ 
+ ENV LC_ALL=C.UTF-8
+ 
++# TODO: upgrade to botan3
+ RUN dnf --refresh install -y \
+ git \
+ make \
+diff --git a/src/irc/irc_client.cpp b/src/irc/irc_client.cpp
+index 719ab6a..ce1c945 100644
+--- a/src/irc/irc_client.cpp
++++ b/src/irc/irc_client.cpp
+@@ -213,7 +213,7 @@ void IrcClient::start()
+   auto options = Database::get_irc_server_options(this->bridge.get_bare_jid(),
+                                                   this->get_hostname());
+ # ifdef BOTAN_FOUND
+-  this->credential_manager.set_trusted_fingerprint(options.col<Database::TrustedFingerprint>());
++  this->credential_manager->set_trusted_fingerprint(options.col<Database::TrustedFingerprint>());
+ # endif
+   if (Config::get("fixed_irc_server", "").empty() &&
+       !options.col<Database::Address>().empty())
+diff --git a/src/network/credentials_manager.cpp b/src/network/credentials_manager.cpp
+index 47f8514..a692b43 100644
+--- a/src/network/credentials_manager.cpp
++++ b/src/network/credentials_manager.cpp
+@@ -39,7 +39,7 @@ const std::string& BasicCredentialsManager::get_trusted_fingerprint() const
+ }
+ 
+ void check_tls_certificate(const std::vector<Botan::X509_Certificate>& certs,
+-                           const std::string& hostname, const std::string& trusted_fingerprint,
++                           const std::string_view hostname, const std::string& trusted_fingerprint,
+                            const std::exception_ptr& exc)
+ {
+ 
+diff --git a/src/network/credentials_manager.hpp b/src/network/credentials_manager.hpp
+index 210a628..4b87d67 100644
+--- a/src/network/credentials_manager.hpp
++++ b/src/network/credentials_manager.hpp
+@@ -19,7 +19,7 @@ class TCPSocketHandler;
+  * on a trusted fingerprint.
+  */
+ void check_tls_certificate(const std::vector<Botan::X509_Certificate>& certs,
+-                           const std::string& hostname, const std::string& trusted_fingerprint,
++                           const std::string_view hostname, const std::string& trusted_fingerprint,
+                            const std::exception_ptr& exc);
+ 
+ class BasicCredentialsManager: public Botan::Credentials_Manager
+diff --git a/src/network/tcp_socket_handler.cpp b/src/network/tcp_socket_handler.cpp
+index 5e4ae30..25adad4 100644
+--- a/src/network/tcp_socket_handler.cpp
++++ b/src/network/tcp_socket_handler.cpp
+@@ -16,23 +16,29 @@
+ # include <botan/hex.h>
+ # include <botan/auto_rng.h>
+ # include <botan/tls_exceptn.h>
++# include <botan/tls_session_manager_memory.h>
++# include <botan/tls_session_manager_hybrid.h>
+ # include <config/config.hpp>
+ # include <utils/dirname.hpp>
+ 
+ namespace
+ {
+-    Botan::AutoSeeded_RNG& get_rng()
++    std::shared_ptr<Botan::RandomNumberGenerator>& get_rng()
+     {
+-      static Botan::AutoSeeded_RNG rng{};
++      static std::shared_ptr<Botan::RandomNumberGenerator> rng;
++
++      if (!rng)
++        rng = std::make_shared<Botan::AutoSeeded_RNG>();
+       return rng;
+     }
+-    Botan::TLS::Session_Manager_In_Memory& get_session_manager()
++    std::shared_ptr<Botan::TLS::Session_Manager>& get_session_manager(std::shared_ptr<BasicCredentialsManager> creds)
+     {
+-      static Botan::TLS::Session_Manager_In_Memory session_manager{get_rng()};
+-#if BOTAN_VERSION_CODE < BOTAN_VERSION_CODE_FOR(2,4,0)
+-      // workaround for https://github.com/randombit/botan/issues/1276
+-      session_manager.remove_all();
+-#endif
++      static std::shared_ptr<Botan::TLS::Session_Manager> session_manager;
++
++      if (!session_manager)
++        session_manager = std::make_shared<Botan::TLS::Session_Manager_Hybrid>(
++            std::make_unique<Botan::TLS::Session_Manager_In_Memory>(get_rng()),
++            creds, get_rng());
+       return session_manager;
+     }
+ }
+@@ -50,7 +56,8 @@ TCPSocketHandler::TCPSocketHandler(std::shared_ptr<Poller>& poller):
+   SocketHandler(poller, -1),
+   use_tls(false)
+ #ifdef BOTAN_FOUND
+-  ,credential_manager()
++  ,credential_manager(std::make_shared<BasicCredentialsManager>())
++  ,policy(std::make_shared<BiboumiTLSPolicy>())
+ #endif
+ {}
+ 
+@@ -242,11 +249,11 @@ void TCPSocketHandler::start_tls(const std::string& address, const std::string&
+   auto policy_directory = Config::get("policy_directory", utils::dirname(Config::get_filename()));
+   if (!policy_directory.empty() && policy_directory[policy_directory.size()-1] != '/')
+     policy_directory += '/';
+-  this->policy.load(policy_directory + "policy.txt");
+-  this->policy.load(policy_directory + address + ".policy.txt");
++  this->policy->load(policy_directory + "policy.txt");
++  this->policy->load(policy_directory + address + ".policy.txt");
+   this->tls = std::make_unique<Botan::TLS::Client>(
+-      *this,
+-      get_session_manager(), this->credential_manager, this->policy,
++      shared_from_this(),
++      get_session_manager(this->credential_manager), this->credential_manager, this->policy,
+       get_rng(), server_info, Botan::TLS::Protocol_Version::latest_tls_version());
+ }
+ 
+@@ -298,17 +305,16 @@ void TCPSocketHandler::tls_send(std::string&& data)
+                          std::make_move_iterator(data.end()));
+ }
+ 
+-void TCPSocketHandler::tls_record_received(uint64_t, const Botan::byte *data, size_t size)
++void TCPSocketHandler::tls_record_received(uint64_t, std::span<const uint8_t> data)
+ {
+-  this->in_buf += std::string(reinterpret_cast<const char*>(data),
+-                              size);
++  this->in_buf += std::string(data.begin(), data.end());
+   if (!this->in_buf.empty())
+-    this->parse_in_buffer(size);
++    this->parse_in_buffer(data.size());
+ }
+ 
+-void TCPSocketHandler::tls_emit_data(const Botan::byte *data, size_t size)
++void TCPSocketHandler::tls_emit_data(std::span<const uint8_t> data)
+ {
+-  this->raw_send(std::string(reinterpret_cast<const char*>(data), size));
++  this->raw_send(std::string(data.begin(), data.end()));
+ }
+ 
+ void TCPSocketHandler::tls_alert(Botan::TLS::Alert alert)
+@@ -316,25 +322,24 @@ void TCPSocketHandler::tls_alert(Botan::TLS::Alert alert)
+   log_debug("tls_alert: ", alert.type_string());
+ }
+ 
+-bool TCPSocketHandler::tls_session_established(const Botan::TLS::Session& session)
++void TCPSocketHandler::tls_session_established(const Botan::TLS::Session_Summary& session)
+ {
+   log_debug("Handshake with ", session.server_info().hostname(), " complete.",
+             " Version: ", session.version().to_string(),
+             " using ", session.ciphersuite().to_string());
+   if (!session.session_id().empty())
+     log_debug("Session ID ", Botan::hex_encode(session.session_id()));
+-  if (!session.session_ticket().empty())
+-    log_debug("Session ticket ", Botan::hex_encode(session.session_ticket()));
+-  return true;
++  if (session.session_ticket().has_value())
++    log_debug("Session ticket ", Botan::hex_encode(*session.session_ticket()));
+ }
+ 
+ void TCPSocketHandler::tls_verify_cert_chain(const std::vector<Botan::X509_Certificate>& cert_chain,
+-                                             const std::vector<std::shared_ptr<const Botan::OCSP::Response>>& ocsp_responses,
++                                             const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
+                                              const std::vector<Botan::Certificate_Store*>& trusted_roots,
+-                                             Botan::Usage_Type usage, const std::string& hostname,
++                                             Botan::Usage_Type usage, std::string_view hostname,
+                                              const Botan::TLS::Policy& policy)
+ {
+-  if (!this->policy.verify_certificate)
++  if (!this->policy->verify_certificate)
+     {
+       log_debug("Not verifying certificate due to domain policy ");
+       return;
+@@ -352,7 +357,7 @@ void TCPSocketHandler::tls_verify_cert_chain(const std::vector<Botan::X509_Certi
+       if (this->abort_on_invalid_cert())
+         exception_ptr = std::current_exception();
+ 
+-      check_tls_certificate(cert_chain, hostname, this->credential_manager.get_trusted_fingerprint(), exception_ptr);
++      check_tls_certificate(cert_chain, hostname, this->credential_manager->get_trusted_fingerprint(), exception_ptr);
+     }
+ }
+ 
+diff --git a/src/network/tcp_socket_handler.hpp b/src/network/tcp_socket_handler.hpp
+index b12ae57..3c6f346 100644
+--- a/src/network/tcp_socket_handler.hpp
++++ b/src/network/tcp_socket_handler.hpp
+@@ -30,6 +30,7 @@
+  * But doesn’t do any connect() or accept() or anything else.
+  */
+ class TCPSocketHandler: public SocketHandler
++    ,public std::enable_shared_from_this<TCPSocketHandler>
+ #ifdef BOTAN_FOUND
+     ,public Botan::TLS::Callbacks
+ #endif
+@@ -137,12 +138,12 @@ private:
+    * Called by the tls object that some data has been decrypt. We call
+    * parse_in_buffer() to handle that unencrypted data.
+    */
+-  void tls_record_received(uint64_t rec_no, const Botan::byte* data, size_t size) override final;
++  void tls_record_received(uint64_t rec_no, std::span<const uint8_t> data) override final;
+   /**
+    * Called by the tls object to indicate that some data has been encrypted
+    * and is now ready to be sent on the socket as is.
+    */
+-  void tls_emit_data(const Botan::byte* data, size_t size) override final;
++  void tls_emit_data(std::span<const uint8_t> data) override final;
+   /**
+    * Called by the tls object to indicate that a TLS alert has been
+    * received. We don’t use it, we just log some message, at the moment.
+@@ -152,13 +153,13 @@ private:
+    * Called by the tls object at the end of the TLS handshake. We don't do
+    * anything here appart from logging the TLS session information.
+    */
+-  bool tls_session_established(const Botan::TLS::Session& session) override final;
++  void tls_session_established(const Botan::TLS::Session_Summary& session) override final;
+ 
+   void tls_verify_cert_chain(const std::vector<Botan::X509_Certificate>& cert_chain,
+-                             const std::vector<std::shared_ptr<const Botan::OCSP::Response>>& ocsp_responses,
++                             const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
+                              const std::vector<Botan::Certificate_Store*>& trusted_roots,
+                              Botan::Usage_Type usage,
+-                             const std::string& hostname,
++                             std::string_view hostname,
+                              const Botan::TLS::Policy& policy) override final;
+   /**
+    * Called whenever the tls session goes from inactive to active. This
+@@ -203,9 +204,9 @@ protected:
+ 
+ #ifdef BOTAN_FOUND
+ protected:
+-  BasicCredentialsManager credential_manager;
++  std::shared_ptr<BasicCredentialsManager> credential_manager;
+ private:
+-  BiboumiTLSPolicy policy;
++  std::shared_ptr<BiboumiTLSPolicy> policy;
+   /**
+    * We use a unique_ptr because we may not want to create the object at
+    * all. The Botan::TLS::Client object generates a handshake message and
+diff --git a/src/network/tls_policy.cpp b/src/network/tls_policy.cpp
+index f32557e..20699cf 100644
+--- a/src/network/tls_policy.cpp
++++ b/src/network/tls_policy.cpp
+@@ -8,7 +8,6 @@
+ 
+ #include <network/tls_policy.hpp>
+ #include <logger/logger.hpp>
+-#include <botan/parsing.h>
+ #include <botan/exceptn.h>
+ 
+ bool BiboumiTLSPolicy::load(const std::string& filename)
+@@ -31,7 +30,7 @@ bool BiboumiTLSPolicy::load(const std::string& filename)
+ 
+ void BiboumiTLSPolicy::load(std::istream& is)
+ {
+-  const auto dict = Botan::read_cfg(is);
++  const auto dict = BiboumiTLSPolicy::read_cfg(is);
+   for (const auto& pair: dict)
+     {
+       // Workaround for options that are not overridden in Botan::TLS::Text_Policy
+@@ -49,4 +48,56 @@ bool BiboumiTLSPolicy::require_cert_revocation_info() const
+   return this->req_cert_revocation_info;
+ }
+ 
++std::map<std::string, std::string> BiboumiTLSPolicy::read_cfg(std::istream& is) {
++   std::map<std::string, std::string> kv;
++   size_t line = 0;
++
++   while(is.good()) {
++      std::string s;
++
++      std::getline(is, s);
++
++      ++line;
++
++      if(s.empty() || s[0] == '#') {
++         continue;
++      }
++
++      s = clean_ws(s.substr(0, s.find('#')));
++
++      if(s.empty()) {
++         continue;
++      }
++
++      auto eq = s.find('=');
++
++      if(eq == std::string::npos || eq == 0 || eq == s.size() - 1) {
++         throw Botan::Decoding_Error("Bad read_cfg input '" + s + "' on line " + std::to_string(line));
++      }
++
++      const std::string key = BiboumiTLSPolicy::clean_ws(s.substr(0, eq));
++      const std::string val = BiboumiTLSPolicy::clean_ws(s.substr(eq + 1, std::string::npos));
++
++      kv[key] = val;
++   }
++
++   return kv;
++}
++
++std::string BiboumiTLSPolicy::clean_ws(std::string_view s) {
++   const char* ws = " \t\n";
++   auto start = s.find_first_not_of(ws);
++   auto end = s.find_last_not_of(ws);
++
++   if(start == std::string::npos) {
++      return "";
++   }
++
++   if(end == std::string::npos) {
++      return std::string(s.substr(start, end));
++   } else {
++      return std::string(s.substr(start, start + end + 1));
++   }
++}
++
+ #endif
+diff --git a/src/network/tls_policy.hpp b/src/network/tls_policy.hpp
+index e915646..052dd9c 100644
+--- a/src/network/tls_policy.hpp
++++ b/src/network/tls_policy.hpp
+@@ -24,6 +24,12 @@ public:
+   bool verify_certificate{true};
+ protected:
+   bool req_cert_revocation_info{true};
++private:
++  // Copied from botan-3's src/lib/utils/read_cfg.cpp
++  // These were made internal in v3, but they are in use by biboumi so they have
++  // to be vendored in
++  static std::map<std::string, std::string> read_cfg(std::istream& is);
++  static std::string clean_ws(std::string_view s);
+ };
+ 
+ #endif
+-- 
+2.47.3

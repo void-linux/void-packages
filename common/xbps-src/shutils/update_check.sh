@@ -94,6 +94,9 @@ update_check() {
                     dirpfx="${match##*/}"
                     urlsfx="${url#$urlpfx}"
                     urlsfx="${urlsfx#*/}"
+                    case "$urlpfx" in
+                        *download.qt.io*) urlpfx="${urlpfx%/*/}/" ;;
+                    esac
                     rx="href=[\"']?(\\Q$urlpfx\\E)?\\.?/?\\K\\Q$dirpfx\\E[-_.0-9]*[0-9]($vdsfx)[\"'/]"
                 fi
                 ;;
@@ -103,9 +106,17 @@ update_check() {
             msg_verbose "(folder) fetching $urlpfx and scanning with $rx\n"
             skipdirs=
             curl "${curlargs[@]}" "$urlpfx" |
-                grep -Po -i "$rx" |
-                # sort -V places 1.1/ before 1/, but 1A/ before 1.1A/
-                sed -e 's:$:A:' -e 's:/A$:A/:' | sort -Vru | sed -e 's:A/$:/A:' -e 's:A$::' |
+            grep -Po -i "$rx" |
+            # sort -V places 1.1/ before 1/, but 1A/ before 1.1A/
+            sed -e 's:$:A:' -e 's:/A$:A/:' | sort -Vru |
+            sed -e 's:A/$:/A:' -e 's:A$::' |
+            case "$urlpfx" in
+            *download.qt.io*)
+                while IFS= read -r newver; do
+                    printf '%s\n' "${urlpfx}${newver}"
+                done
+                ;;
+            *)
                 while IFS= read -r newver; do
                     newurl="${urlpfx}${newver}${urlsfx}"
                     if [ "$newurl" = "$url" ]; then
@@ -115,6 +126,8 @@ update_check() {
                         printf '%s\n' "$newurl"
                     fi
                 done
+                ;;
+            esac
         fi
     done |
     while IFS= read -r url; do
@@ -193,6 +206,8 @@ update_check() {
                 pkgname="${pkgname#sil-}"
                 _pkgname="${pkgname//-/}"
                 rx="($_pkgname|${_pkgname}SIL)[_-]\K[0-9.]+(?=\.tar|\.zip)" ;;
+            *download.qt.io*)
+                rx="((?<=href=\")[0-9.]+(?=/\">[0-9.]+/)|(?<=$pkgname-)[0-9.]+(?=\.tar))";;
             esac
         fi
 

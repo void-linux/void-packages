@@ -76,6 +76,12 @@ exec /usr/lib/qt6/bin/qmake "\$@" -qtconf "${XBPS_WRAPPERDIR}/qt6.conf" \\
 	QMAKE_CXXFLAGS+="\${CXXFLAGS}" \\
 	QMAKE_LFLAGS+="\${LDFLAGS}"
 _EOF
+	cat > "${XBPS_WRAPPERDIR}/qtpaths6" <<-_EOF
+	#!/bin/sh
+	exec /usr/lib/qt6/bin/qtpaths6 "\$@" -qtconf "${XBPS_WRAPPERDIR}/qt6.conf"
+	_EOF
+	chmod +x "${XBPS_WRAPPERDIR}/qtpaths6"
+	cp -p ${XBPS_WRAPPERDIR}/qtpaths{6,-qt6}
 else
         cat > "${XBPS_WRAPPERDIR}/qmake6" <<_EOF
 #!/bin/sh
@@ -91,6 +97,8 @@ exec /usr/lib/qt6/bin/qmake \
 	QMAKE_LFLAGS+="\${LDFLAGS}" \
 	CONFIG+=no_qt_rpath
 _EOF
+	ln -sf /usr/lib/qt6/bin/qtpaths6 "$XBPS_WRAPPERDIR/qtpaths6"
+	ln -sf /usr/lib/qt6/bin/qtpaths6 "$XBPS_WRAPPERDIR/qtpaths-qt6"
 fi
 chmod 755 ${XBPS_WRAPPERDIR}/qmake6
 cp -p ${XBPS_WRAPPERDIR}/qmake{6,-qt6}

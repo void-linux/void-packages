@@ -1,0 +1,88 @@
+--- a/sources/shiboken6/ApiExtractor/clangparser/compilersupport.cpp
++++ b/sources/shiboken6/ApiExtractor/clangparser/compilersupport.cpp
+@@ -72,7 +72,9 @@ bool parseCompiler(QStringView name, Com
+     *c = hostCompiler();
+     if (name.compare("msvc"_L1, Qt::CaseInsensitive) == 0)
+         *c = Compiler::Msvc;
+-    else if (name.compare("g++"_L1, Qt::CaseInsensitive) == 0 || name.compare("gnu"_L1, Qt::CaseInsensitive) == 0)
++    else if (name.compare("g++"_L1, Qt::CaseInsensitive) == 0 ||
++             name.startsWith("gnu"_L1, Qt::CaseInsensitive) ||
++             name.startsWith("musl"_L1, Qt::CaseInsensitive))
+         *c = Compiler::Gpp;
+     else if (name.compare("clang"_L1, Qt::CaseInsensitive) == 0)
+         *c = Compiler::Clang;
+@@ -215,7 +217,9 @@ static Architecture parseArchitecture(QS
+         || a.compare("i686"_L1, Qt::CaseInsensitive) == 0) {
+         return Architecture::X86;
+     }
+-    if (a.startsWith("armv7"_L1, Qt::CaseInsensitive))
++    if (a.startsWith("armv7"_L1, Qt::CaseInsensitive)
++        || a.startsWith("armv6"_L1, Qt::CaseInsensitive)
++        || a.compare("arm"_L1, Qt::CaseInsensitive) == 0)
+         return Architecture::Arm32;
+     if (a.startsWith("arm"_L1, Qt::CaseInsensitive)
+         || a.startsWith("aarch64"_L1, Qt::CaseInsensitive)) {
+@@ -225,6 +229,7 @@ static Architecture parseArchitecture(QS
+ }
+ 
+ static Architecture _architecture = hostArchitecture();
++static QString _triplet;
+ 
+ Architecture architecture()
+ {
+@@ -234,6 +239,17 @@ Architecture architecture()
+ bool setArchitecture(const QString &name)
+ {
+     setOptions.setFlag(ArchitectureOption);
++    {
++        Architecture a;
++        Platform p;
++        Compiler c;
++        QVersionNumber v;
++        if (parseTriplet(name, &a, &p, &c, &v)) {
++            _architecture = a;
++            _triplet = name;
++            return true;
++        }
++    }
+     auto newArchitecture = parseArchitecture(name);
+     const bool result = newArchitecture != Architecture::Other;
+     if (result)
+@@ -300,6 +316,9 @@ QByteArray targetTripletForPlatform(Plat
+                                     const QVersionNumber &platformVersion)
+ {
+     QByteArray result;
++    if (p == _platform && a == _architecture && c == _compiler && !_triplet.isEmpty()) {
++    	    return _triplet.toUtf8();
++    }
+     if (p == Platform::Unix || a == Architecture::Other)
+         return result; // too unspecific
+ 
+--- a/sources/pyside6/cmake/Macros/PySideModules.cmake
++++ b/sources/pyside6/cmake/Macros/PySideModules.cmake
+@@ -126,6 +126,9 @@ macro(create_pyside_module)
+     if(module_ADDITIONAL_INCLUDE_DIRS)
+         list(APPEND shiboken_include_dir_list ${${module_ADDITIONAL_INCLUDE_DIRS}})
+     endif()
++    if (DEFINED SYSROOT_INCLUDE_DIRS)
++        list(APPEND shiboken_include_dir_list ${SYSROOT_INCLUDE_DIRS})
++    endif()
+ 
+     # Remove duplicates and transform the path separators into something
+     # shiboken understands.
+@@ -211,9 +214,15 @@ macro(create_pyside_module)
+     # cross-compiling in linux, we use the clang compiler from the installed
+     # libclang itself.
+     if (CMAKE_CROSSCOMPILING)
++      if (DEFINED SHIBOKEN_ARCH)
++        list(APPEND shiboken_command "--platform=${CMAKE_SYSTEM_NAME}"
++                                     "--arch=${SHIBOKEN_ARCH}"
++                                     "--compiler-path=${CMAKE_CXX_COMPILER}")
++      else()
+         list(APPEND shiboken_command "--platform=${CMAKE_SYSTEM_NAME}"
+                                      "--arch=${CMAKE_SYSTEM_PROCESSOR}"
+                                      "--compiler-path=${CMAKE_CXX_COMPILER}")
++     endif()
+     endif()
+ 
+     if(CMAKE_ANDROID_ARCH_LLVM_TRIPLE)

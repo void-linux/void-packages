@@ -1,0 +1,197 @@
+--- a/src/content/import_service.cc
++++ b/src/content/import_service.cc
+@@ -800,7 +800,7 @@ void ImportService::parseMetafile(const
+ void ImportService::updateItemData(const std::shared_ptr<CdsItem>& item, const std::string& mimetype)
+ {
+     if (hasDefaultDate && item->getMetaData(MetadataFields::M_DATE).empty())
+-        item->addMetaData(MetadataFields::M_DATE, fmt::format("{:%FT%T%z}", fmt::localtime(item->getMTime().count())));
++        item->addMetaData(MetadataFields::M_DATE, fmt::format("{:%FT%T%z}", fmt_localtime(item->getMTime().count())));
+     for (auto&& upnpPattern : upnpMap) {
+         if (upnpPattern.isMatch(item, mimetype)) {
+             item->setClass(upnpPattern.upnpClass);
+--- a/src/content/scripting/script.cc
++++ b/src/content/scripting/script.cc
+@@ -237,7 +237,7 @@ Script::Script(const std::shared_ptr<Con
+                 setIntProperty(definition->removeAttribute(ConfigVal::A_AUTOSCAN_DIRECTORY_SCANCOUNT), adir->getActiveScanCount());
+                 setIntProperty(definition->removeAttribute(ConfigVal::A_AUTOSCAN_DIRECTORY_TASKCOUNT), adir->getTaskCount());
+                 setIntProperty(definition->removeAttribute(ConfigVal::A_AUTOSCAN_DIRECTORY_RETRYCOUNT), adir->getRetryCount());
+-                setProperty(definition->removeAttribute(ConfigVal::A_AUTOSCAN_DIRECTORY_LMT), fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(adir->getPreviousLMT().count())));
++                setProperty(definition->removeAttribute(ConfigVal::A_AUTOSCAN_DIRECTORY_LMT), fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt_localtime(adir->getPreviousLMT().count())));
+ 
+                 duk_put_prop_string(ctx, -2, fmt::to_string(adir->getScanID()).c_str());
+                 log_debug("Adding config[{}][{}] {}", autoscanItemPath, adir->getScanID(), adir->getLocation().string());
+--- a/src/database/sql_database.cc
++++ b/src/database/sql_database.cc
+@@ -1456,7 +1456,7 @@ int SQLDatabase::ensurePathExistence(con
+         *changedContainer = parentID;
+ 
+     std::vector<std::pair<std::string, std::string>> itemMetadata;
+-    itemMetadata.emplace_back(MetaEnumMapper::getMetaFieldName(MetadataFields::M_DATE), fmt::format("{:%FT%T%z}", fmt::localtime(toSeconds(fs::last_write_time(path)).count())));
++    itemMetadata.emplace_back(MetaEnumMapper::getMetaFieldName(MetadataFields::M_DATE), fmt::format("{:%FT%T%z}", fmt_localtime(toSeconds(fs::last_write_time(path)).count())));
+ 
+     auto f2i = converterManager->f2i();
+     auto [mval, err] = f2i->convert(path.filename());
+@@ -1654,7 +1654,7 @@ bool SQLDatabase::addContainer(int paren
+     commit("addContainer");
+ 
+     if (cont->getMetaData(MetadataFields::M_DATE).empty())
+-        cont->addMetaData(MetadataFields::M_DATE, fmt::format("{:%FT%T%z}", fmt::localtime(cont->getMTime().count())));
++        cont->addMetaData(MetadataFields::M_DATE, fmt::format("{:%FT%T%z}", fmt_localtime(cont->getMTime().count())));
+ 
+     *containerID = createContainer(parentContainerId, cont->getTitle(), virtualPath, cont->getFlags(), cont->isVirtual(), cont->getClass(), cont->getFlag(OBJECT_FLAG_PLAYLIST_REF) ? cont->getRefID() : INVALID_OBJECT_ID, cont->getMetaData(), cont->getResources());
+     return true;
+@@ -2596,7 +2596,7 @@ std::vector<std::map<std::string, std::s
+         stats["name"] = row->col(0);
+         stats["count"] = fmt::format("{}", row->col_int(1, -1));
+         stats["playCount"] = fmt::format("{}", row->col_int(2, -1));
+-        stats["last"] = fmt::format("{:%a %b %d %H:%M:%S %Y}", fmt::localtime(std::chrono::seconds(row->col_int(3, 0)).count()));
++        stats["last"] = fmt::format("{:%a %b %d %H:%M:%S %Y}", fmt_localtime(std::chrono::seconds(row->col_int(3, 0)).count()));
+         stats["bookmarks"] = fmt::format("{}", row->col_int(4, -1));
+         result.push_back(std::move(stats));
+     }
+@@ -2725,7 +2725,7 @@ std::shared_ptr<AutoscanDirectory> SQLDa
+         interval = std::stoi(getCol(row, AutoscanColumn::Interval));
+     auto lastModified = std::chrono::seconds(std::stol(getCol(row, AutoscanColumn::LastModified)));
+ 
+-    log_info("Loading autoscan location: {}; recursive: {}, mt: {}/{}, last_modified: {}", location.c_str(), recursive, mt, AutoscanDirectory::mapMediaType(mt), lastModified > std::chrono::seconds::zero() ? fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(lastModified.count())) : "unset");
++    log_info("Loading autoscan location: {}; recursive: {}, mt: {}/{}, last_modified: {}", location.c_str(), recursive, mt, AutoscanDirectory::mapMediaType(mt), lastModified > std::chrono::seconds::zero() ? fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt_localtime(lastModified.count())) : "unset");
+ 
+     auto dir = std::make_shared<AutoscanDirectory>(location, mode, recursive, persistent, interval, hidden, followSymlinks, mt, containerMap);
+     dir->setObjectID(objectID);
+--- a/src/metadata/ffmpeg_handler.cc
++++ b/src/metadata/ffmpeg_handler.cc
+@@ -302,7 +302,7 @@ void FfmpegHandler::addFfmpegMetadataFie
+                         if (utcTime == -1) {
+                             continue;
+                         }
+-                        tmWork = fmt::localtime(utcTime);
++                        tmWork = fmt_localtime(utcTime);
+                     } else if (strptime(avEntry->value, "%Y-%m-%d", &tmWork)) {
+                         ; // use the value as is
+                     } else if (strptime(avEntry->value, "%Y", &tmWork)) {
+--- a/src/upnp/xml_builder.cc
++++ b/src/upnp/xml_builder.cc
+@@ -45,6 +45,7 @@
+ #include "request_handler/device_description_handler.h"
+ #include "request_handler/request_handler.h"
+ #include "upnp/clients.h"
++#include "util/tools.h"
+ #include "util/url_utils.h"
+ 
+ #include <algorithm>
+@@ -454,7 +455,7 @@ void UpnpXMLBuilder::renderObject(
+         auto playStatus = item->getPlayStatus();
+         if (playStatus) {
+             auxData[UPNP_SEARCH_PLAY_COUNT] = fmt::format("{}", playStatus->getPlayCount());
+-            auxData[UPNP_SEARCH_LAST_PLAYED] = fmt::format("{:%Y-%m-%d T %H:%M:%S}", fmt::localtime(playStatus->getLastPlayed().count()));
++            auxData[UPNP_SEARCH_LAST_PLAYED] = fmt::format("{:%Y-%m-%d T %H:%M:%S}", fmt_localtime(playStatus->getLastPlayed().count()));
+             auxData["upnp:lastPlaybackPosition"] = fmt::format("{}", millisecondsToHMSF(playStatus->getLastPlayedPosition().count()));
+             propNames.push_back(addField(result, objFilter, UPNP_SEARCH_PLAY_COUNT, auxData[UPNP_SEARCH_PLAY_COUNT]));
+             propNames.push_back(addField(result, objFilter, UPNP_SEARCH_LAST_PLAYED, auxData[UPNP_SEARCH_LAST_PLAYED]));
+@@ -490,7 +491,7 @@ void UpnpXMLBuilder::renderObject(
+     // make sure a date is set
+     auto dateNode = result.child(DC_DATE);
+     if (!dateNode) {
+-        auto fDate = fmt::format("{:%FT%T%z}", fmt::localtime(obj->getMTime().count()));
++        auto fDate = fmt::format("{:%FT%T%z}", fmt_localtime(obj->getMTime().count()));
+         if (simpleDate)
+             fDate = makeSimpleDate(fDate);
+         result.append_child(DC_DATE).append_child(pugi::node_pcdata).set_value(fDate.c_str());
+--- a/src/util/tools.h
++++ b/src/util/tools.h
+@@ -39,6 +39,7 @@
+ #include <optional>
+ #include <string>
+ #include <vector>
++#include <ctime>
+ 
+ // forward declaration
+ class IOHandler;
+@@ -206,4 +207,10 @@ std::vector<std::string> populateCommand
+ /// \return Caclulated position or -1 in case of an error.
+ ssize_t getValidUTF8CutPosition(std::string_view str, ssize_t cutpos);
+ 
++static inline std::tm fmt_localtime(std::time_t t) {
++	std::tm tm_ = {};
++	localtime_r(&t, &tm_);
++	return tm_;
++}
++
+ #endif // __TOOLS_H__
+--- a/src/web/clients.cc
++++ b/src/web/clients.cc
+@@ -34,13 +34,14 @@
+ #include "upnp/clients.h"
+ #include "upnp/xml_builder.h"
+ #include "util/grb_net.h"
++#include "util/tools.h"
+ #include "util/xml_to_json.h"
+ 
+ #include <fmt/chrono.h>
+ 
+ static std::string secondsToString(const std::chrono::seconds& t)
+ {
+-    return fmt::format("{:%a %b %d %H:%M:%S %Y}", fmt::localtime(t.count()));
++    return fmt::format("{:%a %b %d %H:%M:%S %Y}", fmt_localtime(t.count()));
+ }
+ 
+ const std::string_view Web::Clients::PAGE = "clients";
+--- a/src/web/config_load.cc
++++ b/src/web/config_load.cc
+@@ -46,8 +46,10 @@
+ #include "context.h"
+ #include "database/database.h"
+ #include "database/db_param.h"
++#include "util/tools.h"
+ #include "util/xml_to_json.h"
+ 
++#include <fmt/base.h>
+ #include <fmt/chrono.h>
+ #include <numeric>
+ 
+@@ -118,7 +120,6 @@ void Web::ConfigLoad::createItem(pugi::x
+ template <typename T>
+ void Web::ConfigLoad::setValue(pugi::xml_node& item, const T& value)
+ {
+-    static_assert(fmt::has_formatter<T, fmt::format_context>::value, "T must be formattable");
+     item.append_attribute(CONFIG_LOAD_VALUE) = fmt::to_string(value).c_str();
+ }
+ 
+@@ -920,7 +921,7 @@ void Web::ConfigLoad::writeAutoscan(pugi
+             // Last modified
+             item = values.append_child(CONFIG_LOAD_ITEM);
+             createItem(item, ascs->getItemPath(indexList, { ConfigVal::A_AUTOSCAN_DIRECTORY_LMT }), ascs->option, ConfigVal::A_AUTOSCAN_DIRECTORY_LMT);
+-            setValue(item, fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(adir->getPreviousLMT().count())));
++            setValue(item, fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt_localtime(adir->getPreviousLMT().count())));
+         }
+         // Allow creation of entry in blank config
+         {
+--- a/src/web/edit_load.cc
++++ b/src/web/edit_load.cc
+@@ -102,7 +102,7 @@ pugi::xml_node Web::EditLoad::writeCoreI
+ 
+     if (obj->getMTime() > std::chrono::seconds::zero()) {
+         auto lmtEl = item.append_child("last_modified");
+-        lmtEl.append_attribute("value") = fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(obj->getMTime().count())).c_str();
++        lmtEl.append_attribute("value") = fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt_localtime(obj->getMTime().count())).c_str();
+         lmtEl.append_attribute("editable") = false;
+     } else {
+         auto lmtEl = item.append_child("last_modified");
+@@ -112,7 +112,7 @@ pugi::xml_node Web::EditLoad::writeCoreI
+ 
+     if (obj->getUTime() > std::chrono::seconds::zero()) {
+         auto lmtEl = item.append_child("last_updated");
+-        lmtEl.append_attribute("value") = fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(obj->getUTime().count())).c_str();
++        lmtEl.append_attribute("value") = fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt_localtime(obj->getUTime().count())).c_str();
+         lmtEl.append_attribute("editable") = false;
+     } else {
+         auto lmtEl = item.append_child("last_updated");
+@@ -252,7 +252,7 @@ void Web::EditLoad::writeItemInfo(const
+ 
+         metaEntry = metaData.append_child("metadata");
+         metaEntry.append_attribute("metaname") = fmt::format("upnp:lastPlaybackTime@group[{}]", playStatus->getGroup()).c_str();
+-        metaEntry.append_attribute("metavalue") = fmt::format("{:%Y-%m-%d T %H:%M:%S}", fmt::localtime(playStatus->getLastPlayed().count())).c_str();
++        metaEntry.append_attribute("metavalue") = fmt::format("{:%Y-%m-%d T %H:%M:%S}", fmt_localtime(playStatus->getLastPlayed().count())).c_str();
+         metaEntry.append_attribute("editable") = false;
+ 
+         if (playStatus->getLastPlayedPosition() > std::chrono::seconds::zero()) {

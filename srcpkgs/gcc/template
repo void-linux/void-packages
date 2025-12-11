@@ -4,7 +4,7 @@
 
 pkgname=gcc
 version=14.2.1+20250405
-revision=2
+revision=4
 bootstrap=yes
 _patchver="${version%+*}"
 _minorver="${version%.*}"
@@ -58,13 +58,17 @@ depends="binutils libgcc-devel-${version}_${revision}
 checkdepends="dejagnu"
 subpackages="libgcc libgomp libgomp-devel libatomic libatomic-devel"
 
-build_options="ada gnatboot"
+build_options="ada gnatboot bindist gccbin"
 build_options_default="ada"
 desc_option_ada="Enable Ada build"
 desc_option_gnatboot="Enable Ada bootstrap using adacore.com binaries"
+desc_option_gccbin="Enable gdc and Ada build from our prebuilt gcc"
+desc_option_bindist="Build bindist to build gcc"
 
 _have_gccgo=yes
 _have_libquadmath=no
+_have_gdc=yes
+_old_musl=no
 
 case "$XBPS_TARGET_MACHINE" in
 	i686*|x86_64*|ppc64le*) _have_libquadmath=yes ;;
@@ -105,6 +109,8 @@ if [ "$CHROOT_READY" ]; then
 	fi
 else
 	_have_gccgo=no
+	# Could be enabled if host has gdc
+	_have_gdc=no
 fi
 
 if [ "$_have_gccgo" = "yes" ]; then
@@ -115,8 +121,14 @@ if [ "$_have_gccgo" = "yes" ]; then
 	fi
 fi
 
+if [ "$_have_gdc" = yes ]; then
+	subpackages+=" gcc-gdc"
+	subpackages+=" libgdruntime-devel libgdruntime"
+	subpackages+=" libgphobos-devel libgphobos"
+fi
+
 subpackages+=" libstdc++-devel libstdc++ libgcc-devel"
-if [ "$build_option_gnatboot" -o "$build_option_ada" ]; then
+if [ "$build_option_gnatboot" -o "$build_option_ada" -o "$build_option_bindist" ]; then
 	subpackages+=" gcc-ada libada-devel libada"
 fi
 
@@ -148,19 +160,33 @@ case "$XBPS_TARGET_MACHINE" in
 	riscv64) _triplet="riscv64-linux-gnu";;
 	riscv64-musl) _triplet="riscv64-linux-musl";;
 esac
-case "$XBPS_TARGET_MACHINE" in
-	*-musl)	 depends+=" musl-devel";;
-	*) 	 depends+=" glibc-devel"
-		 subpackages+=" libsanitizer libsanitizer-devel"
-		 ;;
-esac
+if [ "$XBPS_TARGET_LIBC" = musl ]; then
+	makedepends+=" libucontext-devel"
+	export LIBUCONTEXT=-lucontext
+	case "${XBPS_TARGET_MACHINE}" in
+	ppc64*) depends+=" musl-devel" ;;
+	armv*|ppc*|mips*|i686*)
+		_old_musl=yes
+		depends+=" musl1.1-devel"
+		;;
+	*) depends+=" musl-devel" ;;
+	esac
+else
+	depends+=" glibc-devel"
+	subpackages+=" libsanitizer libsanitizer-devel"
+fi
 case "$XBPS_TARGET_MACHINE" in
 	i686*|x86_64*)
 		subpackages+=" libvtv libvtv-devel"
 		;;
 esac
 case "$XBPS_TARGET_MACHINE" in
-	mips*) ;;
+	mip*hf*) ;;
+	mips*)
+		# not enough GOT space for local GOT entries
+		CFLAGS+=" -mxgot"
+		LDFLAGS+=" -mxgot"
+		;;
 	riscv*) ;;
 	x86_64*|i686) subpackages+=" libitm libitm-devel";;
 	*) subpackages+=" libitm libitm-devel";;
@@ -170,6 +196,31 @@ if [ "$CROSS_BUILD" ]; then
 	if [ "$build_option_ada" ]; then
 		hostmakedepends+=" gcc-ada"
 	fi
+fi
+
+if [ "$build_option_bindist" ]; then
+	hostmakedepends+=" gcc-ada"
+	_opt_dir="/opt/${_triplet}"
+elif [ "$build_option_gccbin" ]; then
+	_opt_dir="/opt/${_triplet}"
+fi
+
+if [ "$_have_gdc" != yes ]; then
+	: skip gdc
+elif [ "$CROSS_BUILD" ]; then
+	if [ "$build_option_gccbin" ]; then
+		broken="option gccbin only works with native build"
+	fi
+	hostmakedepends+=" gcc-gdc"
+	export GDC_FOR_BUILD="gdc"
+	export GDC="${_triplet}-gdc"
+	export GDC_FOR_TARGET="${_triplet}-gdc"
+elif [ "$build_option_gccbin" ]; then
+	hostmakedepends+=" gcc-bindist"
+	broken="not uploaded yet"
+else
+	hostmakedepends+=" gcc11-gdc"
+	export GDC=gdc-11
 fi
 
 post_extract() {
@@ -192,7 +243,7 @@ post_extract() {
 	fi
 }
 
-pre_configure() {
+post_patch() {
 	# _FORTIFY_SOURCE needs an optimization level.
 	sed -i "/ac_cpp=/s/\$CPPFLAGS/\$CPPFLAGS -O2/" {gcc,libiberty}/configure
 
@@ -207,6 +258,10 @@ pre_configure() {
 			msg_normal "patching: $p\n"
 			patch -p1 -i $p
 		done
+	fi
+
+	if [ "$_old_musl" ]; then
+		sed -i '/define LIBDRUNTIME_MUSL_PRE_TIME64/s/0/1/' gcc/config/linux-d.cc
 	fi
 }
 
@@ -239,10 +294,6 @@ do_configure() {
 		ppc*-musl) _args+=" --disable-decimal-float";;
 	esac
 
-	if [ -z "$CHROOT_READY" -o -n "$CROSS_BUILD" ]; then
-		_langs="c,c++,lto"
-	fi
-
 	if [ "$CROSS_BUILD" ]; then
 		export CC_FOR_TARGET="$CC"
 		export GCC_FOR_TARGET="$CC"
@@ -252,10 +303,11 @@ do_configure() {
 
 		_args+=" --host=$XBPS_CROSS_TRIPLET"
 		_args+=" --with-build-sysroot=${XBPS_CROSS_BASE}"
-		_langs+=",objc,obj-c++,fortran"
+		_langs="c,c++,objc,obj-c++,fortran,lto"
 	elif [ -z "$CHROOT_READY" ]; then
 		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib${XBPS_TARGET_WORDSIZE}"
 		_args+=" --build=${_triplet}"
+		_langs="c,c++,lto"
 	else
 		_langs="c,c++,objc,obj-c++,fortran,lto"
 		_args+=" --build=${_triplet}"
@@ -263,6 +315,11 @@ do_configure() {
 
 	if [ "$_have_gccgo" = "yes" ]; then
 		_langs+=",go"
+	fi
+
+	if [ "$_have_gdc" = yes ]; then
+		_langs+=",d"
+
 	fi
 
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
@@ -286,12 +343,19 @@ do_configure() {
 	export CFLAGS="${CFLAGS//-fno-PIE/}"
 	export CXXFLAGS="${CXXFLAGS//-fno-PIE/}"
 	export LDFLAGS="${LDFLAGS//-no-pie/}"
+	export GDCFLAGS_FOR_TARGET="$CFLAGS"
 
-	_args+=" --prefix=/usr"
-	_args+=" --mandir=/usr/share/man"
-	_args+=" --infodir=/usr/share/info"
-	_args+=" --libexecdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
-	_args+=" --libdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+	if [ "$build_option_bindist" ]; then
+		_args+=" --prefix=$_opt_dir"
+		_args+=" --libexecdir=$_opt_dir/lib"
+		_args+=" --libdir=$_opt_dir/lib"
+	else
+		_args+=" --prefix=/usr"
+		_args+=" --mandir=/usr/share/man"
+		_args+=" --infodir=/usr/share/info"
+		_args+=" --libexecdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+		_args+=" --libdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+	fi
 	_args+=" --enable-threads=posix"
 	_args+=" --enable-__cxa_atexit"
 	_args+=" --disable-multilib"
@@ -314,7 +378,29 @@ do_configure() {
 
 	mkdir -p build
 	cd build
-	if [ "$build_option_gnatboot" ]; then
+	if [ "$build_option_gccbin" ]; then
+		_args+=" --enable-languages=${_langs},ada"
+		CONFIG_SHELL=/bin/bash \
+		PATH="$PATH:${_opt_dir}/bin" \
+			${wrksrc}/configure ${_args}
+	elif [ "$build_option_bindist" ]; then
+		_args+=" --disable-multilib"
+		_args+=" --disable-libstdcxx-pch"
+		_args+=" --disable-libssp"
+		_args+=" --disable-libsanitizer"
+		_args+=" --disable-fixed-point"
+		_args+=" --disable-bootstrap"
+		_args+=" --disable-libunwind-exceptions"
+		_args+=" --disable-target-libiberty"
+		_args+=" --disable-vtable-verify"
+		_args+=" --disable-libitm"
+		_args+=" --disable-libgomp"
+		_args+=" --disable-libmpx"
+		_args+=" --disable-libmudflap"
+		_args+=" --enable-languages=${_langs},ada"
+		CONFIG_SHELL=/bin/bash \
+			${wrksrc}/configure ${_args}
+	elif [ "$build_option_gnatboot" ]; then
 		# file-prefix-map isn't supported in gcc6
 		export CFLAGS="${CFLAGS/-ffile-prefix-map=$wrksrc=./}"
 		export CXXFLAGS="${CXXFLAGS/-ffile-prefix-map=$wrksrc=./}"
@@ -342,31 +428,42 @@ do_build() {
 	if [ -z "$CHROOT_READY" ]; then
 		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib${XBPS_TARGET_WORDSIZE}"
 	fi
-	cd build
 	if [ "$build_option_gnatboot" ]; then
 		CC="${wrksrc}/gnat/bin/gcc" \
 		GNATBIND="${wrksrc}/gnat/bin/gnatbind" \
 		GNATMAKE="${wrksrc}/gnat/bin/gnatmake" \
 		PATH="${wrksrc}/gnat/bin:$PATH" \
-		make ${makejobs}
+		make -C build ${makejobs}
 	else
-		make ${makejobs}
+		make -C build ${makejobs}
 	fi
 }
-
-pre_install() {
+do_install() {
 	if [ "$CROSS_BUILD" ]; then
 		# XXX otherwise links to host libpthread
 		for f in $(find ${wrksrc}/build/${XBPS_CROSS_TRIPLET} -type f -name libtool); do
 			sed -e "s,add_dir=\"-L\$libdir\",add_dir=\"-L${XBPS_CROSS_BASE}\$libdir\",g" -i $f
 		done
 	fi
-}
+	make -C build DESTDIR=${DESTDIR} install
 
-do_install() {
-	cd build
+	if [ "$build_option_bindist" ]; then
+		ln -s "${_patchver}" \
+			${DESTDIR}${_opt_dir}/lib/gcc/${_triplet}/${_minorver}
+		ln -s "${_patchver}" \
+			${DESTDIR}${_opt_dir}/include/c++/${_minorver}
+		rm -f ${DESTDIR}/${_opt_dir}/lib/gcc/${_triplet}/{_patchver}/include-fixed/bits/statx.h
+		mkdir -p ${XBPS_SRCDISTDIR}/distfiles
+		msg_normal "Creating distfiles ...\n"
+		bsdtar -C "${DESTDIR}" -c --zstd \
+			--options zstd:compression-level=22 \
+			-f ${XBPS_SRCDISTDIR}/distfiles/${_triplet}-gcc-${version}.tar.zst \
+			opt
+		msg_normal "Generated ${_triplet}-gcc-${version}.tar.zst\n"
+		msg_normal "SHA256: $($XBPS_DIGEST_CMD ${XBPS_SRCDISTDIR}/distfiles/${_triplet}-gcc-${version}.tar.zst)\n"
+		exit 1
+	fi
 
-	make DESTDIR=${DESTDIR} install
 
 	# Make version a symlink of major version to make all versions
 	# from the same series work automagically.
@@ -422,6 +519,19 @@ gcc-ada_package() {
 		for f in gnat{,bind,chop,clean,kr,link,ls,make,name,prep}; do
 			vmove usr/bin/${f}
 		done
+	}
+}
+
+gcc-gdc_package() {
+	lib32disabled=yes
+	depends="${sourcepkg}>=${_minorver}
+	 libgdruntime-devel>=${_minorver} libgphobos-devel>=${_minorver}"
+	short_desc+=" - D compiler frontend"
+	pkg_install() {
+		vmove "usr/bin/*gdc*"
+		vmove usr/lib/gcc/${_triplet}/${_minorver}/d21
+		vmove "usr/share/info/gdc*"
+		vmove "usr/share/man/man1/gdc*"
 	}
 }
 
@@ -519,6 +629,47 @@ libada_package() {
 		vmove usr/lib/gcc/${_triplet}/${_minorver}/adalib
 		mv -v ${PKGDESTDIR}/usr/lib/gcc/${_triplet}/${_minorver}/adalib/libgna{rl,t}{,-${_majorver}}.so \
 			${PKGDESTDIR}/usr/lib
+	}
+}
+
+libgdruntime-devel_package() {
+	depends="libgdruntime>=${_minorver}"
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		depends+=" libucontext-devel"
+	fi
+	short_desc+=" - D library - development files"
+	pkg_install() {
+		vmove "usr/lib/gcc/${_triplet}/${_minorver}/include/d"
+		vmove "usr/lib/libgdruntime.a"
+		vmove "usr/lib/libgdruntime.la"
+		vmove "usr/lib/libgdruntime.so"
+	}
+}
+
+libgdruntime_package() {
+	short_desc+=" - D library"
+	pkg_install() {
+		vmove "usr/lib/libgdruntime*.so.*"
+	}
+}
+
+libgphobos-devel_package() {
+	depends="libgphobos>=${_minorver}"
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		depends+=" libucontext-devel"
+	fi
+	short_desc+=" - GNU Phobos library - development files"
+	pkg_install() {
+		vmove usr/lib/libgphobos.spec
+		vmove usr/lib/libgphobos.a
+		vmove usr/lib/libgphobos.so
+	}
+}
+
+libgphobos_package() {
+	short_desc+=" - GNU Phobos library"
+	pkg_install() {
+		vmove "usr/lib/libgphobos.so.*"
 	}
 }
 

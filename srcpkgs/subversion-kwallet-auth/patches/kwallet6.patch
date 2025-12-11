@@ -1,0 +1,129 @@
+--- a/build/ac-macros/kwallet.m4
++++ b/build/ac-macros/kwallet.m4
+@@ -45,21 +45,43 @@ AC_DEFUN(SVN_LIB_KWALLET,
+           if test -n "$PKG_CONFIG"; then
+             if test "$HAVE_DBUS" = "yes"; then
+               AC_MSG_CHECKING([for Qt])
+-              if $PKG_CONFIG --exists Qt5Core Qt5DBus Qt5Gui; then
++              kde_version=
++              if $PKG_CONFIG --exists Qt6Core Qt6DBus Qt6Gui; then
++                AC_MSG_RESULT([yes, Qt6])
++                kde_version=6
++                qt_pkg_config_names="Qt6Core Qt6DBus Qt6Gui"
++                kde_inc_names="KF6/KWallet KF6/KCoreAddons KF6/KI18n"
++                kde_lib_names="-lKF6Wallet -lKF6I18n -lKF6CoreAddons `$PKG_CONFIG --libs Qt6Gui Qt6DBus Qt6Core`"
++              elif $PKG_CONFIG --exists Qt5Core Qt5DBus Qt5Gui; then
+                 AC_MSG_RESULT([yes, Qt5])
++                kde_version=5
+                 qt_pkg_config_names="Qt5Core Qt5DBus Qt5Gui"
+                 kde_config_name="kf5-config"
+                 kde_inc_names="KF5/KWallet KF5/KCoreAddons KF5/KI18n"
+                 kde_lib_names="-lKF5Wallet -lKF5I18n -lKF5CoreAddons -lQt5Gui -lQt5DBus -lQt5Core"
+               elif $PKG_CONFIG --exists QtCore QtDBus QtGui; then
+                 AC_MSG_RESULT([yes, Qt4])
++                kde_version=4
+                 qt_pkg_config_names="QtCore QtDBus QtGui"
+                 kde_config_name="kde4-config"
+                 kde_inc_names="/"
+                 kde_lib_names="-lkdeui -lkdecore -lQtGui -lQtDBus -lQtCore"
+               fi
+               if test -n "$qt_pkg_config_names"; then
+-                if test "$svn_lib_kwallet" != "yes"; then
++                if test "$kde_version" = 6; then
++                  KDE_CONFIG="unneeded"
++                  AC_DEFINE([SVN_HAVE_KF6], [1], [Defined if KF6 available])
++                  case "$svn_lib_kwallet" in
++                  *:*)
++                      kde_incdir="${svn_lib_kwallet%%:*}"
++                      kde_libdir="${svn_lib_kwallet##*:}"
++                      ;;
++                  *)
++                      kde_incdir="$svn_lib_kwallet/include"
++                      kde_libdir="$svn_lib_kwallet/lib"
++                      ;;
++                  esac
++                elif test "$svn_lib_kwallet" != "yes"; then
+                   AC_MSG_CHECKING([for $kde_config_name])
+                   KDE_CONFIG="$svn_lib_kwallet/bin/$kde_config_name"
+                   if test -f "$KDE_CONFIG" && test -x "$KDE_CONFIG"; then
+--- a/subversion/libsvn_auth_kwallet/kwallet.cpp
++++ b/subversion/libsvn_auth_kwallet/kwallet.cpp
+@@ -55,7 +55,7 @@
+ 
+ #include "svn_private_config.h"
+ 
+-#ifndef SVN_HAVE_KF5
++#if !defined(SVN_HAVE_KF6) && !defined(SVN_HAVE_KF5)
+ #include <kcmdlineargs.h>
+ #include <kcomponentdata.h>
+ #endif
+@@ -223,7 +223,7 @@ kwallet_password_get(svn_boolean_t *done
+       app = new QCoreApplication(argc, q_argv);
+     }
+ 
+-#if SVN_HAVE_KF5
++#if defined(SVN_HAVE_KF6) || defined(SVN_HAVE_KF5)
+   KLocalizedString::setApplicationDomain("subversion"); /* translation domain */
+ 
+   /* componentName appears in KDE GUI prompts */
+@@ -305,7 +305,7 @@ kwallet_password_set(svn_boolean_t *done
+       app = new QCoreApplication(argc, q_argv);
+     }
+ 
+-#if SVN_HAVE_KF5
++#if defined(SVN_HAVE_KF6) || defined(SVN_HAVE_KF5)
+   KLocalizedString::setApplicationDomain("subversion"); /* translation domain */
+ 
+   /* componentName appears in KDE GUI prompts */
+--- a/build/ac-macros/compiler.m4
++++ b/build/ac-macros/compiler.m4
+@@ -102,7 +102,7 @@ AC_DEFUN([SVN_CXX_MODE_SETUP],
+   if test "$GXX" = "yes"; then
+     dnl Find flags to force C++98 mode
+                   dnl g++ and clang++
+-    SVN_CXXFLAGS_ADD_IFELSE([-std=c++11])
++    SVN_CXXFLAGS_ADD_IFELSE([-std=c++17])
+   fi
+ 
+   CXXMODEFLAGS="$CXXFLAGS"
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -180,38 +180,6 @@ if test -z "$PYTHON"; then
+ fi
+ export PYTHON
+ 
+-# Compile SWIG headers into standalone C files if we are in release mode
+-if test -n "$RELEASE_MODE"; then
+-  echo "Generating SWIG code..."
+-  # Generate build-outputs.mk in non-release-mode, so that we can
+-  # build the SWIG-related files
+-  "$PYTHON" ./gen-make.py build.conf || gen_failed=1
+-
+-  # Build the SWIG-related files
+-  make -f autogen-standalone.mk autogen-swig || gen_failed=1
+-
+-  # Remove the .swig_*checked files
+-  rm -f .swig_checked .swig_pl_checked .swig_py_checked .swig_rb_checked
+-fi
+-
+-if test -n "$SKIP_DEPS"; then
+-  echo "Creating build-outputs.mk (no dependencies)..."
+-  "$PYTHON" ./gen-make.py $RELEASE_ARGS -s build.conf || gen_failed=1
+-else
+-  echo "Creating build-outputs.mk..."
+-  "$PYTHON" ./gen-make.py $RELEASE_ARGS build.conf || gen_failed=1
+-fi
+-
+-if test -n "$RELEASE_MODE"; then
+-  find build/ -name '*.pyc' -exec rm {} \;
+-fi
+-
+-rm autogen-standalone.mk
+-
+-if test -n "$gen_failed"; then
+-  echo "ERROR: gen-make.py failed"
+-  exit 1
+-fi
+ 
+ # Produce config.h.in
+ echo "Creating svn_private_config.h.in..."
