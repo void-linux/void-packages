@@ -8,11 +8,11 @@
 # uploaded to https://repo-default.voidlinux.org/distfiles/
 #
 pkgname=rust
-version=1.91.1
+version=1.92.0
 revision=1
-_change_id=146435
+_change_id=147888
 _llvmver=21
-hostmakedepends="curl pkg-config python3 tar cargo-bootstrap"
+hostmakedepends="curl pkg-config python3 tar cargo-bootstrap $(vopt_if wasi "clang${_llvmver} llvm${_llvmver} wasi-libc")"
 makedepends="libffi-devel ncurses-devel libxml2-devel libzstd-devel zlib-devel llvm${_llvmver}-devel"
 depends="rust-std gcc"
 short_desc="Safe, concurrent, practical systems language"
@@ -20,14 +20,21 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="Apache-2.0 OR MIT"
 homepage="https://www.rust-lang.org/"
 distfiles="https://static.rust-lang.org/dist/rustc-${version}-src.tar.gz"
-checksum=38dce205d39f61571261f0444237a1ce9efecb970e760d8ec4d957af5b445723
+checksum=9e0d2ca75c7e275fdc758255bf4b03afb3d65d1543602746907c933b6901c3b8
 lib32disabled=yes
 make_check=no # CBA for now
 python_version=3 # needed for python files in rust-src
 
 build_helper="qemu"
-build_options="bindist"
+
+build_options="docs bindist wasm"
+build_options_default="docs"
 desc_option_bindist="Generate tarballs for bootstrap"
+desc_option_docs="build standard library documentation"
+desc_option_wasm="build wasm targets"
+vopt_conflict wasm docs # building with docs for wasm targets is currently broken
+
+subpackages="$(vopt_if docs rust-doc) rust-std $(vopt_if wasm rust-wasm) rust-src"
 
 if [ "$XBPS_LIBC" = "musl" ]; then
 	hostmakedepends+=" libexecinfo-devel"
@@ -92,7 +99,11 @@ do_configure() {
 		_llvm_shared="disable"
 	else
 		_rpath="disable"
-		_docs="enable"
+		if [ "$build_option_docs" ]; then
+			_docs="enable"
+		else
+			_docs="disable"
+		fi
 		_llvm_shared="enable"
 	fi
 
@@ -106,6 +117,30 @@ do_configure() {
 		 --set=target.${RUST_TARGET}.linker=${CC}"
 	fi
 
+	if [ -z "$build_option_bindist" -a -n "$build_option_wasm" ]; then
+		_extra_targets=",wasm32-unknown-unknown"
+		_wasm_args="
+		 --set=target.wasm32-unknown-unknown.sanitizers=false
+		 --set=target.wasm32-unknown-unknown.profiler=false
+		 --set=target.wasm32-unknown-unknown.linker=lld
+		 --set=target.wasm32-unknown-unknown.cc=clang
+		 --set=target.wasm32-unknown-unknown.cxx=clang++
+		 --set=target.wasm32-unknown-unknown.ar=llvm-ar
+		 --set=target.wasm32-unknown-unknown.ranlib=llvm-ranlib"
+		for t in wasm32-wasip1 wasm32-wasip1-threads wasm32-wasip2; do
+			_extra_targets+=",${t}"
+			_wasm_args+="
+			 --set=target.${t}.sanitizers=false
+			 --set=target.${t}.profiler=false
+			 --set=target.${t}.linker=lld
+			 --set=target.${t}.wasi-root=/usr/share/wasi-sysroot
+			 --set=target.${t}.cc=clang
+			 --set=target.${t}.cxx=clang++
+			 --set=target.${t}.ar=llvm-ar
+			 --set=target.${t}.ranlib=llvm-ranlib"
+		done
+	fi
+
 	# cross bootstrap with docs is currently broken in 1.91.0
 	if [ "$CROSS_BUILD" ]; then
 		_docs="disable"
@@ -114,7 +149,7 @@ do_configure() {
 	./configure \
 		--build="${RUST_BUILD}" \
 		--host="${RUST_TARGET}" \
-		--target="${RUST_TARGET}" \
+		--target="${RUST_TARGET}${_extra_targets}" \
 		--prefix=/usr \
 		--python=python3 \
 		--enable-option-checking \
@@ -140,7 +175,7 @@ do_configure() {
 		--llvm-config=/usr/bin/llvm-config \
 		--disable-lld \
 		--disable-llvm-bitcode-linker \
-		--tools=clippy,rustdoc,rustfmt,rust-analyzer-proc-macro-srv \
+		--tools=clippy,rustdoc,rustfmt,rust-analyzer-proc-macro-srv,wasm-component-ld \
 		--set="change-id=${_change_id}" \
 		--set="rust.deny-warnings=false" \
 		--set="rust.optimize=true" \
@@ -160,7 +195,7 @@ do_configure() {
 		--set="target.${RUST_BUILD}.ar=${AR_host:-$AR}" \
 		--set="target.${RUST_BUILD}.linker=${CC_host:-$CC}" \
 		--set="dist.src-tarball=false" \
-		${_cross_args}
+		${_wasm_args} ${_cross_args}
 }
 
 do_build() {
@@ -213,21 +248,23 @@ do_install() {
 	fi
 
 	vmkdir usr
-	tar xf build/dist/rustc-${version}-${RUST_TARGET}.tar.gz \
+	tar xf "build/dist/rustc-${version}-${RUST_TARGET}.tar.gz" \
 	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
-	tar xf build/dist/rust-std-${version}-${RUST_TARGET}.tar.gz \
-	 -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
-	tar xf build/dist/rustc-dev-${version}-${RUST_TARGET}.tar.gz \
+	tar xf "build/dist/rust-std-${version}-${RUST_TARGET}.tar.gz" \
+	 -C "$PKGDESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
+	tar xf "build/dist/rustc-dev-${version}-${RUST_TARGET}.tar.gz" \
 	 -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
 	if [ -z "$CROSS_BUILD" ]; then
-		tar xf build/dist/rust-docs-${version}-${RUST_TARGET}.tar.gz \
-		 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
+		if [ "$build_option_docs" ]; then
+			tar xf "build/dist/rust-docs-${version}-${RUST_TARGET}.tar.gz" \
+			 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
+		fi
 	fi
-	tar xf build/dist/rust-src-${version}.tar.gz \
+	tar xf "build/dist/rust-src-${version}.tar.gz" \
 	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
-	tar xf build/dist/rustfmt-${version}-${RUST_TARGET}.tar.gz \
+	tar xf "build/dist/rustfmt-${version}-${RUST_TARGET}.tar.gz" \
 	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
-	tar xf build/dist/clippy-${version}-${RUST_TARGET}.tar.gz \
+	tar xf "build/dist/clippy-${version}-${RUST_TARGET}.tar.gz" \
 	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
 
 	vlicense COPYRIGHT
@@ -258,8 +295,21 @@ rust-std_package() {
 		depends="libexecinfo-devel"
 	fi
 	pkg_install() {
-		vmove usr/lib/rustlib/${RUST_TARGET}
+		vmove "usr/lib/rustlib/${RUST_TARGET}"
 		vmove usr/lib/rustlib/rustc-src
+	}
+}
+
+rust-wasm_package() {
+	short_desc+=" - wasm"
+	nostrip=yes
+	pkg_install() {
+		if [ -z "$build_option_bindist" -a -n "$build_option_wasm" ]; then
+			for t in wasm32-unknown-unknown wasm32-wasip1 wasm32-wasip1-threads wasm32-wasip2; do
+				tar xf "build/dist/rust-std-${version}-${t}.tar.gz" \
+				 -C "$PKGDESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
+			done
+		fi
 	}
 }
 
