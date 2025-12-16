@@ -3,23 +3,23 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-i18n".
 #
 pkgname=firefox
-version=140.0
+version=146.0
 revision=1
 build_helper="rust"
 short_desc="Mozilla Firefox web browser"
 maintainer="Duncaen <duncaen@voidlinux.org>"
-license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
+license="GPL-3.0-only AND LGPL-2.1-only AND LGPL-3.0-only AND MPL-2.0"
 homepage="https://www.mozilla.org/firefox/"
 changelog="https://www.mozilla.org/en-US/firefox/${version}/releasenotes/"
 distfiles="${MOZILLA_SITE}/firefox/releases/${version/beta/b}/source/firefox-${version/beta/b}.source.tar.xz"
-checksum=ee1253b49b21241abc5d490df60be1d9f1d3914cdc1a4e3482a8158913f9fd1f
+checksum=08d4cae010abc31603ef74091a5d1f81da8e62d3b66c806690e70f03c422df16
 
 lib32disabled=yes
-_llvmver=19 # needs to match rust
-hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust
- cargo llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which
- tar xz $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')
- $(vopt_if wasi wasi-sdk)"
+_llvmver=21 # needs to match rust
+hostmakedepends="unzip zip pkg-config perl python3
+ yasm rust cargo llvm${_llvmver} clang${_llvmver} lld${_llvmver}
+ nodejs cbindgen nasm which tar xz $(vopt_if wasi wasi-sdk)
+ $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')"
 makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
  pixman-devel libevent-devel libnotify-devel libvpx-devel libwebp-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
@@ -73,14 +73,20 @@ post_extract() {
 
 post_patch() {
 	: # _clear_vendor_checksums num-traits
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		vsed -e '\;sys/single_threaded.h;d' -i config/system-headers.mozbuild
+	fi
 }
 
 do_build() {
 	export AS="${CC}"
 	export CFLAGS="-O2"
 	export CXXFLAGS="-O2"
-	export HOST_CFLAGS=""
-	export HOST_CXXFLAGS=""
+	# unset HOST_C{,XX}FLAGS since the firefox build system uses them internally and
+	# if they are exported they end up in the cargo environment, where they are not
+	# supposed to be.
+	unset HOST_CFLAGS
+	unset HOST_CXXFLAGS
 	export LDFLAGS="-Wl,-rpath=/usr/lib/firefox"
 	# export LDFLAGS+="-Wl,--threads=${XBPS_MAKEJOBS}"
 
@@ -140,6 +146,7 @@ do_build() {
 	ac_add_options --host=${XBPS_TRIPLET}
 	ac_add_options --target=${XBPS_CROSS_TRIPLET:-${XBPS_TRIPLET}}
 	ac_add_options --enable-linker=$(vopt_if clang lld bfd)
+	ac_add_options --disable-bootstrap
 	$(vopt_if lto 'ac_add_options --enable-lto=cross')
 	$(vopt_if clang 'ac_add_options --with-libclang-path=/usr/lib')
 
@@ -149,6 +156,8 @@ do_build() {
 	ac_add_options --enable-hardening
 	ac_add_options --enable-optimize="\${CFLAGS}"
 	ac_add_options --enable-path-remapping=c,rust
+	ac_add_options --enable-packed-relative-relocs
+	ac_add_options --disable-cargo-incremental
 	ac_add_options --disable-tests
 	ac_add_options --disable-crashreporter
 	ac_add_options --disable-updater
@@ -266,5 +275,6 @@ do_install() {
 	# https://bugzilla.mozilla.org/show_bug.cgi?id=658850
 	ln -sf firefox ${DESTDIR}/usr/lib/firefox/firefox-bin
 
-	vbin ${FILESDIR}/firefox-wayland
+	# backwards compatibility with old firefox-wayland wrapper
+	ln -sf firefox "${DESTDIR}/usr/bin/firefox-wayland"
 }

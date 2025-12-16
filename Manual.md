@@ -100,7 +100,7 @@ pkgname=foo
 version=1.0
 revision=1
 build_style=gnu-configure
-short_desc="A short description max 72 chars"
+short_desc="Package description, no more than 72 characters"
 maintainer="name <email>"
 license="GPL-3.0-or-later"
 homepage="http://www.foo.org"
@@ -367,7 +367,7 @@ The following variables are defined by `xbps-src` and can be used on any templat
 
 - `makejobs` Set to `-jX` if `XBPS_MAKEJOBS` is defined, to allow parallel jobs with `GNU make`.
 
-- `sourcepkg`  Set to the to main package name, can be used to match the main package
+- `sourcepkg`  Set to the main package name, can be used to match the main package
 rather than additional binary package names.
 
 - `CHROOT_READY`  Set if the target chroot (masterdir) is ready for chroot builds.
@@ -1107,7 +1107,10 @@ additional paths to be searched when linking target binaries to be introspected.
 - `meson` creates a cross file, `${XBPS_WRAPPERDIR}/meson/xbps_meson.cross`, which configures
 meson for cross builds. This is particularly useful for building packages that wrap meson
 invocations (e.g., `python3-pep517` packages that use a meson backend) and is added by default
-for packages that use the `meson` build style.
+for packages that use the `meson` build style. It also sets `$MESON_PACKAGE_CACHE_DIR` to
+`$XBPS_SRCDISTDIR/$pkgname-$version/` so libraries specified as meson wraps can be added to
+distfiles and will be automatically used by meson. See also `common/scripts/gen-wrap-distfiles.py`
+for a script that generates distfiles entries for wraps.
 
 - `numpy` configures the environment for cross-compilation of python packages that provide
 compiled extensions linking to NumPy C libraries. If the `meson` build helper is also
@@ -1137,6 +1140,10 @@ This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 for compiling cargo -sys crates.
 It also adds a `cargo` wrapper that detects and passes builds through `cargo-auditable`.
 This helper is added by default for packages that use the `cargo` build style.
+
+- `haskell` specifies environment variables for cabal.
+This helper is added by default for packages that use the `haskell-stack` or
+`cabal` build style.
 
 <a id="functions"></a>
 ### Functions
@@ -1698,20 +1705,44 @@ The path to the package's source inside `$GOPATH` is available as
 <a id="pkgs_haskell"></a>
 #### Haskell packages
 
-We build Haskell package using `stack` from
-[Stackage](http://www.stackage.org/), generally the LTS versions.
-Haskell templates need to have host dependencies on `ghc` and `stack`,
-and set build style to `haskell-stack`.
+Haskell packages can be built either with the `cabal` or `haskell-stack`
+build style, use whichever is more convenient or better supported by upstream,
+sometimes only one of the two is possible. For packages that have haskell
+parts but use a different build style like `gnu-makefile`, make sure to use
+the `haskell` build helper.
 
-The following variables influence how Haskell packages are built:
+The following variables influence how packages are built with cabal:
+
+- `cabal_index_state`: The state of the hackage cabal index to use for
+  fetching dependencies. The source package of a haskell project should
+  come with a freeze file that sets the index state, some also set it in
+  their cabal project file. If it does not, then this has to be set to an ISO
+  timestamp in the package template. For example `2025-07-05T14:01:16Z`.
+- `configure_args`: Arguments passed to `cabal configure`. The configure step
+  generates the `cabal.project.local` file.
+- `make_build_args`: Arguments passed to `cabal build`.
+- `make_build_target`: Target passed to `cabal build`.
+- `make_check_args`: Arguments passed to `cabal test`.
+- `make_check_target`: Test target passed to cabal instead of "test".
+- `make_install_target`: Target passed to `cabal install`.
+
+And these variables influence how packages are built with stack:
 
 - `stackage`: The Stackage version used to build the package, e.g.
   `lts-3.5`. Alternatively:
   - You can prepare a `stack.yaml` configuration for the project and put it
     into `files/stack.yaml`.
-  - If a `stack.yaml` file is present in the source files, it will be used
+  - If a `stack.yaml` file is present in the source files, it will be used.
 - `make_build_args`: This is passed as-is to `stack build ...`, so
   you can add your `--flag ...` parameters there.
+
+To patch dependencies of haskell packages they have to be fetched explicitly
+from hackage by adding them to `distfiles` instead of letting cabal or stack
+download them. Once extracted and patched, the path to the patched version
+can be added to `packages` in `cabal.project` or `stack.yaml`.
+Stack will find them automatically if no `stack.yaml` file exists by scanning
+the directory. The build tool will then use the patched version of the
+depencency instead of downloading it from hackage.
 
 <a id="pkgs_font"></a>
 #### Font packages
