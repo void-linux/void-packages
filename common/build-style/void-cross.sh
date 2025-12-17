@@ -98,9 +98,17 @@ _void_cross_build_bootstrap_gcc() {
 		_void_cross_apply_patch "$f"
 	done
 	if [ -f ${wrksrc}/.musl_version ]; then
+		local musl_version
 		for f in ${XBPS_SRCPKGDIR}/gcc/files/*-musl.patch; do
 			_void_cross_apply_patch "$f"
 		done
+		musl_version=$(cat "${wrksrc}/.musl_version")
+		case "$musl_version" in
+		1.1.*)
+			sed -i '/define LIBDRUNTIME_MUSL_PRE_TIME64/s/0/1/' \
+				gcc/config/linux-d.cc
+			;;
+		esac
 	fi
 	cd ..
 
@@ -337,7 +345,6 @@ _void_cross_build_musl() {
 }
 
 _void_cross_build_libucontext() {
-	[ -n "$cross_gcc_skip_go" ] && return 0
 	[ -f ${wrksrc}/.libucontext_build_done ] && return 0
 
 	local tgt=$1
@@ -390,7 +397,7 @@ _void_cross_build_gcc() {
 	mkdir -p ${wrksrc}/gcc_build
 	cd ${wrksrc}/gcc_build
 
-	local langs="c,c++,fortran,objc,obj-c++,ada,lto"
+	local langs="c,c++,fortran,objc,obj-c++,ada,lto,d"
 	if [ -z "$cross_gcc_skip_go" ]; then
 		langs+=",go"
 	fi
@@ -477,7 +484,9 @@ _void_cross_test_gcc_ver() {
 	ver=$(cat .gcc_version)
 	if [ -d "gcc-${ver}" ] && [ -f "gcc-${ver}/gcc/BASE-VER" ] && [ -f "gcc-${ver}/gcc/DATESTAMP" ]; then
 		basever="$(cat "gcc-${ver}/gcc/BASE-VER")_$(cat "gcc-${ver}/gcc/DATESTAMP")"
-		mv "gcc-${ver}" "gcc-${basever}"
+		if [ "$ver" != "$basever" ]; then
+			mv "gcc-${ver}" "gcc-${basever}"
+		fi
 		echo ${basever} > ${wrksrc}/.gcc_version
 		return
 	fi
@@ -511,12 +520,12 @@ do_build() {
 	if [ ! -f .musl_version ]; then
 		_void_cross_test_ver glibc
 		libc_ver=$(cat .glibc_version)
+		export GDCFLAGS_FOR_TARGET="$cross_glibc_cflags"
 	else
 		libc_ver=$(cat .musl_version)
-		if [ -z "$cross_gcc_skip_go" ]; then
-			_void_cross_test_ver libucontext
-			libucontext_ver=$(cat .libucontext_version)
-		fi
+		_void_cross_test_ver libucontext
+		libucontext_ver=$(cat .libucontext_version)
+		export GDCFLAGS_FOR_TARGET="$cross_musl_cflags"
 	fi
 
 	local sysroot="/usr/${tgt}"
