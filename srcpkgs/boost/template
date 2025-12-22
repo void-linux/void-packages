@@ -1,7 +1,7 @@
 # Template file for 'boost'
 pkgname=boost
-version=1.89.0
-revision=2
+version=1.90.0
+revision=1
 hostmakedepends="which bzip2-devel icu-devel python3-devel pkg-config"
 makedepends="zlib-devel bzip2-devel icu-devel python3-devel liblzma-devel libzstd-devel"
 checkdepends="openssl-devel libpng-devel libjpeg-turbo-devel"
@@ -10,7 +10,7 @@ maintainer="John <me@johnnynator.dev>"
 license="BSL-1.0"
 homepage="https://www.boost.org/"
 distfiles="https://archives.boost.io/release/${version%.rc*}/source/boost_${version//./_}.tar.bz2"
-checksum=85a33fa22621b4f314f8e85e1a5e2a9363d22e4f4992925d4bb3bc631b5a0c7a
+checksum=49551aff3b22cbc5c5a9ed3dbc92f0e23ea50a0f7325b0d198b705e8ee3fc305
 python_version=3
 noverifyrdeps=yes
 
@@ -19,11 +19,12 @@ noverifyrdeps=yes
 # which requires months of planning
 if [ "${version%beta*}" != "$version" ]; then
 	_version=${version/beta/b}
-	distfiles="https://boostorg.jfrog.io/artifactory/main/beta/${version%.rc*}/source/boost_${_version//./_}.tar.bz2"
+	distfiles="https://archives.boost.io/beta/${version}/source/boost_${_version//./_}.tar.bz2"
 fi
 
 replaces="libboost_program_options1.80>=0 libboost_math_c99f1.80>=0
  libboost_stacktrace_basic1.80>=0 libboost_stacktrace_noop1.80>=0
+ libboost_stacktrace_basic>=0 libboost_stacktrace_noop>=0
  libboost_iostreams1.80>=0 libboost_math_tr1l1.80>=0 libboost_filesystem1.80>=0
  libboost_chrono1.80>=0 libboost_math_tr1f1.80>=0 libboost_wave1.80>=0
  libboost_graph1.80>=0 libboost_locale1.80>=0 libboost_regex1.80>=0
@@ -37,20 +38,20 @@ replaces="libboost_program_options1.80>=0 libboost_math_c99f1.80>=0
  libboost_date_time1.80>=0 libboost_log1.80>=0 libboost_random1.80>=0
  libboost_thread1.80>=0 libboost_container1.80>=0
  libboost_wserialization1.80>=0 libboost_context1.80>=0
+ libboost_stacktrace_from_exception>=0
+ libboost_stacktrace_addr2line>=0
  libboost_stacktrace_addr2line1.80>=0"
 
-subpackages="boost-build
+_minimal_deps=" boost-build boost-headers
  libboost_atomic libboost_chrono libboost_container libboost_charconv
  libboost_context libboost_contract libboost_coroutine libboost_date_time
  libboost_fiber libboost_filesystem libboost_graph
  libboost_iostreams libboost_locale libboost_log libboost_log_setup
- libboost_json libboost_math_c99 libboost_math_c99f
- libboost_math_tr1 libboost_math_tr1f
- libboost_nowide libboost_prg_exec_monitor
+ libboost_json libboost_nowide libboost_prg_exec_monitor
  libboost_process libboost_program_options
  libboost_random libboost_regex libboost_serialization
- libboost_stacktrace_addr2line libboost_stacktrace_basic libboost_stacktrace_noop
  libboost_thread libboost_timer libboost_type_erasure
+ libboost_math_c99 libboost_math_c99f libboost_math_tr1 libboost_math_tr1f
  libboost_unit_test_framework libboost_url libboost_wave libboost_wserialization"
 
 # on glibc ppc, boost.math disables long double stuff because of
@@ -60,8 +61,9 @@ subpackages="boost-build
 #
 case "$XBPS_TARGET_MACHINE" in
 	ppc64le|ppc64|ppc|ppcle) ;;
-	*) subpackages+=" libboost_math_c99l libboost_math_tr1l";;
+	*) _minimal_deps+=" libboost_math_c99l libboost_math_tr1l";;
 esac
+subpackages="${_minimal_deps}"
 
 case "$XBPS_TARGET_MACHINE" in
 	i686*|x86_64*|ppc64le)
@@ -74,14 +76,13 @@ if [ "$XBPS_TARGET_LIBC" = musl ]; then
 	LDFLAGS+=" -lucontext"
 else
 	makedepends+=" libbacktrace"
-	subpackages+=" libboost_stacktrace_backtrace"
 fi
 
 _bst_except=off
 case "$XBPS_TARGET_MACHINE" in
 	x86_64*)
 		_bst_except=on
-		subpackages+=" libboost_stacktrace_from_exception"
+		# subpackages+=" libboost_stacktrace_from_exception"
 		;;
 esac
 
@@ -115,30 +116,33 @@ pre_patch() {
 	ln -sf ../boost include
 }
 
-do_build() {
+do_configure() {
 	# bootstrap.sh will reset CXX and CXXFLAGS (L229)
 	./bootstrap.sh --with-toolset=gcc \
 		--prefix=${DESTDIR}/usr --with-python=/usr/bin/python3 \
 		--with-python-root=${XBPS_CROSS_BASE}/usr
-	(
-	# Rebuild bjam for target
-	cd tools/build/src/engine
-	CXXFLAGS="$CXXFLAGS -fdebug-prefix-map=$PWD=."
-	# toolset gcc will force gcc -x c++ -O2 -s
-	# toolset cxx will use CXX and CXXFLAGS
-	CXX_VERSION_OPT=--version ./build.sh cxx
-	)
 	cat > user-config.jam <<-EOF
 	using gcc : : ${CXX} : <cxxflags>"${CXXFLAGS}" <linkflags>"${LDFLAGS}" <warnings-as-errors>"off" ;
 	using mpi ;
 	using python : ${py3_ver} : /usr/bin/python3 : ${XBPS_CROSS_BASE}/${py3_inc} : ${XBPS_CROSS_BASE}/${py3_lib} ;
 
 	EOF
+}
+
+do_build() {
+	# Rebuild bjam for target
+	# toolset gcc will force gcc -x c++ -O2 -s
+	# toolset cxx will use CXX and CXXFLAGS
+	cd tools/build/src/engine
+	CXXFLAGS="$CXXFLAGS -fdebug-prefix-map=$PWD=. $LDFLAGS" \
+	CXX_VERSION_OPT=--version ./build.sh cxx
+
+	cd $wrksrc
 	./b2 ${makejobs} \
 		--user-config=${wrksrc}/user-config.jam \
 		--toolset=gcc abi=${_abi} architecture=${_arch} \
 		python=${py3_ver} release \
-		boost.stacktrace.from_exception="${_bst_except}" \
+		boost.stacktrace.from_exception=${_bst_except} \
 		cxxflags="${CXXFLAGS}" linkflags="${LDFLAGS}" \
 		threading=multi runtime-link=shared link=shared,static
 }
@@ -147,7 +151,10 @@ do_check() {
 	local _testcase _component
 	local _ignore="contract graph"
 	# Too heavy
-	_ignore+=" math multiprecision mpi"
+	_ignore+=" math"
+	_ignore+=" multiprecision"
+	_ignore+=" mpi"
+	_ignore+=" geometry"
 	# requires clang
 	rm -f libs/hana/test/experimental/type_name.cpp
 	# https://github.com/open-mpi/ompi/issues/7330
@@ -169,7 +176,7 @@ do_check() {
 
 	# required by boost::math
 	mkdir -p .temps
-	local _skip=yes
+	local _skip=
 	local _last=
 	for _testcase in libs/*/test/; do
 		_testcase=${_testcase%/test/}
@@ -177,7 +184,7 @@ do_check() {
 		if [ -z "$_last$_skip" ]; then
 			:
 		elif [ "$_component" = "$_last" ]; then
-			_skip=
+			unset _last
 		else
 			continue
 		fi
@@ -187,10 +194,10 @@ do_check() {
 		esac
 		_component="boost::$_component"
 		msg_normal "Testing: $_component\n"
-		./b2 $_testcase/test \
+		./b2 ${makejobs} $_testcase/test \
 			--user-config=${wrksrc}/user-config.jam \
 			--toolset=gcc abi=${_abi} architecture=${_arch} \
-			boost.stacktrace.from_exception="${_bst_except}" \
+			boost.stacktrace.from_exception=${_bst_except} \
 			python=${py3_ver} release warnings-as-errors=off \
 			cxxflags="${CXXFLAGS}" linkflags="${LDFLAGS}" \
 			threading=multi ||
@@ -200,11 +207,17 @@ do_check() {
 
 do_install() {
 	# Install headers/libs
+	# - disable boost.stacktrace because everyone is using headers only
+	#   those libraries are only for decoration
 	./b2 --prefix=${DESTDIR}/usr abi=${_abi} architecture=${_arch} \
 		--user-config=${wrksrc}/user-config.jam \
 		cxxflags="${CXXFLAGS}" linkflags="${LDFLAGS}" \
 		python=${py3_ver} release \
-		boost.stacktrace.from_exception="${_bst_except}" \
+		boost.stacktrace.noop=off \
+		boost.stacktrace.backtrace=off \
+		boost.stacktrace.addr2line=off \
+		boost.stacktrace.basic=off \
+		boost.stacktrace.from_exception=off \
 		threading=multi runtime-link=shared link=shared,static \
 		install
 
@@ -256,15 +269,27 @@ boost-build_package() {
 	}
 }
 
+boost-headers_package() {
+	noverifyrdeps=yes
+	nostrip=yes
+	short_desc+=" header only"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/cmake/Boost*"
+		vmove "usr/lib/cmake/boost_headers-*"
+	}
+}
+
+
 boost-devel-minimal_package() {
-	depends="boost"
+	depends="boost ${_minimal_deps}"
 	noverifyrdeps=yes
 	nostrip=yes
 	short_desc+=" - development files"
 	pkg_install() {
-		vmove usr/include
 		vmove usr/lib/cmake
 		vmove "usr/lib/*.so"
+		vmove "usr/lib/libboost_test_exec_monitor.a"
 	}
 }
 
@@ -278,7 +303,6 @@ boost-devel_package() {
 
 libboost_atomic_package() {
 	short_desc+=" - libboost_atomic"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_atomic.so.*"
 	}
@@ -286,7 +310,6 @@ libboost_atomic_package() {
 
 libboost_charconv_package() {
 	short_desc+=" - libboost_charconv"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_charconv.so.*"
 	}
@@ -294,7 +317,6 @@ libboost_charconv_package() {
 
 libboost_chrono_package() {
 	short_desc+=" - libboost_chrono"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_chrono.so.*"
 	}
@@ -302,7 +324,6 @@ libboost_chrono_package() {
 
 libboost_container_package() {
 	short_desc+=" - libboost_container"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_container.so.*"
 	}
@@ -310,7 +331,6 @@ libboost_container_package() {
 
 libboost_context_package() {
 	short_desc+=" - libboost_context"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_context.so.*"
 	}
@@ -318,7 +338,6 @@ libboost_context_package() {
 
 libboost_contract_package() {
 	short_desc+=" - libboost_contract"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_contract.so.*"
 	}
@@ -326,7 +345,6 @@ libboost_contract_package() {
 
 libboost_coroutine_package() {
 	short_desc+=" - libboost_coroutine"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_coroutine.so.*"
 	}
@@ -334,7 +352,6 @@ libboost_coroutine_package() {
 
 libboost_date_time_package() {
 	short_desc+=" - libboost_date_time"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_date_time.so.*"
 	}
@@ -342,7 +359,6 @@ libboost_date_time_package() {
 
 libboost_fiber_package() {
 	short_desc+=" - libboost_fiber"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_fiber.so.*"
 	}
@@ -350,7 +366,6 @@ libboost_fiber_package() {
 
 libboost_filesystem_package() {
 	short_desc+=" - libboost_filesystem"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_filesystem.so.*"
 	}
@@ -358,7 +373,6 @@ libboost_filesystem_package() {
 
 libboost_graph_package() {
 	short_desc+=" - libboost_graph"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_graph.so.*"
 	}
@@ -366,7 +380,6 @@ libboost_graph_package() {
 
 libboost_graph_parallel_package() {
 	short_desc+=" - libboost_graph_parallel"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_graph_parallel.so.*"
 	}
@@ -374,7 +387,6 @@ libboost_graph_parallel_package() {
 
 libboost_iostreams_package() {
 	short_desc+=" - libboost_iostreams"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_iostreams.so.*"
 	}
@@ -382,7 +394,6 @@ libboost_iostreams_package() {
 
 libboost_json_package() {
 	short_desc+=" - libboost_json"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_json.so.*"
 	}
@@ -390,7 +401,6 @@ libboost_json_package() {
 
 libboost_locale_package() {
 	short_desc+=" - libboost_locale"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_locale.so.*"
 	}
@@ -398,7 +408,6 @@ libboost_locale_package() {
 
 libboost_log_package() {
 	short_desc+=" - libboost_log"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_log.so.*"
 	}
@@ -406,7 +415,6 @@ libboost_log_package() {
 
 libboost_log_setup_package() {
 	short_desc+=" - libboost_log_setup"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_log_setup.so.*"
 	}
@@ -414,7 +422,6 @@ libboost_log_setup_package() {
 
 libboost_math_c99_package() {
 	short_desc+=" - libboost_math_c99"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_math_c99.so.*"
 	}
@@ -422,7 +429,6 @@ libboost_math_c99_package() {
 
 libboost_math_c99f_package() {
 	short_desc+=" - libboost_math_c99f"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_math_c99f.so.*"
 	}
@@ -430,7 +436,6 @@ libboost_math_c99f_package() {
 
 libboost_math_c99l_package() {
 	short_desc+=" - libboost_math_c99l"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_math_c99l.so.*"
 	}
@@ -438,7 +443,6 @@ libboost_math_c99l_package() {
 
 libboost_math_tr1_package() {
 	short_desc+=" - libboost_math_tr1"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_math_tr1.so.*"
 	}
@@ -446,7 +450,6 @@ libboost_math_tr1_package() {
 
 libboost_math_tr1f_package() {
 	short_desc+=" - libboost_math_tr1f"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_math_tr1f.so.*"
 	}
@@ -454,7 +457,6 @@ libboost_math_tr1f_package() {
 
 libboost_math_tr1l_package() {
 	short_desc+=" - libboost_math_tr1l"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_math_tr1l.so.*"
 	}
@@ -462,7 +464,6 @@ libboost_math_tr1l_package() {
 
 libboost_mpi_package() {
 	short_desc+=" - libboost_mpi"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_mpi.so.*"
 	}
@@ -478,7 +479,6 @@ libboost_mpi-python3_package() {
 
 libboost_nowide_package() {
 	short_desc+=" - libboost_nowide"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_nowide.so.*"
 	}
@@ -486,7 +486,6 @@ libboost_nowide_package() {
 
 libboost_prg_exec_monitor_package() {
 	short_desc+=" - libboost_prg_exec_monitor"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_prg_exec_monitor.so.*"
 	}
@@ -494,7 +493,6 @@ libboost_prg_exec_monitor_package() {
 
 libboost_process_package() {
 	short_desc+=" - libboost_process"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_process.so.*"
 	}
@@ -502,7 +500,6 @@ libboost_process_package() {
 
 libboost_program_options_package() {
 	short_desc+=" - libboost_program_options"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_program_options.so.*"
 	}
@@ -510,7 +507,6 @@ libboost_program_options_package() {
 
 libboost_random_package() {
 	short_desc+=" - libboost_random"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_random.so.*"
 	}
@@ -518,7 +514,6 @@ libboost_random_package() {
 
 libboost_regex_package() {
 	short_desc+=" - libboost_regex"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_regex.so.*"
 	}
@@ -526,55 +521,13 @@ libboost_regex_package() {
 
 libboost_serialization_package() {
 	short_desc+=" - libboost_serialization"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_serialization.so.*"
 	}
 }
 
-libboost_stacktrace_addr2line_package() {
-	short_desc+=" - libboost_stacktrace_addr2line"
-	depends="boost>=${version}_${revision}"
-	pkg_install() {
-		vmove "usr/lib/libboost_stacktrace_addr2line.so.*"
-	}
-}
-
-libboost_stacktrace_backtrace_package() {
-	short_desc+=" - libboost_stacktrace_backtrace"
-	depends="boost>=${version}_${revision}"
-	pkg_install() {
-		vmove "usr/lib/libboost_stacktrace_backtrace.so.*"
-	}
-}
-
-libboost_stacktrace_basic_package() {
-	short_desc+=" - libboost_stacktrace_basic"
-	depends="boost>=${version}_${revision}"
-	pkg_install() {
-		vmove "usr/lib/libboost_stacktrace_basic.so.*"
-	}
-}
-
-libboost_stacktrace_from_exception_package() {
-	short_desc+=" - libboost_stacktrace_from_exception"
-	depends="boost>=${version}_${revision}"
-	pkg_install() {
-		vmove "usr/lib/libboost_stacktrace_from_exception.so.*"
-	}
-}
-
-libboost_stacktrace_noop_package() {
-	short_desc+=" - libboost_stacktrace_noop"
-	depends="boost>=${version}_${revision}"
-	pkg_install() {
-		vmove "usr/lib/libboost_stacktrace_noop.so.*"
-	}
-}
-
 libboost_thread_package() {
 	short_desc+=" - libboost_thread"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_thread.so.*"
 	}
@@ -582,7 +535,6 @@ libboost_thread_package() {
 
 libboost_timer_package() {
 	short_desc+=" - libboost_timer"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_timer.so.*"
 	}
@@ -590,7 +542,6 @@ libboost_timer_package() {
 
 libboost_type_erasure_package() {
 	short_desc+=" - libboost_type_erasure"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_type_erasure.so.*"
 	}
@@ -598,7 +549,6 @@ libboost_type_erasure_package() {
 
 libboost_unit_test_framework_package() {
 	short_desc+=" - libboost_unit_test_framework"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_unit_test_framework.so.*"
 	}
@@ -606,7 +556,6 @@ libboost_unit_test_framework_package() {
 
 libboost_url_package() {
 	short_desc+=" - libboost_url"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_url.so.*"
 	}
@@ -614,7 +563,6 @@ libboost_url_package() {
 
 libboost_wave_package() {
 	short_desc+=" - libboost_wave"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_wave.so.*"
 	}
@@ -622,7 +570,6 @@ libboost_wave_package() {
 
 libboost_wserialization_package() {
 	short_desc+=" - libboost_wserialization"
-	depends="boost>=${version}_${revision}"
 	pkg_install() {
 		vmove "usr/lib/libboost_wserialization.so.*"
 	}
