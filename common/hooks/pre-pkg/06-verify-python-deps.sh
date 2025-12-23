@@ -11,6 +11,7 @@ hook() {
                 "${XBPS_COMMONDIR}"/scripts/parse-py-metadata.py \
                 ${NOCOLORS:+-C} ${XBPS_STRICT:+-s} -S "${PKGDESTDIR}/${py3_sitelib}" -v "${pkgver}" \
                 depends -e "${python_extras}" \
+                -G <( $XBPS_QUERY_XCMD -o '/usr/lib/girepository-*/*.typelib' ) \
                 -V <( $XBPS_QUERY_XCMD -R -p provides -s "py3:" ) -D "${XBPS_STATEDIR}/${pkgname}-rdeps" \
                 || msg_error "$pkgver: failed to verify python module dependencies\n"
     fi
