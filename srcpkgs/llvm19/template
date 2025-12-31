@@ -1,7 +1,7 @@
 # Template file for 'llvm19'
 pkgname=llvm19
 version=19.1.4
-revision=7
+revision=8
 build_wrksrc=llvm
 build_style=cmake
 _llvm_prefix=lib/llvm/19
@@ -11,7 +11,6 @@ _llvm_datadir=usr/${_llvm_prefix}/share
 _llvm_incdir=usr/${_llvm_prefix}/include
 _llvm_libdir=usr/${_llvm_prefix}/lib
 _llvm_libexecdir=usr/${_llvm_prefix}/libexec
-_ext_suffix=".cpython-${py3_ver/./}-linux-${XBPS_TARGET_LIBC/glibc/gnu}.so"
 configure_args="
  -DCMAKE_BUILD_TYPE=Release -Wno-dev
  -DCMAKE_INSTALL_PREFIX=/usr/${_llvm_prefix}
@@ -39,17 +38,15 @@ configure_args="
  -DLLVM_ENABLE_RTTI=YES
  -DLLVM_ENABLE_FFI=YES
  -DLLVM_BINUTILS_INCDIR=/usr/include
- -DLLDB_PYTHON_RELATIVE_PATH=lib/python${py3_ver}/site-packages
- -DLLDB_PYTHON_EXE_RELATIVE_PATH=bin/python${py3_ver}
- -DLLDB_PYTHON_EXT_SUFFIX=$_ext_suffix
+ -DLLDB_ENABLE_PYTHON=NO
  -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=NO
  -DLLVM_SPIRV=/usr/bin/llvm-spirv
 "
 hostmakedepends="perl python3 zlib-devel libffi-devel swig python3-Sphinx
- python3-recommonmark python3-sphinx-automodapi python3-sphinx-markdown-tables python3-yaml pkg-config
+ python3-sphinx-automodapi python3-sphinx-markdown-tables python3-yaml pkg-config
  python3-mdit-py-plugins python3-MyST-Parser python3-markdown-it
  patchelf $(vopt_if graphviz graphviz)"
-makedepends="python3-devel zlib-devel elfutils-devel libffi-devel libedit-devel
+makedepends="zlib-devel elfutils-devel libffi-devel libedit-devel
  libxml2-devel binutils-devel z3-devel"
 short_desc="LLVM Compiler Infrastructure Project - Version 19"
 maintainer="Daniel Martinez <danielmartinez@cock.li>"
@@ -62,9 +59,8 @@ lib32disabled=yes
 python_version=3
 
 build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt
- openmp libc libcxx libunwind offload lto graphviz full_debug"
-build_options_default="clang clang_tools_extra lld libclc polly lldb
- libcxx libunwind mlir"
+ openmp libc offload lto graphviz full_debug"
+build_options_default="clang clang_tools_extra lld libclc polly lldb mlir"
 
 # fails to build with libquadmth on musl
 case "$XBPS_TARGET_MACHINE" in
@@ -128,8 +124,6 @@ subpackages="
  $( vopt_if mlir 'mlir19 mlir19-devel' )
  $( vopt_if flang 'flang19 flang19-devel' )
  $( vopt_if openmp 'libomp19 libomp19-devel' )
- $( vopt_if libunwind 'llvm-libunwind llvm-libunwind-devel' )
- $( vopt_if libcxx 'libcxx libcxxabi libcxxabi-devel libcxx-devel' )
 "
 
 _enabled_projects="$(vopt_if clang 'clang;')\
@@ -142,12 +136,8 @@ $(vopt_if libclc 'libclc;')\
 $(vopt_if mlir 'mlir;')\
 $(vopt_if flang 'flang;')"
 
-_enabled_runtimes="compiler-rt\
-$(vopt_if openmp ';openmp')\
-$(vopt_if offload ';offload')\
-$(vopt_if libc ';libc')\
-$(vopt_if libunwind ';libunwind')\
-$(vopt_if libcxx ';libcxxabi;libcxx')"
+_enabled_runtimes="compiler-rt;libunwind;libcxxabi;libcxx\
+$(vopt_if openmp ';openmp')$(vopt_if offload ';offload')$(vopt_if libc ';libc')"
 
 configure_args+=" -DLLVM_ENABLE_RUNTIMES=${_enabled_runtimes}"
 configure_args+=" -DLLVM_ENABLE_PROJECTS=${_enabled_projects}"
@@ -284,50 +274,6 @@ pre_build() {
 	_setup_debug
 }
 
-post_build() {
-
-	if [ "$CROSS_BUILD" ]; then
-		CC="clang"
-		CXX="clang++"
-
-		CFLAGS+=" --target=${XBPS_CROSS_TRIPLET} --sysroot=${XBPS_CROSS_BASE} "
-		CFLAGS+=" --gcc-toolchain=/usr"
-		CFLAGS+=" -L/${_llvm_libdir}/${XBPS_CROSS_TRIPLET} "
-
-		CXXFLAGS+=" --target=${XBPS_CROSS_TRIPLET} --sysroot=${XBPS_CROSS_BASE} "
-		CXXFLAGS+=" --gcc-toolchain=/usr"
-		CXXFLAGS+=" -L/${_llvm_libdir}/${XBPS_CROSS_TRIPLET} "
-	else
-		export CC=${wrksrc}/llvm/build/bin/clang
-		export CXX=${wrksrc}/llvm/build/bin/clang++
-	fi
-
-	mkdir -p ${wrksrc}/${build_wrksrc}/builddir_runtimes
-	cmake -G Ninja ${wrksrc}/runtimes -B ${wrksrc}/${build_wrksrc}/builddir_runtimes \
-		-DCMAKE_INSTALL_PREFIX=/usr \
-		-DCMAKE_ASM_COMPILER_TARGET=${_triplet} \
-		-DCMAKE_C_COMPILER=$CC \
-		-DCMAKE_C_COMPILER_TARGET=${_triplet} \
-		-DCMAKE_CXX_COMPILER=$CXX \
-		-DCMAKE_CXX_COMPILER_TARGET=${_triplet} \
-		-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
-		-DLIBCXXABI_ENABLE_STATIC_UNWINDER=YES \
-		-DLIBCXXABI_USE_COMPILER_RT=YES \
-		-DLIBCXXABI_USE_LLVM_UNWINDER=YES \
-		-DLIBCXX_CXX_ABI=libcxxabi \
-		-DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=YES \
-		-DLIBCXX_USE_COMPILER_RT=YES \
-		-DLLVM_ENABLE_SPHINX=ON \
-		-DLLVM_TARGET_ARCH=${_arch} \
-		-DLLVM_HOST_TRIPLE=${_triplet} \
-		-DLLVM_DEFAULT_TARGET_TRIPLE=${_triplet} \
-		-DLIBCXX_HAS_MUSL_LIBC=${_is_musl} \
-		-DSPHINX_WARNINGS_AS_ERRORS=OFF
-
-	ninja ${makejobs} -C ${wrksrc}/${build_wrksrc}/builddir_runtimes
-	ninja ${makejobs} -C ${wrksrc}/${build_wrksrc}/builddir_runtimes docs-libcxx-html docs-libunwind-html
-}
-
 post_install() {
 
 	# Required for multilib.
@@ -345,29 +291,6 @@ post_install() {
 	fi
 
 	rm -rf ${DESTDIR}/usr/share/gdb
-
-	if [ "$build_option_libcxx" ]; then
-
-		cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr \
-			-P ${wrksrc}/${build_wrksrc}/builddir_runtimes/libcxx/docs/cmake_install.cmake
-
-		LIBCXX_DOCS=${_llvm_datadir}/doc/LLVM/libcxx
-		vmkdir ${LIBCXX_DOCS}
-		vcopy ${wrksrc}/${build_wrksrc}/builddir_runtimes/libcxx/docs/html ${LIBCXX_DOCS}
-	fi
-
-	if [ "$build_option_libunwind" ]; then
-
-		cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr \
-			-P ${wrksrc}/${build_wrksrc}/builddir_runtimes/libunwind/docs/cmake_install.cmake
-
-		LIBUNWIND_DOCS=${_llvm_datadir}/doc/LLVM/libunwind
-		vmkdir ${LIBUNWIND_DOCS}
-		vcopy ${wrksrc}/${build_wrksrc}/builddir_runtimes/libunwind/docs/html ${LIBUNWIND_DOCS}
-	fi
-
-	cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr \
-		-P ${wrksrc}/${build_wrksrc}/builddir_runtimes/cmake_install.cmake
 
 	# Can this be disabled some other way?
 	rm -f ${DESTDIR}/usr/lib64
@@ -736,7 +659,6 @@ llvm-bolt19_package() {
 
 lldb19_package() {
 	lib32disabled=yes
-	depends+=" python3-six"
 	conflicts="lldb18>=0 lldb17>=0 lldb15>=0"
 	short_desc+=" - LLDB debugger"
 	homepage="https://lldb.llvm.org/"
@@ -746,7 +668,6 @@ lldb19_package() {
 		bin/lldb-instr
 		bin/lldb-server
 		bin/lldb-dap
-		lib/python${py3_ver}/site-packages/lldb
 	)
 	if [ -z "$CROSS_BUILD" ]; then
 		_lldb19_files+=("lib/lua/5.3/lldb.so")
@@ -955,63 +876,6 @@ libomp19-devel_package() {
 			vmove "${_llvm_libdir}/libomptarget*.bc"
 			vmove "${_llvm_libdir}/libomp*.a"
 		fi
-	}
-}
-
-llvm-libunwind_package() {
-	short_desc+=" - libunwind"
-	pkg_install() {
-		vmove "usr/lib/libunwind.so.*"
-	}
-}
-
-llvm-libunwind-devel_package() {
-	short_desc+=" - libunwind - development files"
-	depends="llvm-libunwind>=${version}_${revision}"
-	conflicts="libunwind-devel>=0"
-	pkg_install() {
-		vmove usr/include/mach-o
-		vmove "usr/include/*unwind*"
-		vmove "usr/lib/libunwind.a"
-		vmove "usr/lib/libunwind.so"
-	}
-}
-
-libcxxabi_package() {
-	short_desc+=" - low level support for libc++"
-	pkg_install() {
-		vmove "usr/lib/libc++abi.so.*"
-	}
-}
-
-libcxxabi-devel_package() {
-	short_desc+=" - low level support for libc++ - development files"
-	depends="libcxxabi>=${version}_${revision}"
-	pkg_install() {
-		vmove usr/include/c++/v1/cxxabi.h
-		vmove usr/include/c++/v1/__cxxabi_config.h
-		vmove usr/lib/libc++abi.so
-		vmove usr/lib/libc++abi.a
-	}
-}
-
-libcxx_package() {
-	short_desc+=" - C++ standard library"
-	pkg_install() {
-		vmove "usr/lib/libc++.so.*"
-	}
-}
-
-libcxx-devel_package() {
-	short_desc+=" - C++ standard library - development files"
-	depends="libcxx>=${version}_${revision}"
-	pkg_install() {
-		vmove usr/lib/libc++.modules.json
-		vmove usr/include/c++
-		vmove usr/share/libc++
-		vmove "usr/lib/libc++.so"
-		vmove "usr/lib/libc++.a"
-		vmove "usr/lib/libc++experimental.a"
 	}
 }
 
