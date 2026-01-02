@@ -1,4 +1,4 @@
-Source: OpenBSD ports, adapted to work with meson
+Source: OpenBSD ports
 Upstream: No
 Reason: sndio support
 
@@ -15,10 +15,10 @@ index d984b50..5f0becc 100644
  subdir('vorbis')
 diff --git a/ext/sndio/gstsndio.c b/ext/sndio/gstsndio.c
 new file mode 100644
-index 0000000..2321dc2
+index 0000000..e358b48
 --- /dev/null
 +++ b/ext/sndio/gstsndio.c
-@@ -0,0 +1,401 @@
+@@ -0,0 +1,407 @@
 +/*
 + * Copyright (C) 2008 Jacob Meuser <jakemsr@sdf.lonestar.org>
 + * Copyright (C) 2012 Alexandre Ratchov <alex@caoua.org>
@@ -42,6 +42,7 @@ index 0000000..2321dc2
 +
 +#include <stdio.h>
 +#include "gstsndio.h"
++#include "sndiodeviceprovider.h"
 +
 +GST_DEBUG_CATEGORY (gst_sndio_debug);
 +#define GST_CAT_DEFAULT gst_sndio_debug
@@ -62,6 +63,9 @@ index 0000000..2321dc2
 +  if (!gst_element_register (plugin, "sndiosink", GST_RANK_PRIMARY + 20,
 +          gst_sndiosink_get_type()))
 +    return FALSE;
++  if (!gst_device_provider_register (plugin, "sndiodeviceprovider", GST_RANK_PRIMARY + 20,
++          gst_sndio_device_provider_get_type()))
++    return FALSE;
 +  return TRUE;
 +}
 +
@@ -81,6 +85,8 @@ index 0000000..2321dc2
 +  sio->obj = obj;
 +  sio->hdl = NULL;
 +  sio->device = g_strdup (SIO_DEVANY);
++  /* XXX not implemented; only used for src, not sink */
++  // sio->driver_timestamps = FALSE;
 +}
 +
 +void
@@ -422,10 +428,10 @@ index 0000000..2321dc2
 +}
 diff --git a/ext/sndio/gstsndio.h b/ext/sndio/gstsndio.h
 new file mode 100644
-index 0000000..77ec4e6
+index 0000000..1d54126
 --- /dev/null
 +++ b/ext/sndio/gstsndio.h
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,79 @@
 +/*
 + * Copyright (C) 2012 Alexandre Ratchov <alex@caoua.org>
 + *
@@ -483,6 +489,7 @@ index 0000000..77ec4e6
 +    guint volume;	/* volume level */
 +    GstCaps *cur_caps;  /* saved capabilities of opened device */
 +    GObject *obj;	/* for logging */
++    gboolean driver_timestamps;
 +};
 +
 +#define GST_SNDIO_DELAY(s) ((s)->delay / (s)->bpf)
@@ -506,31 +513,262 @@ index 0000000..77ec4e6
 +#endif
 diff --git a/ext/sndio/meson.build b/ext/sndio/meson.build
 new file mode 100644
-index 0000000..3f9a9fe
+index 0000000..52d3da9
 --- /dev/null
 +++ b/ext/sndio/meson.build
 @@ -0,0 +1,21 @@
 +sndio_sources = [
 +  'gstsndio.c',
++  'sndiodevice.c',
++  'sndiodeviceprovider.c',
 +  'sndiosink.c',
 +  'sndiosrc.c',
 +]
 +
-+cc =  meson.get_compiler('c')
-+
-+sndio_dep = cc.find_library('sndio', required : get_option('sndio'))
++sndio_dep = dependency('sndio', required : get_option('sndio'))
 +
 +if sndio_dep.found()
 +  gstsndio = library('gstsndio',
 +    sndio_sources,
-+	c_args : gst_plugins_base_args,
-+  include_directories: [configinc, libsinc],
-+  dependencies: [gst_base_dep, sndio_dep, audio_dep],
++    c_args : gst_plugins_base_args,
++    include_directories: [configinc, libsinc],
++    dependencies : [sndio_dep, audio_dep, tag_dep, gst_dep, gst_base_dep],
 +    install : true,
 +    install_dir : plugins_install_dir,
-+  )
++ )
 +  pkgconfig.generate(gstsndio, install_dir : plugins_pkgconfig_install_dir)
 +endif
+diff --git a/ext/sndio/sndiodevice.c b/ext/sndio/sndiodevice.c
+new file mode 100644
+index 0000000..7e04c9c
+--- /dev/null
++++ b/ext/sndio/sndiodevice.c
+@@ -0,0 +1,79 @@
++#include <string.h>
++#include <gst/gst.h>
++#include <sndio.h>
++#include <stdio.h>
++#include "gstsndio.h"
++#include "sndiodevice.h"
++
++G_DEFINE_TYPE (GstSndioDevice, gst_sndio_device, GST_TYPE_DEVICE);
++
++GstDevice *
++gst_sndio_device_new (const gchar *name, int mode)
++{
++  static GstStaticCaps sndio_caps = GST_STATIC_CAPS (GST_SNDIO_CAPS_STRING);
++  GstSndioDevice *sndio_device;
++  GstCaps *caps;
++  GstStructure *props;
++  const gchar *klass;
++
++  klass = (mode == SIO_REC) ? "Audio/Source" : "Audio/Sink";
++
++  caps = gst_static_caps_get (&sndio_caps);
++
++  props = gst_structure_new ("sndio-proplist",
++      "device.api", G_TYPE_STRING, "sndio",
++      "device.class", G_TYPE_STRING, "sound",
++      NULL);
++
++  sndio_device = g_object_new (GST_TYPE_SNDIO_DEVICE,
++      "display-name", name,
++      "caps", caps,
++      "device-class", klass,
++      "properties", props,
++      NULL);
++
++  sndio_device->mode = mode;
++
++  /* sndio_device owns 'caps' and 'props', so free ours */
++
++  gst_structure_free (props);
++  gst_caps_unref (caps);
++
++  return GST_DEVICE (sndio_device);
++}
++
++static GstElement *
++gst_sndio_device_create_element (GstDevice *device, const gchar *name)
++{
++  GstSndioDevice *sndio_device = GST_SNDIO_DEVICE (device);
++  GstElement *element;
++  const char *element_name;
++
++  element_name = (sndio_device->mode == SIO_REC) ? "sndiosrc" : "sndiosink";
++
++  element = gst_element_factory_make (element_name, name);
++  g_object_set (element, "device", gst_device_get_display_name(device), NULL);
++
++  return element;
++}
++
++static void
++gst_sndio_device_finalize (GObject *object)
++{
++  G_OBJECT_CLASS (gst_sndio_device_parent_class)->finalize (object);
++}
++
++static void
++gst_sndio_device_class_init (GstSndioDeviceClass *klass)
++{
++  GstDeviceClass *dev_class = GST_DEVICE_CLASS (klass);
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++
++  dev_class->create_element = gst_sndio_device_create_element;
++  object_class->finalize = gst_sndio_device_finalize;
++}
++
++static void
++gst_sndio_device_init (GstSndioDevice *device)
++{
++}
+diff --git a/ext/sndio/sndiodevice.h b/ext/sndio/sndiodevice.h
+new file mode 100644
+index 0000000..c5e5a96
+--- /dev/null
++++ b/ext/sndio/sndiodevice.h
+@@ -0,0 +1,40 @@
++#ifndef __GST_SNDIODEVICE_H__
++#define __GST_SNDIODEVICE_H__
++
++#include <gst/gst.h>
++
++G_BEGIN_DECLS
++
++typedef struct _GstSndioDevice GstSndioDevice;
++typedef struct _GstSndioDeviceClass GstSndioDeviceClass;
++
++#define GST_TYPE_SNDIO_DEVICE \
++	(gst_sndio_device_get_type())
++#define GST_IS_SNDIO_DEVICE(obj) \
++	(G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_SNDIO_DEVICE))
++#define GST_IS_SNDIO_DEVICE_CLASS(klass) \
++	(G_TYPE_CHECK_CLASS_TYPE ((klass), GST_TYPE_SNDIO_DEVICE))
++#define GST_SNDIO_DEVICE_GET_CLASS(obj) \
++	(G_TYPE_INSTANCE_GET_CLASS ((obj), GST_TYPE_SNDIO_DEVICE, GstSndioDeviceClass))
++#define GST_SNDIO_DEVICE(obj) \
++	(G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_SNDIO_DEVICE, GstSndioDevice))
++#define GST_SNDIO_DEVICE_CLASS(klass) \
++	(G_TYPE_CHECK_CLASS_CAST ((klass), GST_TYPE_DEVICE, GstSndioDeviceClass))
++#define GST_SNDIO_DEVICE_CAST(obj) \
++	((GstSndioDevice *)(obj))
++
++struct _GstSndioDevice {
++  GstDevice parent;
++  int mode;
++};
++
++struct _GstSndioDeviceClass {
++  GstDeviceClass parent_class;
++};
++
++GstDevice *gst_sndio_device_new (const gchar *, int);
++GType gst_sndio_device_get_type (void);
++
++G_END_DECLS
++
++#endif
+diff --git a/ext/sndio/sndiodeviceprovider.c b/ext/sndio/sndiodeviceprovider.c
+new file mode 100644
+index 0000000..e8d47af
+--- /dev/null
++++ b/ext/sndio/sndiodeviceprovider.c
+@@ -0,0 +1,50 @@
++#include <string.h>
++#include <gst/gst.h>
++#include <sndio.h>
++#include <stdio.h>
++#include "sndiodeviceprovider.h"
++#include "sndiodevice.h"
++
++G_DEFINE_TYPE (GstSndioDeviceProvider, gst_sndio_device_provider, GST_TYPE_DEVICE_PROVIDER);
++
++static GList *
++gst_sndio_device_provider_probe (GstDeviceProvider *provider)
++{
++  GList *list = NULL;
++  GstDevice *device;
++  struct sio_hdl *hdl;
++
++  /*
++   * There's no way to discover all devices on the network, so
++   * just return the default device. The user can point it to
++   * any device.
++   */
++
++  device = gst_sndio_device_new (SIO_DEVANY, SIO_PLAY);
++  if (device)
++    list = g_list_prepend (list, device);
++
++  device = gst_sndio_device_new (SIO_DEVANY, SIO_REC);
++  if (device)
++    list = g_list_prepend (list, device);
++
++  return list;
++}
++
++static void
++gst_sndio_device_provider_class_init (GstSndioDeviceProviderClass *klass)
++{
++  GstDeviceProviderClass *dm_class = GST_DEVICE_PROVIDER_CLASS (klass);
++
++  dm_class->probe = gst_sndio_device_provider_probe;
++
++  gst_device_provider_class_set_static_metadata (dm_class,
++      "Sndio Device Provider", "Sink/Source/Audio",
++      "List and provide sndio source and sink devices",
++      "Alexandre Ratchov <alex@caoua.com>");
++}
++
++static void
++gst_sndio_device_provider_init (GstSndioDeviceProvider *self)
++{
++}
+diff --git a/ext/sndio/sndiodeviceprovider.h b/ext/sndio/sndiodeviceprovider.h
+new file mode 100644
+index 0000000..5e961de
+--- /dev/null
++++ b/ext/sndio/sndiodeviceprovider.h
+@@ -0,0 +1,38 @@
++#ifndef __GST_SNDIODEVICEPROVIDER_H__
++#define __GST_SNDIODEVICEPROVIDER_H__
++
++#include <gst/gst.h>
++
++G_BEGIN_DECLS
++
++typedef struct _GstSndioDeviceProvider GstSndioDeviceProvider;
++typedef struct _GstSndioDeviceProviderClass GstSndioDeviceProviderClass;
++
++#define GST_TYPE_SNDIO_DEVICE_PROVIDER \
++	(gst_sndio_device_provider_get_type())
++#define GST_IS_SNDIO_DEVICE_PROVIDER(obj) \
++	(G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_SNDIO_DEVICE_PROVIDER))
++#define GST_IS_SNDIO_DEVICE_PROVIDER_CLASS(klass) \
++	(G_TYPE_CHECK_CLASS_TYPE ((klass), GST_TYPE_SNDIO_DEVICE_PROVIDER))
++#define GST_SNDIO_DEVICE_PROVIDER_GET_CLASS(obj) \
++	(G_TYPE_INSTANCE_GET_CLASS ((obj), GST_TYPE_SNDIO_DEVICE_PROVIDER, GstSndioDeviceProviderClass))
++#define GST_SNDIO_DEVICE_PROVIDER(obj) \
++	(G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_SNDIO_DEVICE_PROVIDER, GstSndioDeviceProvider))
++#define GST_SNDIO_DEVICE_PROVIDER_CLASS(klass) \
++	(G_TYPE_CHECK_CLASS_CAST ((klass), GST_TYPE_DEVICE_PROVIDER, GstSndioDeviceProviderClass))
++#define GST_SNDIO_DEVICE_PROVIDER_CAST(obj) \
++	((GstSndioDeviceProvider *)(obj))
++
++struct _GstSndioDeviceProvider {
++  GstDeviceProvider parent;
++};
++
++struct _GstSndioDeviceProviderClass {
++  GstDeviceProviderClass parent_class;
++};
++
++GType gst_sndio_device_provider_get_type (void);
++
++G_END_DECLS
++
++#endif
 diff --git a/ext/sndio/sndiosink.c b/ext/sndio/sndiosink.c
 new file mode 100644
 index 0000000..cc68bd2
@@ -828,10 +1066,10 @@ index 0000000..314e622
 +#endif /* __GST_SNDIOSINK_H__ */
 diff --git a/ext/sndio/sndiosrc.c b/ext/sndio/sndiosrc.c
 new file mode 100644
-index 0000000..5b6d787
+index 0000000..d050942
 --- /dev/null
 +++ b/ext/sndio/sndiosrc.c
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,228 @@
 +/*
 + * Copyright (C) 2008 Jacob Meuser <jakemsr@sdf.lonestar.org>
 + * Copyright (C) 2012 Alexandre Ratchov <alex@caoua.org>
@@ -888,7 +1126,7 @@ index 0000000..5b6d787
 +    GstAudioRingBufferSpec * spec);
 +static gboolean gst_sndiosrc_unprepare (GstAudioSrc * asrc);
 +static guint gst_sndiosrc_read (GstAudioSrc * asrc, gpointer data,
-+    guint length);
++    guint length, GstClockTime * timestamp);
 +static guint gst_sndiosrc_delay (GstAudioSrc * asrc);
 +static void gst_sndiosrc_reset (GstAudioSrc * asrc);
 +static void gst_sndiosrc_set_property (GObject * object, guint prop_id,
@@ -907,6 +1145,8 @@ index 0000000..5b6d787
 +gst_sndiosrc_init (GstSndioSrc * src)
 +{
 +  gst_sndio_init (&src->sndio, G_OBJECT(src));
++  /* XXX not implemented */
++  src->sndio.driver_timestamps = FALSE;
 +}
 +
 +static void
@@ -959,7 +1199,8 @@ index 0000000..5b6d787
 +}
 +
 +static guint
-+gst_sndiosrc_read (GstAudioSrc * asrc, gpointer data, guint length)
++gst_sndiosrc_read (GstAudioSrc * asrc, gpointer data, guint length,
++    GstClockTime * timestamp)
 +{
 +  GstSndioSrc *src = GST_SNDIOSRC (asrc);
 +  guint done;
@@ -1028,7 +1269,7 @@ index 0000000..5b6d787
 +  gobject_class->set_property = gst_sndiosrc_set_property;
 +
 +  gst_element_class_set_static_metadata (gstelement_class,
-+      "Audio src (sndio)", "Src/Audio",
++      "Audio src (sndio)", "Source/Audio",
 +      "Input from a sound card via sndio",
 +      "Jacob Meuser <jakemsr@sdf.lonestar.org>");
 +
@@ -1059,7 +1300,7 @@ index 0000000..5b6d787
 +}
 diff --git a/ext/sndio/sndiosrc.h b/ext/sndio/sndiosrc.h
 new file mode 100644
-index 0000000..83fd29c
+index 0000000..4499e4e
 --- /dev/null
 +++ b/ext/sndio/sndiosrc.h
 @@ -0,0 +1,57 @@
@@ -1093,26 +1334,26 @@ index 0000000..83fd29c
 +G_BEGIN_DECLS
 +
 +#define GST_TYPE_SNDIOSRC \
-+  (gst_sndiosrc_get_type())
++(gst_sndiosrc_get_type())
 +#define GST_SNDIOSRC(obj) \
-+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_SNDIOSRC,GstSndioSrc))
++(G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_SNDIOSRC,GstSndioSrc))
 +#define GST_SNDIOSRC_CLASS(klass) \
-+  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_SNDIOSRC,GstSndioSrcClass))
++(G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_SNDIOSRC,GstSndioSrcClass))
 +#define GST_IS_SNDIOSRC(obj) \
-+  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_SNDIOSRC))
++(G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_SNDIOSRC))
 +#define GST_IS_SNDIOSRC_CLASS(klass) \
-+  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_SNDIOSRC))
++(G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_SNDIOSRC))
 +
 +typedef struct _GstSndioSrc GstSndioSrc;
 +typedef struct _GstSndioSrcClass GstSndioSrcClass;
 +
 +struct _GstSndioSrc {
-+  GstAudioSrc src;
-+  struct gstsndio sndio;
++    GstAudioSrc src;
++    struct gstsndio sndio;
 +};
 +
 +struct _GstSndioSrcClass {
-+  GstAudioSrcClass parent_class;
++    GstAudioSrcClass parent_class;
 +};
 +
 +GType gst_sndiosrc_get_type (void);
@@ -1120,15 +1361,15 @@ index 0000000..83fd29c
 +G_END_DECLS
 +
 +#endif /* __GST_SNDIOSRC_H__ */
-diff --git a/meson_options.txt b/meson_options.txt
-index e7af4dd..827507f 100644
---- a/meson_options.txt
-+++ b/meson_options.txt
-@@ -58,6 +58,7 @@ option('libvisual', type : 'feature', value : 'auto', description : 'libvisual a
+diff --git a/meson.options b/meson.options
+index c2131a1..4d5e905 100644
+--- a/meson.options
++++ b/meson.options
+@@ -56,6 +56,7 @@ option('volume', type : 'feature', value : 'auto')
+ 
+ # Feature options for plugins with external deps
+ option('alsa', type : 'feature', value : 'auto', description : 'ALSA audio source/sink plugin')
++option('sndio', type : 'feature', value : 'auto', description : 'SNDIO audio source/sink plugin')
+ option('cdparanoia', type : 'feature', value : 'auto', description : 'cdparanoia plugin')
+ option('libvisual', type : 'feature', value : 'auto', description : 'libvisual audio visualization plugin')
  option('ogg', type : 'feature', value : 'auto', description : 'ogg parser, muxer, demuxer plugin')
- option('opus', type : 'feature', value : 'auto', description : 'OPUS audio codec plugin')
- option('pango', type : 'feature', value : 'auto', description : 'Pango text rendering and overlay plugin')
-+option('sndio', type : 'feature', value : 'auto', description : 'sndio support')
- option('theora', type : 'feature', value : 'auto', description : 'Theora video parser and codec plugin')
- option('tremor', type : 'feature', value : 'auto', description : 'Integer Vorbis decoder plugin for devices without floating point')
- option('vorbis', type : 'feature', value : 'auto', description : 'Vorbis audio parser, tagger, and codec plugin')
