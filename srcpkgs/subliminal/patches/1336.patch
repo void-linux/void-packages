@@ -1,0 +1,105 @@
+From f31eef51a0d35027cd245cfb02ec60b01bb8f386 Mon Sep 17 00:00:00 2001
+From: John Zimmermann <me@johnzimmermann.de>
+Date: Mon, 29 Dec 2025 15:56:59 +0100
+Subject: [PATCH 1/2] Replace opensubtitlescom _search recursion with a
+ generator implementation (#1336)
+
+* Replace opensubtitlescom _search recursion with a generator implementation
+
+It can happen that a opensubtitlescom query might return hundreds of
+pages, this can lead to a stackoverflow (especially on systems with a
+smaller default thread stack size like musl libc)
+---
+ changelog.d/1336.provider.rst                |  1 +
+ src/subliminal/providers/opensubtitlescom.py | 45 +++++++++-----------
+ 2 files changed, 21 insertions(+), 25 deletions(-)
+ create mode 100644 changelog.d/1336.provider.rst
+
+diff --git a/changelog.d/1336.provider.rst b/changelog.d/1336.provider.rst
+new file mode 100644
+index 0000000..ce050fa
+--- /dev/null
++++ b/changelog.d/1336.provider.rst
+@@ -0,0 +1 @@
++OpenSubtitlesCom: replace recursive ``_search()`` implementation to prevent a stack overflow in some edge case
+diff --git a/src/subliminal/providers/opensubtitlescom.py b/src/subliminal/providers/opensubtitlescom.py
+index 1325716..e4883dd 100644
+--- a/src/subliminal/providers/opensubtitlescom.py
++++ b/src/subliminal/providers/opensubtitlescom.py
+@@ -31,7 +31,7 @@ from subliminal.video import Episode, Movie, Video
+ from . import Provider
+ 
+ if TYPE_CHECKING:
+-    from collections.abc import Mapping, Set
++    from collections.abc import Generator, Mapping, Set
+ 
+ C = TypeVar('C', bound=Callable)
+ 
+@@ -595,30 +595,28 @@ class OpenSubtitlesComProvider(Provider):
+ 
+         return r.json()  # type: ignore[no-any-return]
+ 
+-    def _search(self, *, page: int = 1, **params: Any) -> list[dict[str, Any]]:
+-        # Extended params with page
+-        ext_params = {'page': page, **params}
++    def _search(self, **params: Any) -> Generator[dict[str, Any], None, None]:
++        page = 1
+ 
+-        # query the server
+-        logger.info('Searching subtitles %r', ext_params)
++        while True:
++            # Extended params with page
++            ext_params = {'page': page, **params}
++            logger.info('Searching subtitles %r', ext_params)
++            # GET request and add page information
++            response = self.api_get('subtitles', ext_params)
++            if not response or not response['data']:
++                break
++            yield from response['data']
+ 
+-        # GET request and add page information
+-        response = self.api_get('subtitles', ext_params)
++            page += 1
+ 
+-        if not response or not response['data']:
+-            return []
++            # check that the maximum number of pages has not been exceeded
++            if self.max_result_pages > 0 and page > self.max_result_pages:
++                break
+ 
+-        ret = response['data']
+-
+-        # check that the maximum number of pages has not been exceeded
+-        allow_more_pages = self.max_result_pages <= 0 or page < self.max_result_pages
+-
+-        # retrieve other pages maybe
+-        if allow_more_pages and 'total_pages' in response and page < response['total_pages']:
+-            # missing pages
+-            ret.extend(self._search(page=page + 1, **params))
+-
+-        return ret  # type: ignore[no-any-return]
++            # check if we fetched all pages already
++            if 'total_pages' not in response or page > response['total_pages']:
++                break
+ 
+     def _make_query(
+         self,
+@@ -711,14 +709,11 @@ class OpenSubtitlesComProvider(Provider):
+             # add the language and query the server
+             criterion.update({'languages': ','.join(sorted(lang.opensubtitlescom for lang in languages))})
+ 
+-            # query the server
+-            responses = self._search(**criterion)
+-
+             imdb_match = 'imdb_id' in criterion or 'show_imdb_id' in criterion
+             tmdb_match = 'tmdb_id' in criterion or 'show_tmdb_id' in criterion
+ 
+             # loop over subtitle items
+-            for response in responses:
++            for response in self._search(**criterion):
+                 # read single response
+                 subtitle = self.subtitle_class.from_response(
+                     response,
+-- 
+2.51.2
+
