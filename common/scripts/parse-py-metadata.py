@@ -113,6 +113,7 @@ def parse_depends(args):
     depends = dict()
     vpkgs = dict()
     extras = set(args.extras.split())
+    provides = set()
 
     with args.vpkgs.open() as f:
         for ln in f.readlines():
@@ -138,6 +139,8 @@ def parse_depends(args):
 
         meta = Metadata.from_email(raw, validate=False)
 
+        provides.add(f"py3:{meta.name}")
+
         if meta.requires_dist is not None:
             depends.update(map(lambda p: (vpkgname(p), None),
                                filter(lambda r: match_markers(r, extras), meta.requires_dist)))
@@ -149,7 +152,9 @@ def parse_depends(args):
     unknown = False
     missing = []
     for k in depends.keys():
-        if k in vpkgs.keys():
+        if k in provides:
+            print(f"   PYTHON: {k} <-> (self) (ignored)")
+        elif k in vpkgs.keys():
             for pkgname in vpkgs[k]:
                 if pkgname in rdeps:
                     print(f"   PYTHON: {k} <-> {pkgname}", flush=True)
