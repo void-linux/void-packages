@@ -1,0 +1,73 @@
+From 52a918c82bddeef58a842d112bcb42c6f33883ab Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Patrick=20B=C3=B6ker?= <patrick.boeker@posteo.de>
+Date: Mon, 22 Dec 2025 20:12:04 +0100
+Subject: [PATCH] Fix building MoarVM with a system provided libuv
+
+---
+ src/io/procops.c | 17 ++++++++++++++---
+ 1 file changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/src/io/procops.c b/src/io/procops.c
+index de8dd90b4..71d04d20f 100644
+--- a/src/io/procops.c
++++ b/src/io/procops.c
+@@ -773,13 +773,17 @@ static MVMint64 get_pipe_fd(MVMThreadContext *tc, uv_pipe_t *pipe) {
+         return 0;
+ }
+ static void spawn_setup(MVMThreadContext *tc, uv_loop_t *loop, MVMObject *async_task, void *data) {
+-    MVMint64 spawn_result;
++    MVMint64 spawn_result = 0;
+     char *error_str = NULL;
+ 
+     /* Process info setup. */
+     uv_process_t *process = MVM_calloc(1, sizeof(uv_process_t));
++#ifdef MVM_HAS_LIBUV_PTY
+     uv_process_options2_t process_options = {0};
+     process_options.version = UV_PROCESS_OPTIONS_VERSION;
++#else
++    uv_process_options_t process_options = {0};
++#endif
+     uv_stdio_container_t process_stdio[3];
+ 
+ #ifdef MVM_DO_PTY_OURSELF
+@@ -804,13 +808,13 @@ static void spawn_setup(MVMThreadContext *tc, uv_loop_t *loop, MVMObject *async_
+         goto spawn_setup_error;
+ #endif
+ 
+-        process_options.pty_cols =
++        int cols =
+             MVM_repr_exists_key(tc, si->callbacks, tc->instance->str_consts.pty_cols)
+             ? MVM_repr_get_int(tc, MVM_repr_at_key_o(tc,
+                                                      si->callbacks,
+                                                      tc->instance->str_consts.pty_cols))
+             : 80;
+-        process_options.pty_rows =
++        int rows =
+             MVM_repr_exists_key(tc, si->callbacks, tc->instance->str_consts.pty_rows)
+             ? MVM_repr_get_int(tc, MVM_repr_at_key_o(tc,
+                                                      si->callbacks,
+@@ -818,6 +822,9 @@ static void spawn_setup(MVMThreadContext *tc, uv_loop_t *loop, MVMObject *async_
+             : 24;
+ 
+ #ifdef MVM_HAS_LIBUV_PTY
++
++        process_options.pty_cols = cols;
++        process_options.pty_rows = rows;
+         uv_pipe_t *pipe = MVM_malloc(sizeof(uv_pipe_t));
+         uv_pipe_init(loop, pipe, 0);
+         pipe->data = si;
+@@ -995,7 +1002,11 @@ static void spawn_setup(MVMThreadContext *tc, uv_loop_t *loop, MVMObject *async_
+ 
+     /* Attach data, spawn, report any error. */
+     process->data = si;
++#ifdef MVM_HAS_LIBUV_PTY
+     spawn_result  = uv_spawn2(loop, process, &process_options);
++#else
++    spawn_result  = uv_spawn(loop, process, &process_options);
++#endif
+ 
+ #ifdef MVM_DO_PTY_OURSELF
+     if (pty_mode)
+-- 
+2.50.0
+

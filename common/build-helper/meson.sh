@@ -1,6 +1,9 @@
 # This build helper writes a Meson cross-file, allowing other build styles
 # to properly drive cross-builds in Meson when appropriate
 
+# allows meson to automatically unpack wrapped dependencies specified in distfiles
+export MESON_PACKAGE_CACHE_DIR="${XBPS_SRCDISTDIR}/${pkgname}-${version}/"
+
 # Action is only taken for cross builds
 [ -z "$CROSS_BUILD" ] && return 0
 

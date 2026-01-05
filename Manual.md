@@ -367,7 +367,7 @@ The following variables are defined by `xbps-src` and can be used on any templat
 
 - `makejobs` Set to `-jX` if `XBPS_MAKEJOBS` is defined, to allow parallel jobs with `GNU make`.
 
-- `sourcepkg`  Set to the to main package name, can be used to match the main package
+- `sourcepkg`  Set to the main package name, can be used to match the main package
 rather than additional binary package names.
 
 - `CHROOT_READY`  Set if the target chroot (masterdir) is ready for chroot builds.
@@ -1107,7 +1107,10 @@ additional paths to be searched when linking target binaries to be introspected.
 - `meson` creates a cross file, `${XBPS_WRAPPERDIR}/meson/xbps_meson.cross`, which configures
 meson for cross builds. This is particularly useful for building packages that wrap meson
 invocations (e.g., `python3-pep517` packages that use a meson backend) and is added by default
-for packages that use the `meson` build style.
+for packages that use the `meson` build style. It also sets `$MESON_PACKAGE_CACHE_DIR` to
+`$XBPS_SRCDISTDIR/$pkgname-$version/` so libraries specified as meson wraps can be added to
+distfiles and will be automatically used by meson. See also `common/scripts/gen-wrap-distfiles.py`
+for a script that generates distfiles entries for wraps.
 
 - `numpy` configures the environment for cross-compilation of python packages that provide
 compiled extensions linking to NumPy C libraries. If the `meson` build helper is also
