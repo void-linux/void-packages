@@ -113,7 +113,7 @@ def parse_provides(args):
 def parse_depends(args):
     depends = dict()
     vpkgs = dict()
-    girdict = dict()
+    girs = dict()
     extras = set(args.extras.split())
     provides = set()
 
@@ -136,7 +136,7 @@ def parse_depends(args):
             pkgver, typelib, rest = ln.split(maxsplit=2)
             pkg = getpkgname(pkgver)
             xtypelib = Path(typelib).name.rsplit('-')[0].lower()
-            girdict[xtypelib] = pkg
+            girs[xtypelib] = pkg
 
     if args.rdeps.exists():
         with args.rdeps.open() as f:
@@ -184,9 +184,9 @@ def parse_depends(args):
         else:
             xunk = True
             if k.startswith("py3:gi-repository-"):
-                vkey = k[18:].lower()
-                if vkey in girdict:
-                    pkgname = girdict[vkey]
+                vkey = k.removeprefix("py3:gi-repository-").lower()
+                if vkey in girs:
+                    pkgname = girs[vkey]
                     print(f"   PYTHON: {k} <-> {pkgname}", flush=True)
                     xunk = False
             if xunk:
