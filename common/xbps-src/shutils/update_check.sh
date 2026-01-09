@@ -222,7 +222,7 @@ update_check() {
         fi
 
         msg_verbose "fetching $url and scanning with $rx\n"
-        curl "${curlargs[@]}" -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' "$url" |
+        curl "${curlargs[@]}" -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml,application/json' "$url" |
             grep -Po -i "$rx"
         fetchedurls[$url]=yes
     done |
