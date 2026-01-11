@@ -9,6 +9,13 @@
 # Modified by: Rutpiv <roger_freitas@live.com> in 2024 to adjust symlink
 # creation and preserve existing save data by backing up old directories.
 #
+# Modified by: Rutpiv <roger_freitas@live.com> in 2025 to add versioning
+# for update management, adapting to the fact that dwarfort no longer
+# supports symlinks.
+# Also ensured backup of version 51 layout where saves were stored in the
+# same folder as game files, since from version 52 onward saves moved to
+# separate folders, improving user data handling.
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
@@ -27,57 +34,88 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ##
 
+set -e
+
 usage() {
- printf "Usage:\n %s [-f]\noptions:\n -f\tforce/recreate user's game data directory. <Warning: this will erase all save data>" "${0}"
+  printf "Usage:\n %s [-f]\nOptions:\n -f\tForce full recreate of user data\n" "$0"
 }
 
-while getopts 'f' c
-do
- case $c in
-  f) _FORCE=yes ;;
-  *) usage ;;
- esac
+# Default values
+_FORCE=no
+XDG_BASE="${XDG_DATA_HOME:-$HOME/.local/share}"
+DATA_DIR="$XDG_BASE/dwarffortress"
+SYS_DIR="/usr/share/dwarffortress"
+BIN_PATH="/usr/bin/dwarfort"
+LIB_DIR="/usr/lib/dwarffortress/libs"
+VERSION_FILE="version.txt"
+
+# Parse options
+while getopts "f" opt; do
+  case "$opt" in
+    f) _FORCE=yes ;;
+    *) usage; exit 1 ;;
+  esac
 done
 
-if [ $(id -u) -eq 0 ]; then
- echo "Error, can't be run as root" >&2
- usage
- exit
+# Prevent running as root
+if [ "$(id -u)" -eq 0 ]; then
+  echo "[ERROR] Do not run as root." >&2
+  usage
+  exit 1
 fi
 
-if [ -z ${XDG_DATA_HOME:-$HOME/.local/share} ]; then
- echo "homedir unset"
- usage
- exit
+# Ensure system directories exist
+if [ ! -d "$SYS_DIR" ] || [ ! -x "$BIN_PATH" ] || [ ! -d "$LIB_DIR" ]; then
+  echo "[ERROR] Dwarf Fortress not installed properly." >&2
+  exit 1
 fi
 
-# Check if an existing 'dwarffortress' directory with the old structure is found.
-# If found, create a backup of the directory before removing it.
-# The backup is stored as a tar.gz archive with a timestamp to prevent overwriting.
-if [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress" ] &&
-	 [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress/df" ]; then
- echo "Existing old 'dwarffortress' directory found. Creating a backup..."
-
- timestamp=$(date +%Y%m%d%H%M%S)
- backup_file="${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress_backup_${timestamp}.tar.gz"
- tar -czf "$backup_file" -C "${XDG_DATA_HOME:-$HOME/.local/share}" dwarffortress
- echo "Backup created at $backup_file"
-
- rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress"
- echo "Old 'dwarffortress' directory removed."
+# Create user data dir if missing
+if [ ! -d "$DATA_DIR" ]; then
+  _FORCE=yes
 fi
 
-if [ ! -d ${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress ]; then
- _FORCE=yes
+# Read system version
+if [ ! -r "$SYS_DIR/$VERSION_FILE" ]; then
+  echo "[ERROR] Cannot read $SYS_DIR/$VERSION_FILE" >&2
+  exit 1
 fi
-if [ $_FORCE ]
-then
- rm -rf ${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress
- cp /usr/share/dwarffortress ${XDG_DATA_HOME:-$HOME/.local/share} -r
- for lib in /usr/lib/dwarffortress/libs/*; do
-        ln -s "$lib" "${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress/"
- done
- ln -s /usr/bin/dwarfort ${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress/
+SYS_VERSION=$(cat "$SYS_DIR/$VERSION_FILE")
+
+# Read user version if present
+if [ -r "$DATA_DIR/$VERSION_FILE" ]; then
+  USER_VERSION=$(cat "$DATA_DIR/$VERSION_FILE")
+else
+  USER_VERSION=""
 fi
 
-${XDG_DATA_HOME:-$HOME/.local/share}/dwarffortress/run_df
+# Determine if we need to rebuild
+if [ "$_FORCE" = "yes" ] || [ "$SYS_VERSION" != "$USER_VERSION" ]; then
+  TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+  if [ "$_FORCE" = "yes" ] && [ "$SYS_VERSION" = "$USER_VERSION" ]; then
+    echo "[INFO] Forcing reinstall of user data (version: $SYS_VERSION)"
+  else
+    echo "[INFO] Updating user data: ${USER_VERSION:-none} → $SYS_VERSION"
+  fi
+
+  # Backup legacy layout if present
+  if [ -d "$DATA_DIR" ]; then
+    if [ -f "$DATA_DIR/df" ] || [ -d "$DATA_DIR/save" ]; then
+      BACKUP_PATH="$XDG_BASE/dwarffortress_legacy_backup_$TIMESTAMP.tar.gz"
+      tar -czf "$BACKUP_PATH" -C "$XDG_BASE" dwarffortress
+      echo "[INFO] Legacy layout backed up to $BACKUP_PATH"
+    fi
+  fi
+
+  # Recreate skeleton
+  rm -rf "$DATA_DIR"
+  cp -r "$SYS_DIR" "$DATA_DIR"
+  for lib in "$LIB_DIR"/*; do
+    ln -sf "$lib" "$DATA_DIR"
+  done
+  cp "$BIN_PATH" "$DATA_DIR"
+fi
+
+echo "[INFO] Launching Dwarf Fortress..."
+exec "$DATA_DIR/run_df"
