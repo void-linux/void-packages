@@ -316,7 +316,7 @@ chroot_sync_repodata() {
     fi
 
     # Make sure to sync index for remote repositories.
-    if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
+    if [ -z "$XBPS_SKIP_REMOTEREPOS" -a -z "$XBPS_SKIP_SYNC" ]; then
         msg_normal "xbps-src: updating repositories for host ($XBPS_MACHINE)...\n"
         $XBPS_INSTALL_CMD $XBPS_INSTALL_ARGS -S
     fi
@@ -327,7 +327,7 @@ chroot_sync_repodata() {
         cp $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
             $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
         # Make sure to sync index for remote repositories.
-        if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
+        if [ -z "$XBPS_SKIP_REMOTEREPOS" -a -z "$XBPS_SKIP_SYNC" ]; then
             msg_normal "xbps-src: updating repositories for target ($XBPS_TARGET_MACHINE)...\n"
             env -- XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE \
                 $XBPS_INSTALL_CMD $XBPS_INSTALL_ARGS -r $XBPS_MASTERDIR/$XBPS_CROSS_BASE -S
