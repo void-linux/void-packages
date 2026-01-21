@@ -1,6 +1,6 @@
 # Template file for 'libreoffice-dictionaries'
 pkgname=libreoffice-dictionaries
-version=25.8.1.1
+version=26.2.0.1
 revision=1
 metapackage=yes
 hostmakedepends="mythes perl"
@@ -11,7 +11,7 @@ homepage="https://www.libreoffice.org/"
 distfiles="https://download.documentfoundation.org/libreoffice/src/${version%.*}/${pkgname}-${version}.tar.xz"
 # distfiles="https://download.nus.edu.sg/mirror/tdf/libreoffice/src/${version%.*}/${pkgname}-${version}.tar.xz"
 # distfiles="https://mirrors.nju.edu.cn/tdf/libreoffice/src/${version%.*}/${pkgname}-${version}.tar.xz"
-checksum=b733ef589c97428b1784839e9842cb90654bf008b284f00399557da1f38c643f
+checksum=74607d03d737a14cd5f88e85ba5d5cc5c8042d640ec45875ea5f0e2030e56c16
 
 depends="hunspell-af hyphen-af
  hunspell-an
@@ -100,8 +100,9 @@ _drop_long_dic() {
 	local lang="$1"
 	local len="$2"
 	local dir="${3:-$lang}"
-	cp "dictionaries/$dir/$lang.aff" bdic/
-	sed "/.\\{$len\\}/d" dictionaries/$dir/$lang.dic >"bdic/$lang.dic"
+	sed '/^IGNORE/d' "dictionaries/$dir/$lang.aff" >"bdic/$lang.aff"
+	sed 's/   */ /' dictionaries/$dir/$lang.dic |
+	sed "/.\\{$len\\}/d" >"bdic/$lang.dic"
 }
 
 _build_bdic() {
@@ -110,36 +111,33 @@ _build_bdic() {
 
 	mkdir -p bdic
 	# convert-dict not understand TAB
-	for lang in an_ES bn_BD; do
+	for lang in an_ES bn_BD ta_IN; do
 		sed 's/\t/ /g' "dictionaries/$lang/$lang.aff" >"bdic/$lang.aff"
 		cp "dictionaries/$lang/$lang.dic" bdic/
 	done
 
-	# convert-dict works on fixed array of utf-16 characters.
-	_drop_long_dic da_DK 112
-	_drop_long_dic gl_ES 111 gl
-	_drop_long_dic gu_IN 45
-	_drop_long_dic ko_KR 173
 	if [ "$XBPS_WORDSIZE" != 64 ]; then
+		_drop_long_dic da_DK 112
+		_drop_long_dic gl_ES 111 gl
+		_drop_long_dic gu_IN 45
+		_drop_long_dic sa_IN 43
 		_drop_long_dic ta_IN 50
+		_drop_long_dic th_TH 45
 	fi
-	_drop_long_dic th_TH 45
 
 	# convert-dict not understand IGNORE
 	grep -l IGNORE dictionaries/*/*.aff |
 	while read file; do
-		lang="${file##*/}"
-		lang="${lang%.aff}"
-		sed '/^IGNORE/d' "$file" >"bdic/$lang.aff"
-		cp "dictionaries/$lang/$lang.dic" bdic/
+		base="${file%.aff}"
+		lang="${base##*/}"
+		if [ ! -f bdic/$lang.dic ]; then
+			msg_normal "Fix IGNORE for $lang\n"
+			sed '/^IGNORE/d' "$file" >"bdic/$lang.aff"
+			cp "$base.dic" bdic/
+		fi
 	done
 
 	find dictionaries -name '*.aff' |
-	if [ "$XBPS_WORDSIZE" = 64 ]; then
-		cat
-	else
-		grep -v sa_IN
-	fi |
 	while read file; do
 		base="${file%.aff}"
 		lang="${base##*/}"
@@ -219,8 +217,8 @@ _vmythes() {
 	vmkdir usr/share/mythes
 	vinstall "dictionaries/$subdir/th_${lang}${ver}.dat" \
 		0644 usr/share/mythes
-	vinstall "dictionaries/$subdir/th_${lang}${ver}.idx" \
-		0644 usr/share/mythes
+	th_gen_idx.pl <"$PKGDESTDIR/usr/share/mythes/th_${lang}${ver}.dat" \
+		>"$PKGDESTDIR/usr/share/mythes/th_${lang}${ver}.idx"
 	for lnk; do
 		ln -s "th_$lang$ver.dat" \
 			"${PKGDESTDIR}/usr/share/mythes/th_$lnk$ver.dat"
@@ -230,16 +228,9 @@ _vmythes() {
 }
 
 do_build() {
-	local file
-
 	if [ "$build_option_bdic" ]; then
 		_build_bdic
 	fi
-
-	find dictionaries -name 'th_*.dat' |
-	while read file; do
-		th_gen_idx.pl <"$file" >"${file%.dat}.idx"
-	done
 }
 
 post_patch() {

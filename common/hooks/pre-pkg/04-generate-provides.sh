@@ -27,7 +27,7 @@ generate_pkgconfig_provides() {
 }
 
 generate_cmd_provides() {
-    find "${PKGDESTDIR}/usr/bin" -maxdepth 1 -type f -printf "cmd:%f-${version}_${revision}\n" 2>/dev/null | sort -u
+    find -P "${PKGDESTDIR}/usr/bin" -maxdepth 1 -xtype f -printf "cmd:%f-${version}_${revision}\n" 2>/dev/null | sort -u
 }
 
 generate_alt_cmd_provides() {
