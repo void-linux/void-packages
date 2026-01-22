@@ -1,0 +1,178 @@
+# Template file for 'python3'
+#
+# THIS PACKAGE MUST BE SYNCHRONIZED WITH "srcpkgs/python3-tkinter".
+# Also rebuild those packages on minor version update:
+# - coccinelle
+#
+pkgname=python3
+version=3.14.2
+revision=2
+build_style="gnu-configure"
+configure_args="--enable-shared --enable-ipv6
+ --enable-loadable-sqlite-extensions --with-computed-gotos
+ --with-dbmliborder=gdbm:ndbm --with-system-expat
+ --without-ensurepip ac_cv_working_tzset=yes"
+pycompile_dirs="${py3_lib}"
+hostmakedepends="pkgconf autoconf-archive automake"
+makedepends="libffi-devel readline-devel gdbm-devel openssl-devel
+ expat-devel sqlite-devel bzip2-devel zlib-devel liblzma-devel libzstd-devel"
+depends="ca-certificates"
+checkdepends="$depends iana-etc"
+short_desc="Python programming language (${version%.*} series)"
+maintainer="Andrew J. Hesford <ajh@sideband.org>"
+license="Python-2.0"
+homepage="https://www.python.org"
+_bluez="bluez-5.78"
+distfiles="
+ https://www.python.org/ftp/python/${version%rc*}/Python-${version}.tar.xz
+ ${KERNEL_SITE}/bluetooth/${_bluez}.tar.xz
+"
+checksum="ce543ab854bc256b61b71e9b27f831ffd1bfd60a479d639f8be7f9757cf573e9
+ 830fed1915c5d375b8de0f5e6f45fcdea0dcc5ff5ffb3d31db6ed0f00d73c5e3"
+skip_extraction="${_bluez}.tar.xz"
+
+alternatives="
+ python:pydoc:/usr/bin/pydoc${version%.*}
+ python:python:/usr/bin/python${version%.*}
+ python:python.1:/usr/share/man/man1/python${version%.*}.1"
+
+if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
+	makedepends+=" libxcrypt-devel"
+fi
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" python3"
+	configure_args+=" --with-build-python=python${py3_ver}"
+	configure_args+=" ac_cv_broken_sem_getvalue=no"
+else
+	configure_args+=" --enable-optimizations"
+fi
+
+post_extract() {
+	# Ensure that the internal copy of expat is not used
+	rm -r Modules/expat
+
+	# Extract Bluetooth headers
+	local _srcdistdir="${XBPS_SRCDISTDIR}/${sourcepkg}-${version}"
+	mkdir External
+	bsdtar -C External --strip-components=1 -x \
+		-f "${_srcdistdir}/${_bluez}.tar.xz" "${_bluez}/lib/*.h"
+	mv External/lib External/bluetooth
+}
+
+post_patch() {
+	if [ -n "$CROSS_BUILD" ]; then
+		patch -Np1 -i ${FILESDIR}/cross.patch
+	fi
+}
+
+# https://github.com/python/cpython/issues/89640
+pre_configure() {
+	autoreconf -vfi
+}
+
+do_configure() {
+	# If these are set, distutils will default to cc and attempt to pass
+	# `-R<path>` to the compiler for every compiled extension that sets an
+	# rpath rather than the '-Wl,-R<path>' argument that GCC requires
+	unset GCC CC CXX CPP LD AR AS RANLIB
+
+	# Make sure configure can find Bluetooth headers
+	CFLAGS+=" -I./External"
+	CPPFLAGS+=" -I./External"
+	./configure ${configure_args}
+}
+
+do_check() {
+	local opts
+
+	# relies on sane group membership not found in xbps-src
+	opts="-i test_chown_*"
+	# expects shadow passwd db unreadable by user
+	opts+=" -i test_getspnam_exception"
+	# expects functionality patched out for musl
+	opts+=" -i test_find_library_with_*"
+	# SSL advertises unexpected ciphers
+	opts+=" -i test_shared_ciphers"
+	# requires in-tree expat, which we removed
+	opts+=" -i test_freeze_simple_script"
+	# anomalies in SSL session handling
+	opts+=" -i test_session*"
+	# overflow in datetime.time.mktime
+	opts+=" -i test_localtime_daylight_*_dst_true"
+	# error handling raises exceptions
+	opts+=" -i test_ftp*"
+
+	if [ "${XBPS_TARGET_LIBC}" = "musl" ]; then
+		# musl doesn't work with locales
+		opts+=" -i test_locale* -i test_c_locale* -i test__locale"
+		opts+=" -i test_fpathconf"
+	else
+		# ctypes libm imports misbehave with glibc linker scripts
+		opts+=" -i test_issue18060_*"
+	fi
+
+	make ${makejobs} EXTRATESTOPTS="${opts}" quicktest
+}
+
+do_install() {
+	make DESTDIR=${DESTDIR} install maninstall
+
+	# Put the license in the usual location and remove from the libdir
+	# to prevent the XBPS trigger from attempting to byte-compile it
+	vlicense LICENSE
+	rm ${DESTDIR}/${py3_lib}/LICENSE.txt
+
+	rm -f ${DESTDIR}/usr/bin/2to3
+
+	local _dst_py3_lib="${DESTDIR}/${py3_lib}"
+
+	# Remove files that belong to python3-tkinter and idle-python3
+	rm ${DESTDIR}/usr/bin/idle3*
+	rm ${_dst_py3_lib}/turtle.py
+	rm -r ${_dst_py3_lib}/idlelib
+	rm -r ${_dst_py3_lib}/tkinter
+	rm -r ${_dst_py3_lib}/turtledemo
+
+	# Remove test module and tests that fail to be byte-compiled.
+	rm -rf ${_dst_py3_lib}/test
+	rm -rf ${_dst_py3_lib}/lib2to3/tests
+
+	# Remove references to the install(1) wrapper.
+	sed -e "s,${XBPS_WRAPPERDIR},/usr/bin,g" -i \
+		${_dst_py3_lib}/_sysconfigdata_*_*.py \
+		${_dst_py3_lib}/config-${version%.*}*/Makefile
+
+	if [ "$CROSS_BUILD" ]; then
+		# Remove references to cross toolchain.
+		sed -i "s/$XBPS_CROSS_TRIPLET-//g" \
+			${_dst_py3_lib}/_sysconfigdata_*_*.py \
+			${_dst_py3_lib}/config-${version%.*}*/Makefile
+		sed -i -e "s,$XBPS_CROSS_BASE,,g" \
+			${DESTDIR}/usr/bin/python${version%.*}-config
+	fi
+
+	sed -i -e "s,-I./External,," \
+		-e "s,-ffile-prefix-map=[^[:space:]]*=[.],," \
+		-e "s,-fdebug-prefix-map=[^[:space:]]*=[.],," \
+		${DESTDIR}/usr/bin/python${version%.*}-config \
+		${_dst_py3_lib}/_sysconfigdata_*_*.py \
+		${_dst_py3_lib}/config-${version%.*}*/Makefile
+
+	# https://peps.python.org/pep-0668/
+	vinstall ${FILESDIR}/EXTERNALLY-MANAGED 644 "${py3_lib}"
+}
+
+python3-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}-${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin/python*-config
+		vmove usr/lib/pkgconfig
+		vmove usr/include
+		mv "${DESTDIR}/${py3_lib}"/config-*/libpython*.a "${PKGDESTDIR}/usr/lib"
+
+		mkdir -p "${DESTDIR}/${py3_inc}"
+		mv "${PKGDESTDIR}/${py3_inc}/pyconfig.h" "${DESTDIR}/${py3_inc}"
+	}
+}

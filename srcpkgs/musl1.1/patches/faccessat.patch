@@ -1,0 +1,45 @@
+From 55fb9a177316aa46c639d93dd0323d9a9a8c160c Mon Sep 17 00:00:00 2001
+From: Rich Felker <dalias@aerifal.cx>
+Date: Wed, 9 Sep 2020 21:55:11 -0400
+Subject: [PATCH] use new SYS_faccessat2 syscall to implement faccessat with
+ flags
+
+commit 0a05eace163cee9b08571d2ff9d90f5e82d9c228 implemented AT_EACCESS
+for faccessat with a horrible hack, creating a child process to change
+switch uid/gid and perform the access probe without making potentially
+irreversible changes to the caller's credentials. this was due to the
+syscall lacking a flags argument.
+
+linux 5.8 introduced a new syscall, SYS_faccessat2, fixing this
+deficiency. use it if any flags are passed, and fallback to the old
+strategy on ENOSYS. continue using the old syscall when there are no
+flags.
+---
+ src/unistd/faccessat.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/unistd/faccessat.c b/src/unistd/faccessat.c
+index 76bbd4c72..557503eb6 100644
+--- a/src/unistd/faccessat.c
++++ b/src/unistd/faccessat.c
+@@ -25,12 +25,17 @@ static int checker(void *p)
+ 
+ int faccessat(int fd, const char *filename, int amode, int flag)
+ {
+-	if (!flag || (flag==AT_EACCESS && getuid()==geteuid() && getgid()==getegid()))
+-		return syscall(SYS_faccessat, fd, filename, amode, flag);
++	if (flag) {
++		int ret = __syscall(SYS_faccessat2, fd, filename, amode, flag);
++		if (ret != -ENOSYS) return __syscall_ret(ret);
++	}
+ 
+-	if (flag != AT_EACCESS)
++	if (flag & ~AT_EACCESS)
+ 		return __syscall_ret(-EINVAL);
+ 
++	if (!flag || (getuid()==geteuid() && getgid()==getegid()))
++		return syscall(SYS_faccessat, fd, filename, amode);
++
+ 	char stack[1024];
+ 	sigset_t set;
+ 	pid_t pid;

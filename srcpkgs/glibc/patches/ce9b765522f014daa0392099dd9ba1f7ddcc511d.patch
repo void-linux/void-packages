@@ -1,0 +1,53 @@
+From ce9b765522f014daa0392099dd9ba1f7ddcc511d Mon Sep 17 00:00:00 2001
+From: Adhemerval Zanella <adhemerval.zanella@linaro.org>
+Date: Wed, 12 Mar 2025 10:59:17 -0300
+Subject: [PATCH] nptl: Check if thread is already terminated in
+ sigcancel_handler (BZ 32782)
+
+The SIGCANCEL signal handler should not issue __syscall_do_cancel,
+which calls __do_cancel and __pthread_unwind, if the cancellation
+is already in proces (and libgcc unwind is not reentrant).  Any
+cancellation signal received after is ignored.
+
+Checked on x86_64-linux-gnu and aarch64-linux-gnu.
+
+Tested-by: Aurelien Jarno <aurelien@aurel32.net>
+Reviewed-by: Florian Weimer <fweimer@redhat.com>
+
+(cherry picked from commit 360cce0b066f34e85e473c04cdc16e6fa426021b)
+---
+ NEWS                           |  1 +
+ nptl/pthread_cancel.c          | 14 ++++---
+ sysdeps/pthread/Makefile       |  1 +
+ sysdeps/pthread/tst-cancel32.c | 73 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 83 insertions(+), 6 deletions(-)
+ create mode 100644 sysdeps/pthread/tst-cancel32.c
+
+diff --git a/nptl/pthread_cancel.c b/nptl/pthread_cancel.c
+index f7ce3ec51b..b838273881 100644
+--- a/nptl/pthread_cancel.c
++++ b/nptl/pthread_cancel.c
+@@ -41,15 +41,17 @@ sigcancel_handler (int sig, siginfo_t *si, void *ctx)
+       || si->si_code != SI_TKILL)
+     return;
+ 
+-  /* Check if asynchronous cancellation mode is set or if interrupted
+-     instruction pointer falls within the cancellable syscall bridge.  For
+-     interruptable syscalls with external side-effects (i.e. partial reads),
+-     the kernel  will set the IP to after __syscall_cancel_arch_end, thus
+-     disabling the cancellation and allowing the process to handle such
++  /* Check if asynchronous cancellation mode is set and cancellation is not
++     already in progress, or if interrupted instruction pointer falls within
++     the cancellable syscall bridge.
++     For interruptable syscalls with external side-effects (i.e. partial
++     reads), the kernel will set the IP to after __syscall_cancel_arch_end,
++     thus disabling the cancellation and allowing the process to handle such
+      conditions.  */
+   struct pthread *self = THREAD_SELF;
+   int oldval = atomic_load_relaxed (&self->cancelhandling);
+-  if (cancel_async_enabled (oldval) || cancellation_pc_check (ctx))
++  if (cancel_enabled_and_canceled_and_async (oldval)
++      || cancellation_pc_check (ctx))
+     __syscall_do_cancel ();
+ }
+ 

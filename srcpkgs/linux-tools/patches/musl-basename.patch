@@ -1,0 +1,99 @@
+From 581037151910126a7934e369e4b6ac70eda9a703 Mon Sep 17 00:00:00 2001
+From: Arnaldo Carvalho de Melo <acme@redhat.com>
+Date: Thu, 21 Mar 2024 11:13:30 -0300
+Subject: [PATCH] perf probe: Add missing libgen.h header needed for using
+ basename()
+
+This prototype is obtained indirectly, by luck, from some other header
+in probe-event.c in most systems, but recently exploded on alpine:edge:
+
+   8    13.39 alpine:edge                   : FAIL gcc version 13.2.1 20240309 (Alpine 13.2.1_git20240309)
+    util/probe-event.c: In function 'convert_exec_to_group':
+    util/probe-event.c:225:16: error: implicit declaration of function 'basename' [-Werror=implicit-function-declaration]
+      225 |         ptr1 = basename(exec_copy);
+          |                ^~~~~~~~
+    util/probe-event.c:225:14: error: assignment to 'char *' from 'int' makes pointer from integer without a cast [-Werror=int-conversion]
+      225 |         ptr1 = basename(exec_copy);
+          |              ^
+    cc1: all warnings being treated as errors
+    make[3]: *** [/git/perf-6.8.0/tools/build/Makefile.build:158: util] Error 2
+
+Fix it by adding the libgen.h header where basename() is prototyped.
+
+Fixes: fb7345bbf7fad9bf ("perf probe: Support basic dwarf-based operations on uprobe events")
+Cc: Masami Hiramatsu <mhiramat@kernel.org>
+Cc: Adrian Hunter <adrian.hunter@intel.com>
+Cc: Ian Rogers <irogers@google.com>
+Cc: Jiri Olsa <jolsa@kernel.org>
+Cc: Namhyung Kim <namhyung@kernel.org>
+Link: https://lore.kernel.org/lkml/
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+---
+ tools/perf/util/probe-event.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/perf/util/probe-event.c b/tools/perf/util/probe-event.c
+index 2a0ad9ecf0a20e..5c12459e9765f6 100644
+--- a/tools/perf/util/probe-event.c
++++ b/tools/perf/util/probe-event.c
+@@ -11,6 +11,7 @@
+ #include <sys/stat.h>
+ #include <fcntl.h>
+ #include <errno.h>
++#include <libgen.h>
+ #include <stdio.h>
+ #include <unistd.h>
+ #include <stdlib.h>
+From 29788f39a4171dd48a6d19eb78cf2ab168c4349a Mon Sep 17 00:00:00 2001
+From: Arnaldo Carvalho de Melo <acme@kernel.org>
+Date: Mon, 29 Jan 2024 11:33:26 -0300
+Subject: [PATCH] bpftool: Be more portable by using POSIX's basename()
+
+musl libc had the basename() prototype in string.h, but this is a
+glibc-ism, now they removed the _GNU_SOURCE bits in their devel distro,
+Alpine Linux edge:
+
+  https://git.musl-libc.org/cgit/musl/commit/?id=725e17ed6dff4d0cd22487bb64470881e86a92e7
+
+So lets use the POSIX version, the whole rationale is spelled out at:
+
+  https://gitlab.alpinelinux.org/alpine/aports/-/issues/15643
+
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Jiri Olsa <olsajiri@gmail.com>
+Acked-by: Quentin Monnet <quentin@isovalent.com>
+Link: https://lore.kernel.org/lkml/ZZhsPs00TI75RdAr@kernel.org
+Link: https://lore.kernel.org/bpf/Zbe3NuOgaupvUcpF@kernel.org
+---
+ tools/bpf/bpftool/gen.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/tools/bpf/bpftool/gen.c b/tools/bpf/bpftool/gen.c
+index ee3ce2b8000d75..a9334c57e85991 100644
+--- a/tools/bpf/bpftool/gen.c
++++ b/tools/bpf/bpftool/gen.c
+@@ -7,6 +7,7 @@
+ #include <ctype.h>
+ #include <errno.h>
+ #include <fcntl.h>
++#include <libgen.h>
+ #include <linux/err.h>
+ #include <stdbool.h>
+ #include <stdio.h>
+@@ -56,9 +57,11 @@ static bool str_has_suffix(const char *str, const char *suffix)
+ 
+ static void get_obj_name(char *name, const char *file)
+ {
+-	/* Using basename() GNU version which doesn't modify arg. */
+-	strncpy(name, basename(file), MAX_OBJ_NAME_LEN - 1);
+-	name[MAX_OBJ_NAME_LEN - 1] = '\0';
++	char file_copy[PATH_MAX];
++
++	/* Using basename() POSIX version to be more portable. */
++	strncpy(file_copy, file, PATH_MAX - 1)[PATH_MAX - 1] = '\0';
++	strncpy(name, basename(file_copy), MAX_OBJ_NAME_LEN - 1)[MAX_OBJ_NAME_LEN - 1] = '\0';
+ 	if (str_has_suffix(name, ".o"))
+ 		name[strlen(name) - 2] = '\0';
+ 	sanitize_identifier(name);
+

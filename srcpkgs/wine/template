@@ -1,0 +1,166 @@
+# Template file for 'wine'
+pkgname=wine
+version=10.20
+revision=1
+_pkgver=${version/r/-r}
+create_wrksrc=yes
+build_wrksrc=wine-${_pkgver}
+build_style=gnu-configure
+configure_args="$(vopt_with xshm)"
+short_desc="Run Microsoft Windows applications"
+maintainer="Helmut Pozimski <helmut@pozimski.eu>"
+license="LGPL-2.1-or-later"
+homepage="http://www.winehq.org/"
+distfiles="https://dl.winehq.org/wine/source/${version%.*}.x/wine-${_pkgver}.tar.xz
+ https://github.com/wine-staging/wine-staging/archive/v${_pkgver}.tar.gz"
+checksum="81b4a153958f6247fe5041d5df65eadcbbeea1b6ba8cda24eb7e3d7ce2d1fe3c
+ 83d0d97b1f4b7ee9d61b58c7a87657b768a635d2f3bd5c6435fe337419be0c7a"
+
+# NOTE: wine depends on specific versions of wine-mono and wine-gecko,
+# check for updates to these packages when updating wine
+
+build_options="mingw staging xshm wow64"
+build_options_default="mingw xshm"
+desc_option_mingw="Use the MinGW cross compiler to build WinPE DLLs"
+desc_option_staging="Apply the wine-staging patchset"
+desc_option_xshm="Enable support for the X Shared Memory Extension"
+desc_option_wow64="Run 32-bit Windows apps on a purely 64-bit Unix installation"
+
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	build_options_default+=" wow64"
+fi
+
+lib32mode=full
+archs="i686* x86_64*"
+
+patch_args="-Np1 --directory=${build_wrksrc}"
+
+_nopie=no
+if [ "$XBPS_TARGET_MACHINE" = i686-musl ]; then
+	# build system adds -fno-PIC for 32bit builds, which,
+	# coupled with our default pie toolchain, leads to textrels
+	# in the final binary; musl doesn't support those
+	_nopie=yes
+fi
+
+hostmakedepends="pkg-config flex gettext
+ $(vopt_if mingw "cross-${XBPS_TARGET_MACHINE%-musl}-w64-mingw32")
+ $(vopt_if staging 'autoconf')"
+makedepends="gettext-devel ncurses-devel glu-devel libSM-devel
+ libXext-devel libX11-devel libXpm-devel libXinerama-devel
+ libXcomposite-devel libXmu-devel libXxf86vm-devel
+ libXcursor-devel libXrandr-devel libXdamage-devel libXi-devel
+ alsa-lib-devel libgphoto2-devel glib-devel
+ freetype-devel pulseaudio-devel giflib-devel
+ v4l-utils-devel fontconfig-devel gnutls-devel dbus-devel sane-devel
+ libpcap-devel cups-devel ocl-icd-devel vulkan-loader-devel gst-plugins-base1-devel
+ SDL2-devel"
+depends="libXi libXinerama libXcomposite libXcursor
+ desktop-file-utils hicolor-icon-theme liberation-fonts-ttf
+ gnutls SDL2 wine-common>=${version}_${revision}"
+lib32depends="libXi-32bit>=0 libXinerama-32bit>=0 libXcomposite-32bit>=0
+ libXcursor-32bit>=0 desktop-file-utils>=0 hicolor-icon-theme>=0
+ liberation-fonts-ttf>=0 gnutls-32bit>=0 SDL2-32bit>=0
+ wine-common>=${version}_${revision}"
+replaces="libwine>=0"
+# This testsuite might hang indefinitely
+make_check=extended
+
+if [ "$XBPS_TARGET_WORDSIZE" != 32 ]; then
+	configure_args+=" --enable-win64 --libdir=/usr/lib"
+	_wine_suffix="64"
+else
+	_wine_suffix="32"
+	CFLAGS=" -D_LARGE_FILE_SOURCE=1 -D_FILE_OFFSET_BITS=64"
+	CPPFLAGS=" -D_LARGE_FILE_SOURCE=1 -D_FILE_OFFSET_BITS=64"
+fi
+_wineserver_suffix=${_wine_suffix}
+
+if [ "${build_option_wow64}" ]; then
+	configure_args+=" --enable-archs=i386,x86_64"
+	makedepends+=" cross-i686-w64-mingw32"
+fi
+
+nopie_files="/usr/bin/wine${_wine_suffix}"
+
+if [ "${_nopie}" = yes ]; then
+	nopie_files+=" /usr/bin/wineserver${_wineserver_suffix}"
+fi
+
+post_patch() {
+	if [ "${build_option_staging}" ]; then
+		export PATH="/usr/libexec/chroot-git:${PATH}"
+		"../wine-staging-${_pkgver}/staging/patchinstall.py" --all
+	fi
+}
+
+pre_build() {
+	if [ "${_nopie}" = yes ]; then
+		make ${makejobs} LDFLAGS="$LDFLAGS -no-pie" \
+			tools/{widl/widl,winebuild/winebuild,winegcc/winegcc,wrc/wrc} \
+			loader/wine server/wineserver
+	fi
+}
+
+do_check() {
+	msg_warn "This testsuite might hang indefinitely\n"
+	make check
+}
+
+post_install() {
+	# Font aliasing settings for Win32 applications
+	install -d ${DESTDIR}/etc/fonts/conf.{avail,d}
+	install -m644 ${FILESDIR}/30-win32-aliases.conf ${DESTDIR}/etc/fonts/conf.avail
+	ln -s ../conf.avail/30-win32-aliases.conf ${DESTDIR}/etc/fonts/conf.d/30-win32-aliases.conf
+
+	mv ${DESTDIR}/usr/bin/wine ${DESTDIR}/usr/bin/wine${_wine_suffix}
+	mv ${DESTDIR}/usr/bin/wineserver ${DESTDIR}/usr/bin/wineserver${_wineserver_suffix}
+	vbin ${FILESDIR}/wine
+	vbin ${FILESDIR}/wineserver
+
+	# install man page for wine executable
+	for f in tools/wine/wine*.man; do
+		vman "$f" "${f//man/1}"
+	done
+}
+
+wine-devel_package() {
+	short_desc+=" - development files"
+	replaces="wine-unstable-devel>=0"
+	pkg_install() {
+		vmove usr/include
+	}
+}
+
+wine-common_package() {
+	short_desc+=" - common files"
+	pkg_install() {
+		vmove usr/share
+		vmove etc/fonts
+		for file in wine wineserver msiexec regedit regsvr32 wineboot winecfg winepath winemine winefile winedbg wineconsole notepad msidb
+		do
+			vmove usr/bin/${file}
+		done
+		vmkdir usr/share/binfmts
+		cat <<- EOF >> "${PKGDESTDIR}"/usr/share/binfmts/wine
+		package wine
+		interpreter /usr/bin/wine
+		magic MZ
+		EOF
+	}
+}
+
+wine-tools_package() {
+	depends="wine-${version}_${revision}"
+	short_desc+=" - development tools"
+	if [ "${_nopie}" = yes ]; then
+		nopie=yes
+	fi
+	pkg_install() {
+		for file in widl winebuild winecpp winedump wineg++ winegcc winemaker wmc wrc function_grep.pl
+		do
+			vmove usr/bin/${file}
+		done
+	}
+}

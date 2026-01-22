@@ -1,0 +1,76 @@
+commit 1e52cd968d7ffd9da3249ef01f6c41f8b29e4df3
+Author: Bart Schaefer <schaefer@zsh.org>
+Date:   Sun May 22 15:50:45 2022 -0700
+
+    50278: use `man -w` in preference to `manpath`; fix caching and precedence of -M
+
+diff --git a/Completion/Unix/Command/_man b/Completion/Unix/Command/_man
+index dba1d13dc..190811e41 100644
+--- a/Completion/Unix/Command/_man
++++ b/Completion/Unix/Command/_man
+@@ -16,7 +16,7 @@
+ _man() {
+   local dirs expl mrd awk variant noinsert
+   local -a context line state state_descr args modes
+-  local -aU sects
++  local -aU sects _manpath
+   local -A opt_args val_args sect_descs
+ 
+   if [[ $service == man ]]; then
+@@ -168,29 +168,40 @@ _man() {
+   _arguments -s -S : $args '*::: :->man' && return 0
+   [[ -n $state ]] || return 1
+ 
++  # Override man path
++  [[ -n ${opt_args[-M]} ]] &&
++  _manpath=( ${(s<:>)opt_args[-M]} )
++
++  # Restore cached man path to avoid $(manpath) if we can
+   if (( ! $#_manpath )); then
+-    local mp
+-    mp=( ${(s.:.)$(manpath 2>/dev/null)} )
+-    [[ "$mp" == *:* ]] && mp=( ${(s.:.)mp} )
+-    if (( $#mp )); then
+-      _manpath=( $mp )
+-    elif (( $#manpath )); then
+-      _manpath=( $manpath )
++    if (( ! $+_manpath_cache )); then
++      typeset -gHA _manpath_cache
+     fi
++    if [[ -z $_manpath_cache[$MANPATH] ]]; then
++      local mp
++      mp=( ${(s.:.)$({ command man -w || manpath } 2>/dev/null)} )
++      [[ "$mp" == *:* ]] && mp=( ${(s.:.)mp} )
++      if (( $#mp )); then
++        _manpath_cache[$MANPATH]=${(j.:.)mp}
++      elif (( $#manpath )); then
++        _manpath_cache[$MANPATH]=$MANPATH
++      fi
++    fi
++    _manpath=( ${(s.:.)_manpath_cache[$MANPATH]} )
++  fi
++
++  # Augment man path
++  if [[ -n ${opt_args[-m]} ]]; then
++    [[ $variant == (netbsd|openbsd)* ]] &&
++    _manpath+=( ${(s<:>)opt_args[-m]} )
++  elif [[ $variant == aix* ]]; then
++    # _manpath declared -U so no need to test
++    _manpath+=( /usr/share/man )
+   fi
+ 
+   (( $#_manpath )) ||
+       _manpath=( /usr/man(-/) /(opt|usr)/(pkg|dt|share|X11R6|local)/(cat|)man(-/) )
+ 
+-  # Override man path
+-  [[ -n ${opt_args[-M]} ]] &&
+-  _manpath=( ${(s<:>)opt_args[-M]} )
+-
+-  # Augment man path
+-  [[ $variant == (netbsd|openbsd)* ]] &&
+-  [[ -n ${opt_args[-m]} ]] &&
+-  _manpath+=( ${(s<:>)opt_args[-m]} )
+-
+   # `sman' is the SGML manual directory for Solaris 7.
+   # 1M is system administrator commands on SVR4
+ 

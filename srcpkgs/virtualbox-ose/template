@@ -1,0 +1,190 @@
+# Template file for 'virtualbox-ose'
+pkgname=virtualbox-ose
+version=7.2.4
+revision=1
+short_desc="General-purpose full virtualizer for x86 hardware"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="GPL-2.0-only, CDDL-1.0"
+homepage="https://www.virtualbox.org"
+changelog="https://www.virtualbox.org/wiki/Changelog"
+distfiles="http://download.virtualbox.org/virtualbox/${version%[a-z]*}/VirtualBox-${version}.tar.bz2"
+checksum=d281ec981b5f580211a0cedd1b75a1adcb0fbfcbb768d8c2bf4429f4763e8bbd
+
+nopie=yes
+lib32disabled=yes
+archs="x86_64"
+
+hostmakedepends="acpica-utils dev86 perl pkg-config qt6-tools tar yasm which glslang
+ vulkan-loader"
+makedepends="device-mapper-devel docbook-xsl gsoap-devel libcap-devel libcurl-devel
+ libvpx-devel libXcomposite-devel libXcursor-devel qt6-tools-devel vde2-devel
+ libXinerama-devel libxslt-devel opus-devel pam-devel qt6-base-devel qt6-scxml-devel
+ sdl12-compat-devel xorg-server-devel libslirp-devel libtpms-devel libxml2-devel
+ libvncserver-devel openssl-devel libpng-devel zlib-devel dbus-devel device-mapper-devel
+ libglvnd-devel libX11-devel libXt-devel libXcursor-devel pam-devel SDL2-devel
+ SDL2_ttf-devel SDL2_gfx-devel SDL2_image-devel SDL2_net-devel SDL2_mixer-devel"
+
+if [ "$XBPS_MACHINE" = "x86_64" ]; then
+	makedepends+=" gcc-multilib"
+fi
+
+depends="virtualbox-ose-dkms-${version}_${revision} hicolor-icon-theme desktop-file-utils dbus"
+system_groups="vboxusers"
+
+do_configure() {
+	cp ${FILESDIR}/LocalConfig.kmk .
+	./configure \
+		--disable-docs --disable-java --enable-vde \
+		--with-makeself="/bin/echo" \
+		--disable-python --disable-kmods --nofatal --enable-webservice
+}
+
+do_build() {
+	export USERNAME="builder@void"
+	vsed -i  src/VBox/Main/webservice/Makefile.kmk \
+		-e '/webtest_LIBS/,/^webtest_/{/ z$/!s/.*LIB_.*/& z/ }' \
+		-e '/vboxwebsrv_LIBS/,/^vboxwebsrv_/{/ z$/!s/.*LIB_.*/& z/}'
+	# remove missing manual
+	vsed -i  doc/manual/en_US/dita/UserManual.ditamap \
+		-e '/security-of-remote-vms.dita/d'
+	source ./env.sh
+	kmk ${makejobs} all
+}
+
+do_install() {
+	source ./env.sh
+	#
+	# virtualbox-ose.
+	#
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin
+
+	vmkdir usr/lib/virtualbox
+	vmkdir usr/share/virtualbox
+	vbin VBox.sh VBox
+	for f in VirtualBox VBoxManage VBoxHeadless \
+		VBoxBalloonCtrl vboxwebsrv; do
+		ln -sf VBox ${DESTDIR}/usr/bin/${f}
+	done
+
+	# components
+	vcopy components usr/lib/virtualbox
+	vcopy dtrace usr/lib/virtualbox
+	vcopy ExtensionPacks usr/lib/virtualbox
+	vcopy tools usr/lib/virtualbox
+
+	# libs
+	install -m0755 *.so ${DESTDIR}/usr/lib/virtualbox
+	install -m0644 *.r0 *.fd ${DESTDIR}/usr/lib/virtualbox
+
+	# setuid
+	install -m4755 VirtualBoxVM VBoxHeadless VBoxNetDHCP VBoxNetAdpCtl \
+		VBoxNetNAT -t ${DESTDIR}/usr/lib/virtualbox
+
+	install -m0755 VirtualBox VBoxManage VBoxSVC VBoxExtPackHelperApp \
+		VBoxBugReport VBoxCpuReport VBoxDTrace vboximg-mount \
+		VBoxVolInfo xpidl \
+		VBoxBalloonCtrl vboxwebsrv webtest \
+		-t ${DESTDIR}/usr/lib/virtualbox
+
+	# locales
+	vcopy nls usr/share/virtualbox
+
+	# scripts
+	install -m0755 VBoxCreateUSBNode.sh VBoxSysInfo.sh \
+		-t ${DESTDIR}/usr/share/virtualbox
+
+	# icons and desktop
+	vinstall VBox.png 644 usr/share/pixmaps/
+	sed -i -e "s|Icon=VBox|Icon=VBox.png|" virtualbox.desktop
+	vinstall virtualbox.desktop 644 usr/share/applications/
+	vinstall virtualbox.xml 644 usr/share/mime/packages/
+	install -d ${DESTDIR}/usr/share/icons/hicolor
+	for i in icons/*; do
+		ldir=$(basename ${i})
+		install -d ${DESTDIR}/usr/share/icons/hicolor/${ldir}/mimetypes
+		cp -a ${i}/* ${DESTDIR}/usr/share/icons/hicolor/${ldir}/mimetypes
+	done
+
+	# configuration file
+	mkdir -p ${DESTDIR}/etc/vbox
+	echo 'INSTALL_DIR=/usr/lib/virtualbox' > ${DESTDIR}/etc/vbox/vbox.cfg
+
+	install -d ${DESTDIR}/usr/share/licenses/${pkgname}
+	install -m0644 ${wrksrc}/COPYING* \
+		${DESTDIR}/usr/share/licenses/${pkgname}
+
+	# Install modules-load.d file.
+	vinstall ${FILESDIR}/virtualbox.conf 644 usr/lib/modules-load.d
+	vinstall ${FILESDIR}/virtualbox.modprobe 644 usr/lib/modprobe.d virtualbox.conf
+
+	vsv vboxwebsrv
+
+	vdoc ${FILESDIR}/README.voidlinux
+
+	vcopy UnattendedTemplates usr/share/virtualbox
+}
+
+virtualbox-ose-dkms_package() {
+	short_desc+=" - kernel module sources for dkms"
+	dkms_modules="virtualbox-ose ${version}"
+	depends="dkms"
+
+	pkg_install() {
+		source ${wrksrc}/env.sh
+
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/src
+
+		rm -f do_dkms
+		sed -s "s/#MODULE_VERSION#/$version/" ${FILESDIR}/${pkgname}.dkms >dkms.conf
+		vmkdir "usr/src/${pkgname%-dkms}-${version}"
+		vcopy . "usr/src/${pkgname%-dkms}-${version}"
+		vcopy ${wrksrc}/include "usr/src/${pkgname%-dkms}-${version}"
+		vinstall ${FILESDIR}/${pkgname}.udev 644 \
+			usr/lib/udev/rules.d 60-${pkgname}.rules
+	}
+}
+virtualbox-ose-guest_package() {
+	lib32disabled=yes
+	conflicts="xserver-abi-video>25_1"
+	short_desc+=" - guest utilities"
+
+	pkg_install() {
+		source ${wrksrc}/env.sh
+
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions
+		vmkdir usr/bin
+
+		install -m755 VBoxClient VBoxControl VBoxService ${PKGDESTDIR}/usr/bin
+		install -m755 mount.vboxsf ${PKGDESTDIR}/usr/bin
+		install -Dm755 ${wrksrc}/src/VBox/Additions/x11/Installer/98vboxadd-xclient \
+			${PKGDESTDIR}/usr/bin/VBoxClient-all
+		install -Dm755 ${wrksrc}/src/VBox/Additions/x11/Installer/vboxclient.desktop \
+			${PKGDESTDIR}/etc/xdg/autostart/vboxclient.desktop
+
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions
+		install -d ${PKGDESTDIR}/usr/lib/xorg/modules/drivers
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions
+		install -Dm755 pam_vbox.so ${PKGDESTDIR}/usr/lib/security/pam_vbox.so
+
+		vinstall ${FILESDIR}/virtualbox-guest.conf 644 usr/lib/modules-load.d
+		vsv vboxservice
+	}
+}
+virtualbox-ose-guest-dkms_package() {
+	short_desc+=" - guest addition module source for dkms"
+	dkms_modules="virtualbox-ose-guest ${version}"
+	depends="dkms"
+
+	pkg_install() {
+		source ${wrksrc}/env.sh
+
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions/src
+
+		sed -s "s/#MODULE_VERSION#/$version/" ${FILESDIR}/${pkgname}.dkms >dkms.conf
+		rm -f do_dkms
+		vmkdir "usr/src/${pkgname%-dkms}-${version}"
+		vcopy . "usr/src/${pkgname%-dkms}-${version}"
+		vinstall ${FILESDIR}/${pkgname}.udev 644 \
+			usr/lib/udev/rules.d 60-${pkgname}.rules
+	}
+}

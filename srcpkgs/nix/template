@@ -1,0 +1,79 @@
+# Template file for 'nix'
+pkgname=nix
+version=2.30.2
+revision=6
+build_style=meson
+build_helper=qemu
+# Use /nix/var as suggested by the official Manual.
+# configure_args="--localstatedir=/nix/var --with-sandbox-shell=/usr/bin/busybox.static"
+# requires rapidcheck
+configure_args="-Dunit-tests=false -Dlibstore:sandbox-shell=/usr/bin/busybox.static"
+hostmakedepends="curl pkg-config flex tar xz mdBook jq busybox-static lowdown
+ perl-DBD-SQLite xz lsof"
+makedepends="boost-devel-minimal libboost_context libboost_coroutine
+ libboost_iostreams libboost_regex libboost_container
+ brotli-devel bzip2-devel gc-devel libcurl-devel
+ libblake3-devel libgit2-1.9-devel toml11
+ liblzma-devel openssl-devel libsodium-devel sqlite-devel
+ libseccomp-devel editline-devel jq-devel libarchive-devel
+ gtest-devel lowdown-devel json-c++"
+depends="curl tar xz busybox-static lsof"
+short_desc="Purely functional package manager"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="LGPL-2.1-or-later"
+homepage="https://nixos.org/nix/"
+changelog="https://nixos.org/releases/${pkgname}/${pkgname}-${version}/manual/#sec-relnotes"
+distfiles="https://github.com/NixOS/nix/archive/refs/tags/${version}.tar.gz"
+checksum=1e1490774d9f869d21747e48f3550c997c8c207dc5aa64888d2a18a3d478675e
+# disable_parallel_build="build is fine, only linking test"
+make_check=no # requires repidcheck
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	makedepends+=" musl-legacy-compat"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*|i686*) makedepends+=" libcpuid-devel";;
+esac
+
+CXXFLAGS="-Wno-deprecated-declarations -UNDEBUG"
+
+# Default configuration file.
+conf_files="/etc/nix/nix.conf"
+# Create required build users/groups.
+system_groups="nixbld"
+for f in {1..9}; do
+	system_accounts+=" nixbld${f}"
+	eval export nixbld\${f}_pgroup="nixbld"
+	eval export nixbld\${f}_groups="nixbld"
+done
+# Create required run-time directories.
+make_dirs="
+	/nix/var/log/nix/drvs 0755 root root
+	/nix/var/nix/profiles 0755 root root
+	/nix/var/nix/profiles/per-user 1777 root root
+	/nix/var/nix/gcroots/per-user 1777 root root
+	/nix/var/nix/temproots 0755 root root
+	/nix/var/nix/gcroots 0755 root root
+	/nix/var/nix/manifests 0755 root root
+	/nix/var/nix/userpool 0755 root root
+	/nix/var/nix/db 0755 root root
+	/nix/store 1775 root nixbld"
+
+post_install() {
+	mv "${DESTDIR}/usr/etc" "${DESTDIR}/"
+	vmkdir etc/nix
+	# Remove unused stuff.
+	rm -rf ${DESTDIR}/usr/include ${DESTDIR}/nix ${DESTDIR}/etc/init
+	rm -rf ${DESTDIR}/usr/lib/systemd ${DESTDIR}/usr/lib/pkgconfig
+	# Let users interact with the nix-daemon by default.
+	vmkdir etc/profile.d
+	echo 'export NIX_REMOTE=daemon' > ${DESTDIR}/etc/profile.d/nix-daemon.sh
+	# Setup build users.
+	echo 'build-users-group = nixbld' > ${DESTDIR}/etc/nix/nix.conf
+	echo 'build-use-sandbox = false' >> ${DESTDIR}/etc/nix/nix.conf
+	# Install our profile.d/nix for multi-user by default.
+	vinstall ${FILESDIR}/nix.sh 644 etc/profile.d
+	# runit service
+	vsv nix-daemon
+}

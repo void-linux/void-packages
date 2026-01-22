@@ -1,0 +1,139 @@
+# Template file for 'OpenRCT2'
+# based on https://raw.githubusercontent.com/AluisioASG/void-packages/openrct2/srcpkgs/OpenRCT2/template
+# and https://github.com/void-linux/void-packages/issues/1014#issuecomment-417372421
+pkgname=OpenRCT2
+version=0.4.29
+revision=1
+# versions pulled from https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/v${version}/CMakeLists.txt
+_objects_version=1.7.5
+_titles_version=0.4.26
+_replays_version=0.0.90
+_opensfx_version=1.0.6
+_openmsx_version=1.6.1
+build_style=cmake
+configure_args="
+ -DOPENRCT2_VERSION_TAG=${version}
+ -DDOWNLOAD_TITLE_SEQUENCES=0
+ -DDOWNLOAD_OBJECTS=0
+ -DDOWNLOAD_REPLAYS=0
+ -DDISABLE_DISCORD_RPC=1
+ -DDISABLE_GOOGLE_BENCHMARK=1
+ $(vopt_if multiplayer '' '-DDISABLE_NETWORK=1')
+ $(vopt_if scripting '-DENABLE_SCRIPTING=1' '')"
+hostmakedepends="pkg-config unzip"
+makedepends="SDL2-devel fontconfig-devel freetype-devel libzip-devel
+ libpng-devel speexdsp-devel icu-devel zlib-devel json-c++ libxml2-devel
+ $(vopt_if multiplayer 'libcurl-devel openssl-devel')
+ $(vopt_if scripting duktape-devel)"
+depends="zenity"
+checkdepends="gtest-devel"
+short_desc="Open source re-implementation of RollerCoaster Tycoon 2"
+maintainer="klardotsh <josh@klar.sh>"
+license="GPL-3.0-or-later, CC-BY-SA-4.0"
+homepage="https://openrct2.io"
+changelog="https://openrct2.org/changelog"
+# download objects and title sequences ourselves, instead of letting cmake do it
+distfiles="https://github.com/OpenRCT2/OpenRCT2/archive/v${version}.tar.gz
+ https://github.com/OpenRCT2/objects/releases/download/v${_objects_version}/objects.zip>objects-${_objects_version}.zip
+ https://github.com/OpenRCT2/OpenSoundEffects/releases/download/v${_opensfx_version}/opensound.zip>opensound-${_opensfx_version}.zip
+ https://github.com/OpenRCT2/OpenMusic/releases/download/v${_openmsx_version}/openmusic.zip>openmusic-${_openmsx_version}.zip
+ https://github.com/OpenRCT2/replays/releases/download/v${_replays_version}/replays.zip>replays-${_replays_version}.zip
+ https://github.com/OpenRCT2/title-sequences/releases/download/v${_titles_version}/title-sequences.zip>title-sequences-${_titles_version}.zip"
+checksum="88492fb962236b8a23794620f7b075aac01674676385d68dca650b7f9664fcc0
+ c8b9d3039a920f67caf15b09e8312cc4f80d59ed7fe0288625b9ccedef606797
+ 06b90f3e19c216752df441d551b26a9e3e1ba7755bdd2102504b73bf993608be
+ 994b350d3b180ee1cb9619fe27f7ebae3a1a5232840c4bd47a89f33fa89de1a1
+ f8474a927e155056e5729b6fa9f05af2a85ae7e1435f5fa89ba496242f9f255e
+ dabb9787b1576342fca4dd9f64b3f8cfa04a7e6ce9c2bb9610f47b762905c858"
+skip_extraction="objects-${_objects_version}.zip
+ opensound-${_opensfx_version}.zip
+ openmusic-${_openmsx_version}.zip
+ replays-${_replays_version}.zip
+ title-sequences-${_titles_version}.zip"
+
+replaces="OpenRCT2-data>=0"
+
+CXXFLAGS="-DNDEBUG"
+
+build_options="multiplayer scripting"
+build_options_default="multiplayer scripting"
+desc_option_multiplayer="Enable multiplayer support"
+desc_option_scripting="Enable script / plugin support"
+
+if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
+	broken="not yet implemented"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc*)
+		CFLAGS+=" -mlong-double-64"
+		CXXFLAGS+=" -mlong-double-64"
+		;;
+esac
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" OpenRCT2"
+	# for icu mass-rebuild
+	hostmakedepends+=" enchant2 libxml2 libharfbuzz"
+	hostmakedepends+=" libnuspell libpsl"
+	CXXFLAGS+=" -DHAVE_IMMINTRIN_H=false -DSDL_DISABLE_IMMINTRIN_H=1"
+fi
+
+if [ "$XBPS_CHECK_PKGS" ]; then
+	configure_args+=" -DWITH_TESTS=1 -DSYSTEM_GTEST=1"
+fi
+
+post_extract() {
+	_builddir="${build_wrksrc:+$build_wrksrc/}${cmake_builddir:=build}"
+	vsrcextract --no-strip-components -C data/object objects-${_objects_version}.zip
+	vsrcextract --no-strip-components -C data/sequence title-sequences-${_titles_version}.zip
+	vsrcextract --no-strip-components -C data opensound-${_opensfx_version}.zip
+	vsrcextract --no-strip-components -C data openmusic-${_openmsx_version}.zip
+	vsrcextract --no-strip-components -C test/tests/testdata/replays replays-${_replays_version}.zip
+	# CMakeLists seems to assume `install` is run before `check`, and so
+	# doesn't actually make the `data`/`testdata` symlinks in time
+	mkdir -p "${_builddir}"
+	ln -rs data testdata "${_builddir}/"
+
+	vsed -i CMakeLists.txt -e "s; -Werror;;"
+}
+
+post_patch() {
+	if [ "$CROSS_BUILD" ]; then
+		sed -i -e 's#COMMAND ./openrct2#COMMAND openrct2#g' CMakeLists.txt
+	fi
+}
+
+_check_versions() {
+	local version_var="$1"
+	local expected_version="$2"
+
+	local actual_version=$(grep "set(${version_var}" CMakeLists.txt | sed -E 's/.*"([0-9.]+)".*/\1/')
+
+	if [ "$actual_version" != "$expected_version" ]; then
+		echo "Warning: ${version_var} mismatch"
+		echo "Expected: $expected_version"
+		echo "Actual: $actual_version"
+		return 1
+	fi
+	return 0
+}
+
+pre_configure() {
+	local mismatch=0
+	_check_versions "OBJECTS_VERSION" "$_objects_version" || mismatch=1
+	_check_versions "TITLE_SEQUENCE_VERSION" "$_titles_version" || mismatch=1
+	_check_versions "REPLAYS_VERSION" "$_replays_version" || mismatch=1
+	_check_versions "OPENSFX_VERSION" "$_opensfx_version" || mismatch=1
+	_check_versions "OPENMSX_VERSION" "$_openmsx_version" || mismatch=1
+
+	if [ $mismatch -eq 1 ]; then
+		echo "Version mismatch detected. Please update the template with the correct versions."
+		return 1
+	fi
+}
+
+post_install() {
+	# remove useless static lib
+	rm "${DESTDIR}/usr/lib/libopenrct2.a"
+}

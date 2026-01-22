@@ -1,0 +1,313 @@
+# Template file for 'texlive'
+pkgname=texlive
+version=20250308
+revision=1
+_year=${version%${version#????}}
+build_wrksrc="build"
+build_style=gnu-configure
+configure_script="../configure"
+configure_args="
+ --prefix=/usr
+ --sysconfdir=/etc
+ --datarootdir=/usr/share
+ --datadir=/usr/share
+ --mandir=/usr/share/man
+ --infodir=/usr/share/info
+ --enable-biber
+ --enable-dvipng
+ --enable-dvipsk
+ --enable-epsfwin
+ --enable-ipc
+ --enable-luahbtex
+ --enable-luajittex
+ --enable-luajithbtex
+ --enable-luatex
+ --enable-mflua
+ --enable-mfluajit
+ --enable-mfluajit-nowin
+ --enable-mftalkwin
+ --enable-ps2eps
+ --enable-psutils
+ --enable-regiswin
+ --enable-shared
+ --enable-tektronixwin
+ --enable-unitermwin
+ --enable-xetex
+ --disable-bibtex-x
+ --disable-chktex
+ --disable-cjkutils
+ --disable-detex
+ --disable-dialog
+ --disable-dvi2tty
+ --disable-dvisvgm
+ --disable-largefile
+ --disable-lcdf-typetools
+ --disable-multiplatform
+ --disable-native-texlive-build
+ --disable-pdfopen
+ --disable-ps2pkm
+ --disable-t1utils
+ --disable-tex4htk
+ --disable-ttf2pk2
+ --disable-vlna
+ --disable-xindy
+ --disable-xpdfopen
+ --with-banner-add=/VoidLinux
+ --with-ps=gs
+ --with-system-cairo
+ --with-system-freetype2
+ --with-system-gd
+ --with-system-gmp
+ --with-system-graphite2
+ --with-system-harfbuzz
+ --with-system-icu
+ --with-system-libpaper
+ --with-system-libpng
+ --with-system-mpfr
+ --with-system-pixman
+ --with-system-teckit
+ --with-system-zlib
+ --with-system-zziplib
+ --with-xdvi-x-toolkit=Xaw"
+hostmakedepends="pkg-config perl lua52-BitOp texinfo libXaw-devel"
+makedepends="cairo-devel freetype-devel gd-devel graphite-devel gmp-devel
+ harfbuzz-devel icu-devel libpaper-devel libpng-devel mpfr-devel
+ pixman-devel libteckit-devel zlib-devel zziplib-devel libXaw-devel"
+depends="dialog ghostscript perl-Tk texlive-core>=${version}_${revision} xbps-triggers
+ texlive-latexmk latexindent"
+checkdepends="diffutils"
+short_desc="TeX Live"
+maintainer="dkwo <npiazza@disroot.org>, fosslinux <fosslinux@aussies.space>"
+license="GPL-2.0-or-later"
+homepage="https://tug.org/texlive/"
+distfiles="https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/${_year}/texlive-${version}-source.tar.xz"
+checksum=fffdb1a3d143c177a4398a2229a40d6a88f18098e5f6dcfd57648c9f2417490f
+python_version=3
+# Virtual package cares only about year part of version
+provides="tex-${_year}_1"
+nocross="broken currently"
+
+if [ "$CROSS_BUILD" ] ; then
+	# Tangle is required for cross compile
+	hostmakedepends+=" texlive"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	mips*) broken="cannot find libraries" ;;
+esac
+
+# fixme: use system luajit when that option is available
+# https://tug.org/pipermail/tex-live/2025-January/051045.html
+build_options="luajit"
+
+_luajit_host_cc="cc"
+if [ "$XBPS_WORDSIZE" != "$XBPS_TARGET_WORDSIZE" ] ; then
+	case "$XBPS_MACHINE" in
+		x86_64*)
+			hostmakedepends+=" cross-i686-linux-musl"
+			_luajit_host_cc="i686-linux-musl-gcc -static"
+			;;
+		ppc64le*) _luajit_host_cc="broken" ;; # no 32-bit counterpart yet
+		ppc64*)
+			hostmakedepends+=" cross-powerpc-linux-musl"
+			_luajit_host_cc="powerpc-linux-musl-gcc -static"
+			;;
+		*) _luajit_host_cc="broken" ;;
+	esac
+fi
+
+if [ "${_luajit_host_cc}" != "broken" ] ; then
+	build_options_default+=" luajit"
+fi
+
+if [ ! "$build_option_luajit" ] ; then
+	configure_args+=" --disable-luajittex --disable-mfluajit
+	 --disable-mfluajit-nowin --disable-luajithbtex"
+else
+	if [ "${_luajit_host_cc}" = "broken" ] ; then
+		nocross="Cannot cross compile LuaJIT for different wordsizes"
+	fi
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	aarch64*) DASM_ARCH=arm64 ;;
+	arm*) DASM_ARCH=arm ;;
+	mips64*) DASM_ARCH=mips64 ;;
+	mips*) DASM_ARCH=mips ;;
+	ppc*) DASM_ARCH=ppc ;;
+	i686*) DASM_ARCH=x86 ;;
+	x86_64*) DASM_ARCH=x64 ;;
+esac
+export DASM_ARCH
+
+if [ -n "$build_option_luajit" ] ; then
+	export HOST_CC="${_luajit_host_cc}"
+	if [ -n "$CROSS_BUILD" ] ; then
+		export HOST_CFLAGS="${XBPS_CFLAGS}"
+		export CROSS="${XBPS_CROSS_TRIPLET}-"
+	fi
+fi
+
+post_extract() {
+	mkdir -p "${build_wrksrc}"
+
+	# https://tug.org/pipermail/tlbuild/2025q1/005635.html
+	if [ -n "$CROSS_BUILD" ] ; then
+		sed -i 's|\./himktables\$(EXEEXT)|#\./himktables\$(EXEEXT)|' texk/web2c/Makefile.in
+		cp texk/web2c/hitexdir/hitables.c texk/web2c/hitables.c
+	fi
+}
+
+post_install() {
+	# trick from Alpine
+	# export PATH="${DESTDIR}/usr/bin:$PATH"
+	export LD_LIBRARY_PATH="${DESTDIR}/usr/lib:$LD_LIBRARY_PATH"
+	make DESTDIR=${DESTDIR} texlinks
+
+	# These tools are still useful for a texlive workflow, but are modified
+	# psutils and conflict with psutils; rename them to have a tl- prefix
+	for f in extractres includeres psbook psjoin psnup psresize psselect \
+			 pstops epsffit ; do
+		mv "${DESTDIR}/usr/share/man/man1/"{,tl-}"${f}.1"
+		mv "${DESTDIR}/usr/bin/"{,tl-}"${f}"
+	done
+
+	rm -rf ${DESTDIR}/usr/share/texmf-dist
+	rm -f ${DESTDIR}/usr/bin/tlmgr
+}
+
+texlive-XeTeX_package() {
+	depends="${sourcepkg}>=${version}_${revision} texlive-dvi"
+	short_desc+=" - engine supporting modern typography"
+	pkg_install() {
+		vmove usr/bin/xetex
+		vmove usr/share/man/man1/xe*.1
+		vmove usr/bin/xelatex
+	}
+}
+
+texlive-dvi_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - tools for dvi based workflow"
+	pkg_install() {
+		for i in afm2tfm bbox tl-extractres tl-includeres tl-psbook tl-psjoin \
+				 tl-psnup tl-psresize tl-psselect tl-pstops ; do
+			vmove "usr/bin/${i}"
+			vmove "usr/share/man/man1/${i}.1"
+		done
+		vmove usr/bin/dvi*
+	}
+}
+
+texlive-LuaTeX_package() {
+	depends="${sourcepkg}>=${version}_${revision} bash"
+	short_desc+=" - extended pdfTeX using Lua"
+	pkg_install() {
+		if [ "$build_option_luajit" ] ; then
+			for i in luajittex mfluajit mfluajit-nowin luajithbtex texluajit \
+					 texluajitc ; do
+				vmove "usr/bin/${i}"
+			done
+		fi
+		for i in checkcites cllualatex cluttex diadia digestif getmapdl l3build luafindfont luahbtex \
+				 lualatex luaotfload-tool luatex lwarpmk m-tx \
+				 makeglossaries-lite mflua mflua-nowin musixflx musixtex optex pmxchords \
+				 ptex2pdf texlua texluac xindex ; do
+			vmove "usr/bin/${i}"
+		done
+		for i in luatex texlua texluac ; do
+			vmove "usr/share/man/man1/${i}.1"
+		done
+		vmove "usr/lib/libtexlua*.so.*"
+	}
+}
+
+texlive-LuaTeX-devel_package() {
+	depends="${sourcepkg}-devel>=${version}_${revision}
+	 ${sourcepkg}-LuaTeX>=${version}_${revision}"
+	short_desc+=" - extended pdfTeX using Lua - development files"
+	pkg_install() {
+		for i in texlua53 $(vopt_if luajit texluajit); do
+			vmove "usr/include/${i}"
+			vmove "usr/lib/lib${i}.a"
+			vmove "usr/lib/lib${i}.so"
+			vmove "usr/lib/pkgconfig/${i}.pc"
+		done
+	}
+}
+
+texlive-Xdvi_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - displaying DVI files on the X window system"
+	pkg_install() {
+		for i in xdvi xdvi-xaw xdvipdfmx ; do
+			vmove "usr/bin/${i}"
+		done
+		for i in xdvi xdvipdfmx ; do
+			vmove "usr/share/man/man1/${i}.1"
+		done
+		vmove usr/share/applications/xdvi.desktop
+	}
+}
+
+libsynctex_package() {
+	short_desc+=" - libsynctex"
+	pkg_install() {
+		vmove "usr/lib/libsynctex.so.*"
+	}
+}
+
+texlive-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		for i in kpathsea ptexenc synctex; do
+			vmove "usr/include/${i}"
+			vmove "usr/lib/lib${i}.a"
+			vmove "usr/lib/lib${i}.so"
+			vmove "usr/lib/pkgconfig/${i}.pc"
+		done
+	}
+}
+
+texlive-BibTeX_package() {
+	depends="${sourcepkg}>=${version}_${revision} bash"
+	short_desc+=" - reference management software"
+	pkg_install() {
+		for i in bbl2bib ctanbib ; do
+			vmove "usr/bin/${i}"
+		done
+		vmove usr/bin/bib*
+		vmove usr/share/man/man1/bibtex.1
+	}
+}
+
+texlive-ConTeXt_package() {
+	metapackage=yes
+	short_desc+=" (transitional package)"
+	depends="texlive>=${version}_${revision}"
+}
+
+texlive-PythonTeX_package() {
+	depends="${sourcepkg}>=${version}_${revision} python3"
+	short_desc+=" - executing Python in LaTeX"
+	pkg_install() {
+		vmove usr/bin/*pythontex
+	}
+}
+
+texlive-latexmk_package() {
+	depends="perl"
+	short_desc+=" - script for compiling the correct number of times"
+	pkg_install() {
+		vmove usr/bin/latexmk
+	}
+}
+
+latexindent_package() {
+	depends="perl perl-File-HomeDir perl-Tk perl-Unicode-LineBreak perl-YAML-Tiny"
+	short_desc="Script to add indentation to LaTeX files"
+	pkg_install() {
+		vmove usr/bin/latexindent
+	}
+}

@@ -1,0 +1,142 @@
+# Template file for 'ghc'
+pkgname=ghc
+# Keep this synchronized with http://www.stackage.org/lts
+version=9.8.4
+revision=1
+build_helper="haskell"
+_configure_args="--prefix=/usr"
+_hadrian_args="--prefix=/usr"
+hostmakedepends="ghc-bin python3 tar xz automake"
+makedepends="libffi-devel"
+depends="gcc libffi-devel gmp-devel libnuma-devel"
+short_desc="Glasgow Haskell Compiler"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="BSD-3-Clause"
+homepage="http://www.haskell.org/ghc/"
+distfiles="http://www.haskell.org/ghc/dist/${version}/${pkgname}-${version}-src.tar.xz"
+checksum=17e8188f3c8a5c2f73fb4e35d01032e8dc258835ec876d52c8ad8ee3d24b2fc5
+_hadrian_cmd="hadrian/bootstrap/_build/bin/hadrian"
+nocross=yes # this is conditionally unset for cross bindist
+nopie=yes
+_ghc_ver="${version//./_}"
+
+build_options="bindist stage3"
+desc_option_bindist="Create a binary distribution"
+desc_option_stage3="Build a stage3 compiler"
+
+# it is not possible to cross-compile an entire ghc distribution as
+# some components rely on stage2 binaries being runnable on the host
+# even cross-compiled bindists are incomplete, and you should only
+# use them to compile proper bindists on newly bootstrapped targets
+if [ -z "$build_option_bindist" ]; then
+	# final package builds use system libffi as well as gmp and ncurses
+	_configure_args+=" --with-system-libffi"
+
+	# --hash-unit-ids is needed because it only became part of the
+	# release flavour in later GHC versions.
+	_hadrian_args+=" --flavour=release --hash-unit-ids --docs=no-sphinx-pdfs"
+
+	hostmakedepends+=" python3-Sphinx docbook-xsl"
+	makedepends+=" ncurses-devel gmp-devel libnuma-devel"
+elif [ -z "$CROSS_BUILD" ]; then
+	# native bindist builds use system libffi as well as gmp and ncurses
+	_configure_args+=" --with-system-libffi --disable-numa"
+	_hadrian_args+=" --flavour=quick --docs=none"
+
+	makedepends+=" ncurses-devel gmp-devel"
+elif [ "${XBPS_MACHINE%-*}" != "${XBPS_TARGET_MACHINE%-*}" ]; then
+	# ghc's cross mode only works when the actual target arch differs
+	# i.e. cross-compiling to same arch but different libc does not work
+	unset nocross
+	_configure_args+=" --with-system-libffi --disable-numa"
+	_configure_args+=" --target=${XBPS_CROSS_TRIPLET} --enable-unregistered"
+	_hadrian_args+=" --flavour=quick --docs=none --bignum=native"
+fi
+
+post_extract() {
+	if [ -e ${FILESDIR}/plan-bootstrap-${_ghc_ver}.json ]; then
+		cp "${FILESDIR}/plan-bootstrap-${_ghc_ver}.json" hadrian/bootstrap/
+	fi
+}
+
+do_patch() {
+	if [ "$build_option_stage3" ]; then
+		sed -i 's/finalStage = Stage2/finalStage = Stage3/' hadrian/src/UserSettings.hs
+	fi
+}
+
+pre_configure() {
+	if [ ! -e hadrian/bootstrap/plan-bootstrap-${_ghc_ver}.json ]; then
+		# To generate a bootstrap plan for a new ghc version ensure a
+		# cabal binary is available, run this, then move the plan to
+		# ${FILESDIR}
+		cabal update
+		cd hadrian
+		cabal build --flags=-selftest --dry-run hadrian
+		cp dist-newstyle/cache/plan.json bootstrap/plan-${_ghc_ver}.json
+		cd bootstrap
+		cabal build hadrian-bootstrap-gen --allow-newer
+		cabal run -v0 hadrian-bootstrap-gen -- "plan-${_ghc_ver}.json" \
+			| python3 -m json.tool > "plan-bootstrap-${_ghc_ver}.json"
+		msg_normal "Please install hadrian/bootstrap/plan-bootstrap-${_ghc_ver}.json in ${FILESDIR}\n"
+		exit 1
+	else
+		cd hadrian/bootstrap
+	fi
+
+	./bootstrap.py -d plan-bootstrap-${_ghc_ver}.json
+}
+
+do_configure() {
+	# GNU binutils ld does not work on ARM with haskell, see
+	# https://sourceware.org/bugzilla/show_bug.cgi?id=16177
+	# ld.gold works but was removed from binutils in 2.44
+	# So we set LD to CC and the configure script will set -fuse-ld to lld
+	export LD="$CC"
+	./configure ${_configure_args}
+}
+
+do_build() {
+	${_hadrian_cmd} ${makejobs} ${_hadrian_args}
+}
+
+do_install() {
+	local arch targ
+	if [ "$CROSS_BUILD" ]; then
+		arch=${XBPS_CROSS_TRIPLET%%-*}
+		targ=ghc-${version}-${XBPS_CROSS_TRIPLET}
+	else
+		arch=${XBPS_TRIPLET%%-*}
+		targ=ghc-${version}-${arch}-unknown-linux
+	fi
+
+	if [ "$build_option_bindist" ]; then
+		msg_normal "Creating binary distribution for ${XBPS_TARGET_MACHINE}...\n"
+		${_hadrian_cmd} ${_hadrian_args} binary-dist
+		mkdir -p ${XBPS_SRCDISTDIR}/distfiles
+		install -m 0644 _build/bindist/${targ}.tar.xz ${XBPS_SRCDISTDIR}/distfiles
+		msg_normal "Installed in ${XBPS_SRCDISTDIR}/distfiles\n"
+		exit 1
+	else
+		DESTDIR=${DESTDIR} ${_hadrian_cmd} ${_hadrian_args} install
+	fi
+}
+
+post_install() {
+	vlicense LICENSE
+}
+
+ghc-doc_package() {
+	short_desc+=" - documentation"
+	pkg_install() {
+		vmove usr/share/doc
+	}
+}
+
+ghc-devel_package() {
+	short_desc+=" - development files"
+	pkg_install() {
+		cd ${DESTDIR}
+		find usr/lib \( -type f -o -type l \) \( -name "*.p_*" -o -name "lib*_p.a" \) | while read f; do vmove "$f"; done
+	}
+}
