@@ -1,0 +1,98 @@
+diff --git a/src/sage/databases/sql_db.py b/src/sage/databases/sql_db.py
+index d86643bea21..f3548810be9 100644
+--- a/src/sage/databases/sql_db.py
++++ b/src/sage/databases/sql_db.py
+@@ -1109,6 +1109,12 @@ def __init__(self, filename=None, read_only=None, skeleton=None):
+             raise RuntimeError('Cannot update skeleton of a read only '
+                 + 'database.')
+ 
++    def __enter__(self):
++        return self
++
++    def __exit__(self, exc_type, exc, tb):
++        self.__connection__.close()
++
+     def __repr__(self):
+         """
+         Override the print output to display useful info regarding the
+diff --git a/src/sage/schemes/elliptic_curves/constructor.py b/src/sage/schemes/elliptic_curves/constructor.py
+index fee15d24802..fde3a98b36f 100644
+--- a/src/sage/schemes/elliptic_curves/constructor.py
++++ b/src/sage/schemes/elliptic_curves/constructor.py
+@@ -437,7 +437,8 @@ def create_key_and_extra_args(self, x=None, y=None, j=None, minimal_twist=True,
+         if isinstance(x, str):
+             # Interpret x as a Cremona or LMFDB label.
+             from sage.databases.cremona import CremonaDatabase
+-            x, data = CremonaDatabase().coefficients_and_data(x)
++            with CremonaDatabase() as D:
++                x, data = D.coefficients_and_data(x)
+             # data is only valid for elliptic curves over QQ.
+             if R not in (None, QQ):
+                 data = {}
+@@ -753,10 +754,11 @@ def coefficients_from_j(j, minimal_twist=True):
+         Elist = [E for E in Elist if E.conductor() == min_cond]
+         if len(Elist) > 1:
+             from sage.databases.cremona import CremonaDatabase, parse_cremona_label
+-            if min_cond <= CremonaDatabase().largest_conductor():
+-                sorter = lambda E: parse_cremona_label(E.label(), numerical_class_code=True)
+-            else:
+-                sorter = lambda E: E.ainvs()
++            with CremonaDatabase() as D:
++                if min_cond <= D.largest_conductor():
++                    sorter = lambda E: parse_cremona_label(E.label(), numerical_class_code=True)
++                else:
++                    sorter = lambda E: E.ainvs()
+             Elist.sort(key=sorter)
+         return Sequence(Elist[0].ainvs())
+ 
+diff --git a/src/sage/schemes/elliptic_curves/ell_rational_field.py b/src/sage/schemes/elliptic_curves/ell_rational_field.py
+index d7dba7acbfb..2d578e116a2 100644
+--- a/src/sage/schemes/elliptic_curves/ell_rational_field.py
++++ b/src/sage/schemes/elliptic_curves/ell_rational_field.py
+@@ -686,12 +686,13 @@ def database_attributes(self):
+             LookupError: Cremona database does not contain entry for Elliptic Curve
+             defined by y^2 + 8*x*y + 21*y = x^3 + 13*x^2 + 34*x + 55 over Rational Field
+         """
+-        from sage.databases.cremona import CremonaDatabase
+         ainvs = self.minimal_model().ainvs()
+-        try:
+-            return CremonaDatabase().data_from_coefficients(ainvs)
+-        except RuntimeError:
+-            raise LookupError("Cremona database does not contain entry for " + repr(self))
++        with sage.databases.cremona.CremonaDatabase() as D:
++            try:
++                attrs = D.data_from_coefficients(ainvs)
++                return attrs
++            except RuntimeError:
++                raise LookupError("Cremona database does not contain entry for " + repr(self))
+ 
+     def database_curve(self):
+         r"""
+@@ -718,10 +719,10 @@ def database_curve(self):
+             return self.__database_curve
+         except AttributeError:
+             verbose_verbose("Looking up %s in the database." % self)
+-            D = sage.databases.cremona.CremonaDatabase()
+             ainvs = list(self.minimal_model().ainvs())
+             try:
+-                self.__database_curve = D.elliptic_curve_from_ainvs(ainvs)
++                with sage.databases.cremona.CremonaDatabase() as D:
++                    self.__database_curve = D.elliptic_curve_from_ainvs(ainvs)
+             except RuntimeError:
+                 raise RuntimeError("Elliptic curve %s not in the database." % self)
+             return self.__database_curve
+diff --git a/src/sage/schemes/elliptic_curves/isogeny_class.py b/src/sage/schemes/elliptic_curves/isogeny_class.py
+index 28043f56b95..c038caa8320 100644
+--- a/src/sage/schemes/elliptic_curves/isogeny_class.py
++++ b/src/sage/schemes/elliptic_curves/isogeny_class.py
+@@ -1087,8 +1087,8 @@ def _compute(self):
+                 label = self.E.cremona_label(space=False)
+             except RuntimeError:
+                 raise RuntimeError("unable to find %s in the database" % self.E)
+-            db = sage.databases.cremona.CremonaDatabase()
+-            curves = db.isogeny_class(label)
++            with sage.databases.cremona.CremonaDatabase() as db:
++                curves = db.isogeny_class(label)
+             if not curves:
+                 raise RuntimeError("unable to find %s in the database" % self.E)
+             # All curves will have the same conductor and isogeny class,
