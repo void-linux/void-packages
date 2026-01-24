@@ -1,0 +1,146 @@
+From ba6614981a39ee5b72ceb0c9424fd83443e1d6ba Mon Sep 17 00:00:00 2001
+From: Tobias Diez <code@tobiasdiez.com>
+Date: Sun, 23 Mar 2025 15:13:19 +0000
+Subject: [PATCH] Don't include absolute paths when using `--embed-positions`
+
+---
+ Cython/Compiler/ExprNodes.py              |  6 ++----
+ Cython/Compiler/ModuleNode.py             |  6 +-----
+ Cython/Compiler/Nodes.py                  |  2 +-
+ Cython/Compiler/Scanning.py               | 21 +++++++++++++++++----
+ tests/build/run_cython_not_in_cwd.srctree |  4 ++--
+ 5 files changed, 23 insertions(+), 16 deletions(-)
+
+diff --git a/Cython/Compiler/ExprNodes.py b/Cython/Compiler/ExprNodes.py
+index 56af22981..a7da319ec 100644
+--- a/Cython/Compiler/ExprNodes.py
++++ b/Cython/Compiler/ExprNodes.py
+@@ -10696,11 +10696,9 @@ class CodeObjectNode(ExprNode):
+ 
+         func_name_result = code.get_py_string_const(func.name, identifier=True)
+         # FIXME: better way to get the module file path at module init time? Encoding to use?
+-        file_path = func.pos[0].get_filenametable_entry()
+-        if os.path.isabs(file_path):
+-            file_path = func.pos[0].get_description()
++        file_path = func.pos[0].get_relative_path()
+         # Always use / as separator
+-        file_path = StringEncoding.EncodedString(pathlib.Path(file_path).as_posix())
++        file_path = StringEncoding.EncodedString(file_path.as_posix())
+         file_path_result = code.get_py_string_const(file_path)
+ 
+         if func.node_positions:
+diff --git a/Cython/Compiler/ModuleNode.py b/Cython/Compiler/ModuleNode.py
+index fa8ac5c28..1c9486aa3 100644
+--- a/Cython/Compiler/ModuleNode.py
++++ b/Cython/Compiler/ModuleNode.py
+@@ -1080,12 +1080,8 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
+         code.putln("static const char* const %s[] = {" % Naming.filetable_cname)
+         if code.globalstate.filename_list:
+             for source_desc in code.globalstate.filename_list:
+-                file_path = source_desc.get_filenametable_entry()
+-                if isabs(file_path):
+-                    # never include absolute paths
+-                    file_path = source_desc.get_description()
+                 # Always use / as separator
+-                file_path = pathlib.Path(file_path).as_posix()
++                file_path = source_desc.get_relative_path().as_posix()
+                 escaped_filename = as_encoded_filename(file_path)
+                 code.putln('%s,' % escaped_filename.as_c_string_literal())
+         else:
+diff --git a/Cython/Compiler/Nodes.py b/Cython/Compiler/Nodes.py
+index 520ca8f2f..4472e3a08 100644
+--- a/Cython/Compiler/Nodes.py
++++ b/Cython/Compiler/Nodes.py
+@@ -46,7 +46,7 @@ class NoGilState(enum.IntEnum):
+ 
+ 
+ def relative_position(pos):
+-    return (pos[0].get_filenametable_entry(), pos[1])
++    return (pos[0].get_relative_path().as_posix(), pos[1])
+ 
+ 
+ def embed_position(pos, docstring):
+diff --git a/Cython/Compiler/Scanning.py b/Cython/Compiler/Scanning.py
+index 9bad7706f..78942f247 100644
+--- a/Cython/Compiler/Scanning.py
++++ b/Cython/Compiler/Scanning.py
+@@ -5,21 +5,24 @@
+ 
+ 
+ import cython
++
+ cython.declare(make_lexicon=object, lexicon=object,
+                print_function=object, error=object, warning=object,
+-               os=object, platform=object)
++               os=object, platform=object, Path=object)
+ 
+ import os
+ import platform
+-from unicodedata import normalize
+ from contextlib import contextmanager
++from pathlib import Path
++from unicodedata import normalize
+ 
+ from .. import Utils
+-from ..Plex.Scanners import Scanner
+ from ..Plex.Errors import UnrecognizedInput
++from ..Plex.Scanners import Scanner
+ from .Errors import error, warning, hold_errors, release_errors, CompileError
+ from .Lexicon import any_string_prefix, ft_string_prefixes, make_lexicon, IDENT
+ from .Future import print_function
++from .Lexicon import IDENT, any_string_prefix, make_lexicon
+ 
+ debug_scanner = 0
+ trace_scanner = 0
+@@ -222,6 +225,13 @@ class FileSourceDescriptor(SourceDescriptor):
+     def get_description(self):
+         return self._short_path_description
+ 
++    def get_relative_path(self) -> Path:
++        file_path = Path(self.file_path)
++        if file_path.is_absolute():
++            return Path(self.get_description())
++        else:
++            return file_path
++
+     def get_error_description(self):
+         path = self.filename
+         cwd = Utils.decode_filename(os.getcwd() + os.path.sep)
+@@ -263,6 +273,9 @@ class StringSourceDescriptor(SourceDescriptor):
+     def get_description(self):
+         return self.name
+ 
++    def get_relative_path(self):
++        return Path(self.get_description())
++
+     get_error_description = get_description
+ 
+     def get_filenametable_entry(self):
+@@ -649,7 +662,7 @@ def tentatively_scan(scanner: PyrexScanner):
+         initial_state = (scanner.sy, scanner.systring, scanner.position())
+         try:
+             yield errors
+-        except CompileError as e:
++        except CompileError:
+             pass
+         finally:
+             if errors:
+diff --git a/tests/build/run_cython_not_in_cwd.srctree b/tests/build/run_cython_not_in_cwd.srctree
+index 4eaa60b38..9b546f052 100644
+--- a/tests/build/run_cython_not_in_cwd.srctree
++++ b/tests/build/run_cython_not_in_cwd.srctree
+@@ -5,9 +5,9 @@
+ # relative paths from CWD.
+ #
+ 
+-CYTHON src/pkg/mod.pyx -o build/src/pkg/mod1.pyx.c
++CYTHON src/pkg/mod.pyx --embed-positions -o build/src/pkg/mod1.pyx.c
+ CD build
+-CYTHON ../src/pkg/mod.pyx -o src/pkg/mod2.pyx.c
++CYTHON ../src/pkg/mod.pyx --embed-positions -o src/pkg/mod2.pyx.c
+ CD ..
+ PYTHON check_paths_from_cython.py
+ 
+-- 
+2.51.2
+
