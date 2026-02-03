@@ -16,14 +16,21 @@ check_existing_pkg() {
 check_pkg_arch() {
     local cross="$1" _arch f match nonegation
 
-    if [ -n "$archs" ]; then
-        if [ -n "$cross" ]; then
-            _arch="$XBPS_TARGET_MACHINE"
-        elif [ -n "$XBPS_ARCH" ]; then
-            _arch="$XBPS_ARCH"
-        else
-            _arch="$XBPS_MACHINE"
+    if [ -n "$cross" ]; then
+        _arch="$XBPS_TARGET_MACHINE"
+    elif [ -n "$XBPS_ARCH" ]; then
+        _arch="$XBPS_ARCH"
+    else
+        _arch="$XBPS_MACHINE"
+    fi
+
+    if [ "$pkgname" != "$sourcepkg" ]; then
+        if ! echo "$subpackages" | grep -q -w "$pkgname"; then
+            report_broken "${pkgname}-${version}_${revision}: this subpackage cannot be built for ${_arch}.\n"
         fi
+    fi
+
+    if [ -n "$archs" ]; then
         set -f
         for f in ${archs}; do
             set +f
