@@ -1,8 +1,9 @@
 # Template file for 'texlive'
 pkgname=texlive
 version=20250308
-revision=1
+revision=2
 _year=${version%${version#????}}
+_svn_tag=svn75246.2
 build_wrksrc="build"
 build_style=gnu-configure
 configure_script="../configure"
@@ -19,12 +20,8 @@ configure_args="
  --enable-epsfwin
  --enable-ipc
  --enable-luahbtex
- --enable-luajittex
- --enable-luajithbtex
  --enable-luatex
  --enable-mflua
- --enable-mfluajit
- --enable-mfluajit-nowin
  --enable-mftalkwin
  --enable-ps2eps
  --enable-psutils
@@ -73,96 +70,87 @@ hostmakedepends="pkg-config perl lua52-BitOp texinfo libXaw-devel"
 makedepends="cairo-devel freetype-devel gd-devel graphite-devel gmp-devel
  harfbuzz-devel icu-devel libpaper-devel libpng-devel mpfr-devel
  pixman-devel libteckit-devel zlib-devel zziplib-devel libXaw-devel"
-depends="dialog ghostscript perl-Tk texlive-core>=${version}_${revision} xbps-triggers
+depends="dialog ghostscript perl-Tk texlive-core>=${version}_1 xbps-triggers
  texlive-latexmk latexindent"
 checkdepends="diffutils"
 short_desc="TeX Live"
 maintainer="dkwo <npiazza@disroot.org>, fosslinux <fosslinux@aussies.space>"
 license="GPL-2.0-or-later"
 homepage="https://tug.org/texlive/"
-distfiles="https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/${_year}/texlive-${version}-source.tar.xz"
-checksum=fffdb1a3d143c177a4398a2229a40d6a88f18098e5f6dcfd57648c9f2417490f
+distfiles="https://github.com/TeX-Live/texlive-source/archive/refs/tags/${_svn_tag}.tar.gz"
+checksum=9a5c0c52e29c528c62b2c38d5385525e2b52a1803115f4d98e79a65e3dc70a18
 python_version=3
 # Virtual package cares only about year part of version
 provides="tex-${_year}_1"
-nocross="broken currently"
 
-if [ "$CROSS_BUILD" ] ; then
+if [ -n "${CROSS_BUILD}" ] ; then
 	# Tangle is required for cross compile
 	hostmakedepends+=" texlive"
 fi
 
-case "$XBPS_TARGET_MACHINE" in
-	mips*) broken="cannot find libraries" ;;
-esac
-
-# fixme: use system luajit when that option is available
-# https://tug.org/pipermail/tex-live/2025-January/051045.html
 build_options="luajit"
 
-_luajit_host_cc="cc"
-if [ "$XBPS_WORDSIZE" != "$XBPS_TARGET_WORDSIZE" ] ; then
-	case "$XBPS_MACHINE" in
-		x86_64*)
-			hostmakedepends+=" cross-i686-linux-musl"
-			_luajit_host_cc="i686-linux-musl-gcc -static"
-			;;
-		ppc64le*) _luajit_host_cc="broken" ;; # no 32-bit counterpart yet
-		ppc64*)
-			hostmakedepends+=" cross-powerpc-linux-musl"
-			_luajit_host_cc="powerpc-linux-musl-gcc -static"
-			;;
-		*) _luajit_host_cc="broken" ;;
-	esac
-fi
+# fixme: use system luajit when it will be available
+# https://tug.org/pipermail/tex-live/2025-January/051045.html
 
-if [ "${_luajit_host_cc}" != "broken" ] ; then
+if [ ! "${CROSS_BUILD}"] ; then
 	build_options_default+=" luajit"
 fi
 
-if [ ! "$build_option_luajit" ] ; then
-	configure_args+=" --disable-luajittex --disable-mfluajit
-	 --disable-mfluajit-nowin --disable-luajithbtex"
+if [ -n "${build_option_luajit}" ] ; then
+	configure_args+="
+		--enable-mfluajit
+		--enable-mfluajit-nowin
+		--enable-luajittex
+		--enable-luajithbtex"
 else
-	if [ "${_luajit_host_cc}" = "broken" ] ; then
-		nocross="Cannot cross compile LuaJIT for different wordsizes"
-	fi
-fi
-
-case "$XBPS_TARGET_MACHINE" in
-	aarch64*) DASM_ARCH=arm64 ;;
-	arm*) DASM_ARCH=arm ;;
-	mips64*) DASM_ARCH=mips64 ;;
-	mips*) DASM_ARCH=mips ;;
-	ppc*) DASM_ARCH=ppc ;;
-	i686*) DASM_ARCH=x86 ;;
-	x86_64*) DASM_ARCH=x64 ;;
-esac
-export DASM_ARCH
-
-if [ -n "$build_option_luajit" ] ; then
-	export HOST_CC="${_luajit_host_cc}"
-	if [ -n "$CROSS_BUILD" ] ; then
-		export HOST_CFLAGS="${XBPS_CFLAGS}"
-		export CROSS="${XBPS_CROSS_TRIPLET}-"
-	fi
+	configure_args+="
+		--with-system-luajit
+		--disable-luajittex
+		--disable-mfluajit
+		--disable-mfluajit-nowin
+		--disable-luajithbtex"
 fi
 
 post_extract() {
 	mkdir -p "${build_wrksrc}"
+	cp -rf texk/web2c "${build_wrksrc}/web2c-host"
 
 	# https://tug.org/pipermail/tlbuild/2025q1/005635.html
-	if [ -n "$CROSS_BUILD" ] ; then
+	if [ -n "${CROSS_BUILD}" ] ; then
 		sed -i 's|\./himktables\$(EXEEXT)|#\./himktables\$(EXEEXT)|' texk/web2c/Makefile.in
 		cp texk/web2c/hitexdir/hitables.c texk/web2c/hitables.c
 	fi
+
+	# fixme: texlive's build system blindly configures everything
+	if [ ! "${build_option_luajit}" ] ; then
+		rm -r libs/luajit
+	fi
+}
+
+pre_build() {
+	# fixme: web2c should not be cross
+	mkdir -p "${wrksrc}/build/texk/web2c/web2c"
+	cd "${wrksrc}/build/texk/web2c/web2c"
+	unset CC CXX
+	CFLAGS="$XBPS_CFLAGS" LDFLAGS="$XBPS_LDFLAGS" RANLIB=ranlib \
+		../../../../texk/web2c/web2c/configure
+
+	# Replace configure script with dummy script
+	cd "${wrksrc}"
+	cat > texk/web2c/web2c/configure << EOF
+#!/bin/sh
+printf "already complete\\n"
+EOF
 }
 
 post_install() {
-	# trick from Alpine
-	# export PATH="${DESTDIR}/usr/bin:$PATH"
-	export LD_LIBRARY_PATH="${DESTDIR}/usr/lib:$LD_LIBRARY_PATH"
-	make DESTDIR=${DESTDIR} texlinks
+	# trick from Alpine Linux
+	if [ ! "${CROSS_BUILD}" ] ; then
+		export PATH="${DESTDIR}/usr/bin:$PATH"
+		export LD_LIBRARY_PATH="${DESTDIR}/usr/lib:$LD_LIBRARY_PATH"
+	fi
+	texlinks -f ${DESTDIR}/usr/share/texmf-dist/web2c/fmtutil.cnf $DESTDIR/usr/bin
 
 	# These tools are still useful for a texlive workflow, but are modified
 	# psutils and conflict with psutils; rename them to have a tl- prefix
@@ -272,6 +260,7 @@ texlive-devel_package() {
 
 texlive-BibTeX_package() {
 	depends="${sourcepkg}>=${version}_${revision} bash"
+	replaces="texlive-bibtexextra<=2024_1"
 	short_desc+=" - reference management software"
 	pkg_install() {
 		for i in bbl2bib ctanbib ; do
