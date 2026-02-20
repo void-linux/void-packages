@@ -1,0 +1,348 @@
+From b7cd840a320e3f7f38fc80edefcd29bd88cb54a6 Mon Sep 17 00:00:00 2001
+From: LN Liberda <lauren@selfisekai.rocks>
+Date: Thu, 5 Feb 2026 05:26:48 +0100
+Subject: [PATCH] Revert "[M144][build] Minify release builds with esbuild
+ instead of rollup"
+
+This reverts commit f130475580017f9f87502343dbcfc0c76dccefe8.
+---
+ DEPS                                          |  2 +-
+ front_end/models/ai_assistance/injected.ts    | 29 ++++--
+ front_end/panels/application/BUILD.gn         |  1 -
+ .../InterestGroupStorageView.test.ts          | 13 ++-
+ .../SharedStorageEventsView.test.ts           |  9 +-
+ scripts/build/esbuild.js                      |  5 +-
+ scripts/build/ninja/bundle.gni                | 92 +++++++++++++------
+ 7 files changed, 97 insertions(+), 54 deletions(-)
+
+diff --git a/third_party/devtools-frontend/src/DEPS b/third_party/devtools-frontend/src/DEPS
+index f9caf8874d..7003edcf0b 100644
+--- a/third_party/devtools-frontend/src/DEPS
++++ b/third_party/devtools-frontend/src/DEPS
+@@ -145,7 +145,7 @@ deps = {
+     'url': Var('build_url') + '@' + Var('build_revision'),
+     'condition': 'build_with_chromium == False',
+   },
+-  'third_party/siso/cipd': {
++  'third_party/siso': {
+     'packages': [
+       {
+         'package': 'build/siso/${{platform}}',
+diff --git a/third_party/devtools-frontend/src/front_end/models/ai_assistance/injected.ts b/third_party/devtools-frontend/src/front_end/models/ai_assistance/injected.ts
+index cff188cbba..af9c3c14e6 100644
+--- a/third_party/devtools-frontend/src/front_end/models/ai_assistance/injected.ts
++++ b/third_party/devtools-frontend/src/front_end/models/ai_assistance/injected.ts
+@@ -9,6 +9,10 @@
+  * They need remain isolated for importing other function so
+  * bundling them for production does not create issues.
+  */
++/* eslint-disable @devtools/no-adopted-style-sheets --
++ * The scripts in this file aren't executed as part of DevTools front-end,
++ * but are injected into the page.
++ **/
+ 
+ export const AI_ASSISTANCE_CSS_CLASS_NAME = 'ai-style-change';
+ export const FREESTYLER_WORLD_NAME = 'DevTools AI Assistance';
+@@ -96,9 +100,19 @@ export const PAGE_EXPOSED_FUNCTIONS = ['setElementStyles'];
+ /**
+  * Please see fileoverview
+  */
+-const setupSetElementStyles = `function setupSetElementStyles(prefix) {
+-  const global = globalThis;
+-  async function setElementStyles(el, styles) {
++function setupSetElementStyles(prefix: typeof AI_ASSISTANCE_CSS_CLASS_NAME): void {
++  // Executed in another world
++  const global = globalThis as unknown as {
++    freestyler: FreestylerBinding,
++    setElementStyles: unknown,
++  };
++  async function setElementStyles(
++      el: HTMLElement&{
++        // eslint-disable-next-line
++        __freestylerClassName?: `${typeof AI_ASSISTANCE_CSS_CLASS_NAME}-${number}`,
++      },
++      styles: Record<string, string>,
++      ): Promise<void> {
+     let selector = el.tagName.toLowerCase();
+     if (el.id) {
+       selector = '#' + el.id;
+@@ -117,7 +131,7 @@ const setupSetElementStyles = `function setupSetElementStyles(prefix) {
+ 
+     // __freestylerClassName is not exposed to the page due to this being
+     // run in the isolated world.
+-    const className = el.__freestylerClassName ?? \`\${prefix}-\${global.freestyler.id}\`;
++    const className = el.__freestylerClassName ?? `${prefix}-${global.freestyler.id}`;
+     el.__freestylerClassName = className;
+     el.classList.add(className);
+ 
+@@ -126,6 +140,7 @@ const setupSetElementStyles = `function setupSetElementStyles(prefix) {
+       // if it's kebab case.
+       el.style.removeProperty(key);
+       // If it's camel case.
++      // @ts-expect-error this won't throw if wrong
+       el.style[key] = '';
+     }
+ 
+@@ -153,7 +168,7 @@ const setupSetElementStyles = `function setupSetElementStyles(prefix) {
+             continue;
+           }
+ 
+-          hasAiStyleChange = rule.selectorText.startsWith(\`.\${prefix}\`);
++          hasAiStyleChange = rule.selectorText.startsWith(`.${prefix}`);
+           if (hasAiStyleChange) {
+             stylesheet = sheet;
+             break;
+@@ -168,6 +183,6 @@ const setupSetElementStyles = `function setupSetElementStyles(prefix) {
+   }
+ 
+   global.setElementStyles = setElementStyles;
+-}`;
++}
+ 
+-export const injectedFunctions = `(${setupSetElementStyles})('${AI_ASSISTANCE_CSS_CLASS_NAME}')`;
++export const injectedFunctions = `(${String(setupSetElementStyles)})('${AI_ASSISTANCE_CSS_CLASS_NAME}')`;
+diff --git a/third_party/devtools-frontend/src/front_end/panels/application/BUILD.gn b/third_party/devtools-frontend/src/front_end/panels/application/BUILD.gn
+index 20b81546d8..b0be3bdbc4 100644
+--- a/third_party/devtools-frontend/src/front_end/panels/application/BUILD.gn
++++ b/third_party/devtools-frontend/src/front_end/panels/application/BUILD.gn
+@@ -178,7 +178,6 @@ devtools_ui_module("unittests") {
+     "../../core/sdk:bundle",
+     "../../testing",
+     "../../ui/components/render_coordinator:bundle",
+-    "../../ui/legacy:bundle",
+     "./components",
+     "./preloading/components",
+   ]
+diff --git a/third_party/devtools-frontend/src/front_end/panels/application/InterestGroupStorageView.test.ts b/third_party/devtools-frontend/src/front_end/panels/application/InterestGroupStorageView.test.ts
+index f2e31be0f0..70e1011ee4 100644
+--- a/third_party/devtools-frontend/src/front_end/panels/application/InterestGroupStorageView.test.ts
++++ b/third_party/devtools-frontend/src/front_end/panels/application/InterestGroupStorageView.test.ts
+@@ -6,7 +6,6 @@ import * as Protocol from '../../generated/protocol.js';
+ import {raf} from '../../testing/DOMHelpers.js';
+ import {expectCall} from '../../testing/ExpectStubCall.js';
+ import {describeWithMockConnection} from '../../testing/MockConnection.js';
+-import * as UI from '../../ui/legacy/legacy.js';
+ 
+ import * as Resources from './application.js';
+ 
+@@ -67,7 +66,7 @@ describeWithMockConnection('InterestGroupStorageView', () => {
+ 
+   it('initially has placeholder sidebar', () => {
+     const view = new View.InterestGroupStorageView(new InterestGroupDetailsGetter());
+-    assert.notInstanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++    assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+ 
+     const placeholder = view.sidebarWidget()?.contentElement;
+     assert.deepEqual(
+@@ -87,7 +86,7 @@ describeWithMockConnection('InterestGroupStorageView', () => {
+         grid.dispatchEvent(new CustomEvent('select', {detail: events[0]}));
+         await raf();
+         sinon.assert.calledOnce(spy);
+-        assert.instanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++        assert.deepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+       });
+ 
+   it('Clears sidebarWidget upon receiving cellFocusedEvent on an additionalBid-type events', async function() {
+@@ -110,7 +109,7 @@ describeWithMockConnection('InterestGroupStorageView', () => {
+       grid.dispatchEvent(new CustomEvent('select', {detail: {...events[0], type: eventType}}));
+       await sideBarUpdateDone;
+       sinon.assert.calledOnce(spy);
+-      assert.notInstanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++      assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+       assert.isTrue(view.sidebarWidget()?.contentElement.firstChild?.textContent?.includes('No details'));
+     }
+   });
+@@ -131,7 +130,7 @@ describeWithMockConnection('InterestGroupStorageView', () => {
+        grid.dispatchEvent(new CustomEvent('select', {detail: events[0]}));
+        await raf();
+        sinon.assert.calledOnce(spy);
+-       assert.notInstanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++       assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+        assert.isTrue(view.sidebarWidget()?.contentElement.firstChild?.textContent?.includes('No details'));
+      });
+ 
+@@ -146,10 +145,10 @@ describeWithMockConnection('InterestGroupStorageView', () => {
+     grid.dispatchEvent(new CustomEvent('select', {detail: events[0]}));
+     await raf();
+     sinon.assert.calledOnce(spy);
+-    assert.instanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++    assert.deepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+     view.clearEvents();
+     sinon.assert.calledTwice(spy);
+-    assert.notInstanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++    assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+     assert.isTrue(view.sidebarWidget()?.contentElement.textContent?.includes(
+         'No interest group selectedSelect any interest group event to display the group\'s current state'));
+   });
+diff --git a/third_party/devtools-frontend/src/front_end/panels/application/SharedStorageEventsView.test.ts b/third_party/devtools-frontend/src/front_end/panels/application/SharedStorageEventsView.test.ts
+index d06dfa17f8..7c7b95ad16 100644
+--- a/third_party/devtools-frontend/src/front_end/panels/application/SharedStorageEventsView.test.ts
++++ b/third_party/devtools-frontend/src/front_end/panels/application/SharedStorageEventsView.test.ts
+@@ -5,7 +5,6 @@
+ import * as Protocol from '../../generated/protocol.js';
+ import {raf} from '../../testing/DOMHelpers.js';
+ import {describeWithMockConnection} from '../../testing/MockConnection.js';
+-import * as UI from '../../ui/legacy/legacy.js';
+ 
+ import * as Resources from './application.js';
+ 
+@@ -179,7 +178,7 @@ describeWithMockConnection('SharedStorageEventsView', () => {
+ 
+   it('initially has placeholder sidebar', () => {
+     const view = new View.SharedStorageEventsView();
+-    assert.notInstanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++    assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+     assert.deepEqual(view.sidebarWidget()?.contentElement.firstChild?.textContent, 'No shared storage event selected');
+   });
+ 
+@@ -197,7 +196,7 @@ describeWithMockConnection('SharedStorageEventsView', () => {
+     grid.onSelect(EVENTS[0]);
+     await raf();
+     sinon.assert.calledOnce(spy);
+-    assert.instanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++    assert.deepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+   });
+ 
+   it('clears sidebarWidget upon clearEvents', async () => {
+@@ -214,10 +213,10 @@ describeWithMockConnection('SharedStorageEventsView', () => {
+     grid.onSelect(EVENTS[0]);
+     await raf();
+     sinon.assert.calledOnce(spy);
+-    assert.instanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++    assert.deepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+     view.clearEvents();
+     sinon.assert.calledTwice(spy);
+-    assert.notInstanceOf(view.sidebarWidget(), UI.SearchableView.SearchableView);
++    assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+     assert.deepEqual(view.sidebarWidget()?.contentElement.firstChild?.textContent, 'No shared storage event selected');
+   });
+ 
+diff --git a/third_party/devtools-frontend/src/scripts/build/esbuild.js b/third_party/devtools-frontend/src/scripts/build/esbuild.js
+index 708f79d35e..096edc81b9 100644
+--- a/third_party/devtools-frontend/src/scripts/build/esbuild.js
++++ b/third_party/devtools-frontend/src/scripts/build/esbuild.js
+@@ -25,9 +25,7 @@ const esbuild = require('esbuild');
+ 
+ const entryPoints = [process.argv[2]];
+ const outfile = process.argv[3];
+-const additionalArgs = process.argv.slice(4);
+-const useSourceMaps = additionalArgs.includes('--configSourcemaps');
+-const minify = additionalArgs.includes('--minify');
++const useSourceMaps = process.argv.slice(4).includes('--configSourcemaps');
+ 
+ const outdir = path.dirname(outfile);
+ 
+@@ -48,7 +46,6 @@ esbuild
+       platform: 'browser',
+       plugins: [plugin],
+       sourcemap: useSourceMaps,
+-      minify,
+     })
+     .catch(err => {
+       console.error('Failed to run esbuild:', err);
+diff --git a/third_party/devtools-frontend/src/scripts/build/ninja/bundle.gni b/third_party/devtools-frontend/src/scripts/build/ninja/bundle.gni
+index 7d8fee3433..9b44b1f1b5 100644
+--- a/third_party/devtools-frontend/src/scripts/build/ninja/bundle.gni
++++ b/third_party/devtools-frontend/src/scripts/build/ninja/bundle.gni
+@@ -10,38 +10,72 @@ template("bundle") {
+   assert(defined(invoker.entrypoint),
+          "You must define the 'entrypoint' for a bundle target")
+ 
+-  node_action(target_name) {
+-    script = "scripts/build/esbuild.js"
+-    forward_variables_from(invoker,
+-                           [
+-                             "visibility",
+-                             "deps",
+-                             "public_deps",
+-                           ])
+-
+-    inputs = [
+-      invoker.entrypoint,
+-      devtools_location_prepend + "scripts/build/devtools_plugin.js",
+-      devtools_location_prepend + "scripts/devtools_paths.js",
+-    ]
+-
+-    _esbuild = devtools_location_prepend + "third_party/esbuild/esbuild"
+-    if (host_os == "win") {
+-      inputs += [ _esbuild + ".exe" ]
+-    } else {
+-      inputs += [ _esbuild ]
+-    }
++  _fast_bundle = is_debug || devtools_skip_typecheck
++  assert(!is_official_build || !_fast_bundle,
++         "Fast bundling is disallowed for official builds.")
++
++  if (_fast_bundle) {
++    node_action(target_name) {
++      script = "scripts/build/esbuild.js"
++      forward_variables_from(invoker,
++                             [
++                               "visibility",
++                               "deps",
++                               "public_deps",
++                             ])
++
++      inputs = [
++        invoker.entrypoint,
++        devtools_location_prepend + "scripts/build/devtools_plugin.js",
++        devtools_location_prepend + "scripts/devtools_paths.js",
++      ]
++
++      _esbuild = devtools_location_prepend + "third_party/esbuild/esbuild"
++      if (host_os == "win") {
++        inputs += [ _esbuild + ".exe" ]
++      } else {
++        inputs += [ _esbuild ]
++      }
+ 
+-    args = [
+-      rebase_path(invoker.entrypoint, root_build_dir),
+-      rebase_path(invoker.output_file_location, root_build_dir),
+-      "--configSourcemaps",
+-    ]
++      args = [
++        rebase_path(invoker.entrypoint, root_build_dir),
++        rebase_path(invoker.output_file_location, root_build_dir),
++        "--configSourcemaps",
++      ]
+ 
+-    if (!is_debug) {
+-      args += [ "--minify" ]
++      outputs = [ invoker.output_file_location ]
+     }
++  } else {
++    node_action(target_name) {
++      script = "node_modules/@rollup/wasm-node/dist/bin/rollup"
+ 
+-    outputs = [ invoker.output_file_location ]
++      forward_variables_from(invoker,
++                             [
++                               "visibility",
++                               "deps",
++                               "public_deps",
++                             ])
++
++      inputs = [
++        invoker.entrypoint,
++        devtools_location_prepend + "scripts/build/rollup.config.mjs",
++        devtools_location_prepend + "scripts/build/devtools_plugin.js",
++        devtools_location_prepend + "scripts/devtools_paths.js",
++      ]
++
++      args = [
++        "--config",
++        rebase_path(
++            devtools_location_prepend + "scripts/build/rollup.config.mjs",
++            root_build_dir),
++        "--input",
++        rebase_path(invoker.entrypoint, root_build_dir),
++        "--file",
++        rebase_path(invoker.output_file_location, root_build_dir),
++        "--configSourcemaps",
++      ]
++
++      outputs = [ invoker.output_file_location ]
++    }
+   }
+ }
