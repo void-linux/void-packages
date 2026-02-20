@@ -1,0 +1,2051 @@
+From c6e49810fa4729cffedbc7ba0e99cee4f25ae8db Mon Sep 17 00:00:00 2001
+From: serge-sans-paille <sergesanspaille@free.fr>
+Date: Tue, 13 Jan 2026 19:14:34 +0100
+Subject: [PATCH] [test] Improve testing logging and accuracy
+
+Logging only the number of diff does not help solving or reproducing
+bug, so log every comparison instead.
+
+Get rid of usuned types / functions from test_utils.h
+
+No functional change intended.
+---
+ test/test_arch.cpp                  |   9 +-
+ test/test_batch.cpp                 |  40 ++++----
+ test/test_complex_exponential.cpp   |  58 +++++------
+ test/test_complex_hyperbolic.cpp    |  44 ++++----
+ test/test_complex_power.cpp         |  46 ++++-----
+ test/test_complex_trigonometric.cpp |  58 +++++------
+ test/test_error_gamma.cpp           |  56 +++++-----
+ test/test_exponential.cpp           |  72 ++++++-------
+ test/test_hyperbolic.cpp            |  56 +++++-----
+ test/test_poly_evaluation.cpp       |  11 +-
+ test/test_power.cpp                 |  64 +++++-------
+ test/test_rounding.cpp              |  95 ++++++-----------
+ test/test_select.cpp                |  38 +++----
+ test/test_trigonometric.cpp         |  83 +++++++--------
+ test/test_utils.hpp                 | 153 ----------------------------
+ test/test_xsimd_api.cpp             |   8 +-
+ 16 files changed, 309 insertions(+), 582 deletions(-)
+
+diff --git a/test/test_arch.cpp b/test/test_arch.cpp
+index 7d0a5a7a7..621679ff4 100644
+--- a/test/test_arch.cpp
++++ b/test/test_arch.cpp
+@@ -204,13 +204,12 @@ TEST_CASE("[multi arch support]")
+     {
+         // make sure load_aligned / load_unaligned work for the default arch and
+         // return the appropriate type.
+-        using type_list = xsimd::mpl::type_list<short, int, long, float, std::complex<float>
++        try_loads<short, int, long, float, std::complex<float>
+ #if XSIMD_WITH_NEON64 || !XSIMD_WITH_NEON
+-                                                ,
+-                                                double, std::complex<double>
++                  ,
++                  double, std::complex<double>
+ #endif
+-                                                >;
+-        try_loads<type_list>();
++                  >();
+     }
+ }
+ 
+diff --git a/test/test_batch.cpp b/test/test_batch.cpp
+index 9c81aacab..5cf47f3d7 100644
+--- a/test/test_batch.cpp
++++ b/test/test_batch.cpp
+@@ -920,35 +920,35 @@ struct batch_test
+         return batch_type::load_unaligned(rhs.data());
+     }
+ 
+-    template <class T = value_type>
+-    xsimd::enable_integral_t<T, void> init_operands()
++    void init_operands()
+     {
+-        for (size_t i = 0; i < size; ++i)
++        XSIMD_IF_CONSTEXPR(std::is_integral<value_type>::value)
+         {
+-            bool negative_lhs = std::is_signed<T>::value && (i % 2 == 1);
+-            lhs[i] = value_type(i) * (negative_lhs ? -3 : 3);
+-            if (lhs[i] == value_type(0))
++            for (size_t i = 0; i < size; ++i)
+             {
+-                lhs[i] += value_type(1);
++                bool negative_lhs = std::is_signed<value_type>::value && (i % 2 == 1);
++                lhs[i] = value_type(i) * (negative_lhs ? -3 : 3);
++                if (lhs[i] == value_type(0))
++                {
++                    lhs[i] += value_type(1);
++                }
++                rhs[i] = value_type(i) + value_type(2);
+             }
+-            rhs[i] = value_type(i) + value_type(2);
++            scalar = value_type(3);
+         }
+-        scalar = value_type(3);
+-    }
+-
+-    template <class T = value_type>
+-    xsimd::enable_floating_point_t<T, void> init_operands()
+-    {
+-        for (size_t i = 0; i < size; ++i)
++        else
+         {
+-            lhs[i] = value_type(i) / 4 + value_type(1.2) * std::sqrt(value_type(i + 0.25));
+-            if (lhs[i] == value_type(0))
++            for (size_t i = 0; i < size; ++i)
+             {
+-                lhs[i] += value_type(0.1);
++                lhs[i] = value_type(i) / 4 + value_type(1.2) * std::sqrt(value_type(i + 0.25));
++                if (lhs[i] == value_type(0))
++                {
++                    lhs[i] += value_type(0.1);
++                }
++                rhs[i] = value_type(10.2) / (i + 2) + value_type(0.25);
+             }
+-            rhs[i] = value_type(10.2) / (i + 2) + value_type(0.25);
++            scalar = value_type(1.2);
+         }
+-        scalar = value_type(1.2);
+     }
+ };
+ 
+diff --git a/test/test_complex_exponential.cpp b/test/test_complex_exponential.cpp
+index 55490294c..8dffdf5c4 100644
+--- a/test/test_complex_exponential.cpp
++++ b/test/test_complex_exponential.cpp
+@@ -29,7 +29,6 @@ struct complex_exponential_test
+     vector_type huge_exp_input;
+     vector_type log_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     complex_exponential_test()
+     {
+@@ -46,7 +45,6 @@ struct complex_exponential_test
+                                       real_value_type(0.002 + i * 110 / nb_input));
+         }
+         expected.resize(nb_input);
+-        res.resize(nb_input);
+     }
+ 
+     void test_exp()
+@@ -54,15 +52,14 @@ struct complex_exponential_test
+         std::transform(exp_input.cbegin(), exp_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::exp; return exp(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, exp_input, i);
+             out = exp(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_expm1()
+@@ -71,15 +68,14 @@ struct complex_exponential_test
+                        [](const value_type& v)
+                        { using xsimd::expm1; return expm1(v); });
+ 
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, exp_input, i);
+             out = expm1(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_huge_exp()
+@@ -87,15 +83,14 @@ struct complex_exponential_test
+         std::transform(huge_exp_input.cbegin(), huge_exp_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::exp; return exp(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, huge_exp_input, i);
+             out = exp(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_log()
+@@ -103,15 +98,14 @@ struct complex_exponential_test
+         std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::log; return log(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, log_input, i);
+             out = log(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_log2()
+@@ -119,15 +113,14 @@ struct complex_exponential_test
+         std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using xsimd::log2; return log2(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, log_input, i);
+             out = log2(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_log10()
+@@ -135,15 +128,14 @@ struct complex_exponential_test
+         std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::log10; return log10(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, log_input, i);
+             out = log10(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_log1p()
+@@ -151,15 +143,14 @@ struct complex_exponential_test
+         std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using xsimd::log1p; return log1p(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, log_input, i);
+             out = log1p(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_sign()
+@@ -167,15 +158,14 @@ struct complex_exponential_test
+         std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using xsimd::sign; return sign(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, log_input, i);
+             out = sign(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ };
+ 
+diff --git a/test/test_complex_hyperbolic.cpp b/test/test_complex_hyperbolic.cpp
+index 365f9036a..40e97ca7c 100644
+--- a/test/test_complex_hyperbolic.cpp
++++ b/test/test_complex_hyperbolic.cpp
+@@ -29,7 +29,6 @@ struct complex_hyperbolic_test
+     vector_type acosh_input;
+     vector_type atanh_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     complex_hyperbolic_test()
+     {
+@@ -47,7 +46,6 @@ struct complex_hyperbolic_test
+                                         real_value_type(-0.94) + i * real_value_type(1.8) / nb_input);
+         }
+         expected.resize(nb_input);
+-        res.resize(nb_input);
+     }
+ 
+     void test_sinh()
+@@ -55,15 +53,14 @@ struct complex_hyperbolic_test
+         std::transform(input.cbegin(), input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::sinh; return sinh(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, input, i);
+             out = sinh(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_cosh()
+@@ -71,15 +68,14 @@ struct complex_hyperbolic_test
+         std::transform(input.cbegin(), input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::cosh; return cosh(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, input, i);
+             out = cosh(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_tanh()
+@@ -87,15 +83,14 @@ struct complex_hyperbolic_test
+         std::transform(input.cbegin(), input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::tanh; return tanh(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, input, i);
+             out = tanh(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_asinh()
+@@ -103,15 +98,14 @@ struct complex_hyperbolic_test
+         std::transform(input.cbegin(), input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::asinh; return asinh(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, input, i);
+             out = asinh(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_acosh()
+@@ -119,15 +113,14 @@ struct complex_hyperbolic_test
+         std::transform(acosh_input.cbegin(), acosh_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::acosh; return acosh(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, acosh_input, i);
+             out = acosh(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_atanh()
+@@ -135,15 +128,14 @@ struct complex_hyperbolic_test
+         std::transform(atanh_input.cbegin(), atanh_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::atanh; return atanh(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, atanh_input, i);
+             out = atanh(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ };
+ 
+diff --git a/test/test_complex_power.cpp b/test/test_complex_power.cpp
+index 118ead6e4..99bb82819 100644
+--- a/test/test_complex_power.cpp
++++ b/test/test_complex_power.cpp
+@@ -66,16 +66,15 @@ struct complex_power_test
+         std::transform(lhs_np.cbegin(), lhs_np.cend(), real_expected.begin(),
+                        [](const value_type& v)
+                        { using std::abs; return abs(v); });
+-        batch_type in;
+-        real_batch_type out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in;
++            real_batch_type out, ref;
+             detail::load_batch(in, lhs_np, i);
+             out = abs(in);
+-            detail::store_batch(out, real_res, i);
++            detail::load_batch(ref, real_expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(real_res, real_expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_arg()
+@@ -84,16 +83,15 @@ struct complex_power_test
+         std::transform(lhs_np.cbegin(), lhs_np.cend(), real_expected.begin(),
+                        [](const value_type& v)
+                        { using std::arg; return arg(v); });
+-        batch_type in;
+-        real_batch_type out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in;
++            real_batch_type out, ref;
+             detail::load_batch(in, lhs_np, i);
+             out = arg(in);
+-            detail::store_batch(out, real_res, i);
++            detail::load_batch(ref, real_expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(real_res, real_expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_pow()
+@@ -154,15 +152,14 @@ struct complex_power_test
+         std::transform(lhs_nn.cbegin(), lhs_nn.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::sqrt; return sqrt(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, lhs_nn, i);
+             out = sqrt(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_sqrt_pn()
+@@ -170,15 +167,14 @@ struct complex_power_test
+         std::transform(lhs_pn.cbegin(), lhs_pn.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::sqrt; return sqrt(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, lhs_pn, i);
+             out = sqrt(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_sqrt_np()
+@@ -186,15 +182,14 @@ struct complex_power_test
+         std::transform(lhs_np.cbegin(), lhs_np.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::sqrt; return sqrt(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, lhs_np, i);
+             out = sqrt(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_sqrt_pp()
+@@ -202,15 +197,14 @@ struct complex_power_test
+         std::transform(lhs_pp.cbegin(), lhs_pp.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::sqrt; return sqrt(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, lhs_pp, i);
+             out = sqrt(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ };
+ 
+diff --git a/test/test_complex_trigonometric.cpp b/test/test_complex_trigonometric.cpp
+index 87c5a7812..8a0163be5 100644
+--- a/test/test_complex_trigonometric.cpp
++++ b/test/test_complex_trigonometric.cpp
+@@ -30,7 +30,6 @@ struct complex_trigonometric_test
+     vector_type ainput;
+     vector_type atan_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     complex_trigonometric_test()
+     {
+@@ -48,7 +47,6 @@ struct complex_trigonometric_test
+                                        real_value_type(-9.) + i * real_value_type(21.) / nb_input);
+         }
+         expected.resize(nb_input);
+-        res.resize(nb_input);
+     }
+ 
+     void test_sin()
+@@ -56,15 +54,14 @@ struct complex_trigonometric_test
+         std::transform(input.cbegin(), input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::sin; return sin(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, input, i);
+             out = sin(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_cos()
+@@ -72,15 +69,14 @@ struct complex_trigonometric_test
+         std::transform(input.cbegin(), input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::cos; return cos(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, input, i);
+             out = cos(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_sincos()
+@@ -92,18 +88,18 @@ struct complex_trigonometric_test
+         std::transform(input.cbegin(), input.cend(), expected2.begin(),
+                        [](const value_type& v)
+                        { using std::cos; return cos(v); });
+-        batch_type in, out1, out2;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out1, out2, ref1, ref2;
+             detail::load_batch(in, input, i);
+             std::tie(out1, out2) = sincos(in);
+-            detail::store_batch(out1, res, i);
+-            detail::store_batch(out2, res2, i);
++
++            detail::load_batch(ref1, expected, i);
++            CHECK_BATCH_EQ(ref1, out1);
++
++            detail::load_batch(ref2, expected2, i);
++            CHECK_BATCH_EQ(ref2, out2);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+-        diff = detail::get_nb_diff(res2, expected2);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_tan()
+@@ -116,15 +112,14 @@ struct complex_trigonometric_test
+         std::transform(ainput.cbegin(), ainput.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::asin; return asin(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, ainput, i);
+             out = asin(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_acos()
+@@ -132,15 +127,14 @@ struct complex_trigonometric_test
+         std::transform(ainput.cbegin(), ainput.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::acos; return acos(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, ainput, i);
+             out = acos(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     void test_atan()
+@@ -148,15 +142,14 @@ struct complex_trigonometric_test
+         std::transform(atan_input.cbegin(), atan_input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::atan; return atan(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, atan_input, i);
+             out = atan(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+ private:
+@@ -165,15 +158,14 @@ struct complex_trigonometric_test
+         std::transform(input.cbegin(), input.cend(), expected.begin(),
+                        [](const value_type& v)
+                        { using std::tan; return tan(v); });
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out, ref;
+             detail::load_batch(in, input, i);
+             out = tan(in);
+-            detail::store_batch(out, res, i);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        CHECK_EQ(diff, 0);
+     }
+ 
+     template <class T, std::enable_if_t<!std::is_same<T, float>::value, int> = 0>
+diff --git a/test/test_error_gamma.cpp b/test/test_error_gamma.cpp
+index 214cbb587..5b07b2902 100644
+--- a/test/test_error_gamma.cpp
++++ b/test/test_error_gamma.cpp
+@@ -27,7 +27,6 @@ struct error_gamma_test
+     vector_type gamma_input;
+     vector_type gamma_neg_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     error_gamma_test()
+     {
+@@ -42,7 +41,6 @@ struct error_gamma_test
+             gamma_neg_input[i] = value_type(-3.99) + i * value_type(0.9) / nb_input;
+         }
+         expected.resize(nb_input);
+-        res.resize(nb_input);
+     }
+ 
+     void test_error_functions()
+@@ -52,32 +50,30 @@ struct error_gamma_test
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::erf(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = erf(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("erf");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("erf");
+-            CHECK_EQ(diff, 0);
+         }
+         // erfc
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::erfc(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = erfc(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("erfc");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("erfc");
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ 
+@@ -88,48 +84,45 @@ struct error_gamma_test
+             std::transform(gamma_input.cbegin(), gamma_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::tgamma(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, gamma_input, i);
+                 out = tgamma(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("tgamma");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("tgamma");
+-            CHECK_EQ(diff, 0);
+         }
+         // tgamma (negative input)
+         {
+             std::transform(gamma_neg_input.cbegin(), gamma_neg_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::tgamma(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, gamma_neg_input, i);
+                 out = tgamma(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("tgamma (negative input)");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("tgamma (negative input)");
+-            CHECK_EQ(diff, 0);
+         }
+         // lgamma
+         {
+             std::transform(gamma_input.cbegin(), gamma_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::lgamma(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, gamma_input, i);
+                 out = lgamma(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("lgamma");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("lgamma");
+-            CHECK_EQ(diff, 0);
+         }
+ #if !(XSIMD_WITH_AVX && !XSIMD_WITH_AVX2)
+ 
+@@ -138,16 +131,15 @@ struct error_gamma_test
+             std::transform(gamma_neg_input.cbegin(), gamma_neg_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::lgamma(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, gamma_neg_input, i);
+                 out = lgamma(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("lgamma (negative input)");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("lgamma (negative input)");
+-            CHECK_EQ(diff, 0);
+         }
+ #endif
+     }
+diff --git a/test/test_exponential.cpp b/test/test_exponential.cpp
+index 9b15674f1..23d24698a 100644
+--- a/test/test_exponential.cpp
++++ b/test/test_exponential.cpp
+@@ -26,7 +26,6 @@ struct exponential_test
+     vector_type exp_input;
+     vector_type log_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     exponential_test()
+     {
+@@ -39,7 +38,6 @@ struct exponential_test
+             log_input[i] = value_type(0.001 + i * 100 / nb_input);
+         }
+         expected.resize(nb_input);
+-        res.resize(nb_input);
+     }
+ 
+     void test_exponential_functions()
+@@ -49,16 +47,15 @@ struct exponential_test
+             std::transform(exp_input.cbegin(), exp_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::exp(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, exp_input, i);
+                 out = exp(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("exp");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("exp");
+-            CHECK_EQ(diff, 0);
+         }
+ 
+         // exp2
+@@ -66,16 +63,15 @@ struct exponential_test
+             std::transform(exp_input.cbegin(), exp_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::exp2(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, exp_input, i);
+                 out = exp2(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("exp2");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("exp2");
+-            CHECK_EQ(diff, 0);
+         }
+ 
+         // exp10
+@@ -84,16 +80,15 @@ struct exponential_test
+                            /* imprecise but enough for testing version of exp10 */
+                            [](const value_type& v)
+                            { return exp(log(10) * v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, exp_input, i);
+                 out = exp10(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("exp10");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("exp10");
+-            CHECK_EQ(diff, 0);
+         }
+ 
+         // expm1
+@@ -101,16 +96,15 @@ struct exponential_test
+             std::transform(exp_input.cbegin(), exp_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::expm1(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, exp_input, i);
+                 out = expm1(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("expm1");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("expm1");
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ 
+@@ -121,16 +115,15 @@ struct exponential_test
+             std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::log(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, log_input, i);
+                 out = log(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("log");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("log");
+-            CHECK_EQ(diff, 0);
+         }
+ 
+         // log2
+@@ -138,16 +131,15 @@ struct exponential_test
+             std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::log2(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, log_input, i);
+                 out = log2(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("log2");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("log2");
+-            CHECK_EQ(diff, 0);
+         }
+ 
+         // log10
+@@ -155,16 +147,15 @@ struct exponential_test
+             std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::log10(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, log_input, i);
+                 out = log10(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("log10");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("log10");
+-            CHECK_EQ(diff, 0);
+         }
+ 
+         // log1p
+@@ -172,15 +163,14 @@ struct exponential_test
+             std::transform(log_input.cbegin(), log_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::log1p(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, log_input, i);
+                 out = log1p(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ };
+diff --git a/test/test_hyperbolic.cpp b/test/test_hyperbolic.cpp
+index 6821470b8..032c48e58 100644
+--- a/test/test_hyperbolic.cpp
++++ b/test/test_hyperbolic.cpp
+@@ -27,7 +27,6 @@ struct hyperbolic_test
+     vector_type acosh_input;
+     vector_type atanh_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     hyperbolic_test()
+     {
+@@ -42,7 +41,6 @@ struct hyperbolic_test
+             atanh_input[i] = value_type(-0.95) + i * value_type(1.9) / nb_input;
+         }
+         expected.resize(nb_input);
+-        res.resize(nb_input);
+     }
+ 
+     void test_hyperbolic_functions()
+@@ -52,48 +50,45 @@ struct hyperbolic_test
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::sinh(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = sinh(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("sinh");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("sinh");
+-            CHECK_EQ(diff, 0);
+         }
+         // cosh
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::cosh(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = cosh(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("cosh");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("cosh");
+-            CHECK_EQ(diff, 0);
+         }
+         // tanh
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::tanh(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = tanh(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("tanh");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("tanh");
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ 
+@@ -104,48 +99,45 @@ struct hyperbolic_test
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::asinh(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = asinh(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("asinh");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("asinh");
+-            CHECK_EQ(diff, 0);
+         }
+         // acosh
+         {
+             std::transform(acosh_input.cbegin(), acosh_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::acosh(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, acosh_input, i);
+                 out = acosh(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("acosh");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("acosh");
+-            CHECK_EQ(diff, 0);
+         }
+         // atanh
+         {
+             std::transform(atanh_input.cbegin(), atanh_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::atanh(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, atanh_input, i);
+                 out = atanh(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("atanh");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("atanh");
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ };
+diff --git a/test/test_poly_evaluation.cpp b/test/test_poly_evaluation.cpp
+index b7b597b7e..2b2fedde5 100644
+--- a/test/test_poly_evaluation.cpp
++++ b/test/test_poly_evaluation.cpp
+@@ -41,17 +41,14 @@ struct poly_evaluation_test
+ 
+     void test_poly_evaluation()
+     {
+-        batch_type in, out;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type in, out_horner, out_estrin;
+             detail::load_batch(in, input, i);
+-            out = xsimd::kernel::horner<typename batch_type::value_type, typename batch_type::arch_type, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>(in);
+-            detail::store_batch(out, horner_res, i);
+-            out = xsimd::kernel::estrin<typename batch_type::value_type, typename batch_type::arch_type, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>(in);
+-            detail::store_batch(out, estrin_res, i);
++            out_horner = xsimd::kernel::horner<typename batch_type::value_type, typename batch_type::arch_type, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>(in);
++            out_estrin = xsimd::kernel::estrin<typename batch_type::value_type, typename batch_type::arch_type, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>(in);
++            CHECK_BATCH_EQ(out_horner, out_estrin);
+         }
+-        size_t diff = detail::get_nb_diff(horner_res, estrin_res);
+-        CHECK_EQ(diff, 0);
+     }
+ };
+ 
+diff --git a/test/test_power.cpp b/test/test_power.cpp
+index a2a425c8c..6fa2ef396 100644
+--- a/test/test_power.cpp
++++ b/test/test_power.cpp
+@@ -29,7 +29,6 @@ struct power_test
+     vector_type lhs_input;
+     vector_type rhs_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     power_test()
+     {
+@@ -47,7 +46,6 @@ struct power_test
+         }
+ 
+         expected.resize(nb_input);
+-        res.resize(nb_input);
+     }
+ 
+     void test_power_functions()
+@@ -57,34 +55,32 @@ struct power_test
+             std::transform(lhs_input.cbegin(), lhs_input.cend(), rhs_input.cbegin(), expected.begin(),
+                            [](const value_type& l, const value_type& r)
+                            { return std::pow(l, r); });
+-            batch_type lhs_in, rhs_in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type lhs_in, rhs_in, out, ref;
+                 detail::load_batch(lhs_in, lhs_input, i);
+                 detail::load_batch(rhs_in, rhs_input, i);
+                 out = pow(lhs_in, rhs_in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("pow");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("pow");
+-            CHECK_EQ(diff, 0);
+         }
+         // pow zero
+         {
+             std::transform(zlhs_input.cbegin(), zlhs_input.cend(), rhs_input.cbegin(), expected.begin(),
+                            [](const value_type& l, const value_type& r)
+                            { return std::pow(l, r); });
+-            batch_type zlhs_in, rhs_in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type zlhs_in, rhs_in, out, ref;
+                 detail::load_batch(zlhs_in, zlhs_input, i);
+                 detail::load_batch(rhs_in, rhs_input, i);
+                 out = pow(zlhs_in, rhs_in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("0 ^ x");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("0 ^ x");
+-            CHECK_EQ(diff, 0);
+ 
+ // use of undeclared identifier '_MM_SET_EXCEPTION_MASK for emscripten
+ #if defined(__SSE__) && !defined(EMSCRIPTEN)
+@@ -93,15 +89,15 @@ struct power_test
+             _MM_SET_EXCEPTION_MASK(mask & ~_MM_MASK_INVALID);
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type zlhs_in, rhs_in, out, ref;
+                 detail::load_batch(zlhs_in, zlhs_input, i);
+                 detail::load_batch(rhs_in, rhs_input, i);
+                 out = pow(zlhs_in, rhs_in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("0 ^ x with exception");
++                CHECK_BATCH_EQ(ref, out);
+             }
+             _MM_SET_EXCEPTION_MASK(mask);
+-            diff = detail::get_nb_diff(res, expected);
+-            INFO("0 ^ x with exception");
+-            CHECK_EQ(diff, 0);
+ #endif
+         }
+ #ifndef __FAST_MATH__
+@@ -110,17 +106,16 @@ struct power_test
+             std::transform(zero_input.cbegin(), zero_input.cend(), rhs_input.cbegin(), expected.begin(),
+                            [](const value_type& z, const value_type& r)
+                            { return std::pow(z, -r); });
+-            batch_type zero_in, rhs_in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type zero_in, rhs_in, out, ref;
+                 detail::load_batch(zero_in, zero_input, i);
+                 detail::load_batch(rhs_in, rhs_input, i);
+                 out = pow(zero_in, -rhs_in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("pow(0, -x)");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("pow(0, -x)");
+-            CHECK_EQ(diff, 0);
+         }
+ #endif
+         // ipow
+@@ -129,49 +124,46 @@ struct power_test
+             std::transform(lhs_input.cbegin(), lhs_input.cend(), expected.begin(),
+                            [&k, this](const value_type& l)
+                            { auto arg = k / size / 8000 - nb_input / size / 8000 / 2; ++k; return std::pow(l, arg); });
+-            batch_type lhs_in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type lhs_in, out, ref;
+                 detail::load_batch(lhs_in, lhs_input, i);
+                 out = pow(lhs_in, i / size / 8000 - nb_input / size / 8000 / 2);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("ipow");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("ipow");
+-            CHECK_EQ(diff, 0);
+         }
+         // hypot
+         {
+             std::transform(lhs_input.cbegin(), lhs_input.cend(), rhs_input.cbegin(), expected.begin(),
+                            [](const value_type& l, const value_type& r)
+                            { return std::hypot(l, r); });
+-            batch_type lhs_in, rhs_in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type lhs_in, rhs_in, out, ref;
+                 detail::load_batch(lhs_in, lhs_input, i);
+                 detail::load_batch(rhs_in, rhs_input, i);
+                 out = hypot(lhs_in, rhs_in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("hypot");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("hypot");
+-            CHECK_EQ(diff, 0);
+         }
+         // cbrt
+         {
+             std::transform(lhs_input.cbegin(), lhs_input.cend(), expected.begin(),
+                            [](const value_type& l)
+                            { return std::cbrt(l); });
+-            batch_type lhs_in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type lhs_in, out, ref;
+                 detail::load_batch(lhs_in, lhs_input, i);
+                 out = cbrt(lhs_in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("cbrt");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("cbrt");
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ };
+diff --git a/test/test_rounding.cpp b/test/test_rounding.cpp
+index e4dab459b..d800edd67 100644
+--- a/test/test_rounding.cpp
++++ b/test/test_rounding.cpp
+@@ -28,7 +28,6 @@ struct rounding_test
+ 
+     std::array<value_type, nb_input> input;
+     std::array<value_type, nb_input> expected;
+-    std::array<value_type, nb_input> res;
+ 
+     rounding_test()
+     {
+@@ -57,143 +56,107 @@ struct rounding_test
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::ceil(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_batches; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = ceil(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("ceil");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            for (size_t i = nb_batches; i < nb_input; ++i)
+-            {
+-                res[i] = std::ceil(input[i]);
+-            }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("ceil");
+-            CHECK_EQ(diff, 0);
+         }
+         // floor
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::floor(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_batches; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = floor(in);
+-                detail::store_batch(out, res, i);
+-            }
+-            for (size_t i = nb_batches; i < nb_input; ++i)
+-            {
+-                res[i] = std::floor(input[i]);
++                detail::load_batch(ref, expected, i);
++                INFO("floor");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("floor");
+-            CHECK_EQ(diff, 0);
+         }
+         // trunc
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::trunc(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_batches; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = trunc(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("trunc");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            for (size_t i = nb_batches; i < nb_input; ++i)
+-            {
+-                res[i] = std::trunc(input[i]);
+-            }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("trunc");
+-            CHECK_EQ(diff, 0);
+         }
+         // round
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::round(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_batches; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = round(in);
+-                detail::store_batch(out, res, i);
+-            }
+-            for (size_t i = nb_batches; i < nb_input; ++i)
+-            {
+-                res[i] = std::round(input[i]);
++                detail::load_batch(ref, expected, i);
++                INFO("round");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("round");
+-            CHECK_EQ(diff, 0);
+         }
+         // nearbyint
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::nearbyint(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_batches; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = nearbyint(in);
+-                detail::store_batch(out, res, i);
+-            }
+-            for (size_t i = nb_batches; i < nb_input; ++i)
+-            {
+-                res[i] = std::nearbyint(input[i]);
++                detail::load_batch(ref, expected, i);
++                INFO("nearbyint");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("nearbyint");
+-            CHECK_EQ(diff, 0);
+         }
+         // nearbyint_as_int
+         {
+             std::array<int_value_type, nb_input> expected;
+-            std::array<int_value_type, nb_input> res;
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return xsimd::nearbyint_as_int(v); });
+-            batch_type in;
+-            int_batch_type out;
+             for (size_t i = 0; i < nb_batches; i += size)
+             {
++                batch_type in;
++                int_batch_type out, ref;
+                 detail::load_batch(in, input, i);
+                 out = nearbyint_as_int(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("nearbyint_as_int");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            for (size_t i = nb_batches; i < nb_input; ++i)
+-            {
+-                res[i] = xsimd::nearbyint_as_int(input[i]);
+-            }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("nearbyint_as_int");
+-            CHECK_EQ(diff, 0);
+         }
+         // rint
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::rint(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_batches; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = rint(in);
+-                detail::store_batch(out, res, i);
+-            }
+-            for (size_t i = nb_batches; i < nb_input; ++i)
+-            {
+-                res[i] = std::rint(input[i]);
++                detail::load_batch(ref, expected, i);
++                INFO("rint");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("rint");
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ };
+diff --git a/test/test_select.cpp b/test/test_select.cpp
+index 837fca314..6aa07d94b 100644
+--- a/test/test_select.cpp
++++ b/test/test_select.cpp
+@@ -29,12 +29,10 @@ struct select_test
+     vector_type lhs_input;
+     vector_type rhs_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     vector_bool_type lhs_input_b;
+     vector_bool_type rhs_input_b;
+     vector_bool_type expected_b;
+-    vector_bool_type res_b;
+ 
+     select_test()
+     {
+@@ -59,24 +57,22 @@ struct select_test
+             expected_b[i] = lhs_input[i] > value_type(3) ? lhs_input_b[i] : rhs_input_b[i];
+         }
+ 
+-        batch_type lhs_in, rhs_in;
+-        batch_bool_type lhs_in_b, rhs_in_b;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type lhs_in, rhs_in, out, ref;
+             detail::load_batch(lhs_in, lhs_input, i);
+             detail::load_batch(rhs_in, rhs_input, i);
+-            const auto out = xsimd::select(lhs_in > value_type(3), lhs_in, rhs_in);
+-            detail::store_batch(out, res, i);
++            out = xsimd::select(lhs_in > value_type(3), lhs_in, rhs_in);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+ 
++            batch_bool_type lhs_in_b, rhs_in_b, out_b, ref_b;
+             detail::load_batch(lhs_in_b, lhs_input_b, i);
+             detail::load_batch(rhs_in_b, rhs_input_b, i);
+-            const auto out_b = xsimd::select(lhs_in > value_type(3), lhs_in_b, rhs_in_b);
+-            detail::store_batch(out_b, res_b, i);
++            out_b = xsimd::select(lhs_in > value_type(3), lhs_in_b, rhs_in_b);
++            detail::load_batch(ref_b, expected_b, i);
++            CHECK_BATCH_EQ(ref_b, out_b);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        size_t diff_b = detail::get_nb_diff(res_b, expected_b);
+-        CHECK_EQ(diff, 0);
+-        CHECK_EQ(diff_b, 0);
+     }
+     struct pattern
+     {
+@@ -93,24 +89,22 @@ struct select_test
+             expected_b[i] = mask.get(i % size) ? lhs_input_b[i] : rhs_input_b[i];
+         }
+ 
+-        batch_type lhs_in, rhs_in;
+-        batch_bool_type lhs_in_b, rhs_in_b;
+         for (size_t i = 0; i < nb_input; i += size)
+         {
++            batch_type lhs_in, rhs_in, out, ref;
++            batch_bool_type lhs_in_b, rhs_in_b, out_b, ref_b;
+             detail::load_batch(lhs_in, lhs_input, i);
+             detail::load_batch(rhs_in, rhs_input, i);
+-            const auto out = xsimd::select(mask, lhs_in, rhs_in);
+-            detail::store_batch(out, res, i);
++            out = xsimd::select(mask, lhs_in, rhs_in);
++            detail::load_batch(ref, expected, i);
++            CHECK_BATCH_EQ(ref, out);
+ 
+             detail::load_batch(lhs_in_b, lhs_input_b, i);
+             detail::load_batch(rhs_in_b, rhs_input_b, i);
+-            const auto out_b = xsimd::select(mask, lhs_in_b, rhs_in_b);
+-            detail::store_batch(out_b, res_b, i);
++            out_b = xsimd::select(mask, lhs_in_b, rhs_in_b);
++            detail::load_batch(ref_b, expected_b, i);
++            CHECK_BATCH_EQ(ref_b, out_b);
+         }
+-        size_t diff = detail::get_nb_diff(res, expected);
+-        size_t diff_b = detail::get_nb_diff(res_b, expected_b);
+-        CHECK_EQ(diff, 0);
+-        CHECK_EQ(diff_b, 0);
+     }
+ };
+ 
+diff --git a/test/test_trigonometric.cpp b/test/test_trigonometric.cpp
+index 475ff8e1a..d3e8862a6 100644
+--- a/test/test_trigonometric.cpp
++++ b/test/test_trigonometric.cpp
+@@ -27,7 +27,6 @@ struct trigonometric_test
+     vector_type ainput;
+     vector_type atan_input;
+     vector_type expected;
+-    vector_type res;
+ 
+     trigonometric_test()
+     {
+@@ -42,7 +41,6 @@ struct trigonometric_test
+             atan_input[i] = value_type(-10.) + i * value_type(20.) / nb_input;
+         }
+         expected.resize(nb_input);
+-        res.resize(nb_input);
+     }
+ 
+     void test_trigonometric_functions()
+@@ -52,72 +50,67 @@ struct trigonometric_test
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::sin(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = sin(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("sin");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("sin");
+-            CHECK_EQ(diff, 0);
+         }
+         // cos
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::cos(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = cos(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("cos");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("cos");
+-            CHECK_EQ(diff, 0);
+         }
+         // sincos
+         {
+-            vector_type expected2(nb_input), res2(nb_input);
++            vector_type expected2(nb_input);
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::sin(v); });
+             std::transform(input.cbegin(), input.cend(), expected2.begin(),
+                            [](const value_type& v)
+                            { return std::cos(v); });
+-            batch_type in, out1, out2;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out1, out2, ref1, ref2;
+                 detail::load_batch(in, input, i);
+                 std::tie(out1, out2) = sincos(in);
+-                detail::store_batch(out1, res, i);
+-                detail::store_batch(out2, res2, i);
++                detail::load_batch(ref1, expected, i);
++                INFO("sincos / sin");
++                CHECK_BATCH_EQ(ref1, out1);
++                detail::load_batch(ref2, expected2, i);
++                INFO("sincos / cos");
++                CHECK_BATCH_EQ(ref2, out2);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("sincos(sin)");
+-            CHECK_EQ(diff, 0);
+-            diff = detail::get_nb_diff(res2, expected2);
+-            INFO("sincos(cos)");
+-            CHECK_EQ(diff, 0);
+         }
+         // tan
+         {
+             std::transform(input.cbegin(), input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::tan(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, input, i);
+                 out = tan(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("tan");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("tan");
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ 
+@@ -129,65 +122,61 @@ struct trigonometric_test
+             std::transform(ainput.cbegin(), ainput.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::asin(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, ainput, i);
+                 out = asin(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("asin");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("asin");
+-            CHECK_EQ(diff, 0);
+         }
+         // acos
+         {
+             std::transform(ainput.cbegin(), ainput.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::acos(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, ainput, i);
+                 out = acos(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("acos");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("acos");
+-            CHECK_EQ(diff, 0);
+         }
+         // atan
+         {
+             std::transform(atan_input.cbegin(), atan_input.cend(), expected.begin(),
+                            [](const value_type& v)
+                            { return std::atan(v); });
+-            batch_type in, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, out, ref;
+                 detail::load_batch(in, atan_input, i);
+                 out = atan(in);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("atan");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("atan");
+-            CHECK_EQ(diff, 0);
+         }
+         // atan2
+         {
+             std::transform(atan_input.cbegin(), atan_input.cend(), input.cbegin(), expected.begin(),
+                            [](const value_type& v, const value_type& r)
+                            { return std::atan2(v, r); });
+-            batch_type in, rhs, out;
+             for (size_t i = 0; i < nb_input; i += size)
+             {
++                batch_type in, rhs, out, ref;
+                 detail::load_batch(in, atan_input, i);
+                 detail::load_batch(rhs, input, i);
+                 out = atan2(in, rhs);
+-                detail::store_batch(out, res, i);
++                detail::load_batch(ref, expected, i);
++                INFO("atan2");
++                CHECK_BATCH_EQ(ref, out);
+             }
+-            size_t diff = detail::get_nb_diff(res, expected);
+-            INFO("atan2");
+-            CHECK_EQ(diff, 0);
+         }
+     }
+ };
+diff --git a/test/test_utils.hpp b/test/test_utils.hpp
+index 0da0c6f12..5f25f3e77 100644
+--- a/test/test_utils.hpp
++++ b/test/test_utils.hpp
+@@ -42,107 +42,6 @@ struct precision_t
+ #endif
+ };
+ 
+-/*******************
+- * Pretty printers *
+- *******************/
+-
+-class simd_test_names
+-{
+-public:
+-    template <class T>
+-    static std::string GetName(int)
+-    {
+-        using value_type = typename T::value_type;
+-        std::string prefix;
+-#if XSIMD_WITH_SSE
+-        size_t register_size = T::size * sizeof(value_type) * CHAR_BIT;
+-        if (register_size == size_t(128))
+-        {
+-            prefix = "sse_";
+-        }
+-        else if (register_size == size_t(256))
+-        {
+-            prefix = "avx_";
+-        }
+-        else if (register_size == size_t(512))
+-        {
+-            prefix = "avx512_";
+-        }
+-#elif XSIMD_WITH_NEON
+-        size_t register_size = T::size * sizeof(value_type) * CHAR_BIT;
+-        if (register_size == size_t(128))
+-        {
+-            prefix = "arm_";
+-        }
+-#endif
+-        if (std::is_same<value_type, uint8_t>::value)
+-        {
+-            return prefix + "uint8_t";
+-        }
+-        if (std::is_same<value_type, int8_t>::value)
+-        {
+-            return prefix + "int8_t";
+-        }
+-        if (std::is_same<value_type, uint16_t>::value)
+-        {
+-            return prefix + "uint16_t";
+-        }
+-        if (std::is_same<value_type, int16_t>::value)
+-        {
+-            return prefix + "int16_t";
+-        }
+-        if (std::is_same<value_type, uint32_t>::value)
+-        {
+-            return prefix + "uint32_t";
+-        }
+-        if (std::is_same<value_type, int32_t>::value)
+-        {
+-            return prefix + "int32_t";
+-        }
+-        if (std::is_same<value_type, uint64_t>::value)
+-        {
+-            return prefix + "uint64_t";
+-        }
+-        if (std::is_same<value_type, int64_t>::value)
+-        {
+-            return prefix + "int64_t";
+-        }
+-        if (std::is_same<value_type, float>::value)
+-        {
+-            return prefix + "float";
+-        }
+-        if (std::is_same<value_type, double>::value)
+-        {
+-            return prefix + "double";
+-        }
+-        if (std::is_same<value_type, std::complex<float>>::value)
+-        {
+-            return prefix + "complex<float>";
+-        }
+-        if (std::is_same<value_type, std::complex<double>>::value)
+-        {
+-            return prefix + "complex<double>";
+-        }
+-#ifdef XSIMD_ENABLE_XTL_COMPLEX
+-        if (std::is_same<value_type, xtl::xcomplex<float>>::value)
+-        {
+-            return prefix + "xcomplex<float>";
+-        }
+-        if (std::is_same<value_type, xtl::xcomplex<double>>::value)
+-        {
+-            return prefix + "xcomplex<double>";
+-        }
+-#endif
+-
+-        return prefix + "unknow_type";
+-    }
+-};
+-
+-inline std::string print_function_name(const std::string& func)
+-{
+-    return std::string("  while testing ") + func;
+-}
+-
+ /************************
+  * Comparison functions *
+  ************************/
+@@ -245,7 +144,6 @@ namespace detail
+     template <class T>
+     bool check_is_small(const T& value, const T& tolerance)
+     {
+-        using std::abs;
+         return uabs(value) < uabs(tolerance);
+     }
+ 
+@@ -448,33 +346,6 @@ namespace detail
+         return expect_batch_near(tmp, rhs);
+     }
+ 
+-    template <class It>
+-    size_t get_nb_diff(It lhs_begin, It lhs_end, It rhs_begin)
+-    {
+-        size_t res = 0;
+-        using value_type = typename std::iterator_traits<It>::value_type;
+-        while (lhs_begin != lhs_end)
+-        {
+-            if (!scalar_comparison<value_type>::run(*lhs_begin++, *rhs_begin++))
+-            {
+-                ++res;
+-            }
+-        }
+-        return res;
+-    }
+-
+-    template <class T, class A>
+-    size_t get_nb_diff(const std::vector<T, A>& lhs, const std::vector<T, A>& rhs)
+-    {
+-        return get_nb_diff(lhs.begin(), lhs.end(), rhs.begin());
+-    }
+-
+-    template <class T, size_t N>
+-    size_t get_nb_diff(const std::array<T, N>& lhs, const std::array<T, N>& rhs)
+-    {
+-        return get_nb_diff(lhs.begin(), lhs.end(), rhs.begin());
+-    }
+-
+     template <class T, class A>
+     size_t get_nb_diff_near(const std::vector<T, A>& lhs, const std::vector<T, A>& rhs, float precision)
+     {
+
+# old line numbers: -539,30 +410,6
+# new line numbers: -539,34 +539,6
+@@ -539,30 +410,6 @@ namespace detail
+         CHECK_UNARY(::detail::expect_vector_near(v1, v2)); \
+     } while (0)
+ 
+-namespace xsimd
+-{
+-    /************************
+-     * Enable metafunctions *
+-     ************************/
+-
+-    template <class T, class R>
+-    using enable_integral_t = std::enable_if_t<std::is_integral<T>::value, R>;
+-
+-    template <class T, class R>
+-    using enable_floating_point_t = std::enable_if_t<std::is_floating_point<T>::value, R>;
+-
+-    namespace mpl
+-    {
+-        /**************
+-         * types_list *
+-         **************/
+-        template <class... T>
+-        struct type_list
+-        {
+-        };
+-    }
+-}
+-
+ /***********************
+  * Testing types lists *
+  ***********************/
+diff --git a/test/test_xsimd_api.cpp b/test/test_xsimd_api.cpp
+index d39d600d5..8c58543ad 100644
+--- a/test/test_xsimd_api.cpp
++++ b/test/test_xsimd_api.cpp
+@@ -740,9 +740,13 @@ struct xsimd_api_float_types_functions
+     {
+         value_type val0(2);
+         value_type val1(2);
++        value_type nval1(-3);
+         int ival1 = 4;
++        int nival1 = -5;
+         CHECK_EQ(extract(xsimd::pow(T(val0), T(val1))), std::pow(val0, val1));
+         CHECK_EQ(extract(xsimd::pow(T(val0), ival1)), std::pow(val0, ival1));
++        CHECK_EQ(extract(xsimd::pow(T(val0), T(nval1))), doctest::Approx(std::pow(val0, nval1)));
++        CHECK_EQ(extract(xsimd::pow(T(val0), nival1)), doctest::Approx(std::pow(val0, nival1)));
+     }
+     void test_reciprocal()
+     {
+@@ -784,7 +788,7 @@ struct xsimd_api_float_types_functions
+     void test_sqrt()
+     {
+         value_type val(1);
+-        CHECK_EQ(extract(xsimd::sqrt(T(val))), std::sqrt(val));
++        CHECK_EQ(extract(xsimd::sqrt(T(val))), doctest::Approx(std::sqrt(val)));
+     }
+     void test_tan()
+     {
+@@ -1183,7 +1187,7 @@ struct xsimd_api_all_signed_types_functions
+     void test_abs()
+     {
+         value_type val(-1);
+-        CHECK_EQ(extract(xsimd::abs(T(val))), std::abs(val));
++        CHECK_EQ(extract(xsimd::abs(T(val))), doctest::Approx(std::abs(val)));
+     }
+ 
+     void test_fnms()
