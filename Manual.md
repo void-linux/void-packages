@@ -1758,14 +1758,13 @@ installs its fonts
 <a id="pkg_rename"></a>
 ### Renaming a package
 
-- Create empty package of old name, depending on new package. This is
+- Create an empty subpackage of old name, depending on new package. This is
 necessary to provide updates to systems where old package is already
-installed. This should be a subpackage of new one, except when version
-number of new package decreased: then create a separate template using
-old version and increased revision.
+installed. This should be a subpackage of new one. When the version
+number of the transitional package decreases, add `reverts` entries to it.
+- append `" (transitional dummy package)"` to the package's `short_desc`.
 - Edit references to package in other templates and common/shlibs.
-- Don't set `replaces=`, it can result in removing both packages from
-systems by xbps.
+- Set `replaces="old-name>=0` on the new package.
 
 <a id="pkg_remove"></a>
 ### Removing a package
