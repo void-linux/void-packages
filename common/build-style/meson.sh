@@ -64,7 +64,7 @@ do_check() {
 	ninja|samu) : ${make_verbose:=-v} ;;
 	esac
 
-	${make_check_pre} ${make_cmd} ${XBPS_VERBOSE+${make_verbose}} -C ${meson_builddir} ${makejobs} ${make_check_target} ${make_check_args}
+	${make_check_pre} ${make_cmd} ${make_check_target} ${XBPS_VERBOSE+${make_verbose}} -C ${meson_builddir} ${makejobs} ${make_check_args}
 }
 
 do_install() {
