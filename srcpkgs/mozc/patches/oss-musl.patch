@@ -1,0 +1,154 @@
+--- a/mozc/src/.bazelrc
++++ b/mozc/src/.bazelrc
+@@ -4,6 +4,7 @@ startup  --windows_enable_symlinks  # ig
+ ## Target platforms
+ common:linux      --config=linux_env --define TARGET=oss_linux
+ common:oss_linux  --config=linux_env --define TARGET=oss_linux
++common:oss_musl   --config=linux_env --define TARGET=oss_musl
+ common:prod_linux --config=linux_env --define TARGET=prod_linux
+ 
+ common:macos      --config=macos_env --define TARGET=oss_macos
+--- a/mozc/src/MODULE.bazel
++++ b/mozc/src/MODULE.bazel
+@@ -229,6 +229,19 @@ pkg_config_repository(
+     ],
+ )
+ 
++# pkg_config_repository(
++#     name = "fts",
++#     packages = [
++#         "musl-fts",
++#     ],
++# )
++
++new_local_repository(
++    name = "fts",
++    build_file = "BUILD.fts.bazel",
++    path = "/usr",
++)
++
+ # Qt for Linux
+ pkg_config_repository(
+     name = "qt_linux",
+--- a/mozc/src/base/file/BUILD.bazel
++++ b/mozc/src/base/file/BUILD.bazel
+@@ -97,6 +97,9 @@ mozc_cc_library(
+             "//bazel/win32:pathcch",
+             "@com_microsoft_wil//:wil",
+         ],
++        oss_musl = [
++            "@fts",
++        ],
+     ),
+ )
+ 
+--- a/mozc/src/build_defs.bzl
++++ b/mozc/src/build_defs.bzl
+@@ -777,6 +777,7 @@ def mozc_select(
+         macos = None,
+         oss_android = None,
+         oss_linux = None,
++        oss_musl = None,
+         oss_macos = None,
+         oss_windows = None,
+         prod = None,
+@@ -791,6 +792,7 @@ def mozc_select(
+       android: android > client > default
+       ios,chromiumos,wasm,linux: same with android.
+       oss_linux: oss_linux > oss > linux > client > default
++      oss_musl: oss_musl > oss_linux > oss > linux > client > default
+ 
+     Args:
+       default: default fallback value.
+@@ -805,6 +807,7 @@ def mozc_select(
+       macos: value for macOS build.
+       oss_android: value for OSS Android build.
+       oss_linux: value for OSS Linux build.
++      oss_musl: value for OSS Linux with musl libc build.
+       oss_macos: value for OSS macOS build.
+       oss_windows: value for OSS Windows build.
+       prod: value for prod build.
+@@ -827,6 +830,7 @@ def mozc_select(
+         "//bazel/cc_target_os:linux": _get_value([linux, client, default]),
+         "//bazel/cc_target_os:oss_android": _get_value([oss_android, oss, android, client, default]),
+         "//bazel/cc_target_os:oss_linux": _get_value([oss_linux, oss, linux, client, default]),
++        "//bazel/cc_target_os:oss_musl": _get_value([oss_musl, oss_linux, oss, linux, client, default]),
+         "//bazel/cc_target_os:oss_macos": _get_value([oss_macos, oss, macos, ios, client, default]),
+         "//bazel/cc_target_os:oss_windows": _get_value([oss_windows, oss, windows, client, default]),
+         "//bazel/cc_target_os:prod_linux": _get_value([prod_linux, prod, oss_linux, oss, linux, client, default]),
+--- a/mozc/src/rewriter/BUILD.bazel
++++ b/mozc/src/rewriter/BUILD.bazel
+@@ -36,6 +36,7 @@ load(
+     "mozc_cc_library",
+     "mozc_cc_test",
+     "mozc_py_binary",
++    "mozc_select",
+     "mozc_select_enable_usage_rewriter",
+ )
+ 
+@@ -913,7 +914,11 @@ mozc_cc_binary(
+         "@com_google_absl//absl/status:statusor",
+         "@com_google_absl//absl/strings",
+         "@com_google_absl//absl/types:span",
+-    ],
++    ] + mozc_select(
++        oss_musl = [
++            "@fts",
++        ],
++    ),
+ )
+ 
+ mozc_cc_binary(
+--- a/mozc/src/BUILD.bazel
++++ b/mozc/src/BUILD.bazel
+@@ -251,6 +251,7 @@ selects.config_setting_group(
+         # TODO(yuryu): define platforms and use bazel_platforms.
+         "//bazel/cc_target_os:linux",
+         "//bazel/cc_target_os:oss_linux",
++        "//bazel/cc_target_os:oss_musl",
+         "//bazel/cc_target_os:prod_linux",
+         "//bazel/cc_target_os:darwin",
+         "//bazel/cc_target_os:oss_macos",
+@@ -274,6 +275,7 @@ selects.config_setting_group(
+         # TODO(yuryu): define platforms and use bazel_platforms.
+         "//bazel/cc_target_os:linux",
+         "//bazel/cc_target_os:oss_linux",
++        "//bazel/cc_target_os:oss_musl",
+         "//bazel/cc_target_os:prod_linux",
+         "//bazel/cc_target_os:darwin",
+         "//bazel/cc_target_os:oss_macos",
+--- a/mozc/src/bazel/cc_target_os/BUILD.bazel
++++ b/mozc/src/bazel/cc_target_os/BUILD.bazel
+@@ -95,6 +95,13 @@ config_setting(
+ )
+ 
+ config_setting(
++    name = "oss_musl",
++    values = {
++        "define": "TARGET=oss_musl",
++    },
++)
++
++config_setting(
+     name = "prod_linux",
+     values = {
+         "define": "TARGET=prod_linux",
+--- /dev/null
++++ b/mozc/src/BUILD.fts.bazel
+@@ -0,0 +1,16 @@
++package(
++    default_visibility = ["//visibility:public"],
++)
++
++cc_library(
++    name = "fts",
++    hdrs = [
++        "include/fts.h",
++    ],
++    includes = [
++        "include",
++    ],
++    linkopts = [
++        "-lfts",
++    ],
++)

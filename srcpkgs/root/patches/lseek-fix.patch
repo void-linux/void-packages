@@ -1,0 +1,84 @@
+From 5cd554303ead0f8891eee3cd6d25cb07f5a7bf67 Mon Sep 17 00:00:00 2001
+From: Khem Raj <raj.khem@gmail.com>
+Date: Sat, 4 Feb 2023 13:54:41 -0800
+Subject: [PATCH] cmake: Enable 64bit off_t on 32bit glibc systems
+
+Pass -D_FILE_OFFSET_BITS=64 to compiler flags on 32bit glibc based
+systems. This will make sure that 64bit versions of LFS functions are
+used e.g. seek will behave same as lseek64. Also revert [1] partially
+because this added a cmake test to detect lseek64 but then forgot to
+pass the needed macro to actual compile, this test was incomplete too
+since libc implementations like musl has 64bit off_t by default on 32bit
+systems and does not bundle[2] -D_LARGEFILE64_SOURCE under -D_GNU_SOURCE
+like glibc, which means the compile now fails on musl because the cmake
+check passes but we do not have _LARGEFILE64_SOURCE defined. Using the
+*64 function was transitional anyways so use -D_FILE_OFFSET_BITS=64
+instead
+
+[1] https://github.com/llvm/llvm-project/commit/8db7e5e4eed4c4e697dc3164f2c9351d8c3e942b
+[2] https://git.musl-libc.org/cgit/musl/commit/?id=25e6fee27f4a293728dd15b659170e7b9c7db9bc
+
+Reviewed By: MaskRay
+
+Differential Revision: https://reviews.llvm.org/D139752
+---
+ llvm/cmake/config-ix.cmake                                | 8 +++++---
+ llvm/include/llvm/Config/config.h.cmake                   | 3 ---
+ llvm/lib/interpreter/llvm-project/Support/raw_ostream.cpp                          | 2 --
+ llvm/utils/gn/secondary/llvm/include/llvm/Config/BUILD.gn | 2 --
+ utils/bazel/llvm_configs/config.h.cmake                   | 3 ---
+ 5 files changed, 5 insertions(+), 13 deletions(-)
+
+diff --git a/interpreter/llvm-project/llvm/cmake/config-ix.cmake b/interpreter/llvm-project/llvm/cmake/config-ix.cmake
+index f959cd1f88484..b78c1b34ab8b9 100644
+--- a/interpreter/llvm-project/llvm/cmake/config-ix.cmake
++++ b/interpreter/llvm-project/llvm/cmake/config-ix.cmake
+@@ -284,9 +284,6 @@ check_symbol_exists(futimes sys/time.h HAVE_FUTIMES)
+ if( HAVE_SIGNAL_H AND NOT LLVM_USE_SANITIZER MATCHES ".*Address.*" AND NOT APPLE )
+   check_symbol_exists(sigaltstack signal.h HAVE_SIGALTSTACK)
+ endif()
+-set(CMAKE_REQUIRED_DEFINITIONS "-D_LARGEFILE64_SOURCE")
+-check_symbol_exists(lseek64 "sys/types.h;unistd.h" HAVE_LSEEK64)
+-set(CMAKE_REQUIRED_DEFINITIONS "")
+ check_symbol_exists(mallctl malloc_np.h HAVE_MALLCTL)
+ check_symbol_exists(mallinfo malloc.h HAVE_MALLINFO)
+ check_symbol_exists(mallinfo2 malloc.h HAVE_MALLINFO2)
+@@ -340,6 +337,11 @@ check_symbol_exists(__GLIBC__ stdio.h LLVM_USING_GLIBC)
+ if( LLVM_USING_GLIBC )
+   add_compile_definitions(_GNU_SOURCE)
+   list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D_GNU_SOURCE")
++# enable 64bit off_t on 32bit systems using glibc
++  if (CMAKE_SIZEOF_VOID_P EQUAL 4)
++    add_compile_definitions(_FILE_OFFSET_BITS=64)
++    list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D_FILE_OFFSET_BITS=64")
++  endif()
+ endif()
+ 
+ # This check requires _GNU_SOURCE.
+diff --git a/interpreter/llvm-project/llvm/include/llvm/Config/config.h.cmake b/interpreter/llvm-project/llvm/include/llvm/Config/config.h.cmake
+index 3543e6fc29944..29ac536b4c31b 100644
+--- a/interpreter/llvm-project/llvm/include/llvm/Config/config.h.cmake
++++ b/interpreter/llvm-project/llvm/include/llvm/Config/config.h.cmake
+@@ -128,9 +128,6 @@
+ /* Define to 1 if you have the <link.h> header file. */
+ #cmakedefine HAVE_LINK_H ${HAVE_LINK_H}
+ 
+-/* Define to 1 if you have the `lseek64' function. */
+-#cmakedefine HAVE_LSEEK64 ${HAVE_LSEEK64}
+-
+ /* Define to 1 if you have the <mach/mach.h> header file. */
+ #cmakedefine HAVE_MACH_MACH_H ${HAVE_MACH_MACH_H}
+ 
+diff --git a/interpreter/llvm-project/llvm/lib/interpreter/llvm-project/Support/raw_ostream.cpp b/llvm/lib/Support/raw_ostream.cpp
+index 92b15f14c62fd..8943c4478c7f2 100644
+--- a/interpreter/llvm-project/llvm/lib/interpreter/llvm-project/Support/raw_ostream.cpp
++++ b/interpreter/llvm-project/llvm/lib/Support/raw_ostream.cpp
+@@ -802,8 +802,6 @@ uint64_t raw_fd_ostream::seek(uint64_t off) {
+   flush();
+ #ifdef _WIN32
+   pos = ::_lseeki64(FD, off, SEEK_SET);
+-#elif defined(HAVE_LSEEK64)
+-  pos = ::lseek64(FD, off, SEEK_SET);
+ #else
+   pos = ::lseek(FD, off, SEEK_SET);
+ #endif

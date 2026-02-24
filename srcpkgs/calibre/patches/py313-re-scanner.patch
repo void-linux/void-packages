@@ -1,0 +1,106 @@
+diff -Nur a/src/calibre/utils/_py313_scanner.py b/src/calibre/utils/_py313_scanner.py
+--- a/src/calibre/utils/_py313_scanner.py	1969-12-31 19:00:00.000000000 -0500
++++ b/src/calibre/utils/_py313_scanner.py	2025-12-04 16:43:12.371808182 -0500
+@@ -0,0 +1,52 @@
++### THIS FILE WAS ADDED SPECIFICALLY TO THE VOID LINUX PACKAGE
++###
++### Python 3.14.1 has restricted the use of re.Scanner to patterns that do not
++### use capturing groups because capturing groups never worked properly and can
++### cause the interpreter to crash. Cf.
++###
++###    https://github.com/python/cpython/pull/140944
++###
++### The Scanner implementation is undocumented and there is some debate how to
++### address programs that rely on this now-missing functionality. Because it
++### seemed to work in calibre, and upstream has not addressed the change, we
++### will just vendor the implementation from Python 3.13 for now.
++
++from re import _compiler, _parser, RegexFlag
++class Scanner:
++    def __init__(self, lexicon, flags=0):
++        from re._constants import BRANCH, SUBPATTERN
++        if isinstance(flags, RegexFlag):
++            flags = flags.value
++        self.lexicon = lexicon
++        # combine phrases into a compound pattern
++        p = []
++        s = _parser.State()
++        s.flags = flags
++        for phrase, action in lexicon:
++            gid = s.opengroup()
++            p.append(_parser.SubPattern(s, [
++                (SUBPATTERN, (gid, 0, 0, _parser.parse(phrase, flags))),
++                ]))
++            s.closegroup(gid, p[-1])
++        p = _parser.SubPattern(s, [(BRANCH, (None, p))])
++        self.scanner = _compiler.compile(p)
++    def scan(self, string):
++        result = []
++        append = result.append
++        match = self.scanner.scanner(string).match
++        i = 0
++        while True:
++            m = match()
++            if not m:
++                break
++            j = m.end()
++            if i == j:
++                break
++            action = self.lexicon[m.lastindex-1][1]
++            if callable(action):
++                self.match = m
++                action = action(self, m.group())
++            if action is not None:
++                append(action)
++            i = j
++        return result, string[i:]
+diff -Nur a/src/calibre/utils/formatter.py b/src/calibre/utils/formatter.py
+--- a/src/calibre/utils/formatter.py	2025-07-17 23:41:17.000000000 -0400
++++ b/src/calibre/utils/formatter.py	2025-12-04 16:43:51.782906462 -0500
+@@ -25,6 +25,7 @@
+ from calibre.utils.localization import _
+ from polyglot.builtins import error_message
+ 
++from ._py313_scanner import Scanner
+ 
+ class Node:
+     NODE_RVALUE = 1
+@@ -1690,7 +1691,7 @@
+     compress_spaces = re.compile(r'\s+')
+     backslash_comma_to_comma = re.compile(r'\\,')
+ 
+-    arg_parser = re.Scanner([
++    arg_parser = Scanner([
+                 (r',', lambda x,t: ''),
+                 (r'.*?((?<!\\),)', lambda x,t: t[:-1]),
+                 (r'.*?\)', lambda x,t: t[:-1]),
+@@ -1698,7 +1699,7 @@
+ 
+     # ################# Template language lexical analyzer ######################
+ 
+-    lex_scanner = re.Scanner([
++    lex_scanner = Scanner([
+             (r'(==#|!=#|<=#|<#|>=#|>#)', lambda x,t: (_Parser.LEX_NUMERIC_INFIX, t)),
+             (r'(==|!=|<=|<|>=|>)',       lambda x,t: (_Parser.LEX_STRING_INFIX, t)),
+             (r'(if|then|else|elif|fi)\b',lambda x,t: (_Parser.LEX_KEYWORD, t)),
+diff -Nur a/src/calibre/utils/search_query_parser.py b/src/calibre/utils/search_query_parser.py
+--- a/src/calibre/utils/search_query_parser.py	2025-07-17 23:41:17.000000000 -0400
++++ b/src/calibre/utils/search_query_parser.py	2025-12-04 16:44:16.500968101 -0500
+@@ -28,6 +28,8 @@
+ from polyglot.binary import as_hex_unicode, from_hex_unicode
+ from polyglot.builtins import codepoint_to_chr
+ 
++from ._py313_scanner import Scanner
++
+ '''
+ This class manages access to the preference holding the saved search queries.
+ It exists to ensure that unicode is used throughout, and also to permit
+@@ -157,7 +159,7 @@
+     docstring_sep = '□ༀ؆'  # Unicode white square, Tibetian Om, Arabic-Indic Cube Root
+ 
+     # Had to translate named constants to numeric values
+-    lex_scanner = re.Scanner([
++    lex_scanner = Scanner([
+             (r'[()]',           lambda x,t: (Parser.OPCODE, t)),
+             (r'@.+?:[^")\s]+',  lambda x,t: (Parser.WORD, str(t))),
+             (r'[^"()\s]+',      lambda x,t: (Parser.WORD, str(t))),

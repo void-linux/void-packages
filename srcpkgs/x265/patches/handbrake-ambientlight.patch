@@ -1,0 +1,107 @@
+--- a/source/common/param.cpp
++++ b/source/common/param.cpp
+@@ -408,6 +408,7 @@ void x265_param_default(x265_param* para
+     param->preferredTransferCharacteristics = -1;
+     param->pictureStructure = -1;
+     param->bEmitCLL = 1;
++    param->bEmitAmbientViewingEnvironment = 0;
+ 
+     param->bEnableFrameDuplication = 0;
+     param->dupThreshold = 70;
+@@ -1963,6 +1964,7 @@ int x265_check_params(x265_param* param)
+                      || param->bEmitIDRRecoverySEI
+                    || !!param->interlaceMode
+                      || param->preferredTransferCharacteristics > 1
++                     || param->bEmitAmbientViewingEnvironment
+                      || strlen(param->toneMapFile)
+                      || strlen(param->naluFile));
+ 
+@@ -2910,6 +2912,10 @@ void x265_copy_params(x265_param* dst, x
+     dst->bEmitCLL = src->bEmitCLL;
+     dst->maxCLL = src->maxCLL;
+     dst->maxFALL = src->maxFALL;
++    dst->ambientIlluminance = src->ambientIlluminance;
++    dst->ambientLightX = src->ambientLightX;
++    dst->ambientLightY = src->ambientLightY;
++    dst->bEmitAmbientViewingEnvironment = src->bEmitAmbientViewingEnvironment;
+     dst->log2MaxPocLsb = src->log2MaxPocLsb;
+     dst->bEmitVUIHRDInfo = src->bEmitVUIHRDInfo;
+     dst->bEmitVUITimingInfo = src->bEmitVUITimingInfo;
+--- a/source/encoder/encoder.cpp
++++ b/source/encoder/encoder.cpp
+@@ -3361,6 +3361,15 @@ void Encoder::getStreamHeaders(NALList&
+         }
+     }
+ 
++    if (m_param->bEmitAmbientViewingEnvironment)
++    {
++        SEIAmbientViewingEnvironment ambientsei;
++        ambientsei.ambientIlluminance = m_param->ambientIlluminance;
++        ambientsei.ambientLightX = m_param->ambientLightX;
++        ambientsei.ambientLightY = m_param->ambientLightY;
++        ambientsei.writeSEImessages(bs, m_sps, NAL_UNIT_PREFIX_SEI, list, m_param->bSingleSeiNal);
++    }
++
+     if (m_param->bEmitInfoSEI)
+     {
+         char *opts = x265_param2string(m_param, m_sps.conformanceWindow.rightOffset, m_sps.conformanceWindow.bottomOffset);
+--- a/source/encoder/sei.h
++++ b/source/encoder/sei.h
+@@ -638,6 +638,25 @@ public:
+     }
+ };
+ 
++class SEIAmbientViewingEnvironment : public SEI
++{
++public:
++    SEIAmbientViewingEnvironment()
++    {
++        m_payloadType = AMBIENT_VIEWING_ENVIRONMENT;
++        m_payloadSize = 8;
++    }
++    uint32_t ambientIlluminance;
++    uint16_t ambientLightX;
++    uint16_t ambientLightY;
++    void writeSEI(const SPS&)
++    {
++        WRITE_CODE(ambientIlluminance, 32, "ambient_illuminance");
++        WRITE_CODE(ambientLightX,      16, "ambient_light_x");
++        WRITE_CODE(ambientLightY,      16, "ambient_light_y");
++    }
++};
++
+ class SEIDecodedPictureHash : public SEI
+ {
+ public:
+--- a/source/x265.h
++++ b/source/x265.h
+@@ -376,6 +376,7 @@ typedef enum
+     MASTERING_DISPLAY_INFO               = 137,
+     CONTENT_LIGHT_LEVEL_INFO             = 144,
+     ALTERNATIVE_TRANSFER_CHARACTERISTICS = 147,
++    AMBIENT_VIEWING_ENVIRONMENT          = 148,
+     ALPHA_CHANNEL_INFO                   = 165,
+     THREE_DIMENSIONAL_REFERENCE_DISPLAYS_INFO = 176,
+     MULTIVIEW_SCENE_INFO                 = 178,
+@@ -1962,6 +1963,11 @@ typedef struct x265_param
+      * value to that value. */
+     uint16_t maxLuma;
+ 
++    /* ISO/IEC 23008-2:2017, D.2.39 ambient viewing environment SEI message */
++    uint32_t ambientIlluminance;
++    uint16_t ambientLightX;
++    uint16_t ambientLightY;
++
+     /* Maximum of the picture order count */
+     int log2MaxPocLsb;
+ 
+@@ -2173,6 +2179,9 @@ typedef struct x265_param
+     /*Emit content light level info SEI*/
+     int         bEmitCLL;
+ 
++    /* Emit ambient viewing environment SEI */
++    int         bEmitAmbientViewingEnvironment;
++
+     /*
+     * Signals picture structure SEI timing message for every frame
+     * picture structure 7 is signalled for frame doubling
