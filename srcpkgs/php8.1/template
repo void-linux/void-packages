@@ -1,14 +1,15 @@
 # Template file for 'php8.1'
 # rebuild php8.1-apcu and php8.1-imagick when updating this package
 pkgname=php8.1
-version=8.1.31
+version=8.1.34
 revision=1
-_php_version=8.1
+_php_version=${version%.*}
 hostmakedepends="bison pkg-config apache-devel autoconf"
 makedepends="apache-devel enchant2-devel freetds-devel freetype-devel gdbm-devel
  gmp-devel libcurl-devel libjpeg-turbo-devel libmariadbclient-devel
  libsodium-devel libtidy5-devel libxslt-devel libzip-devel net-snmp-devel
  postgresql-libs-devel readline-devel sqlite-devel unixodbc-devel pcre2-devel
+ libxml2-devel
  libffi-devel oniguruma-devel gd-devel acl-devel"
 short_desc="HTML-embedded scripting language"
 maintainer="Joel Beckmeyer <joel@beckmeyer.us>"
@@ -18,8 +19,11 @@ changelog="https://raw.githubusercontent.com/php/php-src/php-${version}/NEWS"
 # this is the source where the www.php.net code pulls the tarballs it serves
 # at https://www.php.net/distributions/
 distfiles="https://github.com/php/web-php-distributions/raw/master/php-${version}.tar.gz"
-checksum=618923b407c4575bfee085f00c4aaa16a5cc86d4b1eb893c0f352d61541bbfb1
+checksum=3c5b060ec8e0d5dd1d8237823f3161cc8bc5342aab3c46893eba9857759c4bfa
 provides="php-runtime-${version}_1"
+# pear is dead, php8.1-pear depends is broken and noone notices it,
+# noone is using it
+replaces="php8.1-pear>=0"
 
 system_accounts="_phpfpm"
 _phpfpm_homedir="/var/empty"
@@ -32,8 +36,10 @@ if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
 	makedepends+=" libxcrypt-devel"
 fi
 
+CFLAGS="-D_FILE_OFFSET_BITS=64"
+
 if [ -n "$CROSS_BUILD" ]; then
-	# phar and pear need php to build
+	# phar need php to build
 	hostmakedepends+=" php${_php_version}"
 	CFLAGS+=" -DHAVE_LIBDL
 		 -DHAVE_DLOPEN
@@ -112,7 +118,6 @@ do_build() {
 		--with-mysqli=shared,mysqlnd \
 		--with-openssl=shared \
 		--with-external-pcre \
-		--with-pear=/usr/share/pear${_php_version} \
 		--with-pdo-mysql=shared,mysqlnd \
 		--with-pdo-odbc=shared,unixODBC,$XBPS_CROSS_BASE/usr \
 		--with-pdo-pgsql=shared,$XBPS_CROSS_BASE/usr \
@@ -134,15 +139,13 @@ do_build() {
 
 	EXTENSION_DIR="/usr/lib/php${_php_version}/modules"
 	export EXTENSION_DIR
-	PEAR_INSTALLDIR=/usr/share/pear${_php_version}
-	export PEAR_INSTALLDIR
 	EXTRA_LIBS="-ldl"
 	export EXTRA_LIBS
 
 	# cgi,cli,embed,fcgi,fpm
 	mkdir -p build
 	cd build
-	ln -s ${wrksrc}/configure
+	ln -sf ../configure .
 	./configure ${_phpconfig} \
 		--host=${XBPS_CROSS_TRIPLET} \
 		--enable-cgi \
@@ -163,6 +166,11 @@ do_build() {
 		--with-apxs2 \
 		${_phpextensions}
 	make ${makejobs} ${_make_env}
+}
+
+do_check() {
+	make ${makejobs} -C build test
+	make ${makejobs} -C build-apache test
 }
 
 do_install() {
@@ -241,27 +249,6 @@ php8.1-embed_package() {
 		cd ${wrksrc}/build
 		make INSTALL_ROOT=${PKGDESTDIR} PHP_SAPI=embed install-sapi
 		mv ${PKGDESTDIR}/usr/lib/libphp.so ${PKGDESTDIR}/usr/lib/libphp${_php_version}.so
-	}
-}
-
-php8.1-pear_package() {
-	lib32disabled=yes
-	depends="php${_php_version}>=${version}_${revision}
-	 php${_php_version}>=devel-${version}_${revision} autoconf"
-	short_desc+=' - PHP Extension and Application Repository'
-	conf_files="/etc/php${_php_version}/pear.conf"
-	pkg_install() {
-		cd ${wrksrc}/build
-		local _env="INSTALL_ROOT=${PKGDESTDIR} PHP_PEAR_PHP_BIN=php${_php_version}"
-		if [ -n "$CROSS_BUILD" ]; then
-			_env+=" PEAR_PHP=/usr/bin/php${_php_version}"
-		fi
-		make install-pear ${_env}
-		rm -rf ${PKGDESTDIR}/.{channels,depdb,depdblock,filemap,lock,registry}
-		rm -rf ${PKGDESTDIR}/usr/share/pear/.{channels,depdb,depdblock,filemap,lock,registry}
-		mv ${PKGDESTDIR}/usr/bin/pear{,${_php_version}}
-		mv ${PKGDESTDIR}/usr/bin/peardev{,${_php_version}}
-		mv ${PKGDESTDIR}/usr/bin/pecl{,${_php_version}}
 	}
 }
 
