@@ -1,0 +1,69 @@
+# Template file for 'python3-pypdfium2'
+pkgname=python3-pypdfium2
+version=5.4.0
+revision=1
+build_style=python3-pep517
+build_wrksrc="pypdfium2-${version}"
+hostmakedepends="python3-setuptools_scm python3-wheel python3-packaging tar pkg-config gcc"
+makedepends="python3-devel libpdfium-devel"
+depends="python3 libpdfium"
+checkdepends="python3-pytest python3-Pillow python3-numpy"
+short_desc="Python bindings to PDFium"
+maintainer="Mateusz Sylwestrzak <slymattz@gmail.com>"
+license="Apache-2.0 OR BSD-3-Clause OR CC-BY-4.0 OR LGPL-3.0-or-later OR MIT OR MPL-2.0"
+homepage="https://github.com/pypdfium2-team/pypdfium2"
+_ctypesgen_commit="b561360fad763b4a64e2d8ef8f7ddf354670dbb7" # use pypdfium2's own fork of ctypesgen
+distfiles="https://github.com/pypdfium2-team/pypdfium2/archive/refs/tags/${version}.tar.gz
+ https://github.com/pypdfium2-team/ctypesgen/archive/${_ctypesgen_commit}.tar.gz>ctypesgen-${_ctypesgen_commit}.tar.gz"
+checksum="a503409fcf14c748b9e848f07085f9512633e95ad958fc4b3bc4f155b06ff930
+ 5ae14b36da396d3bea23e41f615c12349697be63144fc840f29336e50ab94406"
+create_wrksrc=yes
+
+post_extract() {
+	mv "ctypesgen-${_ctypesgen_commit}" "ctypesgen_fork"
+}
+
+pre_build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION="${version}"
+	export PDFIUM_PLATFORM="sourcebuild"
+
+	_data_dir="data/sourcebuild"
+	mkdir -p "${_data_dir}"
+
+	_prefix="${XBPS_CROSS_BASE}/usr"
+	_header_dir="${_prefix}/include/pdfium"
+
+	_headers=$(find "${_header_dir}" -maxdepth 1 -name "*.h" | sort)
+
+	_pdfium_ver=$(pkg-config --modversion pdfium)
+
+	cat > "${_data_dir}/version.json" <<-EOF
+		{"major":0,"minor":0,"build":${_pdfium_ver},"patch":0,"origin":"sourcebuild","flags":[],"n_commits":0,"hash":"","is_reproducible":true}
+	EOF
+
+	PYTHONPATH="../ctypesgen_fork/src" python3 -m ctypesgen \
+		--library pdfium --no-srcinfo \
+		--headers ${_headers} \
+		--cpp "${CC} -E ${CFLAGS} ${CPPFLAGS}" \
+		-I "${_header_dir}" \
+		-I "${_prefix}/include" \
+		-I "$(${CC} -print-file-name=include)" \
+		-D "FPDF_EXPORT=" -D "FPDF_CALLCONV=" -D "__linux__" \
+		-o "${_data_dir}/bindings.py"
+
+	# Resolve the path to libpdfium.so.VER
+	local _real_path=$(readlink -f "${XBPS_CROSS_BASE}/usr/lib/libpdfium.so")
+	local _real_name="${_real_path##*/}"
+
+	# Runtime fix: ensure it loads the specific SO version
+	vsed -i "${_data_dir}/bindings.py" \
+		-e "s|name = 'pdfium'|name = '${_real_name}'|g"
+
+	vsed -i pyproject.toml \
+		-e '/ctypesgen/d'
+}
+
+post_install() {
+	vlicense LICENSES/BSD-3-Clause.txt
+	vlicense LICENSES/MIT.txt
+}

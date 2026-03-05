@@ -1,0 +1,164 @@
+# Template file for 'libpdfium'
+# Updating libpdfium might break ABI, so make sure all dependents get rebuilt (e.g. pypdfium2)
+pkgname=libpdfium
+version=7659
+revision=1
+_commit_pdfium="1c78362d2fd58803037befd37e5649fef3b3dcdc"
+_commit_build="967506e40f93df1d46f0ded7c12c0cd7a58f01f7"
+_commit_buildtools="6a18683f555b4ac8b05ac8395c29c84483ac9588"
+_release_fast_float="8.2.2"
+hostmakedepends="python3 ninja gn pkg-config tar"
+makedepends="libjpeg-turbo-devel icu-devel libopenjpeg2-devel freetype-devel
+ glib-devel abseil-cpp-devel lcms2-devel libpng-devel zlib-devel"
+short_desc="Google PDF rendering library"
+maintainer="Mateusz Sylwestrzak <slymattz@gmail.com>"
+license="Apache-2.0"
+homepage="https://pdfium.googlesource.com/pdfium"
+distfiles="
+ https://pdfium.googlesource.com/pdfium/+archive/${_commit_pdfium}.tar.gz>pdfium-${version}.tar.gz
+ https://chromium.googlesource.com/chromium/src/build/+archive/${_commit_build}.tar.gz>build-${version}.tar.gz
+ https://chromium.googlesource.com/chromium/src/buildtools/+archive/${_commit_buildtools}.tar.gz>buildtools-${version}.tar.gz
+ https://github.com/fastfloat/fast_float/archive/refs/tags/v${_release_fast_float}.tar.gz>fast_float.tar.gz"
+checksum="@a95045e880ba851d1601030c5d3ea7bab440984dbd0532b26e66216c8d573ef2
+ @c0b0c894d912ec777e87b7e3184bc34d5c9125965daf662a6eaba1ca65ea0b94
+ @93dc381113745090ab300e90acbbc6cc6b3d055b80f6020791f78ae3042f6dbb
+ e64b5fff88e04959154adbd5fb83331d91f2e04ac06454671cdfcbdff172b158"
+skip_extraction="build-${version}.tar.gz buildtools-${version}.tar.gz fast_float.tar.gz"
+
+post_extract() {
+	mkdir -p build buildtools third_party/fast_float/src \
+		third_party/icu third_party/abseil-cpp
+
+	local _dist="${XBPS_SRCDISTDIR}/${pkgname}-${version}"
+	tar -xf "${_dist}/build-${version}.tar.gz" -C build
+	tar -xf "${_dist}/buildtools-${version}.tar.gz" -C buildtools
+	tar -xf "${_dist}/fast_float.tar.gz" -C third_party/fast_float/src --strip-components=1
+
+	# Mock testing targets to satisfy internal dependencies
+	rm -f testing/BUILD.gn
+	for g in pdfium_test path_service embedder_test_support unit_test_support test_support pixel_diff_utils; do
+		echo "group(\"$g\") {}" >> testing/BUILD.gn
+	done
+
+	cat > build/config/gclient_args.gni <<-EOF
+		checkout_google_benchmark = false
+		checkout_nacl = false
+	EOF
+
+	cat > build_overrides/build.gni <<-EOF
+		build_with_chromium = false
+		use_system_libcxx = true
+	EOF
+
+	# System shim for ICU
+	cat > third_party/icu/BUILD.gn <<-EOF
+		import("//build/config/linux/pkg_config.gni")
+		pkg_config("icu_config") { packages = [ "icu-uc", "icu-i18n" ] }
+		group("icuuc") { public_configs = [ ":icu_config" ] }
+		group("icui18n") { public_configs = [ ":icu_config" ] }
+EOF
+
+	# System shim for Abseil
+	cat > third_party/abseil-cpp/BUILD.gn <<-EOF
+		import("//build/config/linux/pkg_config.gni")
+		pkg_config("absl_config") {
+			packages = [
+				"absl_base", "absl_int128", "absl_strings", "absl_hash",
+				"absl_synchronization", "absl_raw_hash_set",
+				"absl_low_level_hash", "absl_raw_logging_internal"
+			]
+		}
+		group("absl") { public_configs = [ ":absl_config" ] }
+EOF
+}
+
+post_patch() {
+	# Transform internal paths to system-wide include style
+	find core -type f \( -name "*.cpp" -o -name "*.h" \) -exec sed -i \
+		-e 's|#include "third_party/abseil-cpp/\(.*\)"|#include <\1>|g' \
+		-e 's|#include "third_party/icu/source/common/\(.*\)"|#include <\1>|g' \
+		-e 's|#include "third_party/icu/source/i18n/\(.*\)"|#include <\1>|g' {} +
+
+	# Strip ARM64-specific strictness that breaks build for this arch
+	vsed -i build/config/compiler/BUILD.gn \
+		-e 's/-Wl,--fatal-warnings/-Wl,--no-fatal-warnings/g'
+
+	# Map build-system toolchain to XBPS environment
+	vsed -i build/toolchain/linux/BUILD.gn \
+		-e '/toolprefix =/d' \
+		-e "s|cc = \".*gcc\"|cc = \"${CC}\"|g" \
+		-e "s|cxx = \".*g++\"|cxx = \"${CXX}\"|g" \
+		-e "s|ar = \".*ar\"|ar = \"${AR}\"|g" \
+		-e "s|nm = \".*nm\"|nm = \"${NM}\"|g" \
+		-e "s|readelf = \".*readelf\"|readelf = \"${READELF}\"|g"
+
+	vsed -i build/config/compiler/BUILD.gn \
+		-e '1i declare_args() { extra_cflags="" extra_cppflags="" extra_ldflags="" }'
+}
+
+do_configure() {
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*) _cpu=arm64 ;;
+		arm*)     _cpu=arm ;;
+		mips64*)  _cpu=mips64 ;;
+		mips*)    _cpu=mips ;;
+		ppc*)     _cpu=ppc ;;
+		i686*)    _cpu=x86 ;;
+		x86_64*)  _cpu=x64 ;;
+	esac
+
+	# Enforce global flags for all arches
+	local _extra_cflags="${CFLAGS} -Wno-free-nonheap-object"
+	local _extra_cppflags="${CXXFLAGS} -Wno-free-nonheap-object"
+	local _extra_ldflags="${LDFLAGS} -Wl,-soname,libpdfium.so.${version} -Wl,--no-fatal-warnings"
+
+	gn gen out/Release --args="
+ target_cpu=\"${_cpu}\" is_debug=false is_component_build=true
+ pdf_is_standalone=true pdf_enable_v8=false pdf_enable_xfa=false pdf_use_skia=false
+ use_custom_libcxx=false use_sysroot=false
+ is_clang=false treat_warnings_as_errors=false symbol_level=0
+ use_system_zlib=true
+ use_system_libpng=true
+ use_system_libjpeg=true
+ use_system_libopenjpeg2=true
+ use_system_lcms2=true
+ use_system_freetype=true
+ pdf_bundle_freetype=false
+ extra_cflags=\"${_extra_cflags}\"
+ extra_cppflags=\"${_extra_cppflags}\"
+ extra_ldflags=\"${_extra_ldflags}\""
+}
+
+do_build() {
+	ninja -C out/Release pdfium
+}
+
+do_install() {
+	vinstall out/Release/libpdfium.so 755 usr/lib libpdfium.so.${version}
+	ln -sf libpdfium.so.${version} ${DESTDIR}/usr/lib/libpdfium.so
+	vmkdir usr/include/pdfium
+	vcopy "public/*.h" usr/include/pdfium
+
+	vmkdir usr/lib/pkgconfig
+	cat > "${DESTDIR}/usr/lib/pkgconfig/pdfium.pc" <<-EOF
+		prefix=/usr
+		exec_prefix=\${prefix}
+		libdir=\${exec_prefix}/lib
+		includedir=\${prefix}/include/pdfium
+		Name: pdfium
+		Description: Google PDFium rendering library
+		Version: ${version}
+		Libs: -L\${libdir} -lpdfium
+		Cflags: -I\${includedir}
+EOF
+}
+
+libpdfium-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove "usr/lib/*.so"
+		vmove usr/include
+		vmove usr/lib/pkgconfig
+	}
+}
