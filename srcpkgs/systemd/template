@@ -1,6 +1,6 @@
 # Template file for 'systemd'
 pkgname=systemd
-version=259.3
+version=259.4
 revision=1
 build_helper="qemu"
 build_style=meson
@@ -8,10 +8,13 @@ build_style=meson
 # create log directories manually
 # https://github.com/systemd/systemd/blob/57ffa99daae30375ec72a4c998d9c5b74a1f9023/src/journal/meson.build#L186-L199
 configure_args="
+ -Dversion-tag=${version}_${revision}-void
+ -Dvcs-tag=false
+ -Dshared-lib-tag=${version}_${revision}
  -Dmode=release
  -Drpmmacrosdir=no
  -Dman=enabled
- -Dcreate-log-dirs=true
+ -Dcreate-log-dirs=false
 
  -Dlibc=${XBPS_TARGET_LIBC}
 
@@ -129,6 +132,9 @@ makedepends="
  $(vopt_if bpf libbpf-devel)
  $(vopt_if libarchive libarchive-devel)"
 checkdepends="python3-pefile acl-progs"
+
+# include recommended dlopen'ed dependencies
+# readelf -p .note.dlopen /usr/lib/systemd/libsystemd-shared-259.so
 depends="
  systemd-libudev
  systemd-analyze
@@ -148,14 +154,25 @@ depends="
  systemd-sysusers
  systemd-tmpfiles
  systemd-udev
- systemd-vconsole-setup"
+ systemd-vconsole-setup
+ $(vopt_if tpm2 tpm2-tss)
+ $(vopt_if acl acl)
+ $(vopt_if apparmor libapparmor)
+ $(vopt_if blkid libblkid)
+ $(vopt_if audit libaudit)
+ $(vopt_if kmod libkmod)
+ $(vopt_if seccomp libseccomp)
+ $(vopt_if pam pam-libs)
+ libmount
+ $(vopt_if zstd libzstd)
+ "
 short_desc="System and Service Manager"
 maintainer="Duncaen <duncaen@voidlinux.org>"
 license="LGPL-2.1-or-later, GPL-2.0-or-later, MIT"
 homepage="https://systemd.io/"
 changelog="https://github.com/systemd/systemd/raw/main/NEWS"
 distfiles="https://github.com/systemd/systemd/archive/refs/tags/v${version}.tar.gz"
-checksum=a1a1a52a63365a867b8ba71a4c66b513ff90eafe4935e6a079ffdfa29625980a
+checksum=3ea6c8bf43f12827d1ab9f39b23e1df5d960a715996ee09b920fdd1971bb73fd
 
 if [[ "$XBPS_TARGET_LIBC" == "glibc" ]]; then
 	makedepends+=" libxcrypt-devel"
@@ -170,8 +187,28 @@ conf_files="
  /etc/systemd/system.conf
  /etc/systemd/user.conf"
 
-# XXX: split usr/lib/sysusers.d/systemd-remote.conf and move each sysuser
-# to systemd-journal-remote and systemd-journal-upload.
+make_dirs="
+ /etc/credstore 0755 root root
+ /etc/credstore.encrypted 0755 root root
+ /etc/modules-load.d 0755 root root
+ /etc/profile.d 0755 root root
+ /etc/ssh/ssh_config.d 0755 root root
+ /etc/ssh/sshd_config.d 0755 root root
+ /etc/sysctl.d 0755 root root
+ /etc/systemd/system 0755 root root
+ /etc/systemd/user 0755 root root
+ /usr/lib/credstore 0755 root root
+ /usr/lib/environment.d 0755 root root
+ /usr/lib/modules-load.d 0755 root root
+ /usr/lib/systemd/system-environment-generator 0755 root root
+ /usr/lib/systemd/system-generators 0755 root root
+ /usr/lib/systemd/system-shutdown 0755 root root
+ /usr/lib/systemd/system-sleep 0755 root root
+ /usr/lib/systemd/user-environment-generators 0755 root root
+ /usr/lib/systemd/user-generators 0755 root root
+ /usr/libexec/varlink-bridges 0755 root root
+ /usr/share/dbus-1/services 0755 root root
+ /var/log/journal 0755 root root"
 
 build_options="
  efi
@@ -323,6 +360,8 @@ systemd-coredump_package() {
 systemd-networkd_package() {
 	short_desc+=" - Network manager"
 	conf_files="/etc/systemd/networkd.conf"
+	make_dirs="
+	 /etc/systemd/network 0755 root root"
 	pkg_install() {
 		vmove "usr/lib/systemd/network/*.network"
 		vmove "usr/lib/systemd/system/systemd-networkd*"
@@ -522,8 +561,13 @@ systemd-machined_package() {
 	short_desc+=" - Virtual machine and container registration manager"
 	pkg_install() {
 		vmove usr/lib/systemd/system/dbus-org.freedesktop.machine1.service
+		vmove usr/lib/systemd/system/sockets.target.wants/systemd-machined.socket
 		vmove usr/lib/systemd/system/systemd-machined.service
+		vmove usr/lib/systemd/system/systemd-machined.socket
 		vmove usr/lib/systemd/systemd-machined
+		vmove usr/lib/systemd/user/sockets.target.wants/systemd-machined.socket
+		vmove usr/lib/systemd/user/systemd-machined.service
+		vmove usr/lib/systemd/user/systemd-machined.socket
 		vmove usr/share/dbus-1/interfaces/org.freedesktop.machine1.Image.xml
 		vmove usr/share/dbus-1/interfaces/org.freedesktop.machine1.Machine.xml
 		vmove usr/share/dbus-1/interfaces/org.freedesktop.machine1.Manager.xml
@@ -533,9 +577,6 @@ systemd-machined_package() {
 		vmove usr/share/man/man8/systemd-machined.8
 		vmove usr/share/man/man8/systemd-machined.service.8
 		vmove usr/share/polkit-1/actions/org.freedesktop.machine1.policy
-		vmove usr/lib/systemd/user/systemd-machined.service
-		vmove usr/lib/systemd/user/systemd-machined.socket
-		vmove usr/lib/systemd/user/sockets.target.wants/systemd-machined.socket
 	}
 }
 
@@ -587,6 +628,8 @@ systemd-homed_package() {
 
 systemd-hwdb_package() {
 	short_desc+=" - Hardware database support"
+	make_dirs="
+	 /etc/udev/hwdb.d 0755 root root"
 	pkg_install() {
 		vmove "usr/lib/udev/hwdb.d/*"
 		vmove usr/bin/systemd-hwdb
@@ -611,6 +654,9 @@ systemd-sysusers_package() {
 
 systemd-tmpfiles_package() {
 	short_desc+=" - Creates, deletes and cleans up tmp-files and directories"
+	make_dirs="
+	 /etc/tmpfiles.d 0755 root root
+	 /etc/user-tmpfiles.d 0755 root root"
 	pkg_install() {
 		vmove usr/bin/systemd-tmpfiles
 		vmove usr/lib/systemd/system/sysinit.target.wants/systemd-tmpfiles-setup-dev.service
@@ -695,6 +741,9 @@ systemd-sysvcompat_package() {
 
 libsystemd_package() {
 	short_desc+=" - library"
+	# readelf -p .note.dlopen /usr/lib/libsystemd.so.0
+	depends="
+	 $(vopt_if zstd zstd)"
 	license="LGPL-2.1-or-later"
 	pkg_install() {
 		vmove "usr/lib/libsystemd.so.*"
@@ -723,6 +772,8 @@ systemd-udev_package() {
 	conf_files="
 	 /etc/udev/iocost.conf
 	 /etc/udev/udev.conf"
+	make_dirs="
+	 /etc/udev/rules.d 0755 root root"
 	provides="eudev-${version}_${revision}"
 	replaces="eudev>=0"
 	pkg_install() {
@@ -807,7 +858,9 @@ systemd-analyze_package() {
 systemd-kernel-install_package() {
 	depends="systemd>=${version}_${revision}"
 	short_desc+=" - Add and remove kernel and initrd images"
-	make_dirs="/etc/kernel 750 root root"
+	make_dirs="
+	 /etc/kernel 750 root root
+	 /etc/kernel/install.d 0755 root root"
 	pkg_install() {
 		vmove usr/bin/kernel-install
 		vmove usr/lib/kernel/install.conf
@@ -823,6 +876,9 @@ systemd-kernel-install_package() {
 systemd-binfmt_package() {
 	depends="systemd>=${version}_${revision}"
 	short_desc+=" - Configure additional binary formats"
+	make_dirs="
+	 /etc/binfmt.d 0755 root root
+	 /usr/lib/binfmt.d 0755 root root"
 	pkg_install() {
 		vmove usr/lib/systemd/system/proc-sys-fs-binfmt_misc.automount
 		vmove usr/lib/systemd/system/proc-sys-fs-binfmt_misc.mount
@@ -870,11 +926,13 @@ systemd-journal-remote_package() {
 	depends="systemd>=${version}_${revision}"
 	short_desc+=" - Receive journal messages over the network"
 	conf_files="/etc/systemd/journal-remote.conf"
+	make_dirs="/var/log/journal/remote 0755 root root"
 	pkg_install() {
 		vmove etc/systemd/journal-remote.conf
 		vmove usr/lib/systemd/system/systemd-journal-remote.service
 		vmove usr/lib/systemd/system/systemd-journal-remote.socket
 		vmove usr/lib/systemd/systemd-journal-remote
+		vmove usr/lib/sysusers.d/systemd-remote.conf
 		vmove usr/share/man/man5/journal-remote.conf.5
 		vmove usr/share/man/man5/journal-remote.conf.d.5
 		vmove usr/share/man/man8/systemd-journal-remote.8
