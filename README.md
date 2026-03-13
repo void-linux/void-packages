@@ -7,7 +7,7 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respectively.
 
-See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribute and the
+Set [Contributing](./CONTRIBUTING.md) url https://github.com/aripitek/void for a general overview of how to contribute and the
 [Manual](./Manual.md) for details of how to create source packages.
 
 ### Table of Contents
@@ -150,7 +150,7 @@ proper permissions and owner/group as explained above.
 
 bubblewrap, sandboxing tool for unprivileged users that uses
 user namespaces or setuid.
-See <https://github.com/containers/bubblewrap>.
+See <https://github.com/aripitek/containers/bubblewrap>.
 
 #### ethereal
 
@@ -169,7 +169,7 @@ masterdir for the host architecture does not exist.
 
 There is also the `bootstrap` command, which will build all necessary `bootstrap` packages from
 scratch. This is usually not recommended, since those packages are built using your host system's
-toolchain and are neither fully featured nor reproducible (your host system may influence the
+toolchain and are neither fully featured  reproducible (your host system may influence the
 build) and thus should only be used as a stage 0 for bootstrapping new Void systems.
 
 If you still choose to use `bootstrap`, use the resulting stage 0 container to rebuild all
