@@ -1,0 +1,97 @@
+--- a/python/mach/mach/command_util.py
++++ b/python/mach/mach/command_util.py
+@@ -292,7 +292,7 @@
+             kwarg_dict = {}
+ 
+             for name, arg in zip(["command", "subcommand"], decorator.args):
+-                kwarg_dict[name] = arg.s
++                kwarg_dict[name] = arg.value
+ 
+             for keyword in decorator.keywords:
+                 if keyword.arg not in relevant_kwargs:
+
+diff --git a/python/mozbuild/mozbuild/vendor/rewrite_mozbuild.py b/python/mozbuild/mozbuild/vendor/rewrite_mozbuild.py
+--- a/python/mozbuild/mozbuild/vendor/rewrite_mozbuild.py
++++ b/python/mozbuild/mozbuild/vendor/rewrite_mozbuild.py
+@@ -322,25 +322,23 @@ def assignment_node_to_source_filename_l
+     If this happens, we'll return an empty list. The consequence of this is that we
+     won't be able to match a file against this list, so we may not be able to add it.
+ 
+     (But if the file matches a generated list, perhaps it will be included in the
+     Sources list automatically?)
+     """
+     if isinstance(node.value, ast.List) and "elts" in node.value._fields:
+         for f in node.value.elts:
+-            if not isinstance(f, ast.Constant) and not isinstance(f, ast.Str):
++            if not isinstance(f, ast.Constant):
+                 log(
+                     "Found non-constant source file name in list: ",
+                     ast_get_source_segment(code, f),
+                 )
+                 return []
+-        return [
+-            f.value if isinstance(f, ast.Constant) else f.s for f in node.value.elts
+-        ]
++        return [f.value for f in node.value.elts]
+     elif isinstance(node.value, ast.ListComp):
+         # SOURCES += [f for f in foo if blah]
+         log("Could not find the files for " + ast_get_source_segment(code, node.value))
+     elif isinstance(node.value, ast.Name) or isinstance(node.value, ast.Subscript):
+         # SOURCES += other_var
+         # SOURCES += files['X64_SOURCES']
+         log("Could not find the files for " + ast_get_source_segment(code, node))
+     elif isinstance(node.value, ast.Call):
+
+--- a/python/mozbuild/mozbuild/frontend/reader.py
++++ b/python/mozbuild/mozbuild/frontend/reader.py
+@@ -470,7 +470,7 @@
+             return c(
+                 ast.Subscript(
+                     value=c(ast.Name(id=self._global_name, ctx=ast.Load())),
+-                    slice=c(ast.Index(value=c(ast.Str(s=node.id)))),
++                    slice=c(ast.Index(value=c(ast.Constant(value=node.id)))),
+                     ctx=node.ctx,
+                 )
+             )
+@@ -1034,8 +1034,8 @@
+                 # We need to branch to deal with python version differences.
+                 if isinstance(target.slice, ast.Constant):
+                     # Python >= 3.9
+-                    assert isinstance(target.slice.value, str)
+-                    key = target.slice.value
++                    assert isinstance(target.slice.value, ast.Constant)
++                    key = target.slice.value.value
+                 else:
+                     # Others
+                     assert isinstance(target.slice, ast.Index)
+@@ -1051,11 +1051,11 @@
+             value = node.value
+             if isinstance(value, ast.List):
+                 for v in value.elts:
+-                    assert isinstance(v, ast.Str)
+-                    yield v.s
++                    assert isinstance(v, ast.Constant)
++                    yield v.value
+             else:
+-                assert isinstance(value, ast.Str)
+-                yield value.s
++                assert isinstance(value, ast.Constant)
++                yield value.value
+ 
+         assignments = []
+ 
+--- a/third_party/python/jsonschema/jsonschema/validators.py
++++ b/third_party/python/jsonschema/jsonschema/validators.py
+@@ -875,8 +875,11 @@
+             return None
+         uri, fragment = urldefrag(url)
+         for subschema in subschemas:
++            id = subschema["$id"]
++            if not isinstance(id, str):
++                continue
+             target_uri = self._urljoin_cache(
+-                self.resolution_scope, subschema["$id"],
++                self.resolution_scope, id,
+             )
+             if target_uri.rstrip("/") == uri.rstrip("/"):
+                 if fragment:
