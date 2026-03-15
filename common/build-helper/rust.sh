@@ -93,3 +93,7 @@ exec /usr/bin/cargo auditable "$@"
 _EOF
 
 chmod 755 ${XBPS_WRAPPERDIR}/cargo
+
+if [ -n "$XBPS_SCCACHE" ]; then
+	export RUSTC_WRAPPER="/usr/bin/sccache"
+fi
