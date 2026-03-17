@@ -1,0 +1,322 @@
+From e65cb388e5da56d1236607e0db9cadf89e50eded Mon Sep 17 00:00:00 2001
+From: Lukasz Anforowicz <lukasza@chromium.org>
+Date: Tue, 15 Apr 2025 11:10:19 -0700
+Subject: [PATCH] [rust] Clean up `//build/rust/allocator` after a Rust
+ toolchain roll.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This CL makes minor tweaks and changes under `//build/rust/allocator`:
+
+* Thanks to the Rust toolchain roll, we no longer need to keep two
+  implementations, picking between them using the
+  `mangle_alloc_error_handler` configuration knob.
+* The `#[cfg(use_cpp_allocator_impls)]` vs
+  `#[cfg(not(use_cpp_allocator_impls))]` choices have been deduplicated
+  by putting the related/conditional stuff under `mod cpp_allocator` and
+  `rust_allocator`.
+* Closes a minor gap missed in https://crrev.com/c/6432410:
+    - Moving `DEPS` file to the new source location
+
+Bug: 408221149
+Change-Id: Id541797e03da113a5271b02a5f60eb2be08254a9
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/6454872
+Reviewed-by: Alan Zhao <ayzhao@google.com>
+Commit-Queue: Łukasz Anforowicz <lukasza@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#1447241}
+---
+ build/rust/allocator/BUILD.gn           |  11 +-
+ build/rust/{std => allocator}/DEPS      |   2 +-
+ build/rust/allocator/allocator_impls.cc |  65 ++----------
+ build/rust/allocator/allocator_impls.h  |   2 +
+ build/rust/allocator/lib.rs             | 132 +++++++++++++++---------
+ 5 files changed, 97 insertions(+), 115 deletions(-)
+ rename build/rust/{std => allocator}/DEPS (76%)
+
+diff --git a/build/rust/std/DEPS b/build/rust/allocator/DEPS
+similarity index 76%
+rename from build/rust/std/DEPS
+rename to build/rust/allocator/DEPS
+index eb524c0a06acd..923a2e07c80f4 100644
+--- a/build/rust/std/DEPS
++++ b/build/rust/allocator/DEPS
+@@ -3,7 +3,7 @@ include_rules = [
+ ]
+ 
+ specific_include_rules = {
+-  "remap_alloc.cc" : [
++  "allocator_impls.cc" : [
+     "+partition_alloc"
+   ]
+ }
+diff --git a/build/rust/allocator/allocator_impls.cc b/build/rust/allocator/allocator_impls.cc
+index bf3c2a301adf5..8887752f3dfad 100644
+--- a/build/rust/allocator/allocator_impls.cc
++++ b/build/rust/allocator/allocator_impls.cc
+@@ -24,62 +24,6 @@
+ #include <cstdlib>
+ #endif
+ 
+-// NOTE: this documentation is outdated.
+-//
+-// TODO(crbug.com/408221149): update this documentation, or replace it with docs
+-// in the Rust allocator implementation.
+-//
+-// When linking a final binary, rustc has to pick between either:
+-// * The default Rust allocator
+-// * Any #[global_allocator] defined in *any rlib in its dependency tree*
+-//   (https://doc.rust-lang.org/edition-guide/rust-2018/platform-and-target-support/global-allocators.html)
+-//
+-// In this latter case, this fact will be recorded in some of the metadata
+-// within the .rlib file. (An .rlib file is just a .a file, but does have
+-// additional metadata for use by rustc. This is, as far as I know, the only
+-// such metadata we would ideally care about.)
+-//
+-// In all the linked rlibs,
+-// * If 0 crates define a #[global_allocator], rustc uses its default allocator
+-// * If 1 crate defines a #[global_allocator], rustc uses that
+-// * If >1 crates define a #[global_allocator], rustc bombs out.
+-//
+-// Because rustc does these checks, it doesn't just have the __rust_alloc
+-// symbols defined anywhere (neither in the stdlib nor in any of these
+-// crates which have a #[global_allocator] defined.)
+-//
+-// Instead:
+-// Rust's final linking stage invokes dynamic LLVM codegen to create symbols
+-// for the basic heap allocation operations. It literally creates a
+-// __rust_alloc symbol at link time. Unless any crate has specified a
+-// #[global_allocator], it simply calls from __rust_alloc into
+-// __rdl_alloc, which is the default Rust allocator. The same applies to a
+-// few other symbols.
+-//
+-// We're not (always) using rustc for final linking. For cases where we're not
+-// Rustc as the final linker, we'll define those symbols here instead. This
+-// allows us to redirect allocation to PartitionAlloc if clang is doing the
+-// link.
+-//
+-// We use unchecked allocation paths in PartitionAlloc rather than going through
+-// its shims in `malloc()` etc so that we can support fallible allocation paths
+-// such as Vec::try_reserve without crashing on allocation failure.
+-//
+-// In future, we should build a crate with a #[global_allocator] and
+-// redirect these symbols back to Rust in order to use to that crate instead.
+-// This would allow Rust-linked executables to:
+-// 1. Use PartitionAlloc on Windows. The stdlib uses Windows heap functions
+-//    directly that PartitionAlloc can not intercept.
+-// 2. Have `Vec::try_reserve` to fail at runtime on Linux instead of crashing in
+-//    malloc() where PartitionAlloc replaces that function.
+-//
+-// They're weak symbols, because this file will sometimes end up in targets
+-// which are linked by rustc, and thus we would otherwise get duplicate
+-// definitions. The following definitions will therefore only end up being
+-// used in targets which are linked by our C++ toolchain.
+-//
+-// # On Windows ASAN
+-//
+ // In ASAN builds, PartitionAlloc-Everywhere is disabled, meaning malloc() and
+ // friends in C++ do not go to PartitionAlloc. So we also don't point the Rust
+ // allocation functions at PartitionAlloc. Generally, this means we just direct
+@@ -93,7 +37,6 @@
+ // Note that there is a runtime option to make ASAN hook HeapAlloc() but
+ // enabling it breaks Win32 APIs like CreateProcess:
+ // https://issues.chromium.org/u/1/issues/368070343#comment29
+-
+ #if !BUILDFLAG(RUST_ALLOCATOR_USES_PARTITION_ALLOC) && BUILDFLAG(IS_WIN) && \
+     defined(ADDRESS_SANITIZER)
+ #define USE_WIN_ALIGNED_MALLOC 1
+@@ -110,6 +53,10 @@ unsigned char* alloc(size_t size, size_t align) {
+     return nullptr;
+   }
+ 
++  // We use unchecked allocation paths in PartitionAlloc rather than going
++  // through its shims in `malloc()` etc so that we can support fallible
++  // allocation paths such as Vec::try_reserve without crashing on allocation
++  // failure.
+   if (align <= alignof(std::max_align_t)) {
+     return static_cast<unsigned char*>(allocator_shim::UncheckedAlloc(size));
+   } else {
+@@ -144,6 +91,10 @@ unsigned char* realloc(unsigned char* p,
+                        size_t align,
+                        size_t new_size) {
+ #if BUILDFLAG(RUST_ALLOCATOR_USES_PARTITION_ALLOC)
++  // We use unchecked allocation paths in PartitionAlloc rather than going
++  // through its shims in `malloc()` etc so that we can support fallible
++  // allocation paths such as Vec::try_reserve without crashing on allocation
++  // failure.
+   if (align <= alignof(std::max_align_t)) {
+     return static_cast<unsigned char*>(
+         allocator_shim::UncheckedRealloc(p, new_size));
+diff --git a/build/rust/allocator/allocator_impls.h b/build/rust/allocator/allocator_impls.h
+index e90ab7cd422c1..e562a877d886e 100644
+--- a/build/rust/allocator/allocator_impls.h
++++ b/build/rust/allocator/allocator_impls.h
+@@ -10,6 +10,8 @@
+ #include "build/build_config.h"
+ #include "build/rust/allocator/buildflags.h"
+ 
++// This header exposes PartitionAlloc to Rust
++// (most APIs below are called from `impl GlobalAlloc` in `lib.rs`).
+ namespace rust_allocator_internal {
+ 
+ unsigned char* alloc(size_t size, size_t align);
+diff --git a/build/rust/allocator/lib.rs b/build/rust/allocator/lib.rs
+index 4e2dad3d542a8..a4f898f9b107f 100644
+--- a/build/rust/allocator/lib.rs
++++ b/build/rust/allocator/lib.rs
+@@ -5,72 +5,106 @@
+ //! Define the allocator that Rust code in Chrome should use.
+ //!
+ //! Any final artifact that depends on this crate, even transitively, will use
+-//! the allocator defined here. Currently this is a thin wrapper around
+-//! allocator_impls.cc's functions; see the documentation there.
++//! the allocator defined here.
++//!
++//! List of known issues:
++//!
++//! 1. We'd like to use PartitionAlloc on Windows, but the stdlib uses Windows
++//!    heap functions directly that PartitionAlloc can not intercept.
++//! 2. We'd like `Vec::try_reserve` to fail at runtime on Linux instead of
++//!    crashing in malloc() where PartitionAlloc replaces that function.
+ 
+ // Required to apply weak linkage to symbols.
++//
++// TODO(https://crbug.com/410596442): Stop using unstable features here.
++// https://github.com/rust-lang/rust/issues/29603 tracks stabilization of the `linkage` feature.
+ #![feature(linkage)]
+ // Required to apply `#[rustc_std_internal_symbol]` to our alloc error handler
+ // so the name is correctly mangled as rustc expects.
+-#![cfg_attr(mangle_alloc_error_handler, allow(internal_features))]
+-#![cfg_attr(mangle_alloc_error_handler, feature(rustc_attrs))]
++//
++// TODO(https://crbug.com/410596442): Stop using internal features here.
++#![allow(internal_features)]
++#![feature(rustc_attrs)]
+ 
++/// Module that provides `#[global_allocator]` / `GlobalAlloc` interface for
++/// using an allocator from C++.
+ #[cfg(use_cpp_allocator_impls)]
+-use std::alloc::{GlobalAlloc, Layout};
++mod cpp_allocator {
++    use super::ffi;
++    use std::alloc::{GlobalAlloc, Layout};
+ 
+-#[cfg(use_cpp_allocator_impls)]
+-struct Allocator;
++    struct Allocator;
+ 
+-#[cfg(use_cpp_allocator_impls)]
+-unsafe impl GlobalAlloc for Allocator {
+-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+-        unsafe { ffi::alloc(layout.size(), layout.align()) }
+-    }
++    unsafe impl GlobalAlloc for Allocator {
++        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++            unsafe { ffi::alloc(layout.size(), layout.align()) }
++        }
+ 
+-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+-        unsafe {
+-            ffi::dealloc(ptr, layout.size(), layout.align());
++        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
++            unsafe {
++                ffi::dealloc(ptr, layout.size(), layout.align());
++            }
+         }
+-    }
+ 
+-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+-        unsafe { ffi::alloc_zeroed(layout.size(), layout.align()) }
+-    }
++        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
++            unsafe { ffi::alloc_zeroed(layout.size(), layout.align()) }
++        }
+ 
+-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+-        unsafe { ffi::realloc(ptr, layout.size(), layout.align(), new_size) }
++        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
++            unsafe { ffi::realloc(ptr, layout.size(), layout.align(), new_size) }
++        }
+     }
+-}
+ 
+-#[cfg(use_cpp_allocator_impls)]
+-#[global_allocator]
+-static GLOBAL: Allocator = Allocator;
++    #[global_allocator]
++    static GLOBAL: Allocator = Allocator;
++}
+ 
++/// Module that provides `#[global_allocator]` / `GlobalAlloc` interface for
++/// using the default Rust allocator.
+ #[cfg(not(use_cpp_allocator_impls))]
+-#[global_allocator]
+-static GLOBAL: std::alloc::System = std::alloc::System;
+-
+-// As part of rustc's contract for using `#[global_allocator]` without
+-// rustc-generated shims we must define this symbol, since we are opting in to
+-// unstable functionality. See https://github.com/rust-lang/rust/issues/123015
+-#[no_mangle]
+-#[linkage = "weak"]
+-static __rust_no_alloc_shim_is_unstable: u8 = 0;
+-
+-// Mangle the symbol name as rustc expects.
+-#[cfg_attr(mangle_alloc_error_handler, rustc_std_internal_symbol)]
+-#[cfg_attr(not(mangle_alloc_error_handler), no_mangle)]
+-#[allow(non_upper_case_globals)]
+-#[linkage = "weak"]
+-static __rust_alloc_error_handler_should_panic: u8 = 0;
+-
+-// Mangle the symbol name as rustc expects.
+-#[cfg_attr(mangle_alloc_error_handler, rustc_std_internal_symbol)]
+-#[cfg_attr(not(mangle_alloc_error_handler), no_mangle)]
+-#[allow(non_upper_case_globals)]
+-#[linkage = "weak"]
+-fn __rust_alloc_error_handler(_size: usize, _align: usize) {
+-    unsafe { ffi::crash_immediately() }
++mod rust_allocator {
++    #[global_allocator]
++    static GLOBAL: std::alloc::System = std::alloc::System;
++}
++
++/// Module that provides global symbols that are needed both by `cpp_allocator`
++/// and `rust_allocator`.
++///
++/// When `rustc` drives linking, then it will define the symbols below.  But
++/// Chromium only uses `rustc` to link Rust-only executables (e.g. `build.rs`
++/// scripts) and otherwise uses a non-Rust linker.  This is why we have to
++/// manually define a few symbols below.  We define those symbols
++/// as "weak" symbols, so that Rust-provided symbols "win" in case where Rust
++/// actually does drive the linking.  This hack works (not only for Chromium,
++/// but also for google3 and other projects), but isn't officially supported by
++/// `rustc`.
++///
++/// TODO(https://crbug.com/410596442): Stop using internal features here.
++mod both_allocators {
++    use super::ffi;
++
++    /// As part of rustc's contract for using `#[global_allocator]` without
++    /// rustc-generated shims we must define this symbol, since we are opting in
++    /// to unstable functionality. See https://github.com/rust-lang/rust/issues/123015
++    #[no_mangle]
++    #[linkage = "weak"]
++    static __rust_no_alloc_shim_is_unstable: u8 = 0;
++
++    // Mangle the symbol name as rustc expects.
++    #[rustc_std_internal_symbol]
++    #[allow(non_upper_case_globals)]
++    #[linkage = "weak"]
++    static __rust_alloc_error_handler_should_panic: u8 = 0;
++
++    // Mangle the symbol name as rustc expects.
++    #[rustc_std_internal_symbol]
++    #[allow(non_upper_case_globals)]
++    #[linkage = "weak"]
++    fn __rust_alloc_error_handler(_size: usize, _align: usize) {
++        // TODO(lukasza): Investigate if we can just call `std::process::abort()` here.
++        // (Not really _needed_, but it could simplify code a little bit.)
++        unsafe { ffi::crash_immediately() }
++    }
+ }
+ 
+ // TODO(crbug.com/408221149): conditionally include the FFI glue based on

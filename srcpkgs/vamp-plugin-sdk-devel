@@ -1,0 +1,1 @@
+vamp-plugin-sdk

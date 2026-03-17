@@ -1,0 +1,144 @@
+#!/bin/sh
+#
+# DKMS trigger. Used to add/build/install or remove the specified modules
+# from all kernels.
+#
+# Modules can be specified like:
+#  dkms_modules="<modulename> <version> ..."
+#
+# Arguments:	$ACTION = [run/targets]
+#		$TARGET = [post-install/pre-remove]
+#		$PKGNAME
+#		$VERSION
+#		$UPDATE = [yes/no]
+#
+ACTION="$1"
+TARGET="$2"
+PKGNAME="$3"
+VERSION="$4"
+UPDATE="$5"
+
+remove_modules() {
+	# Remove the specified modules from all kernels.
+	set -- ${dkms_modules}
+	while [ $# -gt 0 ]; do
+		$DKMS status -m "$1" | while read -r line; do
+			IFS=" ,:/" read -r modname modver kver arch status _ <<-EOF
+			$line
+			EOF
+			if [ "${line#*: }" = added ]; then
+				# The module wasn't built successfully for any kernel version
+				printf %s "Cleaning up DKMS module '$modname-$modver'... "
+				$DKMS remove -m "$modname" -v "$modver" >/dev/null 2>&1
+			elif [ "$status" = installed ] || [ "$status" = built ]; then
+				printf %s "Removing DKMS module '$modname-$modver' for kernel-$kver... "
+				$DKMS remove -m "$modname" -v "$modver" -k "$kver" >/dev/null 2>&1
+			else
+				# Invalid output
+				continue
+			fi
+			if [ $? -eq 0 ]; then
+				echo "done."
+			else
+				echo "FAILED!"
+			fi
+		done
+		shift 2
+	done
+}
+
+add_modules() {
+	local rval=
+
+	[ -r /etc/default/dkms ] && . /etc/default/dkms
+	: "${DKMS_JOBS:=$(nproc)}"
+
+	# Add/build and install the specified modules for all kernels.
+	set -- ${dkms_modules}
+	while [ $# -gt 0 ]; do
+		$DKMS add -m "$1" -v "$2" >/dev/null 2>&1
+		rval=$?
+		if [ $rval -eq 0 ]; then
+			echo "Added DKMS module '$1-$2'."
+		elif [ $rval -eq 3 ]; then
+			echo "DKMS module '$1-$2' already added, skipping."
+		else
+			echo "Failed to add DKMS module: '$1-$2'..."
+			err=1
+		fi
+		shift 2
+	done
+	[ -n "$err" ] && exit $err
+
+	for f in $(echo lib/modules/*); do
+		_kver=$(basename $f)
+		if [ ! -e "${f}/build/include" ]; then
+			echo "Skipping kernel-${_kver}. kernel-headers package not installed..."
+			continue
+		fi
+		if [ ! -f ${f}/build/scripts/basic/fixdep ] || [ ! -f ${f}/build/scripts/mod/modpost ] ; then
+			echo -n "Prepare to build modules for kernel-${_kver}... "
+			yes "" | make -j "$DKMS_JOBS" -C ${f}/build prepare0 > ${f}/build/make.log 2>&1
+			if [ $? -eq 0 ]; then
+				echo "done."
+			else
+				echo "FAILED!"
+				echo "Kernel scripts failed to build, please check /${f}/build/make.log"
+				echo "for errors in the log file."
+			fi
+		fi
+		set -- ${dkms_modules}
+		while [ $# -gt 0 ]; do
+			echo -n "Building DKMS module '$1-$2' for kernel-${_kver}... "
+			$DKMS build -j "${DKMS_JOBS}" -q -m "$1" -v "$2" -k "${_kver}" >/dev/null 2>&1
+			if [ $? -eq 0 ]; then
+				echo "done."
+			else
+				echo "FAILED!"
+				echo "DKMS module '$1-$2' failed to build, please check /var/lib/dkms"
+				echo "for errors in the log file."
+				shift 2; continue
+			fi
+			echo -n "Installing DKMS module '$1-$2' for kernel-${_kver}... "
+			$DKMS install --force -j "${DKMS_JOBS}" -q -m "$1" -v "$2" -k "${_kver}" >/dev/null 2>&1
+			if [ $? -eq 0 ]; then
+				echo "done."
+			else
+				echo "FAILED!"
+				echo "DKMS module '$1-$2' failed to install, please do this manually"
+				echo "and check for errors in the log file."
+			fi
+			shift 2
+		done
+	done
+}
+
+case "$ACTION" in
+targets)
+	echo "post-install pre-remove"
+	;;
+run)
+	[ -z "${dkms_modules}" ] && exit 0
+
+	DKMS=usr/bin/dkms
+	[ -x "${DKMS}" ] || exit 0
+
+	case "$TARGET" in
+	post-install)
+		export IGNORE_CC_MISMATCH=1
+		add_modules
+		;;
+	pre-remove)
+		remove_modules
+		;;
+	*)
+		exit 1
+		;;
+	esac
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

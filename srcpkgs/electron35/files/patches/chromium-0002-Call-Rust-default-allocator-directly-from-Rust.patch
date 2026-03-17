@@ -1,0 +1,319 @@
+From 5032162442c5f2f3093cd7646f3a06f826d7f7a8 Mon Sep 17 00:00:00 2001
+From: Collin Baker <collinbaker@chromium.org>
+Date: Mon, 7 Apr 2025 12:48:17 -0700
+Subject: [PATCH] Call Rust default allocator directly from Rust
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The Chromium `#[global_allocator] crate forwarded calls to the C++
+implementation, which in turn called into the Rust standard library
+implementations in some build configurations.
+
+This Rust -> C++ -> Rust round trip is unnecessary, and the references
+to these symbols is blocking a toolchain update: upstream, these
+symbol names are now mangled.
+
+Instead, use Rust conditional compilation to choose between the
+Chromium and the libstd-provided allocators.
+
+Additionally, the remaining internal symbols defined in C++ are moved
+to Rust.
+
+Bug: 408221149, 407024458
+Change-Id: I78f8c90d51a36a73099aa7d333091d7b8aded3c0
+
+Cq-Include-Trybots: luci.chromium.try:android-rust-arm32-rel,android-rust-arm64-dbg,android-rust-arm64-rel,linux-rust-x64-dbg,linux-rust-x64-rel,mac-rust-x64-dbg,win-rust-x64-dbg,win-rust-x64-rel
+Change-Id: I78f8c90d51a36a73099aa7d333091d7b8aded3c0
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/6434355
+Reviewed-by: Łukasz Anforowicz <lukasza@chromium.org>
+Commit-Queue: Collin Baker <collinbaker@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#1443703}
+---
+ build/rust/allocator/BUILD.gn                 | 54 +++++++------------
+ build/rust/allocator/allocator_impls.cc       | 28 +++++-----
+ build/rust/allocator/allocator_impls.h        |  2 +
+ .../allocator/allocator_shim_definitions.cc   | 30 -----------
+ build/rust/allocator/lib.rs                   | 38 +++++++++++++
+ 5 files changed, 73 insertions(+), 79 deletions(-)
+ delete mode 100644 build/rust/allocator/allocator_shim_definitions.cc
+
+diff --git a/build/rust/allocator/BUILD.gn b/build/rust/allocator/BUILD.gn
+index 06aa47f097c9c..f09314afc8158 100644
+--- a/build/rust/allocator/BUILD.gn
++++ b/build/rust/allocator/BUILD.gn
+@@ -12,6 +12,9 @@ if (build_with_chromium) {
+   rust_allocator_uses_partition_alloc = use_partition_alloc_as_malloc
+ }
+ 
++use_cpp_allocator_impls =
++    rust_allocator_uses_partition_alloc || (is_win && is_asan)
++
+ buildflag_header("buildflags") {
+   header = "buildflags.h"
+   flags = [
+@@ -30,61 +33,44 @@ if (toolchain_has_rust) {
+     crate_root = "lib.rs"
+     cxx_bindings = [ "lib.rs" ]
+ 
+-    deps = [
+-      ":allocator_impls",
+-      ":allocator_shim_definitions",
+-    ]
++    deps = [ ":allocator_impls" ]
+ 
+     no_chromium_prelude = true
+     no_allocator_crate = true
+     allow_unsafe = true
++
++    if (use_cpp_allocator_impls) {
++      rustflags = [
++        "--cfg",
++        "use_cpp_allocator_impls",
++      ]
++    }
++
++    configs -= [ "//build/config/compiler:disallow_unstable_features" ]
+   }
+ 
++  # TODO(crbug.com/408221149): don't build this when `use_cpp_allocator_impls`
++  # is false.
+   static_library("allocator_impls") {
+     public_deps = []
+     if (rust_allocator_uses_partition_alloc) {
+       public_deps += [ "//base/allocator/partition_allocator:partition_alloc" ]
+     }
+ 
+-    sources = [
+-      "allocator_impls.cc",
+-      "allocator_impls.h",
+-    ]
+-
+-    deps = [
+-      ":allocator_cpp_shared",
+-      ":buildflags",
+-
+-      # TODO(crbug.com/408221149): remove the C++ -> Rust dependency for the
+-      # default allocator.
+-      "//build/rust/std",
+-    ]
+-
+-    visibility = [ ":*" ]
+-  }
+-
+-  source_set("allocator_shim_definitions") {
+-    sources = [ "allocator_shim_definitions.cc" ]
+-
+-    deps = [ ":allocator_cpp_shared" ]
+-
+-    visibility = [ ":*" ]
+-  }
+-
+-  source_set("allocator_cpp_shared") {
+     sources = [
+       # `alias.*`, `compiler_specific.h`, and `immediate_crash.*` have been
+       # copied from `//base`.
+       # TODO(crbug.com/40279749): Avoid duplication / reuse code.
+       "alias.cc",
+       "alias.h",
++      "allocator_impls.cc",
++      "allocator_impls.h",
+       "compiler_specific.h",
+       "immediate_crash.h",
+     ]
+ 
+-    visibility = [
+-      ":allocator_impls",
+-      ":allocator_shim_definitions",
+-    ]
++    deps = [ ":buildflags" ]
++
++    visibility = [ ":*" ]
+   }
+ }
+diff --git a/build/rust/allocator/allocator_impls.cc b/build/rust/allocator/allocator_impls.cc
+index 1fde98f23cd12..bf3c2a301adf5 100644
+--- a/build/rust/allocator/allocator_impls.cc
++++ b/build/rust/allocator/allocator_impls.cc
+@@ -101,16 +101,6 @@
+ #define USE_WIN_ALIGNED_MALLOC 0
+ #endif
+ 
+-// The default allocator functions provided by the Rust standard library.
+-extern "C" void* __rdl_alloc(size_t size, size_t align);
+-extern "C" void __rdl_dealloc(void* p, size_t size, size_t align);
+-extern "C" void* __rdl_realloc(void* p,
+-                               size_t old_size,
+-                               size_t align,
+-                               size_t new_size);
+-
+-extern "C" void* __rdl_alloc_zeroed(size_t size, size_t align);
+-
+ namespace rust_allocator_internal {
+ 
+ unsigned char* alloc(size_t size, size_t align) {
+@@ -129,7 +119,8 @@ unsigned char* alloc(size_t size, size_t align) {
+ #elif USE_WIN_ALIGNED_MALLOC
+   return static_cast<unsigned char*>(_aligned_malloc(size, align));
+ #else
+-  return static_cast<unsigned char*>(__rdl_alloc(size, align));
++  // TODO(crbug.com/408221149): don't build this file in this case.
++  IMMEDIATE_CRASH();
+ #endif
+ }
+ 
+@@ -143,7 +134,8 @@ void dealloc(unsigned char* p, size_t size, size_t align) {
+ #elif USE_WIN_ALIGNED_MALLOC
+   return _aligned_free(p);
+ #else
+-  __rdl_dealloc(p, size, align);
++  // TODO(crbug.com/408221149): don't build this file in this case.
++  IMMEDIATE_CRASH();
+ #endif
+ }
+ 
+@@ -162,8 +154,8 @@ unsigned char* realloc(unsigned char* p,
+ #elif USE_WIN_ALIGNED_MALLOC
+   return static_cast<unsigned char*>(_aligned_realloc(p, new_size, align));
+ #else
+-  return static_cast<unsigned char*>(
+-      __rdl_realloc(p, old_size, align, new_size));
++  // TODO(crbug.com/408221149): don't build this file in this case.
++  IMMEDIATE_CRASH();
+ #endif
+ }
+ 
+@@ -179,8 +171,14 @@ unsigned char* alloc_zeroed(size_t size, size_t align) {
+   }
+   return p;
+ #else
+-  return static_cast<unsigned char*>(__rdl_alloc_zeroed(size, align));
++  // TODO(crbug.com/408221149): don't build this file in this case.
++  IMMEDIATE_CRASH();
+ #endif
+ }
+ 
++void crash_immediately() {
++  NO_CODE_FOLDING();
++  IMMEDIATE_CRASH();
++}
++
+ }  // namespace rust_allocator_internal
+diff --git a/build/rust/allocator/allocator_impls.h b/build/rust/allocator/allocator_impls.h
+index afb335412faf9..e90ab7cd422c1 100644
+--- a/build/rust/allocator/allocator_impls.h
++++ b/build/rust/allocator/allocator_impls.h
+@@ -20,6 +20,8 @@ unsigned char* realloc(unsigned char* p,
+                        size_t new_size);
+ unsigned char* alloc_zeroed(size_t size, size_t align);
+ 
++void crash_immediately();
++
+ }  // namespace rust_allocator_internal
+ 
+ #endif  // BUILD_RUST_ALLOCATOR_ALLOCATOR_IMPLS_H_
+diff --git a/build/rust/allocator/allocator_shim_definitions.cc b/build/rust/allocator/allocator_shim_definitions.cc
+deleted file mode 100644
+index a4d1bd77b7016..0000000000000
+--- a/build/rust/allocator/allocator_shim_definitions.cc
++++ /dev/null
+@@ -1,30 +0,0 @@
+-// Copyright 2025 The Chromium Authors
+-// Use of this source code is governed by a BSD-style license that can be
+-// found in the LICENSE file.
+-
+-#include <cstddef>
+-
+-#include "build/rust/allocator/alias.h"
+-#include "build/rust/allocator/immediate_crash.h"
+-
+-extern "C" {
+-
+-// As part of rustc's contract for using `#[global_allocator]` without
+-// rustc-generated shims we must define this symbol, since we are opting in to
+-// unstable functionality. See https://github.com/rust-lang/rust/issues/123015
+-//
+-// Mark it weak since rustc will generate it when it drives linking.
+-[[maybe_unused]]
+-__attribute__((weak)) unsigned char __rust_no_alloc_shim_is_unstable;
+-
+-__attribute__((weak)) void __rust_alloc_error_handler(size_t size,
+-                                                      size_t align) {
+-  NO_CODE_FOLDING();
+-  IMMEDIATE_CRASH();
+-}
+-
+-__attribute__((
+-    weak)) extern const unsigned char __rust_alloc_error_handler_should_panic =
+-    0;
+-
+-}  // extern "C"
+diff --git a/build/rust/allocator/lib.rs b/build/rust/allocator/lib.rs
+index 7f4a0fc245694..b8b67d9c6c649 100644
+--- a/build/rust/allocator/lib.rs
++++ b/build/rust/allocator/lib.rs
+@@ -8,10 +8,20 @@
+ //! the allocator defined here. Currently this is a thin wrapper around
+ //! allocator_impls.cc's functions; see the documentation there.
+ 
++// Required to apply weak linkage to symbols.
++#![feature(linkage)]
++// Required to apply `#[rustc_std_internal_symbol]` to our alloc error handler
++// so the name is correctly mangled as rustc expects.
++#![cfg_attr(mangle_alloc_error_handler, allow(internal_features))]
++#![cfg_attr(mangle_alloc_error_handler, feature(rustc_attrs))]
++
++#[cfg(use_cpp_allocator_impls)]
+ use std::alloc::{GlobalAlloc, Layout};
+ 
++#[cfg(use_cpp_allocator_impls)]
+ struct Allocator;
+ 
++#[cfg(use_cpp_allocator_impls)]
+ unsafe impl GlobalAlloc for Allocator {
+     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+         unsafe { ffi::alloc(layout.size(), layout.align()) }
+@@ -32,9 +42,36 @@ unsafe impl GlobalAlloc for Allocator {
+     }
+ }
+ 
++#[cfg(use_cpp_allocator_impls)]
+ #[global_allocator]
+ static GLOBAL: Allocator = Allocator;
+ 
++#[cfg(not(use_cpp_allocator_impls))]
++#[global_allocator]
++static GLOBAL: std::alloc::System = std::alloc::System;
++
++// As part of rustc's contract for using `#[global_allocator]` without
++// rustc-generated shims we must define this symbol, since we are opting in to
++// unstable functionality. See https://github.com/rust-lang/rust/issues/123015
++#[no_mangle]
++#[linkage = "weak"]
++static __rust_no_alloc_shim_is_unstable: u8 = 0;
++
++#[no_mangle]
++#[linkage = "weak"]
++static __rust_alloc_error_handler_should_panic: u8 = 0;
++
++// Mangle the symbol name as rustc expects.
++#[cfg_attr(mangle_alloc_error_handler, rustc_std_internal_symbol)]
++#[cfg_attr(not(mangle_alloc_error_handler), no_mangle)]
++#[linkage = "weak"]
++fn __rust_alloc_error_handler(_size: usize, _align: usize) {
++    unsafe { ffi::crash_immediately() }
++}
++
++// TODO(crbug.com/408221149): conditionally include the FFI glue based on
++// `use_cpp_allocator_impls`
++#[allow(dead_code)]
+ #[cxx::bridge(namespace = "rust_allocator_internal")]
+ mod ffi {
+     extern "C++" {
+@@ -44,5 +81,6 @@ mod ffi {
+         unsafe fn dealloc(p: *mut u8, size: usize, align: usize);
+         unsafe fn realloc(p: *mut u8, old_size: usize, align: usize, new_size: usize) -> *mut u8;
+         unsafe fn alloc_zeroed(size: usize, align: usize) -> *mut u8;
++        unsafe fn crash_immediately();
+     }
+ }

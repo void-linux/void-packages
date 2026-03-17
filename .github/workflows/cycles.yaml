@@ -1,0 +1,45 @@
+name: 'Cycle Check'
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * *'
+
+jobs:
+  cycles:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    container:
+      image: ghcr.io/void-linux/void-musl-full
+    steps:
+      - name: Prepare container
+        run: |
+          # switch to repo-ci mirror
+          mkdir -p /etc/xbps.d && cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
+          sed -i 's|repo-default|repo-ci|g' /etc/xbps.d/*-repository-*.conf
+          # install dependencies
+          xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash grep git python3-networkx github-cli
+          # create non-root user
+          useradd -G xbuilder -M builder
+
+      - name: Clone and checkout
+        uses: classabbyamp/treeless-checkout-action@v1
+
+      - name: Prepare masterdir
+        run: |
+          chown -R builder:builder . &&
+          sudo -Eu builder common/travis/set_mirror.sh
+
+      - name: Find cycles and open issues
+        run: |
+          sudo -Eu builder common/scripts/xbps-cycles.py | tee cycles
+          grep 'Cycle:' cycles | while read -r line; do
+              if gh issue list -R "$GITHUB_REPOSITORY" -S "$line" | grep .; then
+                  printf "Issue on '%s' already exists.\n" "$line"
+              else
+                  gh issue create -R "$GITHUB_REPOSITORY" -b '' -t "$line"
+              fi
+          done
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN }}

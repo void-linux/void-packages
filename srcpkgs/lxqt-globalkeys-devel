@@ -1,0 +1,1 @@
+lxqt-globalkeys

@@ -1,0 +1,119 @@
+# Template file for 'wasi-sdk'
+pkgname=wasi-sdk
+version=29
+revision=1
+_llvmversion="21.1.7"
+_llvmver="${_llvmversion%%.*}"
+_wasi_libc_ref=ac020b8
+# build_wrksrc="llvm-project-${_llvmversion}.src"
+build_style=cmake
+hostmakedepends="python3 clang${_llvmver} llvm${_llvmver} lld${_llvmver} ninja
+ wasm-component-ld"
+depends="wasi-libc wasi-libcxx wasi-compiler-rt"
+short_desc="WASI-enabled WebAssembly C/C++ toolchain"
+maintainer="Duncaen <duncaen@voidlinux.org>"
+license="custom:Apache-2.0-with-llvm-exception"
+homepage="https://github.com/WebAssembly/wasi-sdk"
+distfiles="https://github.com/llvm/llvm-project/releases/download/llvmorg-${_llvmversion}/llvm-project-${_llvmversion}.src.tar.xz
+ https://github.com/WebAssembly/wasi-sdk/archive/refs/tags/wasi-sdk-${version}.tar.gz
+ https://github.com/WebAssembly/wasi-libc/archive/${_wasi_libc_ref}.zip>wasi-libc-${_wasi_libc_ref}.tar.gz"
+checksum="e5b65fd79c95c343bb584127114cb2d252306c1ada1e057899b6aacdd445899e
+ aba99b0d51e766751d6832d07fdd044a827845d7e9e337aacc2357247d0696e6
+ e8023fb214b2183b724defed68c92b89616a1f434f18c7d4559338926bb16877"
+
+nostrip=yes
+
+skip_extraction="llvm-project-${_llvmversion}.src.tar.xz wasi-libc-${_wasi_libc_ref}.tar.gz"
+
+conf_files="
+ /etc/clang21/wasm32-unknown-wasi.cfg
+ /etc/clang21/wasm32-unknown-wasi-threads.cfg"
+
+
+subpackages="wasi-compiler-rt wasi-libcxx wasi-libc" # subpackages need to be ordered right
+
+export CMAKE_GENERATOR=Ninja
+
+post_extract() {
+	vsrcextract -C src/llvm-project "llvm-project-${_llvmversion}.src.tar.xz"
+	vsrcextract -C src/wasi-libc "wasi-libc-${_wasi_libc_ref}.tar.gz"
+	# cp "wasi-sdk-wasi-sdk-${version}/wasi-sdk.cmake" "llvm-project-${_llvmversion}.src"/wasi-sdk.cmake
+	# cp -r "wasi-sdk-wasi-sdk-${version}/cmake/Platform" "llvm-project-${_llvmversion}.src"/cmake
+}
+
+post_patch() {
+	# avoid building again at install step
+	vsed -e 's/\(install:\) finish/\1/' -i src/wasi-libc/Makefile
+}
+
+
+do_configure() {
+	unset CFLAGS CXXFLAGS LDFLAGS
+	cmake -G Ninja -B build -S . \
+		-DCMAKE_INSTALL_PREFIX=build/install \
+		-DCMAKE_TOOLCHAIN_FILE=${wrksrc}/wasi-sdk.cmake \
+		-DCMAKE_C_COMPILER_WORKS=ON \
+		-DCMAKE_CXX_COMPILER_WORKS=ON \
+		-DWASI_SDK_PREFIX=/usr \
+		-DWASI_SDK_VERSION="${version}"
+}
+
+do_build() {
+	unset CFLAGS CXXFLAGS LDFLAGS
+	cmake --build build --target dist ${makejobs}
+}
+
+do_install() {
+	vmkdir "usr/lib/llvm/${_llvmver}/lib/clang/${_llvmver}/lib"
+	bsdtar -x -C "${DESTDIR}/usr/lib/llvm/${_llvmver}/lib/clang/${_llvmver}/lib" --strip-components 1 -f "build/dist/libclang_rt-${version}.tar.gz"
+
+	vmkdir usr/share/wasi-sysroot
+	bsdtar -x -C "${DESTDIR}/usr/share/wasi-sysroot" --strip-components 1 -f "build/dist/wasi-sysroot-${version}.tar.gz"
+
+	mkdir -p "${DESTDIR}/etc/clang${_llvmver}"
+	cat <<-EOF >"${DESTDIR}/etc/clang${_llvmver}/wasm32-unknown-wasi.cfg"
+	--sysroot /usr/share/wasi-sysroot
+	EOF
+	cat <<-EOF >"${DESTDIR}/etc/clang${_llvmver}/wasm32-unknown-wasi-threads.cfg"
+	--sysroot /usr/share/wasi-sysroot
+	EOF
+
+	vlicense LICENSE
+}
+
+wasi-libcxx_package() {
+	short_desc+=" - C++ standard library"
+	nostrip=yes
+	make_dirs="/usr/share/wasi-sysroot/include/c++/v1 0755 root root"
+	pkg_install() {
+		vmove usr/share/wasi-sysroot/include/wasm32-wasi-threads/c++
+		vmove usr/share/wasi-sysroot/include/wasm32-wasi/c++
+		vmove usr/share/wasi-sysroot/include/wasm32-wasip1-threads/c++
+		vmove usr/share/wasi-sysroot/include/wasm32-wasip1/c++
+		vmove usr/share/wasi-sysroot/include/wasm32-wasip2/c++
+		vmove usr/share/wasi-sysroot/lib/wasm32-wasi-threads/libc++.a
+		vmove usr/share/wasi-sysroot/lib/wasm32-wasi-threads/libc++abi.a
+		vmove usr/share/wasi-sysroot/lib/wasm32-wasi-threads/libc++experimental.a
+		vmove usr/share/wasi-sysroot/lib/wasm32-wasi/libc++.a
+		vmove usr/share/wasi-sysroot/lib/wasm32-wasi/libc++abi.a
+		vmove usr/share/wasi-sysroot/lib/wasm32-wasi/libc++experimental.a
+		vmove usr/share/wasi-sysroot/share/libc++
+	}
+}
+
+wasi-compiler-rt_package() {
+	short_desc+=" - runtime libraries"
+	nostrip=yes
+	pkg_install() {
+		vmove "usr/lib/llvm/${_llvmver}/lib/clang/${_llvmver}/lib"
+	}
+}
+
+wasi-libc_package() {
+	short_desc+=" - C standard library"
+	nostrip=yes
+	pkg_install() {
+		vmove "usr/share/wasi-sysroot/include"
+		vmove "usr/share/wasi-sysroot/lib"
+	}
+}

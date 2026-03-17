@@ -1,0 +1,97 @@
+musl does not have execinfo.h, and hence no implementation of
+. backtrace()
+. backtrace_symbols()
+for discussion about this, see https://www.openwall.com/lists/musl/2021/07/16/1
+--
+--- a/src/3rdparty/chromium/v8/src/codegen/external-reference-table.cc
++++ b/src/3rdparty/chromium/v8/src/codegen/external-reference-table.cc
+@@ -12,7 +12,9 @@
+ 
+ #if defined(DEBUG) && defined(V8_OS_LINUX) && !defined(V8_OS_ANDROID)
+ #define SYMBOLIZE_FUNCTION
++#if defined(__GLIBC__)
+ #include <execinfo.h>
++#endif
+ 
+ #include <vector>
+ 
+@@ -114,7 +116,7 @@ void ExternalReferenceTable::Init(Isolat
+ }
+ 
+ const char* ExternalReferenceTable::ResolveSymbol(void* address) {
+-#ifdef SYMBOLIZE_FUNCTION
++#if defined(SYMBOLIZE_FUNCTION) && defined(__GLIBC__)
+   char** names = backtrace_symbols(&address, 1);
+   const char* name = names[0];
+   // The array of names is malloc'ed. However, each name string is static
+--- a/src/3rdparty/chromium/base/debug/stack_trace.cc
++++ b/src/3rdparty/chromium/base/debug/stack_trace.cc
+@@ -329,7 +329,7 @@ std::string StackTrace::ToString() const
+ 
+ std::string StackTrace::ToStringWithPrefix(cstring_view prefix_string) const {
+   std::stringstream stream;
+-#if !defined(__UCLIBC__) && !defined(_AIX)
++#if defined(__GLIBC__) && !defined(_AIX)
+   OutputToStreamWithPrefix(&stream, prefix_string);
+ #endif
+   return stream.str();
+@@ -353,7 +353,7 @@ bool StackTrace::ShouldSuppressOutput()
+ }
+ 
+ std::ostream& operator<<(std::ostream& os, const StackTrace& s) {
+-#if !defined(__UCLIBC__) && !defined(_AIX)
++#if defined(__GLIBC__) && !defined(_AIX)
+   s.OutputToStream(&os);
+ #else
+   os << "StackTrace::OutputToStream not implemented.";
+--- a/src/3rdparty/chromium/base/debug/stack_trace_unittest.cc
++++ b/src/3rdparty/chromium/base/debug/stack_trace_unittest.cc
+@@ -42,7 +42,7 @@ typedef testing::Test StackTraceTest;
+ #endif
+ typedef testing::Test StackTraceDeathTest;
+ 
+-#if !defined(__UCLIBC__) && !defined(_AIX)
++#if !defined(__UCLIBC__) && !defined(_AIX) && defined(__GLIBC__)
+ // StackTrace::OutputToStream() is not implemented under uclibc, nor AIX.
+ // See https://crbug.com/706728
+ 
+--- a/src/3rdparty/chromium/third_party/angle/util/posix/crash_handler_posix.cpp
++++ b/src/3rdparty/chromium/third_party/angle/util/posix/crash_handler_posix.cpp
+@@ -24,7 +24,7 @@
+ #include <unistd.h>
+ #include <iostream>
+ 
+-#if !defined(ANGLE_PLATFORM_ANDROID) && !defined(ANGLE_PLATFORM_FUCHSIA)
++#if !defined(ANGLE_PLATFORM_ANDROID) && !defined(ANGLE_PLATFORM_FUCHSIA) && defined(__GLIBC__)
+ #    if defined(ANGLE_PLATFORM_APPLE)
+ // We only use local unwinding, so we can define this to select a faster implementation.
+ #        define UNW_LOCAL_ONLY
+@@ -71,7 +71,7 @@
+ 
+ namespace angle
+ {
+-#if defined(ANGLE_PLATFORM_ANDROID) || defined(ANGLE_PLATFORM_FUCHSIA)
++#if defined(ANGLE_PLATFORM_ANDROID) || defined(ANGLE_PLATFORM_FUCHSIA) || !defined(__GLIBC__)
+ 
+ void PrintStackBacktrace()
+ {
+--- a/src/3rdparty/chromium/third_party/skia/dm/DM.cpp
++++ b/src/3rdparty/chromium/third_party/skia/dm/DM.cpp
+@@ -365,7 +365,7 @@ static void find_culprit() {
+     }
+ #else
+     #include <signal.h>
+-    #if !defined(SK_BUILD_FOR_ANDROID)
++    #if defined(__GLIBC__)
+         #include <execinfo.h>
+     #endif
+ 
+@@ -389,7 +389,7 @@ static void find_culprit() {
+         }
+         find_culprit();
+ 
+-    #if !defined(SK_BUILD_FOR_ANDROID)
++    #if defined(__GLIBC__)
+         void* stack[128];
+         int count = backtrace(stack, std::size(stack));
+         char** symbols = backtrace_symbols(stack, count);

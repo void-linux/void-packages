@@ -1,0 +1,199 @@
+--- a/clipgrab.cpp
++++ b/clipgrab.cpp
+@@ -211,7 +211,7 @@ ClipGrab::ClipGrab()
+     //*
+     //* Add Mozilla Root CA certificats to avoid errors from missing system certificates
+     //*
+-    QSslSocket::addDefaultCaCertificates(":/crt/mozilla-root-cas.txt");
++    // QSslSocket::addDefaultCaCertificates(":/crt/mozilla-root-cas.txt");
+ 
+ 
+     //*
+@@ -342,7 +342,7 @@ void ClipGrab::parseUpdateInfo(QNetworkR
+ 
+         if (!this->availableUpdates.isEmpty())
+         {
+-            qSort(this->availableUpdates.begin(), this->availableUpdates.end());
++            std::sort(this->availableUpdates.begin(), this->availableUpdates.end());
+ 
+             //Create changelog document
+             QDomDocument updateNotesDocument("html");
+@@ -482,7 +482,7 @@ void ClipGrab::startUpdateDownload()
+ {
+     QString updateUrl = this->availableUpdates.last().url;
+     QString updateFilePattern = updateUrl.split("/").last();
+-    updateFilePattern.insert(updateFilePattern.lastIndexOf(QRegExp("\\.dmg|\\.exe|\\.tar")), "-XXXXXX");
++    updateFilePattern.insert(updateFilePattern.lastIndexOf(QRegularExpression("\\.dmg|\\.exe|\\.tar")), "-XXXXXX");
+     this->updateFile = new QTemporaryFile(QDir::tempPath() + "/" + updateFilePattern);
+     this->updateFile->open();
+     qDebug() << "Downloading update to " << this->updateFile->fileName();
+@@ -543,7 +543,7 @@ void ClipGrab::updateDownloadFinished()
+     //Close and rename to avoid problems with file locks
+     updateFile->setAutoRemove(false);
+     updateFile->close();
+-    updateFile->rename(updateFile->fileName().insert(updateFile->fileName().lastIndexOf(QRegExp("\\.dmg|\\.exe|\\.tar")), "-update"));
++    updateFile->rename(updateFile->fileName().insert(updateFile->fileName().lastIndexOf(QRegularExpression("\\.dmg|\\.exe|\\.tar")), "-update"));
+ 
+     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(updateFile->fileName())))
+     {
+@@ -602,7 +602,7 @@ void ClipGrab::startYoutubeDlDownload()
+     QString youtubeDlUrl = settings.value("youtubeDlUrl", "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp").toString();
+     QNetworkRequest request;
+     request.setUrl(QUrl(youtubeDlUrl));
+-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
++    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+     QNetworkAccessManager* youtubeDlNAM = new QNetworkAccessManager();
+     QNetworkReply* reply = youtubeDlNAM->get(request);
+ 
+@@ -618,7 +618,7 @@ void ClipGrab::startYoutubeDlDownload()
+     connect(reply, &QNetworkReply::sslErrors, [=](QList<QSslError> errors) {
+         for (int i = 0; i < errors.length(); i++) {
+             QString errorString = errors.at(i).errorString();
+-            QString certInfo = errors.at(i).certificate().issuerDisplayName() + " " + errors.at(i).certificate().subjectDisplayName() + " " +  errors.at(i).certificate().serialNumber() + " " + errors.at(i).error();
++            QString certInfo = errors.at(i).certificate().issuerDisplayName() + " " + errors.at(i).certificate().subjectDisplayName() + " " +  errors.at(i).certificate().serialNumber() + " " + errors.at(i).errorString();
+             errorHandler(tr("SSL error: %1 \n%2").arg(errorString).arg(certInfo));
+         }
+     });
+--- a/clipgrab.h
++++ b/clipgrab.h
+@@ -81,20 +81,20 @@ struct updateInfo
+ 
+     static int compare(const updateInfo &a, const updateInfo&b)
+     {
+-        QRegExp regexp("^(\\d+)\\.(\\d+)\\.(\\d+)(-.*)?$");
+-        if (regexp.indexIn(a.version) > -1 && regexp.indexIn((b.version)) > -1)
++        QRegularExpression regexp("^(\\d+)\\.(\\d+)\\.(\\d+)(-.*)?$");
++        QRegularExpressionMatch ma = regexp.match(a.version);
++        QRegularExpressionMatch mb = regexp.match(b.version);
++        if (ma.hasMatch() && mb.hasMatch())
+         {
+-            regexp.indexIn(a.version);
+-            int majorA = regexp.cap(1).toInt();
+-            int minorA = regexp.cap(2).toInt();
+-            int patchA = regexp.cap(3).toInt();
+-            QString restA = regexp.cap(4);
++            int majorA = ma.captured(1).toInt();
++            int minorA = ma.captured(2).toInt();
++            int patchA = ma.captured(3).toInt();
++            QString restA = ma.captured(4);
+ 
+-            regexp.indexIn(b.version);
+-            int majorB = regexp.cap(1).toInt();
+-            int minorB = regexp.cap(2).toInt();
+-            int patchB = regexp.cap(3).toInt();
+-            QString restB = regexp.cap(4);
++            int majorB = ma.captured(1).toInt();
++            int minorB = ma.captured(2).toInt();
++            int patchB = ma.captured(3).toInt();
++            QString restB = ma.captured(4);
+ 
+             if (majorA > majorB) return 1;
+             if (majorA < majorB) return -1;
+--- a/converter_ffmpeg.cpp
++++ b/converter_ffmpeg.cpp
+@@ -56,25 +56,24 @@ void ffmpegThread::run()
+         QString videoInfo = ffmpeg->readAllStandardError();
+         ffmpeg->close();
+ 
+-        QRegExp expression;
+-        expression = QRegExp("Audio: (.*)\\n");
+-        expression.setMinimal(true);
+-        if (expression.indexIn(videoInfo) !=-1)
++        QRegularExpression re("Audio: (.*?)\\n");
++        QRegularExpressionMatch match = re.match(videoInfo);
++        if (match.hasMatch())
+         {
+-            audioCodec = expression.cap(1);
++            audioCodec = match.captured(1);
+         }
+-        expression = QRegExp("Video: (.*)\\n");
+-        expression.setMinimal(true);
+-        if (expression.indexIn(videoInfo) !=-1)
++        re.setPattern("Video: (.*?)\\n");
++        match = re.match(videoInfo);
++        if (match.hasMatch())
+         {
+-            videoCodec = expression.cap(1);
++            videoCodec = match.captured(1);
+         }
+ 
+-        expression = QRegExp("Video:.*([0-9]+) kb/s");
+-        expression.setMinimal(true);
+-        if (expression.indexIn(videoInfo) !=-1)
++        re.setPattern("Video:.*?([0-9]+) kb/s");
++        match = re.match(videoInfo);
++        if (match.hasMatch())
+         {
+-            videoBitrate = expression.cap(1);
++            videoBitrate = match.captured(1);
+         }
+ 
+         qDebug() << "Source video: " << videoCodec << videoBitrate << audioCodec;
+--- a/main.cpp
++++ b/main.cpp
+@@ -53,7 +53,12 @@ int main(int argc, char *argv[])
+     QSettings settings;
+     if (settings.allKeys().isEmpty()) {
+         static const QChar key[] = {
+-            0x0050, 0x0068, 0x0069, 0x006c, 0x0069, 0x0070, 0x0070, 0x0020, 0x0053, 0x0063, 0x0068, 0x006d, 0x0069, 0x0065, 0x0064, 0x0065, 0x0072};
++            QChar(0x0050), QChar(0x0068), QChar(0x0069), QChar(0x006c),
++            QChar(0x0069), QChar(0x0070), QChar(0x0070), QChar(0x0020),
++            QChar(0x0053), QChar(0x0063), QChar(0x0068), QChar(0x006d),
++            QChar(0x0069), QChar(0x0065), QChar(0x0064), QChar(0x0065),
++            QChar(0x0072)
++        };
+         QSettings legacySettings(QString::fromRawData(key, sizeof(key) / sizeof(QChar)), "ClipGrab");
+         QStringList legacyKeys = legacySettings.allKeys();
+         QStringList ignoredKeys = {"youtubePlayerUrl", "youtubePlayerJS", "youtubePlayerSignatureMethodName"};
+--- a/mainwindow.cpp
++++ b/mainwindow.cpp
+@@ -289,7 +289,8 @@ void MainWindow::targetFileSelected(vide
+ 
+     if (cg->settings.value("saveLastPath", true).toBool() == true) {
+         QString targetDir = target;
+-        targetDir.remove(targetDir.split("/", QString::SkipEmptyParts).last()).replace(QRegExp("/+$"), "/");
++        targetDir.remove(targetDir.split("/", Qt::SkipEmptyParts).last())
++                 .replace(QRegularExpression("/+$"), "/");
+         ui.settingsSavedPath->setText(targetDir);
+     }
+ 
+--- a/mainwindow.h
++++ b/mainwindow.h
+@@ -67,7 +67,7 @@ public:
+     {
+         this->setAudioMuted(true);
+         SearchWebEngineUrlRequestInterceptor* interceptor = new SearchWebEngineUrlRequestInterceptor();
+-        this->profile()->setRequestInterceptor(interceptor);
++        this->profile()->setUrlRequestInterceptor(interceptor);
+         connect(interceptor, SIGNAL(intercepted(QUrl)), this, SLOT(handleInterceptedUrl(QUrl)));
+     }
+ 
+@@ -78,7 +78,8 @@ public:
+ 
+         if (type == QWebEnginePage::NavigationTypeTyped)
+         {
+-            if (QRegExp("https://(www|m)\\.youtube.com/watch").indexIn(url.toString()) > -1)
++            QRegularExpression re("https://(www|m)\\.youtube.com/watch");
++            if (re.match(url.toString()).hasMatch())
+             {
+                 emit linkClicked(url);
+                 return false;
+@@ -87,7 +88,8 @@ public:
+         }
+         if (type == QWebEnginePage::NavigationTypeLinkClicked)
+         {
+-            if (QRegExp("https://(www|m)\\.youtube.com").indexIn(url.toString()) > -1)
++            QRegularExpression re("https://(www|m)\\.youtube.com");
++            if (re.match(url.toString()).hasMatch())
+             {
+                 emit linkClicked(url);
+             }
+@@ -113,7 +115,7 @@ class MainWindow : public QMainWindow
+     Q_OBJECT
+ 
+ public:
+-    MainWindow(ClipGrab* cg, QWidget *parent = 0, Qt::WindowFlags flags = 0);
++    MainWindow(ClipGrab* cg, QWidget *parent = 0, Qt::WindowFlags flags = Qt::Widget);
+     ~MainWindow();
+     void init();
+ 
