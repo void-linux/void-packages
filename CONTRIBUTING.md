@@ -172,7 +172,7 @@ Use `./xbps-src -Q pkg <package>` to do so.
 Some tests won't work in the CI environment or at all, and their templates should encode this information using the `make_check` variable.
 
 Continuous Integration will also check if the templates you have changed
-comply with the our guidelines. At the moment not all packages comply with the rules, so if you update a package, it may report errors about places you haven't touched. Please feel free to fix those errors too.
+comply with our guidelines. At the moment not all packages comply with the rules, so if you update a package, it may report errors about places you haven't touched. Please feel free to fix those errors too.
 
 #### Review
 
