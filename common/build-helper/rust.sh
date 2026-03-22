@@ -49,9 +49,7 @@ export GETTEXT_INCLUDE_DIR="${XBPS_CROSS_BASE}/usr/include"
 export LIBSSH2_SYS_USE_PKG_CONFIG=1
 
 # sodium-sys
-export SODIUM_LIB_DIR="${XBPS_CROSS_BASE}/usr/include"
-export SODIUM_INC_DIR="${XBPS_CROSS_BASE}/usr/lib"
-export SODIUM_SHARED=1
+export SODIUM_USE_PKG_CONFIG=1
 
 # openssl-sys
 export OPENSSL_NO_VENDOR=1
