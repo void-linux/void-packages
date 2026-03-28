@@ -1,0 +1,108 @@
+--- a/src/screencast.c
++++ b/src/screencast.c
+@@ -847,18 +847,11 @@
+ static void
+ on_gnome_screen_cast_enabled (GnomeScreenCast *gnome_screen_cast)
+ {
+-  g_autoptr(GError) error = NULL;
+-
+-  impl = G_DBUS_INTERFACE_SKELETON (xdp_impl_screen_cast_skeleton_new ());
+-  xdp_impl_screen_cast_set_version (XDP_IMPL_SCREEN_CAST (impl), 5);
+-
+-  g_signal_connect (impl, "handle-create-session",
+-                    G_CALLBACK (handle_create_session), NULL);
+-  g_signal_connect (impl, "handle-select-sources",
+-                    G_CALLBACK (handle_select_sources), NULL);
+-  g_signal_connect (impl, "handle-start",
+-                    G_CALLBACK (handle_start), NULL);
+-
++  /* Update capabilities on the already-exported skeleton. The property
++   * change (0 -> 7) emits PropertiesChanged on D-Bus, which the main
++   * xdg-desktop-portal daemon's proxy receives via its notify:: handlers.
++   * This fixes screen sharing on compositors that register their
++   * Mutter.ScreenCast D-Bus service after the portal backends start. */
+   g_object_set (G_OBJECT (impl),
+                 "available-source-types", SCREEN_CAST_SOURCE_TYPE_MONITOR |
+                                           SCREEN_CAST_SOURCE_TYPE_WINDOW |
+@@ -868,16 +861,6 @@
+                                           SCREEN_CAST_CURSOR_MODE_METADATA,
+                 NULL);
+ 
+-  if (!g_dbus_interface_skeleton_export (impl,
+-                                         impl_connection,
+-                                         DESKTOP_PORTAL_OBJECT_PATH,
+-                                         &error))
+-    {
+-      g_warning ("Failed to export screen cast portal implementation object: %s",
+-                 error->message);
+-      return;
+-    }
+-
+   g_debug ("providing %s", g_dbus_interface_skeleton_get_info (impl)->name);
+ }
+ 
+@@ -888,10 +871,14 @@
+ {
+   if (impl)
+     {
+-      g_debug ("unproviding %s", g_dbus_interface_skeleton_get_info (impl)->name);
+-
+-      g_dbus_interface_skeleton_unexport (impl);
+-      g_clear_object (&impl);
++      /* Reset capabilities to zero instead of destroying the skeleton.
++       * Keeping the skeleton exported ensures the main portal's proxy
++       * remains valid and receives future property changes. */
++      g_debug ("disabling %s", g_dbus_interface_skeleton_get_info (impl)->name);
++      g_object_set (G_OBJECT (impl),
++                    "available-source-types", 0,
++                    "available-cursor-modes", 0,
++                    NULL);
+     }
+ }
+ 
+@@ -956,6 +943,8 @@
+ screen_cast_init (GDBusConnection  *connection,
+                   GError          **error)
+ {
++  g_autoptr(GError) export_error = NULL;
++
+   /*
+    * Ensure ShellIntrospect and DisplayStateTracker are initialized before
+    * any screencast session is created to avoid race conditions when restoring
+@@ -965,6 +954,36 @@
+   shell_introspect_get ();
+ 
+   impl_connection = connection;
++
++  /*
++   * Export the ScreenCast skeleton immediately with zero capabilities.
++   * On non-GNOME compositors (niri, atrium, etc.), the compositor's
++   * Mutter.ScreenCast D-Bus service may not be registered yet when the
++   * portal starts.  Previously the skeleton was only created and exported
++   * in on_gnome_screen_cast_enabled(), which fires when Mutter.ScreenCast
++   * appears.  By that time the main xdg-desktop-portal daemon has already
++   * created a GDBusProxy for this interface and cached the default (zero)
++   * property values.  Exporting the skeleton here ensures the proxy is
++   * created against a live interface, and the property update in
++   * on_gnome_screen_cast_enabled() emits PropertiesChanged, which the
++   * main daemon receives and re-syncs.
++   */
++  impl = G_DBUS_INTERFACE_SKELETON (xdp_impl_screen_cast_skeleton_new ());
++  xdp_impl_screen_cast_set_version (XDP_IMPL_SCREEN_CAST (impl), 5);
++
++  g_signal_connect (impl, "handle-create-session",
++                    G_CALLBACK (handle_create_session), NULL);
++  g_signal_connect (impl, "handle-select-sources",
++                    G_CALLBACK (handle_select_sources), NULL);
++  g_signal_connect (impl, "handle-start",
++                    G_CALLBACK (handle_start), NULL);
++
++  if (!g_dbus_interface_skeleton_export (impl, connection,
++                                         DESKTOP_PORTAL_OBJECT_PATH,
++                                         &export_error))
++    g_warning ("Failed to export screen cast skeleton: %s",
++               export_error->message);
++
+   gnome_screen_cast = gnome_screen_cast_new (connection);
+ 
+   g_signal_connect (gnome_screen_cast, "enabled",
