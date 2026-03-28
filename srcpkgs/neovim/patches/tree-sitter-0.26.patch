@@ -1,0 +1,247 @@
+NOTE: has been slightly edited in order to apply cleanly
+
+From a9c6564bcbee9fb0e00c056d8c88fd9f60e49e7e Mon Sep 17 00:00:00 2001
+From: Riley Bruins <ribru17@hotmail.com>
+Date: Thu, 20 Mar 2025 14:50:15 -0700
+Subject: [PATCH] refactor(treesitter): migrate to ts parser callback API
+
+---
+ runtime/lua/vim/treesitter/_meta/misc.lua   |  4 +-
+ runtime/lua/vim/treesitter/languagetree.lua | 43 ++++++++++------
+ src/nvim/lua/treesitter.c                   | 57 +++++++++++----------
+ 3 files changed, 58 insertions(+), 46 deletions(-)
+
+diff --git a/runtime/lua/vim/treesitter/_meta/misc.lua b/runtime/lua/vim/treesitter/_meta/misc.lua
+index 07a1c921c744c3..9b9cc4eb5469d5 100644
+--- a/runtime/lua/vim/treesitter/_meta/misc.lua
++++ b/runtime/lua/vim/treesitter/_meta/misc.lua
+@@ -5,12 +5,10 @@ error('Cannot require a meta file')
+ ---@alias TSLoggerCallback fun(logtype: 'parse'|'lex', msg: string)
+ 
+ ---@class TSParser: userdata
+----@field parse fun(self: TSParser, tree: TSTree?, source: integer|string, include_bytes: boolean): TSTree, (Range4|Range6)[]
++---@field parse fun(self: TSParser, tree: TSTree?, source: integer|string, include_bytes: boolean, timeout_ns: integer?): TSTree?, (Range4|Range6)[]
+ ---@field reset fun(self: TSParser)
+ ---@field included_ranges fun(self: TSParser, include_bytes: boolean?): integer[]
+ ---@field set_included_ranges fun(self: TSParser, ranges: (Range6|TSNode)[])
+----@field set_timeout fun(self: TSParser, timeout: integer)
+----@field timeout fun(self: TSParser): integer
+ ---@field _set_logger fun(self: TSParser, lex: boolean, parse: boolean, cb: TSLoggerCallback)
+ ---@field _logger fun(self: TSParser): TSLoggerCallback
+ 
+diff --git a/runtime/lua/vim/treesitter/languagetree.lua b/runtime/lua/vim/treesitter/languagetree.lua
+index e7cee33a038866..6f0e377d2f920f 100644
+--- a/runtime/lua/vim/treesitter/languagetree.lua
++++ b/runtime/lua/vim/treesitter/languagetree.lua
+@@ -43,8 +43,10 @@
+ local query = require('vim.treesitter.query')
+ local language = require('vim.treesitter.language')
+ local Range = require('vim.treesitter._range')
++local hrtime = vim.uv.hrtime
+ 
+-local default_parse_timeout_ms = 3
++-- Parse in 3ms chunks.
++local default_parse_timeout_ns = 3 * 1000000
+ 
+ ---@type Range2
+ local entire_document_range = { 0, math.huge }
+@@ -198,16 +200,16 @@ function LanguageTree:_set_logger()
+   self._parser:_set_logger(log_lex, log_parse, self._logger)
+ end
+ 
+----Measure execution time of a function
++---Measure execution time of a function, in nanoseconds.
+ ---@generic R1, R2, R3
+ ---@param f fun(): R1, R2, R3
+ ---@return number, R1, R2, R3
+ local function tcall(f, ...)
+-  local start = vim.uv.hrtime()
++  local start = hrtime()
+   ---@diagnostic disable-next-line
+   local r = { f(...) }
+   --- @type number
+-  local duration = (vim.uv.hrtime() - start) / 1000000
++  local duration = hrtime() - start
+   --- @diagnostic disable-next-line: redundant-return-value
+   return duration, unpack(r)
+ end
+@@ -388,18 +390,29 @@ function LanguageTree:_parse_regions(range, thread_state)
+       )
+     then
+       self._parser:set_included_ranges(ranges)
+-      self._parser:set_timeout(thread_state.timeout and thread_state.timeout * 1000 or 0) -- ms -> micros
+ 
+-      local parse_time, tree, tree_changes =
+-        tcall(self._parser.parse, self._parser, self._trees[i], self._source, true)
++      local parse_time, tree, tree_changes = tcall(
++        self._parser.parse,
++        self._parser,
++        self._trees[i],
++        self._source,
++        true,
++        thread_state.timeout
++      )
+       while true do
+         if tree then
+           break
+         end
+         coroutine.yield(self._trees, false)
+ 
+-        parse_time, tree, tree_changes =
+-          tcall(self._parser.parse, self._parser, self._trees[i], self._source, true)
++        parse_time, tree, tree_changes = tcall(
++          self._parser.parse,
++          self._parser,
++          self._trees[i],
++          self._source,
++          true,
++          thread_state.timeout
++        )
+       end
+ 
+       self:_subtract_time(thread_state, parse_time)
+@@ -503,7 +516,7 @@ function LanguageTree:_async_parse(range, on_parse)
+   local buf = is_buffer_parser and vim.b[source] or nil
+   local ct = is_buffer_parser and buf.changedtick or nil
+   local total_parse_time = 0
+-  local redrawtime = vim.o.redrawtime
++  local redrawtime = vim.o.redrawtime * 1000000
+ 
+   local thread_state = {} ---@type ParserThreadState
+ 
+diff --git a/runtime/lua/vim/treesitter/languagetree.lua b/runtime/lua/vim/treesitter/languagetree.lua
+index a346bf59637fa0..5d3599920ea308 100644
+--- a/runtime/lua/vim/treesitter/languagetree.lua
++++ b/runtime/lua/vim/treesitter/languagetree.lua
+@@ -997,7 +997,7 @@
+ 
+   ---@type table<integer,vim.treesitter.languagetree.Injection>
+   local injections = {}
+-  local start = vim.uv.hrtime()
++  local start = hrtime()
+ 
+   local full_scan = range == true or self._injection_query.has_combined_injections
+ 
+@@ -1021,9 +1021,9 @@
+       end
+ 
+       -- Check the current function duration against the timeout, if it exists.
+-      local current_time = vim.uv.hrtime()
+-      self:_subtract_time(thread_state, (current_time - start) / 1000000)
+-      start = current_time
++      local current_time = hrtime()
++      self:_subtract_time(thread_state, current_time - start)
++      start = hrtime()
+     end
+   end
+
+diff --git a/src/nvim/lua/treesitter.c b/src/nvim/lua/treesitter.c
+index a346bf59637fa0..5d3599920ea308 100644
+--- a/src/nvim/lua/treesitter.c
++++ b/src/nvim/lua/treesitter.c
+@@ -15,6 +15,8 @@
+ #include <tree_sitter/api.h>
+ #include <uv.h>
+ 
++#include "nvim/os/time.h"
++
+ #ifdef HAVE_WASMTIME
+ # include <wasm.h>
+ 
+@@ -54,5 +56,10 @@ typedef struct {
+ } TSLuaTree;
+ 
++typedef struct {
++  uint64_t parse_start_time;
++  uint64_t timeout_threshold_ns;
++} TSLuaParserCallbackPayload;
++
+ #ifdef INCLUDE_GENERATED_DECLARATIONS
+ # include "lua/treesitter.c.generated.h"
+ #endif
+@@ -362,8 +369,6 @@ static struct luaL_Reg parser_meta[] = {
+   { "reset", parser_reset },
+   { "set_included_ranges", parser_set_ranges },
+   { "included_ranges", parser_get_ranges },
+-  { "set_timeout", parser_set_timeout },
+-  { "timeout", parser_get_timeout },
+   { "_set_logger", parser_set_logger },
+   { "_logger", parser_get_logger },
+   { NULL, NULL }
+@@ -487,6 +492,13 @@ static void push_ranges(lua_State *L, const TSRange *ranges, const size_t length
+   }
+ }
+ 
++static bool on_parser_progress(TSParseState *state)
++{
++  TSLuaParserCallbackPayload *payload = state->payload;
++  uint64_t parse_time = os_hrtime() - payload->parse_start_time;
++  return parse_time >= payload->timeout_threshold_ns;
++}
++
+ static int parser_parse(lua_State *L)
+ {
+   TSParser *p = parser_check(L, 1);
+@@ -524,7 +536,17 @@ static int parser_parse(lua_State *L)
+     }
+ 
+     input = (TSInput){ (void *)buf, input_cb, TSInputEncodingUTF8, NULL };
+-    new_tree = ts_parser_parse(p, old_tree, input);
++    if (!lua_isnil(L, 5)) {
++      uint64_t timeout_ns = (uint64_t)lua_tointeger(L, 5);
++      TSLuaParserCallbackPayload payload =
++        (TSLuaParserCallbackPayload){ .parse_start_time = os_hrtime(),
++                                      .timeout_threshold_ns = timeout_ns };
++      TSParseOptions parse_options = { .payload = &payload,
++                                       .progress_callback = on_parser_progress };
++      new_tree = ts_parser_parse_with_options(p, old_tree, input, parse_options);
++    } else {
++      new_tree = ts_parser_parse(p, old_tree, input);
++    }
+ 
+     break;
+ 
+@@ -534,12 +556,11 @@ static int parser_parse(lua_State *L)
+ 
+   bool include_bytes = (lua_gettop(L) >= 4) && lua_toboolean(L, 4);
+ 
+-  // Sometimes parsing fails (timeout, or wrong parser ABI)
+-  // In those case, just return an error.
+   if (!new_tree) {
+-    if (ts_parser_timeout_micros(p) == 0) {
+-      // No timeout set, must have had an error
+-      return luaL_error(L, "An error occurred when parsing.");
++    // Sometimes parsing fails (no language was set, or it was set to one with an incompatible ABI)
++    // In those cases, just return an error.
++    if (!ts_parser_language(p)) {
++      return luaL_error(L, "Language was unset, or has an incompatible ABI.");
+     }
+     return 0;
+   }
+@@ -670,26 +691,6 @@ static int parser_get_ranges(lua_State *L)
+   return 1;
+ }
+ 
+-static int parser_set_timeout(lua_State *L)
+-{
+-  TSParser *p = parser_check(L, 1);
+-
+-  if (lua_gettop(L) < 2) {
+-    luaL_error(L, "integer expected");
+-  }
+-
+-  uint32_t timeout = (uint32_t)luaL_checkinteger(L, 2);
+-  ts_parser_set_timeout_micros(p, timeout);
+-  return 0;
+-}
+-
+-static int parser_get_timeout(lua_State *L)
+-{
+-  TSParser *p = parser_check(L, 1);
+-  lua_pushinteger(L, (lua_Integer)ts_parser_timeout_micros(p));
+-  return 1;
+-}
+-
+ static void logger_cb(void *payload, TSLogType logtype, const char *s)
+ {
+   TSLuaLoggerOpts *opts = (TSLuaLoggerOpts *)payload;
