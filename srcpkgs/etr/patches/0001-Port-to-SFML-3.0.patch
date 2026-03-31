@@ -1,0 +1,2023 @@
+From 266a8c7e87287c3afa70fd3dd5ae9af49c88a6b3 Mon Sep 17 00:00:00 2001
+From: Andrea Brancaleoni <abc@pompel.me>
+Date: Tue, 31 Mar 2026 06:57:26 +0200
+Subject: [PATCH] Port to SFML 3.0
+
+Mostly straightforward with a few more complex changes:
+* Include `<GL/gl.h>` instead of `<GL/glx.h>`. The glx header
+  includes `Xlib.h` which has a `#define Status` which breaks the SFML 3
+  headers.
+* Change the `clamp` define to an inline function named `etr_clamp`.
+  The define breaks modern C++ stl headers (eg `std::clamp` breaks).
+* Rewrite the credits geometry using a triangle strip.
+* Rewrite `PollEvent` which has significantly changed in SFML 3.
+* Bump C++ standard to c++17 as required by SFML 3.
+---
+ configure.ac             |   4 +-
+ src/audio.cpp            |  40 ++++++------
+ src/bh.h                 |   4 ++
+ src/common.cpp           |   2 +-
+ src/common.h             |   2 +-
+ src/config_screen.cpp    |   6 +-
+ src/credits.cpp          | 100 +++++++++++++++++++++--------
+ src/event.cpp            |   6 +-
+ src/event_select.cpp     |   8 +--
+ src/font.cpp             |  14 ++--
+ src/game_over.cpp        |   2 +-
+ src/game_type_select.cpp |  18 +++---
+ src/gui.cpp              | 134 +++++++++++++++++++--------------------
+ src/loading.cpp          |   4 +-
+ src/newplayer.cpp        |   4 +-
+ src/ogl_test.cpp         |   2 +-
+ src/particles.cpp        |  29 ++++-----
+ src/paused.cpp           |  10 +--
+ src/physics.cpp          |   6 +-
+ src/race_select.cpp      |  12 ++--
+ src/racing.cpp           |  50 +++++++--------
+ src/regist.cpp           |   4 +-
+ src/score.cpp            |  10 +--
+ src/splash_screen.cpp    |  16 ++---
+ src/states.cpp           |  89 ++++++++++----------------
+ src/textures.cpp         |   4 +-
+ src/tool_char.cpp        |  62 +++++++++---------
+ src/tool_frame.cpp       |  88 ++++++++++++-------------
+ src/tux.cpp              |   4 +-
+ src/view.cpp             |   2 +-
+ src/winsys.cpp           |  38 +++++------
+ src/winsys.h             |   2 +-
+ 32 files changed, 402 insertions(+), 374 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 4b64043..f69ac6b 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -110,8 +110,8 @@ fi
+ 
+ CPPFLAGS="${CPPFLAGS} -DETR_DATA_DIR=\\\"$datadir\\\""
+ 
+-# Request c++14 compatibility
+-CXXFLAGS="${CXXFLAGS} -std=c++14"
++# Request c++17 compatibility for SFML 3
++CXXFLAGS="${CXXFLAGS} -std=c++17"
+ 
+ AC_CONFIG_FILES([
+         Makefile
+diff --git a/src/audio.cpp b/src/audio.cpp
+index c89081b..005395c 100644
+--- a/src/audio.cpp
++++ b/src/audio.cpp
+@@ -12,7 +12,7 @@ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+----------------------------------------------------------------------*/
++ ---------------------------------------------------------------------*/
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <etr_config.h>
+@@ -30,18 +30,20 @@ CMusic Music;
+ 
+ struct TSound {
+ 	sf::SoundBuffer data;
+-	sf::Sound player;
++	std::unique_ptr<sf::Sound> player;
+ 	explicit TSound(int volume) {
+ 		setVolume(volume);
+ 	}
++	~TSound() = default;
+ 	void setVolume(int volume) {
+-		player.setVolume(volume);
++		if (player) player->setVolume(volume);
+ 	}
+ 
+ 	void Play(bool loop) {
+-		if (player.getStatus() == sf::Sound::Playing) return;
+-		player.setLoop(loop);
+-		player.play();
++		if (!player) return;
++		if (player->getStatus() == sf::SoundSource::Status::Playing) return;
++		player->setLooping(loop);
++		player->play();
+ 	}
+ };
+ 
+@@ -55,9 +57,9 @@ CSound::~CSound() {
+ 
+ bool CSound::LoadChunk(const std::string& name, const std::string& filename) {
+ 	sounds.emplace_back(new TSound(param.sound_volume));
+-	if (!sounds.back()->data.loadFromFile(filename)) // Try loading sound buffer
++	if (!sounds.back()->data.loadFromFile(filename))
+ 		return false;
+-	sounds.back()->player.setBuffer(sounds.back()->data);
++	sounds.back()->player = std::make_unique<sf::Sound>(sounds.back()->data);
+ 	SoundIndex[name] = sounds.size()-1;
+ 	return true;
+ }
+@@ -94,7 +96,7 @@ std::size_t CSound::GetSoundIdx(const std::string& name) const {
+ void CSound::SetVolume(std::size_t soundid, int volume) {
+ 	if (soundid >= sounds.size()) return;
+ 
+-	volume = clamp(0, volume, MIX_MAX_VOLUME);
++	volume = etr_clamp(0, volume, MIX_MAX_VOLUME);
+ 	sounds[soundid]->setVolume(volume);
+ }
+ 
+@@ -117,7 +119,7 @@ void CSound::Play(const std::string& name, bool loop) {
+ void CSound::Play(std::size_t soundid, bool loop, int volume) {
+ 	if (soundid >= sounds.size()) return;
+ 
+-	volume = clamp(0, volume, MIX_MAX_VOLUME);
++	volume = etr_clamp(0, volume, MIX_MAX_VOLUME);
+ 	sounds[soundid]->setVolume(volume);
+ 	sounds[soundid]->Play(loop);
+ }
+@@ -129,9 +131,8 @@ void CSound::Play(const std::string& name, bool loop, int volume) {
+ void CSound::Halt(std::size_t soundid) {
+ 	if (soundid >= sounds.size()) return;
+ 
+-	// loop_count must be -1 (endless loop) for halt
+-	if (sounds[soundid]->player.getLoop())
+-		sounds[soundid]->player.stop();
++	if (sounds[soundid]->player && sounds[soundid]->player->isLooping())
++		sounds[soundid]->player->stop();
+ }
+ 
+ void CSound::Halt(const std::string& name) {
+@@ -140,7 +141,8 @@ void CSound::Halt(const std::string& name) {
+ 
+ void CSound::HaltAll() {
+ 	for (std::size_t i = 0; i < sounds.size(); i++) {
+-		sounds[i]->player.stop();
++		if (sounds[i]->player)
++			sounds[i]->player->stop();
+ 	}
+ }
+ 
+@@ -149,7 +151,7 @@ void CSound::HaltAll() {
+ // --------------------------------------------------------------------
+ 
+ CMusic::CMusic() {
+-	curr_music = 0;
++	curr_music = nullptr;
+ 	curr_volume = 10;
+ }
+ CMusic::~CMusic() {
+@@ -232,7 +234,7 @@ std::size_t CMusic::GetThemeIdx(const std::string& theme) const {
+ }
+ 
+ void CMusic::SetVolume(int volume) {
+-	volume = clamp(0, volume, MIX_MAX_VOLUME);
++	volume = etr_clamp(0, volume, MIX_MAX_VOLUME);
+ 	if (curr_music)
+ 		curr_music->setVolume(volume);
+ 	curr_volume = volume;
+@@ -242,10 +244,10 @@ bool CMusic::Play(sf::Music* music, bool loop, int volume) {
+ 	if (!music)
+ 		return false;
+ 
+-	volume = clamp(0, volume, MIX_MAX_VOLUME);
++	volume = etr_clamp(0, volume, MIX_MAX_VOLUME);
+ 	if (music != curr_music) {
+ 		music->setVolume(volume);
+-		music->setLoop(loop);
++		music->setLooping(loop);
+ 		if (curr_music)
+ 			curr_music->stop();
+ 		curr_music = music;
+@@ -286,4 +288,4 @@ void CMusic::Halt() {
+ 		curr_music->stop();
+ 		curr_music = nullptr;
+ 	}
+-}
++}
+\ No newline at end of file
+diff --git a/src/bh.h b/src/bh.h
+index c189901..85f6178 100644
+--- a/src/bh.h
++++ b/src/bh.h
+@@ -25,6 +25,7 @@ GNU General Public License for more details.
+ #include <cstdint>
+ #include <cstddef>
+ #include <string>
++#include <stdlib.h>
+ 
+ #include <GL/gl.h>
+ #include <SFML/System.hpp>
+@@ -72,6 +73,9 @@ GNU General Public License for more details.
+ #	define SEP "/"
+ #endif
+ 
++#ifdef Status
++#undef Status
++#endif
+ 
+ #define USE_STENCIL_BUFFER
+ 
+diff --git a/src/common.cpp b/src/common.cpp
+index b444739..49cfd7d 100644
+--- a/src/common.cpp
++++ b/src/common.cpp
+@@ -30,7 +30,7 @@ GNU General Public License for more details.
+ //				color utils
+ // --------------------------------------------------------------------
+ 
+-#define TColor(r, g, b, a) sf::Color(static_cast<sf::Uint8>(r*255), static_cast<sf::Uint8>(g*255), static_cast<sf::Uint8>(b*255), static_cast<sf::Uint8>(a*255))
++#define TColor(r, g, b, a) sf::Color(static_cast<std::uint8_t>(r*255), static_cast<std::uint8_t>(g*255), static_cast<std::uint8_t>(b*255), static_cast<std::uint8_t>(a*255))
+ const sf::Color colDYell =		TColor(1.0, 0.8, 0.0, 1.0);
+ const sf::Color colDDYell =		TColor(0.8, 0.6, 0.0, 1.0);
+ const sf::Color colLYell =		TColor(1.0, 1.0, 0.4, 1.0);
+diff --git a/src/common.h b/src/common.h
+index 4c87849..29cc64b 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -22,7 +22,7 @@ GNU General Public License for more details.
+ #include "matrices.h"
+ 
+ 
+-#define clamp(minimum, x, maximum) (std::max(std::min(x, maximum), minimum))
++#define etr_clamp(minimum, x, maximum) (std::max(std::min(x, maximum), minimum))
+ 
+ #ifndef M_PI
+ #	define M_PI 3.1415926535
+diff --git a/src/config_screen.cpp b/src/config_screen.cpp
+index 0e7200b..ce86a73 100644
+--- a/src/config_screen.cpp
++++ b/src/config_screen.cpp
+@@ -97,13 +97,13 @@ void CGameConfig::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+ 
+ 	switch (key) {
+-		case sf::Keyboard::U:
++		case sf::Keyboard::Key::U:
+ 			param.ui_snow = !param.ui_snow;
+ 			break;
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			State::manager.RequestEnterState(*State::manager.PreviousState());
+ 			break;
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			if (textbuttons[0]->focussed())
+ 				State::manager.RequestEnterState(*State::manager.PreviousState());
+ 			else if (textbuttons[1]->focussed())
+diff --git a/src/credits.cpp b/src/credits.cpp
+index 7dd3be1..d427fde 100644
+--- a/src/credits.cpp
++++ b/src/credits.cpp
+@@ -12,7 +12,7 @@ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+----------------------------------------------------------------------*/
++ ---------------------------------------------------------------------*/
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <etr_config.h>
+@@ -38,8 +38,8 @@ CCredits Credits;
+ 
+ static float y_offset = 0;
+ static bool moving = true;
+-sf::RenderTexture* RT = 0;
+-sf::VertexArray arr(sf::Quads, 12);
++sf::RenderTexture* RT = nullptr;
++sf::VertexArray arr(sf::PrimitiveType::Triangles, 18);
+ sf::RenderStates states(sf::BlendAlpha);
+ 
+ void CCredits::LoadCreditList() {
+@@ -72,14 +72,14 @@ void CCredits::DrawCreditsText(float time_step) {
+ 	float offs = 0.f;
+ 	if (moving) y_offset += time_step * 30;
+ 
+-	sf::Text text;
+-	text.setFont(FT.getCurrentFont());
++	FT.getCurrentFont();
+ 	RT->clear(colTBackr);
+ 	for (std::forward_list<TCredits>::const_iterator i = CreditList.begin(); i != CreditList.end(); ++i) {
+ 		offs = h - TOP_Y - y_offset + i->offs;
+-		if (offs > h || offs < -100.f) // Draw only visible lines
++		if (offs > h || offs < -100.f)
+ 			continue;
+ 
++		sf::Text text(FT.getCurrentFont());
+ 		if (i->col == 0) {
+ 			text.setFillColor(colWhite);
+ 			text.setOutlineColor(colWhite);
+@@ -89,7 +89,7 @@ void CCredits::DrawCreditsText(float time_step) {
+ 		}
+ 		text.setCharacterSize(FT.AutoSizeN(i->size)+1);
+ 		text.setString(i->text);
+-		text.setPosition((Winsys.resolution.width - text.getLocalBounds().width) / 2, offs);
++		text.setPosition({(Winsys.resolution.width - text.getLocalBounds().size.x) / 2, offs});
+ 		RT->draw(text);
+ 	}
+ 	RT->display();
+@@ -102,10 +102,10 @@ void CCredits::DrawCreditsText(float time_step) {
+ void CCredits::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+ 	switch (key) {
+-		case sf::Keyboard::M:
++		case sf::Keyboard::Key::M:
+ 			moving = !moving;
+ 			break;
+-		case sf::Keyboard::U:
++		case sf::Keyboard::Key::U:
+ 			param.ui_snow = !param.ui_snow;
+ 			break;
+ 		default:
+@@ -128,24 +128,68 @@ void CCredits::Enter() {
+ 	y_offset = 0;
+ 	moving = true;
+ 	RT = new sf::RenderTexture();
+-	RT->create(Winsys.resolution.width, Winsys.resolution.height - TOP_Y - BOTT_Y + 2 * FADE);
+-
+-	float w = Winsys.resolution.width;
+-	float h = Winsys.resolution.height;
+-	arr[0] = sf::Vertex(sf::Vector2f(0, TOP_Y - FADE), colTBackr, sf::Vector2f(0, 0));
+-	arr[1] = sf::Vertex(sf::Vector2f(0, TOP_Y), colWhite, sf::Vector2f(0, FADE));
+-	arr[2] = sf::Vertex(sf::Vector2f(w, TOP_Y), colWhite, sf::Vector2f(w, FADE));
+-	arr[3] = sf::Vertex(sf::Vector2f(w, TOP_Y - FADE), colTBackr, sf::Vector2f(w, 0));
+-
+-	arr[4] = sf::Vertex(sf::Vector2f(0, TOP_Y), colWhite, sf::Vector2f(0, FADE));
+-	arr[5] = sf::Vertex(sf::Vector2f(0, h - BOTT_Y), colWhite, sf::Vector2f(0, RT->getSize().y - FADE));
+-	arr[6] = sf::Vertex(sf::Vector2f(w, h - BOTT_Y), colWhite, sf::Vector2f(w, RT->getSize().y - FADE));
+-	arr[7] = sf::Vertex(sf::Vector2f(w, TOP_Y), colWhite, sf::Vector2f(w, FADE));
+-
+-	arr[8] = sf::Vertex(sf::Vector2f(0, h - BOTT_Y), colWhite, sf::Vector2f(0, RT->getSize().y - FADE));
+-	arr[9] = sf::Vertex(sf::Vector2f(0, h - BOTT_Y + FADE), colTBackr, sf::Vector2f(0, RT->getSize().y));
+-	arr[10] = sf::Vertex(sf::Vector2f(w, h - BOTT_Y + FADE), colTBackr, sf::Vector2f(w, RT->getSize().y));
+-	arr[11] = sf::Vertex(sf::Vector2f(w, h - BOTT_Y), colWhite, sf::Vector2f(w, RT->getSize().y - FADE));
++	RT->resize({Winsys.resolution.width, Winsys.resolution.height - TOP_Y - BOTT_Y + 2 * FADE});
++
++	float w = static_cast<float>(Winsys.resolution.width);
++	float h = static_cast<float>(Winsys.resolution.height);
++	float tex_h = static_cast<float>(RT->getSize().y);
++
++	arr[0].position = sf::Vector2f(0, TOP_Y - FADE);
++	arr[0].color = colTBackr;
++	arr[0].texCoords = sf::Vector2f(0, 0);
++	arr[1].position = sf::Vector2f(0, TOP_Y);
++	arr[1].color = colWhite;
++	arr[1].texCoords = sf::Vector2f(0, FADE);
++	arr[2].position = sf::Vector2f(w, TOP_Y);
++	arr[2].color = colWhite;
++	arr[2].texCoords = sf::Vector2f(w, FADE);
++	arr[3].position = sf::Vector2f(0, TOP_Y - FADE);
++	arr[3].color = colTBackr;
++	arr[3].texCoords = sf::Vector2f(0, 0);
++	arr[4].position = sf::Vector2f(w, TOP_Y);
++	arr[4].color = colWhite;
++	arr[4].texCoords = sf::Vector2f(w, FADE);
++	arr[5].position = sf::Vector2f(w, TOP_Y - FADE);
++	arr[5].color = colTBackr;
++	arr[5].texCoords = sf::Vector2f(w, 0);
++
++	arr[6].position = sf::Vector2f(0, TOP_Y);
++	arr[6].color = colWhite;
++	arr[6].texCoords = sf::Vector2f(0, FADE);
++	arr[7].position = sf::Vector2f(0, h - BOTT_Y);
++	arr[7].color = colWhite;
++	arr[7].texCoords = sf::Vector2f(0, tex_h - FADE);
++	arr[8].position = sf::Vector2f(w, h - BOTT_Y);
++	arr[8].color = colWhite;
++	arr[8].texCoords = sf::Vector2f(w, tex_h - FADE);
++	arr[9].position = sf::Vector2f(0, TOP_Y);
++	arr[9].color = colWhite;
++	arr[9].texCoords = sf::Vector2f(0, FADE);
++	arr[10].position = sf::Vector2f(w, h - BOTT_Y);
++	arr[10].color = colWhite;
++	arr[10].texCoords = sf::Vector2f(w, tex_h - FADE);
++	arr[11].position = sf::Vector2f(w, TOP_Y);
++	arr[11].color = colWhite;
++	arr[11].texCoords = sf::Vector2f(w, FADE);
++
++	arr[12].position = sf::Vector2f(0, h - BOTT_Y);
++	arr[12].color = colWhite;
++	arr[12].texCoords = sf::Vector2f(0, tex_h - FADE);
++	arr[13].position = sf::Vector2f(0, h - BOTT_Y + FADE);
++	arr[13].color = colTBackr;
++	arr[13].texCoords = sf::Vector2f(0, tex_h);
++	arr[14].position = sf::Vector2f(w, h - BOTT_Y + FADE);
++	arr[14].color = colTBackr;
++	arr[14].texCoords = sf::Vector2f(w, tex_h);
++	arr[15].position = sf::Vector2f(0, h - BOTT_Y);
++	arr[15].color = colWhite;
++	arr[15].texCoords = sf::Vector2f(0, tex_h - FADE);
++	arr[16].position = sf::Vector2f(w, h - BOTT_Y + FADE);
++	arr[16].color = colTBackr;
++	arr[16].texCoords = sf::Vector2f(w, tex_h);
++	arr[17].position = sf::Vector2f(w, h - BOTT_Y);
++	arr[17].color = colWhite;
++	arr[17].texCoords = sf::Vector2f(w, tex_h - FADE);
+ 
+ 	states.texture = &RT->getTexture();
+ }
+@@ -169,4 +213,4 @@ void CCredits::Loop(float time_step) {
+ 	DrawGUIBackground(Winsys.scale);
+ 
+ 	Winsys.SwapBuffers();
+-}
++}
+\ No newline at end of file
+diff --git a/src/event.cpp b/src/event.cpp
+index a1f5c48..33fe410 100644
+--- a/src/event.cpp
++++ b/src/event.cpp
+@@ -67,14 +67,14 @@ void StartRace() {
+ void CEvent::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+ 	switch (key) {
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			if (textbuttons[0]->focussed() && ready < 1) StartRace();
+ 			else State::manager.RequestEnterState(EventSelect);
+ 			break;
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			State::manager.RequestEnterState(EventSelect);
+ 			break;
+-		case sf::Keyboard::U:
++		case sf::Keyboard::Key::U:
+ 			param.ui_snow = !param.ui_snow;
+ 			break;
+ 		default:
+diff --git a/src/event_select.cpp b/src/event_select.cpp
+index f954e88..e1f2822 100644
+--- a/src/event_select.cpp
++++ b/src/event_select.cpp
+@@ -53,17 +53,17 @@ void EnterEvent() {
+ void CEventSelect::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+ 	switch (key) {
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			State::manager.RequestEnterState(GameTypeSelect);
+ 			break;
+-		case sf::Keyboard::Q:
++		case sf::Keyboard::Key::Q:
+ 			State::manager.RequestQuit();
+ 			break;
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			if (textbuttons[1]->focussed()) State::manager.RequestEnterState(GameTypeSelect);
+ 			else if (Events.IsUnlocked(event->GetValue(), cup->GetValue())) EnterEvent();
+ 			break;
+-		case sf::Keyboard::U:
++		case sf::Keyboard::Key::U:
+ 			param.ui_snow = !param.ui_snow;
+ 			break;
+ 		default:
+diff --git a/src/font.cpp b/src/font.cpp
+index cc7a2ab..e6fa77d 100644
+--- a/src/font.cpp
++++ b/src/font.cpp
+@@ -110,7 +110,7 @@ void CFont::Clear() {
+ 
+ int CFont::LoadFont(const std::string& name, const std::string& path) {
+ 	fonts.push_back(new sf::Font());
+-	if (!fonts.back()->loadFromFile(path)) {
++	if (!fonts.back()->openFromFile(path)) {
+ 		Message("Failed to open font");
+ 		return -1;
+ 	}
+@@ -195,10 +195,10 @@ int CFont::AutoDistanceN(int rel_val) const {
+ void CFont::DrawText(float x, float y, const sf::String& text, std::size_t font, unsigned int size) const {
+ 	if (font >= fonts.size()) return;
+ 
+-	sf::Text temp(text, *fonts[font], size);
++	sf::Text temp(*fonts[font], text, size);
+ 	if (x == CENTER)
+-		x = (Winsys.resolution.width - temp.getLocalBounds().width) / 2;
+-	temp.setPosition(x, y);
++		x = (Winsys.resolution.width - temp.getLocalBounds().size.x) / 2;
++	temp.setPosition({x, y});
+ 	temp.setFillColor(curr_col);
+ 	temp.setOutlineColor(curr_col);
+ 	Winsys.draw(temp);
+@@ -218,9 +218,9 @@ void CFont::DrawString(float x, float y, const sf::String& s, const std::string
+ void CFont::GetTextSize(const sf::String& text, float &x, float &y, std::size_t font, unsigned int size) const {
+ 	if (font >= fonts.size()) { x = 0; y = 0; return; }
+ 
+-	sf::Text temp(text, *fonts[font], size);
+-	x = temp.getGlobalBounds().width;
+-	y = temp.getGlobalBounds().height;
++	sf::Text temp(*fonts[font], text, size);
++	x = temp.getGlobalBounds().size.x;
++	y = temp.getGlobalBounds().size.y;
+ }
+ 
+ void CFont::GetTextSize(const sf::String& text, float &x, float &y, const std::string &fontname, unsigned int size) const {
+diff --git a/src/game_over.cpp b/src/game_over.cpp
+index 204db54..e5cb744 100644
+--- a/src/game_over.cpp
++++ b/src/game_over.cpp
+@@ -55,7 +55,7 @@ void QuitGameOver() {
+ 
+ void CGameOver::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+-	if (key == sf::Keyboard::Enter || key == sf::Keyboard::Escape) QuitGameOver();
++	if (key == sf::Keyboard::Key::Enter || key == sf::Keyboard::Key::Escape) QuitGameOver();
+ }
+ 
+ void CGameOver::Mouse(int button, int state, int x, int y) {
+diff --git a/src/game_type_select.cpp b/src/game_type_select.cpp
+index 169a242..5309685 100644
+--- a/src/game_type_select.cpp
++++ b/src/game_type_select.cpp
+@@ -38,7 +38,7 @@ GNU General Public License for more details.
+ CGameTypeSelect GameTypeSelect;
+ 
+ static TTextButton* textbuttons[7];
+-static sf::Sprite logo;
++static sf::Sprite* logo;
+ 
+ void EnterPractice() {
+ 	g_game.game_type = PRACTICING;
+@@ -73,16 +73,16 @@ void CGameTypeSelect::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+ 
+ 	switch (key) {
+-		case sf::Keyboard::U:
++		case sf::Keyboard::Key::U:
+ 			param.ui_snow = !param.ui_snow;
+ 			break;
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			State::manager.RequestQuit();
+ 			break;
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			QuitGameType();
+ 			break;
+-		case sf::Keyboard::W:
++		case sf::Keyboard::Key::W:
+ 			Music.FreeMusics();
+ 			break;
+ 		default:
+@@ -113,9 +113,9 @@ void CGameTypeSelect::Enter() {
+ 	textbuttons[4] = AddTextButton(Trans.Text(43), CENTER, top + dist * 4, siz);
+ 	textbuttons[5] = AddTextButton(Trans.Text(4), CENTER, top + dist * 5, siz);
+ 	textbuttons[6] = AddTextButton(Trans.Text(5), CENTER, top + dist * 6, siz);
+-	logo.setTexture(Tex.GetSFTexture(T_TITLE));
+-	logo.setScale(Winsys.scale, Winsys.scale);
+-	logo.setPosition((Winsys.resolution.width - logo.getTextureRect().width) / 2, (5));
++	logo = new sf::Sprite(Tex.GetSFTexture(T_TITLE));
++	logo->setScale({Winsys.scale, Winsys.scale});
++	logo->setPosition({(Winsys.resolution.width - logo->getTextureRect().size.x) / 2.0f, 5.0f});
+ 
+ 	Music.Play(param.menu_music, true);
+ }
+@@ -129,7 +129,7 @@ void CGameTypeSelect::Loop(float time_step) {
+ 		draw_ui_snow();
+ 	}
+ 
+-	Winsys.draw(logo);
++	Winsys.draw(*logo);
+ 	DrawGUIFrame();
+ 	DrawGUI();
+ 
+diff --git a/src/gui.cpp b/src/gui.cpp
+index 7704876..57ca40d 100644
+--- a/src/gui.cpp
++++ b/src/gui.cpp
+@@ -78,11 +78,11 @@ void TWidget::MouseMove(int x, int y) {
+ 
+ TLabel::TLabel(const sf::String& string, int x, int y, const sf::Color& color)
+ 	: TWidget(x, y, 0, 0, false)
+-	, text(string, FT.getCurrentFont(), FT.GetSize()) {
++	, text(FT.getCurrentFont(), string, FT.GetSize()) {
+ 	if (x == CENTER)
+-		text.setPosition((Winsys.resolution.width - text.getLocalBounds().width) / 2, y);
++		text.setPosition({(Winsys.resolution.width - text.getLocalBounds().size.x) / 2, (float)y});
+ 	else
+-		text.setPosition(x, y);
++		text.setPosition({(float)x, (float)y});
+ 	text.setFillColor(color);
+ 	text.setOutlineColor(color);
+ }
+@@ -103,7 +103,7 @@ void TLabel::Draw() const {
+ }
+ 
+ sf::Vector2f TLabel::GetSize() const {
+-	return sf::Vector2f(text.getLocalBounds().width, text.getLocalBounds().height);
++	return sf::Vector2f(text.getLocalBounds().size.x, text.getLocalBounds().size.y);
+ 
+ }
+ 
+@@ -115,9 +115,9 @@ TLabel* AddLabel(const sf::String& string, int x, int y, const sf::Color& color)
+ TFramedText::TFramedText(int x, int y, int width, int height, int line, const sf::Color& backcol, const sf::String& string, unsigned int ftsize, bool borderFocus_)
+ 	: TWidget(x, y, width, height, false)
+ 	, frame(sf::Vector2f(width - line * 2, height - line * 2))
+-	, text(string, FT.getCurrentFont(), ftsize)
++	, text(FT.getCurrentFont(), string, ftsize)
+ 	, borderFocus(borderFocus_) {
+-	text.setPosition(x + line + 20, y + line);
++	text.setPosition({(float)x + line + 20, (float)y + line});
+ 	if (!borderFocus) {
+ 		text.setFillColor(colWhite);
+ 		text.setOutlineColor(colWhite);
+@@ -125,7 +125,7 @@ TFramedText::TFramedText(int x, int y, int width, int height, int line, const sf
+ 		text.setFillColor(colDYell);
+ 		text.setOutlineColor(colDYell);
+ 	}
+-	frame.setPosition(x + line, y + line);
++	frame.setPosition({(float)x + line, (float)y + line});
+ 	frame.setOutlineThickness(line);
+ 	frame.setFillColor(backcol);
+ 	frame.setOutlineColor(colWhite);
+@@ -172,12 +172,12 @@ TFramedText* AddFramedText(int x, int y, int width, int height, int line, const
+ 
+ TTextButton::TTextButton(int x, int y, const sf::String& text_, int ftsize)
+ 	: TWidget(x, y, 0, 0)
+-	, text(text_, FT.getCurrentFont(), ftsize) {
++	, text(FT.getCurrentFont(), text_, ftsize) {
+ 	if (ftsize < 0) text.setCharacterSize(FT.AutoSizeN(4));
+ 
+-	int len = text.getLocalBounds().width;
++	int len = text.getLocalBounds().size.x;
+ 	if (x == CENTER) position.x = (Winsys.resolution.width - len) / 2;
+-	text.setPosition(position.x, position.y);
++	text.setPosition({position.x, position.y});
+ 	int offs = ftsize / 5;
+ 	mouseRect.left = position.x-20;
+ 	mouseRect.top = position.y+offs;
+@@ -211,15 +211,15 @@ TTextButton* AddTextButtonN(const sf::String& text, int x, int y, int rel_ftsize
+ 
+ TTextField::TTextField(int x, int y, int width, int height, const sf::String& text_)
+ 	: TWidget(x, y, width, height)
+-	, text(text_, FT.getCurrentFont(), FT.AutoSizeN(5))
++	, text(FT.getCurrentFont(), text_, FT.AutoSizeN(5))
+ 	, frame(sf::Vector2f(width-6.f, height-6.f))
+ 	, cursorShape(sf::Vector2f(2.f, 30.f * Winsys.scale))
+ 	, maxLng(32)
+ 	, time(0.0)
+ 	, cursor(false) {
+-	text.setPosition(mouseRect.left + 20, mouseRect.top);
++	text.setPosition({(float)mouseRect.left + 20, (float)mouseRect.top});
+ 	cursorShape.setFillColor(colYellow);
+-	frame.setPosition(x + 3, y + 3);
++	frame.setPosition({(float)x + 3, (float)y + 3});
+ 	frame.setOutlineThickness(3);
+ 	frame.setFillColor(colMBackgr);
+ 	frame.setOutlineColor(colWhite);
+@@ -244,7 +244,7 @@ void TTextField::TextEnter(char c) {
+ 
+ void TTextField::SetCursorPos(std::size_t new_pos) {
+ 	cursorPos = new_pos;
+-	cursorShape.setPosition(text.findCharacterPos(cursorPos).x, mouseRect.top + 9);
++	cursorShape.setPosition({text.findCharacterPos(cursorPos).x, (float)mouseRect.top + 9});
+ }
+ 
+ void TTextField::Focussed() {
+@@ -270,7 +270,7 @@ bool TTextField::Click(int x, int y) {
+ 			cursorPos++;
+ 			first = second;
+ 		}
+-		cursorShape.setPosition(text.findCharacterPos(cursorPos).x, mouseRect.top + 9);
++		cursorShape.setPosition({text.findCharacterPos(cursorPos).x, (float)mouseRect.top + 9});
+ 		return true;
+ 	}
+ 	return false;
+@@ -283,22 +283,22 @@ static void eraseFromText(sf::Text& text, std::size_t pos) {
+ }
+ void TTextField::Key(sf::Keyboard::Key key, bool released) {
+ 	switch (key) {
+-		case sf::Keyboard::Delete:
++		case sf::Keyboard::Key::Delete:
+ 			if (cursorPos < text.getString().getSize()) eraseFromText(text, cursorPos);
+ 			break;
+-		case sf::Keyboard::BackSpace:
++		case sf::Keyboard::Key::Backspace:
+ 			if (cursorPos > 0) { eraseFromText(text, cursorPos-1); SetCursorPos(cursorPos - 1); }
+ 			break;
+-		case sf::Keyboard::Right:
++			case sf::Keyboard::Key::Right:
+ 			if (cursorPos < text.getString().getSize()) SetCursorPos(cursorPos + 1);
+ 			break;
+-		case sf::Keyboard::Left:
++			case sf::Keyboard::Key::Left:
+ 			if (cursorPos > 0) SetCursorPos(cursorPos - 1);
+ 			break;
+-		case sf::Keyboard::Home:
++		case sf::Keyboard::Key::Home:
+ 			SetCursorPos(0);
+ 			break;
+-		case sf::Keyboard::End:
++		case sf::Keyboard::Key::End:
+ 			SetCursorPos(text.getString().getSize());
+ 			break;
+ 		default:
+@@ -321,22 +321,22 @@ TTextField* AddTextField(const sf::String& text, int x, int y, int width, int he
+ 
+ TCheckbox::TCheckbox(int x, int y, int width, const sf::String& tag_)
+ 	: TWidget(x, y, 32 * Winsys.scale / 0.8f, 32 * Winsys.scale / 0.8f)
+-	, text(tag_, FT.getCurrentFont(), FT.GetSize())
++	, text(FT.getCurrentFont(), tag_, FT.GetSize())
+ 	, back(Tex.GetSFTexture(CHECKBOX))
+ 	, checkmark(Tex.GetSFTexture(CHECKMARK_SMALL))
+ 	, checked(false) {
+-	text.setPosition(x, y);
+-	back.setPosition(x + width - 32, y);
+-	checkmark.setPosition(x + width - 32, y);
++	text.setPosition({(float)x, (float)y});
++	back.setPosition({(float)x + width - 32, (float)y});
++	checkmark.setPosition({(float)x + width - 32, (float)y});
+ 	mouseRect.left = x + width - 32;
+-	back.setScale(Winsys.scale / 0.8f, Winsys.scale / 0.8f);
+-	checkmark.setScale(Winsys.scale / 0.8f, Winsys.scale / 0.8f);
++	back.setScale({Winsys.scale / 0.8f, Winsys.scale / 0.8f});
++	checkmark.setScale({Winsys.scale / 0.8f, Winsys.scale / 0.8f});
+ }
+ 
+ void TCheckbox::SetPosition(int x, int y) {
+-	text.setPosition(x, y);
+-	back.setPosition(x, y);
+-	checkmark.setPosition(x, y);
++	text.setPosition({(float)x, (float)y});
++	back.setPosition({(float)x, (float)y});
++	checkmark.setPosition({(float)x, (float)y});
+ }
+ 
+ void TCheckbox::Focussed() {
+@@ -367,7 +367,7 @@ bool TCheckbox::Click(int x, int y) {
+ void TCheckbox::Key(sf::Keyboard::Key key, bool released) {
+ 	if (released) return;
+ 
+-	if (key == sf::Keyboard::Space || key == sf::Keyboard::Return) {
++	if (key == sf::Keyboard::Key::Space || key == sf::Keyboard::Key::Enter) {
+ 		checked = !checked;
+ 	}
+ }
+@@ -383,9 +383,9 @@ TIconButton::TIconButton(int x, int y, const sf::Texture& texture, float size_,
+ 	, size(size_)
+ 	, maximum(max_)
+ 	, value(value_) {
+-	sprite.setScale(size / (texture.getSize().x / 2.f), size / (texture.getSize().y / 2.f));
+-	sprite.setPosition(x, y);
+-	frame.setPosition(x, y);
++	sprite.setScale({size / (texture.getSize().x / 2.f), size / (texture.getSize().y / 2.f)});
++	sprite.setPosition({(float)x, (float)y});
++	frame.setPosition({(float)x, (float)y});
+ 	frame.setOutlineColor(colWhite);
+ 	frame.setOutlineThickness(3.f);
+ 	SetValue(value_);
+@@ -398,19 +398,19 @@ void TIconButton::SetValue(int _value) {
+ 	else if (value < 0)
+ 		value = maximum;
+ 
+-	sf::Vector2u texSize = sprite.getTexture()->getSize();
++	sf::Vector2u texSize = sprite.getTexture().getSize();
+ 	switch (value) {
+ 		case 0:
+-			sprite.setTextureRect(sf::IntRect(0, 0, texSize.x / 2, texSize.y / 2));
++			sprite.setTextureRect(sf::IntRect({0, 0}, {texSize.x / 2, texSize.y / 2}));
+ 			break;
+ 		case 1:
+-			sprite.setTextureRect(sf::IntRect(texSize.x / 2, 0, texSize.x / 2, texSize.y / 2));
++			sprite.setTextureRect(sf::IntRect({texSize.x / 2, 0}, {texSize.x / 2, texSize.y / 2}));
+ 			break;
+ 		case 2:
+-			sprite.setTextureRect(sf::IntRect(0, texSize.y / 2, texSize.x / 2, texSize.y / 2));
++			sprite.setTextureRect(sf::IntRect({0, texSize.y / 2}, {texSize.x / 2, texSize.y / 2}));
+ 			break;
+ 		case 3:
+-			sprite.setTextureRect(sf::IntRect(texSize.x / 2, texSize.y / 2, texSize.x / 2, texSize.y / 2));
++			sprite.setTextureRect(sf::IntRect({texSize.x / 2, texSize.y / 2}, {texSize.x / 2, texSize.y / 2}));
+ 			break;
+ 	}
+ }
+@@ -438,9 +438,9 @@ bool TIconButton::Click(int x, int y) {
+ void TIconButton::Key(sf::Keyboard::Key key, bool released) {
+ 	if (released) return;
+ 
+-	if (key == sf::Keyboard::Down) { // Arrow down/left
++	if (key == sf::Keyboard::Key::Down) { // Arrow down/left
+ 		SetValue(value - 1);
+-	} else if (key == sf::Keyboard::Up) { // Arrow up/right
++	} else if (key == sf::Keyboard::Key::Up) { // Arrow up/right
+ 		SetValue(value + 1);
+ 	}
+ }
+@@ -454,8 +454,8 @@ TArrow::TArrow(int x, int y, bool down_)
+ 	: TWidget(x, y, 32 * Winsys.scale / 0.8f, 16 * Winsys.scale / 0.8f)
+ 	, sprite(Tex.GetSFTexture(LB_ARROWS))
+ 	, down(down_) {
+-	sprite.setPosition(x, y);
+-	sprite.setScale(Winsys.scale / 0.8f, Winsys.scale / 0.8f);
++	sprite.setPosition({(float)x, (float)y});
++	sprite.setScale({Winsys.scale / 0.8f, Winsys.scale / 0.8f});
+ 
+ 	SetTexture();
+ }
+@@ -480,8 +480,8 @@ void TArrow::SetTexture() {
+ 	if (down)
+ 		type += 3;
+ 
+-	sf::Vector2u texSize = sprite.getTexture()->getSize();
+-	sprite.setTextureRect(sf::IntRect(textl[type] * texSize.x, texbr[type] * texSize.y, texSize.x / 2, texSize.y / 4));
++	sf::Vector2u texSize = sprite.getTexture().getSize();
++	sprite.setTextureRect(sf::IntRect({textl[type] * texSize.x, texbr[type] * texSize.y}, {texSize.x / 2, texSize.y / 4}));
+ }
+ 
+ void TArrow::Draw() const {
+@@ -533,14 +533,14 @@ bool TUpDown::Click(int x, int y) {
+ void TUpDown::Key(sf::Keyboard::Key key, bool released) {
+ 	if (released) return;
+ 
+-	if ((!swapArrows && key == sf::Keyboard::Up) || (swapArrows && key == sf::Keyboard::Down)) { // Arrow up
++	if ((!swapArrows && key == sf::Keyboard::Key::Up) || (swapArrows && key == sf::Keyboard::Key::Down)) { // Arrow up
+ 		if (value > minimum) {
+ 			value--;
+ 			lower.SetActive(true);
+ 			if (value == minimum)
+ 				higher.SetActive(false);
+ 		}
+-	} else if ((!swapArrows && key == sf::Keyboard::Down) || (swapArrows && key == sf::Keyboard::Up)) { // Arrow down
++	} else if ((!swapArrows && key == sf::Keyboard::Key::Down) || (swapArrows && key == sf::Keyboard::Key::Up)) { // Arrow down
+ 		if (value < maximum) {
+ 			value++;
+ 			higher.SetActive(true);
+@@ -560,19 +560,19 @@ void TUpDown::MouseMove(int x, int y) {
+ }
+ 
+ void TUpDown::SetValue(int value_) {
+-	value = clamp(minimum, value_, maximum);
++	value = etr_clamp(minimum, value_, maximum);
+ 	lower.SetActive(value < maximum);
+ 	higher.SetActive(value > minimum);
+ }
+ void TUpDown::SetMinimum(int min_) {
+ 	minimum = min_;
+-	value = clamp(minimum, value, maximum);
++	value = etr_clamp(minimum, value, maximum);
+ 	lower.SetActive(value < maximum);
+ 	higher.SetActive(value > minimum);
+ }
+ void TUpDown::SetMaximum(int max_) {
+ 	maximum = max_;
+-	value = clamp(minimum, value, maximum);
++	value = etr_clamp(minimum, value, maximum);
+ 	lower.SetActive(value < maximum);
+ 	higher.SetActive(value > minimum);
+ }
+@@ -590,7 +590,7 @@ void DrawFrameX(int x, int y, int w, int h, int line, const sf::Color& backcol,
+ 	w -= line * 2;
+ 	h -= line * 2;
+ 	sf::RectangleShape shape(sf::Vector2f(w, h));
+-	shape.setPosition(x, y);
++	shape.setPosition({(float)x, (float)y});
+ 	shape.setOutlineThickness(line);
+ 	shape.setFillColor(sf::Color(backcol.r, backcol.g, backcol.b, backcol.a * transp));
+ 	shape.setOutlineColor(sf::Color(framecol.r, framecol.g, framecol.b, framecol.a * transp));
+@@ -617,8 +617,8 @@ void DrawBonusExt(int y, std::size_t numraces, std::size_t num) {
+ 	DrawFrameX(lleft[2], y, framewidth, 40, 1, col2, colBlack, 1);
+ 
+ 	static sf::Sprite tuxbonus(Tex.GetSFTexture(TUXBONUS));
+-	sf::Vector2u size = tuxbonus.getTexture()->getSize();
+-	tuxbonus.setTextureRect(sf::IntRect(0, 0, size.x, size.y/2));
++	sf::Vector2u size = tuxbonus.getTexture().getSize();
++	tuxbonus.setTextureRect(sf::IntRect({0, 0}, {size.x, size.y/2}));
+ 
+ 	for (std::size_t i=0; i<maxtux; i++) {
+ 		std::size_t majr = (i/numraces);
+@@ -627,7 +627,7 @@ void DrawBonusExt(int y, std::size_t numraces, std::size_t num) {
+ 		int x = lleft[majr] + (int)minr * 40 + 6;
+ 
+ 		if (i<num) {
+-			tuxbonus.setPosition(x, y + 4);
++			tuxbonus.setPosition({(float)x, (float)y + 4});
+ 			Winsys.draw(tuxbonus);
+ 		}
+ 	}
+@@ -639,9 +639,9 @@ void DrawGUIFrame() {
+ 	static sf::Sprite top_left(Tex.GetSFTexture(TOP_LEFT));
+ 	static sf::Sprite top_right(Tex.GetSFTexture(TOP_RIGHT));
+ 
+-	bottom_left.setPosition(0, Winsys.resolution.height - bottom_left.getTexture()->getSize().y);
+-	bottom_right.setPosition(Winsys.resolution.width - bottom_right.getTexture()->getSize().x, Winsys.resolution.height - bottom_right.getTexture()->getSize().y);
+-	top_right.setPosition(Winsys.resolution.width - top_right.getTexture()->getSize().x, 0);
++	bottom_left.setPosition({0, (float)Winsys.resolution.height - (float)bottom_left.getTexture().getSize().y});
++	bottom_right.setPosition({(float)Winsys.resolution.width - (float)bottom_right.getTexture().getSize().x, (float)Winsys.resolution.height - (float)bottom_right.getTexture().getSize().y});
++	top_right.setPosition({(float)Winsys.resolution.width - (float)top_right.getTexture().getSize().x, 0});
+ 
+ 	Winsys.draw(bottom_left);
+ 	Winsys.draw(bottom_right);
+@@ -654,8 +654,8 @@ void DrawGUIBackground(float scale) {
+ 
+ 	static sf::Sprite logo(Tex.GetSFTexture(T_TITLE));
+ 	scale *= 0.5f;
+-	logo.setScale(scale, scale);
+-	logo.setPosition((Winsys.resolution.width - logo.getTextureRect().width*scale)/2, 5);
++	logo.setScale({scale, scale});
++	logo.setPosition({(Winsys.resolution.width - logo.getTextureRect().size.x*scale)/2, 5});
+ 	Winsys.draw(logo);
+ }
+ 
+@@ -663,10 +663,10 @@ void DrawCursor() {
+ 	static sf::Sprite s(Tex.GetSFTexture(MOUSECURSOR));
+ 	static bool init = false;
+ 	if (!init) {
+-		s.setScale((double) Winsys.resolution.width / 1400, (double) Winsys.resolution.width / 1400);
++		s.setScale({(double) Winsys.resolution.width / 1400, (double) Winsys.resolution.width / 1400});
+ 		init = true;
+ 	}
+-	s.setPosition(cursor_pos.x, cursor_pos.y);
++	s.setPosition({cursor_pos.x, cursor_pos.y});
+ 	Winsys.draw(s);
+ }
+ 
+@@ -716,25 +716,25 @@ TWidget* MouseMoveGUI(int x, int y) {
+ TWidget* KeyGUI(sf::Keyboard::Key key, bool released) {
+ 	if (!released) {
+ 		switch (key) {
+-			case sf::Keyboard::Tab:
+-				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift) || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift))
++			case sf::Keyboard::Key::Tab:
++				if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift))
+ 					DecreaseFocus();
+ 				else
+ 					IncreaseFocus();
+ 				break;
+-			case sf::Keyboard::Up:
++			case sf::Keyboard::Key::Up:
+ 				if (!locked_UD)
+ 					DecreaseFocus();
+ 				break;
+-			case sf::Keyboard::Left:
++	case sf::Keyboard::Key::Left:
+ 				if (!locked_LR)
+ 					DecreaseFocus();
+ 				break;
+-			case sf::Keyboard::Down:
++			case sf::Keyboard::Key::Down:
+ 				if (!locked_UD)
+ 					IncreaseFocus();
+ 				break;
+-			case sf::Keyboard::Right:
++	case sf::Keyboard::Key::Right:
+ 				if (!locked_LR)
+ 					IncreaseFocus();
+ 				break;
+diff --git a/src/loading.cpp b/src/loading.cpp
+index 5fa02b7..3f4923c 100644
+--- a/src/loading.cpp
++++ b/src/loading.cpp
+@@ -50,8 +50,8 @@ void CLoading::Loop(float time_step) {
+ 	}
+ 
+ 	sf::Sprite logo(Tex.GetSFTexture(TEXLOGO));
+-	logo.setScale(0.35f, 0.35f);
+-	logo.setPosition((Winsys.resolution.width - logo.getTextureRect().width*0.35f) / 2, 40);
++	logo.setScale({0.35f, 0.35f});
++	logo.setPosition({(Winsys.resolution.width - logo.getTextureRect().size.x*0.35f) / 2, 40});
+ 	Winsys.draw(logo);
+ 	DrawGUIFrame();
+ 
+diff --git a/src/newplayer.cpp b/src/newplayer.cpp
+index 073e6ea..169077d 100644
+--- a/src/newplayer.cpp
++++ b/src/newplayer.cpp
+@@ -49,10 +49,10 @@ void CNewPlayer::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 
+ 	KeyGUI(key, release);
+ 	switch (key) {
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			State::manager.RequestEnterState(Regist);
+ 			break;
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			if (textbuttons[0]->focussed()) State::manager.RequestEnterState(Regist);
+ 			else QuitAndAddPlayer();
+ 			break;
+diff --git a/src/ogl_test.cpp b/src/ogl_test.cpp
+index b099482..f3df64d 100644
+--- a/src/ogl_test.cpp
++++ b/src/ogl_test.cpp
+@@ -45,7 +45,7 @@ void SetTestLight() {
+ 
+ void COglTest::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+-	if (key == sf::Keyboard::Escape) {
++	if (key == sf::Keyboard::Key::Escape) {
+ 		State::manager.RequestQuit();
+ 	}
+ }
+diff --git a/src/particles.cpp b/src/particles.cpp
+index 459149e..d70d89d 100644
+--- a/src/particles.cpp
++++ b/src/particles.cpp
+@@ -66,32 +66,31 @@ static TVector2d push_position(0, 0);
+ static TVector2d last_push_position;
+ static bool push_position_initialized = false;
+ 
+-TGuiParticle::TGuiParticle(float x, float y) {
+-	const sf::Texture& texture = Tex.GetSFTexture(SNOW_PART);
+-	sprite.setTexture(texture);
+-	sprite.setPosition(x*static_cast<float>(Winsys.resolution.width), y*static_cast<float>(Winsys.resolution.height));
++TGuiParticle::TGuiParticle(float x, float y) : sprite(Tex.GetSFTexture(SNOW_PART)) {
++	const sf::Texture& texture = sprite.getTexture();
++	sprite.setPosition({x * (float)Winsys.resolution.width, y * (float)Winsys.resolution.height});
+ 	sprite.setColor(sf::Color(255, 255, 255, 76));
+ 	double p_dist = FRandom();
+ 
+ 	size = PARTICLE_MIN_SIZE + (1.0 - p_dist) * PARTICLE_SIZE_RANGE;
+ 
+-	sprite.setScale(size / (texture.getSize().x / 2), size / (texture.getSize().y / 2));
++	sprite.setScale({size / (texture.getSize().x / 2.f), size / (texture.getSize().y / 2.f)});
+ 	vel.x = 0;
+ 	vel.y = BASE_VELOCITY + p_dist * VELOCITY_RANGE;
+ 
+ 	int type = std::rand() % 4;
+ 	switch (type) {
+ 		case 0:
+-			sprite.setTextureRect(sf::IntRect(0, 0, texture.getSize().x / 2, texture.getSize().y / 2));
++			sprite.setTextureRect(sf::IntRect({0, 0}, {texture.getSize().x / 2, texture.getSize().y / 2}));
+ 			break;
+ 		case 1:
+-			sprite.setTextureRect(sf::IntRect(texture.getSize().x / 2, 0, texture.getSize().x / 2, texture.getSize().y / 2));
++			sprite.setTextureRect(sf::IntRect({texture.getSize().x / 2, 0}, {texture.getSize().x / 2, texture.getSize().y / 2}));
+ 			break;
+ 		case 2:
+-			sprite.setTextureRect(sf::IntRect(texture.getSize().x / 2, texture.getSize().y / 2, texture.getSize().x / 2, texture.getSize().y / 2));
++			sprite.setTextureRect(sf::IntRect({texture.getSize().x / 2, texture.getSize().y / 2}, {texture.getSize().x / 2, texture.getSize().y / 2}));
+ 			break;
+ 		case 3:
+-			sprite.setTextureRect(sf::IntRect(0, texture.getSize().y / 2, texture.getSize().x / 2, texture.getSize().y / 2));
++			sprite.setTextureRect(sf::IntRect({0, texture.getSize().y / 2}, {texture.getSize().x / 2, texture.getSize().y / 2}));
+ 			break;
+ 	}
+ }
+@@ -109,8 +108,8 @@ void TGuiParticle::Update(float time_step, float push_timestep, const TVector2d&
+ 	                        std::pow((y - push_position.y), 2));
+ 	if (push_timestep > 0) {
+ 		f = PUSH_FACTOR / push_timestep * push_vector;
+-		f.x = clamp(-MAX_PUSH_FORCE, f.x, MAX_PUSH_FORCE);
+-		f.y = clamp(-MAX_PUSH_FORCE, f.y, MAX_PUSH_FORCE);
++		f.x = etr_clamp(-MAX_PUSH_FORCE, f.x, MAX_PUSH_FORCE);
++		f.y = etr_clamp(-MAX_PUSH_FORCE, f.y, MAX_PUSH_FORCE);
+ 		f *= 1.0/(PUSH_DIST_DECAY*dist_from_push + 1) *
+ 		     size/PARTICLE_SIZE_RANGE;
+ 	}
+@@ -121,8 +120,8 @@ void TGuiParticle::Update(float time_step, float push_timestep, const TVector2d&
+ 	x += vel.x * time_step * (size / PARTICLE_SIZE_RANGE);
+ 	y += vel.y * time_step * (size / PARTICLE_SIZE_RANGE);
+ 
+-	x = clamp(-0.05f, x, 1.05f);
+-	sprite.setPosition(x*Winsys.resolution.width, y*Winsys.resolution.height);
++	x = etr_clamp(-0.05f, x, 1.05f);
++	sprite.setPosition({x * (float)Winsys.resolution.width, y * (float)Winsys.resolution.height});
+ }
+ 
+ void init_ui_snow() {
+@@ -159,10 +158,10 @@ void update_ui_snow(float time_step) {
+ 			if (particles_2d.size() > BASE_snowparticles * Winsys.resolution.width && FRandom() > 0.2) {
+ 				p = particles_2d.erase(p);
+ 			} else {
+-				p->sprite.setPosition(static_cast<float>(Winsys.resolution.width)*FRandom(), static_cast<float>(Winsys.resolution.height) * (-FRandom()*BASE_VELOCITY));
++				p->sprite.setPosition({static_cast<float>(Winsys.resolution.width)*FRandom(), static_cast<float>(Winsys.resolution.height) * (-FRandom()*BASE_VELOCITY)});
+ 				double p_dist = FRandom();
+ 				p->size = PARTICLE_MIN_SIZE + (1.f - p_dist) * PARTICLE_SIZE_RANGE;
+-				p->sprite.setScale(p->size / (p->sprite.getTexture()->getSize().x / 2), p->size / (p->sprite.getTexture()->getSize().x / 2));
++				p->sprite.setScale({(float)p->size / (p->sprite.getTexture().getSize().x / 2.f), (float)p->size / (p->sprite.getTexture().getSize().x / 2.f)});
+ 				p->vel.x = 0;
+ 				p->vel.y = BASE_VELOCITY + p_dist*VELOCITY_RANGE;
+ 				++p;
+diff --git a/src/paused.cpp b/src/paused.cpp
+index cba005a..355740b 100644
+--- a/src/paused.cpp
++++ b/src/paused.cpp
+@@ -45,19 +45,19 @@ static bool trees = true;
+ void CPaused::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+ 	switch (key) {
+-		case sf::Keyboard::C:
++		case sf::Keyboard::Key::C:
+ 			Winsys.TakeScreenshot();
+ 			break;
+-		case sf::Keyboard::F5:
++		case sf::Keyboard::Key::F5:
+ 			sky = !sky;
+ 			break;
+-		case sf::Keyboard::F6:
++		case sf::Keyboard::Key::F6:
+ 			fog = !fog;
+ 			break;
+-		case sf::Keyboard::F7:
++		case sf::Keyboard::Key::F7:
+ 			terr = !terr;
+ 			break;
+-		case sf::Keyboard::F8:
++		case sf::Keyboard::Key::F8:
+ 			trees = !trees;
+ 			break;
+ 		default:
+diff --git a/src/physics.cpp b/src/physics.cpp
+index 841a22f..42ac779 100644
+--- a/src/physics.cpp
++++ b/src/physics.cpp
+@@ -286,10 +286,10 @@ TVector3d CControl::CalcAirForce() {
+ TVector3d CControl::CalcSpringForce() {
+ 	double springvel = DotProduct(ff.vel, ff.rollnml);
+ 	double springfact = std::min(ff.compression, 0.05) * 1500;
+-	springfact += clamp(0.0, ff.compression - 0.05, 0.12) * 3000;
++	springfact += etr_clamp(0.0, ff.compression - 0.05, 0.12) * 3000;
+ 	springfact += std::max(0.0, ff.compression - 0.12 - 0.05) * 10000;
+ 	springfact -= springvel * (ff.compression <= 0.05 ? 1500 : 500);
+-	springfact = clamp(0.0, springfact, 3000.0);
++	springfact = etr_clamp(0.0, springfact, 3000.0);
+ 	return springfact * ff.rollnml;
+ }
+ 
+@@ -434,7 +434,7 @@ TVector3d CControl::CalcNetForce(const TVector3d& pos, const TVector3d& vel) {
+ 
+ double CControl::AdjustTimeStep(double h, const TVector3d& vel) {
+ 	double speed = vel.Length();
+-	h = clamp(MIN_TIME_STEP, h, MAX_STEP_DIST / speed);
++	h = etr_clamp(MIN_TIME_STEP, h, MAX_STEP_DIST / speed);
+ 	h = std::min(h, MAX_TIME_STEP);
+ 	return h;
+ }
+diff --git a/src/race_select.cpp b/src/race_select.cpp
+index a8cf688..ca073ac 100644
+--- a/src/race_select.cpp
++++ b/src/race_select.cpp
+@@ -109,24 +109,24 @@ void CRaceSelect::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	KeyGUI(key, release);
+ 	UpdateInfo();
+ 	switch (key) {
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			State::manager.RequestEnterState(GameTypeSelect);
+ 			break;
+-		case sf::Keyboard::U:
++		case sf::Keyboard::Key::U:
+ 			param.ui_snow = !param.ui_snow;
+ 			break;
+-		case sf::Keyboard::T:
++		case sf::Keyboard::Key::T:
+ 			g_game.force_treemap = !g_game.force_treemap;
+ 			break;
+-		case sf::Keyboard::C:
++		case sf::Keyboard::Key::C:
+ 			g_game.treesize++;
+ 			if (g_game.treesize > 5) g_game.treesize = 1;
+ 			break;
+-		case sf::Keyboard::V:
++		case sf::Keyboard::Key::V:
+ 			g_game.treevar++;
+ 			if (g_game.treevar > 5) g_game.treevar = 1;
+ 			break;
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			if (textbuttons[1]->focussed())
+ 				State::manager.RequestEnterState(GameTypeSelect);
+ 			else
+diff --git a/src/racing.cpp b/src/racing.cpp
+index e5ea391..38dfb84 100644
+--- a/src/racing.cpp
++++ b/src/racing.cpp
+@@ -69,61 +69,61 @@ static int lastsound = -1;
+ void CRacing::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	switch (key) {
+ 		// steering flipflops
+-		case sf::Keyboard::Up:
+-                case sf::Keyboard::W:
++		case sf::Keyboard::Key::Up:
++                case sf::Keyboard::Key::W:
+ 			key_paddling = !release;
+ 			break;
+-		case sf::Keyboard::Down:
+-                case sf::Keyboard::S:
++		case sf::Keyboard::Key::Down:
++                case sf::Keyboard::Key::S:
+ 			key_braking = !release;
+ 			break;
+-		case sf::Keyboard::Left:
+-                case sf::Keyboard::A:
++		case sf::Keyboard::Key::Left:
++                case sf::Keyboard::Key::A:
+ 			left_turn = !release;
+ 			break;
+-		case sf::Keyboard::Right:
+-                case sf::Keyboard::D:
++		case sf::Keyboard::Key::Right:
++                case sf::Keyboard::Key::D:
+ 			right_turn = !release;
+ 			break;
+-		case sf::Keyboard::Space:
++		case sf::Keyboard::Key::Space:
+ 			key_charging = !release;
+ 			break;
+-		case sf::Keyboard::T:
++		case sf::Keyboard::Key::T:
+ 			trick_modifier = !release;
+ 			break;
+ 
+ 		// mode changing and other actions
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			if (!release) {
+ 				g_game.raceaborted = true;
+ 				g_game.race_result = -1;
+ 				State::manager.RequestEnterState(GameOver);
+ 			}
+ 			break;
+-		case sf::Keyboard::P:
++		case sf::Keyboard::Key::P:
+ 			if (!release) State::manager.RequestEnterState(Paused);
+ 			break;
+-		case sf::Keyboard::R:
++		case sf::Keyboard::Key::R:
+ 			if (!release) State::manager.RequestEnterState(Reset);
+ 			break;
+-		case sf::Keyboard::C:
++		case sf::Keyboard::Key::C:
+ 			if (!release) Winsys.TakeScreenshot();
+ 			break;
+ 
+ 		// view changing
+-		case sf::Keyboard::Num1:
++		case sf::Keyboard::Key::Num1:
+ 			if (!release) {
+ 				set_view_mode(g_game.player->ctrl, ABOVE);
+ 				param.view_mode = ABOVE;
+ 			}
+ 			break;
+-		case sf::Keyboard::Num2:
++		case sf::Keyboard::Key::Num2:
+ 			if (!release) {
+ 				set_view_mode(g_game.player->ctrl, FOLLOW);
+ 				param.view_mode = FOLLOW;
+ 			}
+ 			break;
+-		case sf::Keyboard::Num3:
++		case sf::Keyboard::Key::Num3:
+ 			if (!release) {
+ 				set_view_mode(g_game.player->ctrl, BEHIND);
+ 				param.view_mode = BEHIND;
+@@ -131,22 +131,22 @@ void CRacing::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 			break;
+ 
+ 		// toggle display settings
+-		case sf::Keyboard::H:
++		case sf::Keyboard::Key::H:
+ 			if (!release) param.show_hud = !param.show_hud;
+ 			break;
+-		case sf::Keyboard::F:
++		case sf::Keyboard::Key::F:
+ 			if (!release) param.display_fps = !param.display_fps;
+ 			break;
+-		case sf::Keyboard::F5:
++		case sf::Keyboard::Key::F5:
+ 			if (!release) sky = !sky;
+ 			break;
+-		case sf::Keyboard::F6:
++		case sf::Keyboard::Key::F6:
+ 			if (!release) fog = !fog;
+ 			break;
+-		case sf::Keyboard::F7:
++		case sf::Keyboard::Key::F7:
+ 			if (!release) terr = !terr;
+ 			break;
+-		case sf::Keyboard::F8:
++		case sf::Keyboard::Key::F8:
+ 			if (!release) trees = !trees;
+ 			break;
+ 		default:
+@@ -284,12 +284,12 @@ static void CalcSteeringControls(CControl *ctrl, float time_step) {
+ 	if (stick_turn) {
+ 		ctrl->turn_fact = stick_turnfact;
+ 		ctrl->turn_animation += ctrl->turn_fact * 2 * time_step;
+-		ctrl->turn_animation = clamp(-1.0, ctrl->turn_animation, 1.0);
++		ctrl->turn_animation = etr_clamp(-1.0, ctrl->turn_animation, 1.0);
+ 	} else if (left_turn ^ right_turn) {
+ 		if (left_turn) ctrl->turn_fact = -1.0;
+ 		else ctrl->turn_fact = 1.0;
+ 		ctrl->turn_animation += ctrl->turn_fact * 2 * time_step;
+-		ctrl->turn_animation = clamp(-1.0, ctrl->turn_animation, 1.0);
++		ctrl->turn_animation = etr_clamp(-1.0, ctrl->turn_animation, 1.0);
+ 	} else {
+ 		ctrl->turn_fact = 0.0;
+ 		if (time_step < ROLL_DECAY) {
+diff --git a/src/regist.cpp b/src/regist.cpp
+index e9f249c..4710025 100644
+--- a/src/regist.cpp
++++ b/src/regist.cpp
+@@ -52,10 +52,10 @@ void CRegist::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	TWidget* focussed = KeyGUI(key, release);
+ 	if (release) return;
+ 	switch (key) {
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			State::manager.RequestQuit();
+ 			break;
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			if (focussed == textbuttons[1]) {
+ 				g_game.player = Players.GetPlayer(player->GetValue());
+ 				State::manager.RequestEnterState(NewPlayer);
+diff --git a/src/score.cpp b/src/score.cpp
+index c1cabda..e35b943 100644
+--- a/src/score.cpp
++++ b/src/score.cpp
+@@ -175,19 +175,19 @@ void CScore::Keyb(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	KeyGUI(key, release);
+ 	if (release) return;
+ 	switch (key) {
+-		case sf::Keyboard::Escape:
++		case sf::Keyboard::Key::Escape:
+ 			State::manager.RequestEnterState(*State::manager.PreviousState());
+ 			break;
+-		case sf::Keyboard::Q:
++		case sf::Keyboard::Key::Q:
+ 			State::manager.RequestQuit();
+ 			break;
+-		case sf::Keyboard::S:
++		case sf::Keyboard::Key::S:
+ 			Score.SaveHighScore();
+ 			break;
+-		case sf::Keyboard::L:
++		case sf::Keyboard::Key::L:
+ 			Score.LoadHighScore();
+ 			break;
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			State::manager.RequestEnterState(*State::manager.PreviousState());
+ 			break;
+ 		default:
+diff --git a/src/splash_screen.cpp b/src/splash_screen.cpp
+index 87f761f..ba8c335 100644
+--- a/src/splash_screen.cpp
++++ b/src/splash_screen.cpp
+@@ -50,17 +50,17 @@ void CSplashScreen::Loop(float time_step) {
+ 	Trans.LoadTranslations(param.language);  // Before first texts are being displayed
+ 
+ 	sf::Sprite logo(Tex.GetSFTexture(TEXLOGO));
+-	logo.setScale(Winsys.scale/2.f, Winsys.scale/2.f);
+-	logo.setPosition((Winsys.resolution.width - logo.getTextureRect().width*(Winsys.scale / 2)) / 2, 60);
++	logo.setScale({Winsys.scale/2.f, Winsys.scale/2.f});
++	logo.setPosition({(Winsys.resolution.width - logo.getTextureRect().size.x*(Winsys.scale / 2)) / 2, 60});
+ 
+ 	if (!Failure) {
+ 		FT.AutoSizeN(6);
+-		sf::Text t1(Trans.Text(67), FT.getCurrentFont(), FT.GetSize());
++		sf::Text t1(FT.getCurrentFont(), Trans.Text(67), FT.GetSize());
+ 		int top = AutoYPosN(60);
+-		t1.setPosition((Winsys.resolution.width - t1.getLocalBounds().width) / 2, top);
+-		sf::Text t2(Trans.Text(68), FT.getCurrentFont(), FT.GetSize());
++		t1.setPosition({(Winsys.resolution.width - t1.getLocalBounds().size.x) / 2, (float)top});
++		sf::Text t2(FT.getCurrentFont(), Trans.Text(68), FT.GetSize());
+ 		int dist = FT.AutoDistanceN(3);
+-		t2.setPosition((Winsys.resolution.width - t2.getLocalBounds().width) / 2, top + dist);
++		t2.setPosition({(Winsys.resolution.width - t2.getLocalBounds().size.x) / 2, (float)(top + dist)});
+ 
+ 		Winsys.draw(t1);
+ 		Winsys.draw(t2);
+@@ -99,10 +99,10 @@ void CSplashScreen::Loop(float time_step) {
+ 		else { // Failure
+ 			FT.AutoSizeN(6);
+ 			int top = AutoYPosN(60);
+-			Failure = new sf::Text(reason, FT.getCurrentFont(), FT.GetSize());
++			Failure = new sf::Text(FT.getCurrentFont(), reason, FT.GetSize());
+ 			Failure->setFillColor(colDRed);
+ 			Failure->setOutlineColor(colDRed);
+-			Failure->setPosition((Winsys.resolution.width - Failure->getLocalBounds().width) / 2, top);
++			Failure->setPosition({(Winsys.resolution.width - Failure->getLocalBounds().size.x) / 2, (float)top});
+ 		}
+ 	}
+ }
+diff --git a/src/states.cpp b/src/states.cpp
+index 935e9c4..0524e0a 100644
+--- a/src/states.cpp
++++ b/src/states.cpp
+@@ -13,7 +13,7 @@ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+----------------------------------------------------------------------*/
++ ---------------------------------------------------------------------*/
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <etr_config.h>
+@@ -53,63 +53,42 @@ void State::Manager::EnterNextState() {
+ }
+ 
+ void State::Manager::PollEvent() {
+-	sf::Event event;
+ 	sf::Keyboard::Key key;
+ 
+-	while (Winsys.PollEvent(event)) {
++	while (const std::optional event = Winsys.PollEvent()) {
+ 		if (!next) {
+-			switch (event.type) {
+-				case sf::Event::KeyPressed:
+-					key = event.key.code;
+-					current->Keyb(key, false, sf::Mouse::getPosition().x, sf::Mouse::getPosition().y);
+-					break;
+-
+-				case sf::Event::KeyReleased:
+-					key = event.key.code;
+-					current->Keyb(key, true, sf::Mouse::getPosition().x, sf::Mouse::getPosition().y);
+-					break;
+-
+-				case sf::Event::TextEntered:
+-					current->TextEntered(static_cast<char>(event.text.unicode));
+-					break;
+-
+-				case sf::Event::MouseButtonPressed:
+-				case sf::Event::MouseButtonReleased:
+-					current->Mouse(event.mouseButton.button, event.type == sf::Event::MouseButtonPressed, event.mouseButton.x, event.mouseButton.y);
+-					break;
+-
+-				case sf::Event::MouseMoved: {
+-					TVector2i old = cursor_pos;
+-					cursor_pos.x = event.mouseMove.x;
+-					cursor_pos.y = event.mouseMove.y;
+-					current->Motion(event.mouseMove.x - old.x, event.mouseMove.y - old.y);
+-					break;
+-				}
+-
+-				case sf::Event::JoystickMoved: {
+-					float val = event.joystickMove.position / 100.f;
+-					current->Jaxis(event.joystickMove.axis == sf::Joystick::X ? 0 : 1, val);
+-					break;
++			if (event->is<sf::Event::Closed>()) {
++				quit = true;
++			} else if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>()) {
++				key = keyPressed->code;
++				current->Keyb(key, false, sf::Mouse::getPosition().x, sf::Mouse::getPosition().y);
++			} else if (const auto* keyReleased = event->getIf<sf::Event::KeyReleased>()) {
++				key = keyReleased->code;
++				current->Keyb(key, true, sf::Mouse::getPosition().x, sf::Mouse::getPosition().y);
++			} else if (const auto* textEntered = event->getIf<sf::Event::TextEntered>()) {
++				current->TextEntered(static_cast<char>(textEntered->unicode));
++			} else if (const auto* mouseButtonPressed = event->getIf<sf::Event::MouseButtonPressed>()) {
++				current->Mouse(static_cast<int>(mouseButtonPressed->button), true, mouseButtonPressed->position.x, mouseButtonPressed->position.y);
++			} else if (const auto* mouseButtonReleased = event->getIf<sf::Event::MouseButtonReleased>()) {
++				current->Mouse(static_cast<int>(mouseButtonReleased->button), false, mouseButtonReleased->position.x, mouseButtonReleased->position.y);
++			} else if (const auto* mouseMoved = event->getIf<sf::Event::MouseMoved>()) {
++				TVector2i old = cursor_pos;
++				cursor_pos.x = mouseMoved->position.x;
++				cursor_pos.y = mouseMoved->position.y;
++				current->Motion(mouseMoved->position.x - old.x, mouseMoved->position.y - old.y);
++			} else if (const auto* joystickMoved = event->getIf<sf::Event::JoystickMoved>()) {
++				float val = joystickMoved->position / 100.f;
++				current->Jaxis(joystickMoved->axis == sf::Joystick::Axis::X ? 0 : 1, val);
++			} else if (const auto* joystickButtonPressed = event->getIf<sf::Event::JoystickButtonPressed>()) {
++				current->Jbutt(joystickButtonPressed->button, true);
++			} else if (const auto* joystickButtonReleased = event->getIf<sf::Event::JoystickButtonReleased>()) {
++				current->Jbutt(joystickButtonReleased->button, false);
++			} else if (const auto* resized = event->getIf<sf::Event::Resized>()) {
++				if (Winsys.resolution.width != resized->size.x || Winsys.resolution.height != resized->size.y) {
++					Winsys.resolution.width = resized->size.x;
++					Winsys.resolution.height = resized->size.y;
++					Winsys.SetupVideoMode(resized->size.x, resized->size.y);
+ 				}
+-				case sf::Event::JoystickButtonPressed:
+-				case sf::Event::JoystickButtonReleased:
+-					current->Jbutt(event.joystickButton.button, event.type == sf::Event::JoystickButtonPressed);
+-					break;
+-
+-				case sf::Event::Resized:
+-					if (Winsys.resolution.width != event.size.width || Winsys.resolution.height != event.size.height) {
+-						Winsys.resolution.width = event.size.width;
+-						Winsys.resolution.height = event.size.height;
+-						Winsys.SetupVideoMode(event.size.width, event.size.height);
+-					}
+-					break;
+-
+-				case sf::Event::Closed:
+-					quit = true;
+-					break;
+-
+-				default:
+-					break;
+ 			}
+ 		}
+ 	}
+@@ -121,4 +100,4 @@ void State::Manager::CallLoopFunction() {
+ 	g_game.time_step = std::max(0.0001f, timer.getElapsedTime().asSeconds());
+ 	timer.restart();
+ 	current->Loop(g_game.time_step);
+-}
++}
+\ No newline at end of file
+diff --git a/src/textures.cpp b/src/textures.cpp
+index dc9eef3..01ff651 100644
+--- a/src/textures.cpp
++++ b/src/textures.cpp
+@@ -158,8 +158,8 @@ void TTexture::DrawFrame(int x, int y, int w, int h, int frame, const sf::Color&
+ 		DrawFrameX(x - frame, y - frame, w + 2 * frame, h + 2 * frame, frame, colTransp, col, 1.f);
+ 
+ 	sf::Sprite temp(texture);
+-	temp.setPosition(x, y);
+-	temp.setScale((float) w / (float) texture.getSize().x, (float) h / (float) texture.getSize().y);
++	temp.setPosition({(float)x, (float)y});
++	temp.setScale({(float)w / (float)texture.getSize().x, (float)h / (float)texture.getSize().y});
+ 	Winsys.draw(temp);
+ }
+ 
+diff --git a/src/tool_char.cpp b/src/tool_char.cpp
+index 122b8db..8126542 100644
+--- a/src/tool_char.cpp
++++ b/src/tool_char.cpp
+@@ -124,111 +124,111 @@ void CharKeys(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	must_render = true;
+ 
+ 	if (ToolsFinalStage()) {
+-		if (key == sf::Keyboard::Y || key == sf::Keyboard::J) {
++		if (key == sf::Keyboard::Key::Y || key == sf::Keyboard::Key::J) {
+ 			SaveToolCharacter();
+ 			SaveToolFrame();
+ 			State::manager.RequestQuit();
+-		} else if (key == sf::Keyboard::N) State::manager.RequestQuit();
++		} else if (key == sf::Keyboard::Key::N) State::manager.RequestQuit();
+ 		return;
+ 	}
+ 
+-	if (key == sf::Keyboard::LShift || key == sf::Keyboard::RShift) shift = !release;
+-	if (key == sf::Keyboard::LControl || key == sf::Keyboard::RControl) control = !release;
+-	if (key == sf::Keyboard::LAlt || key == sf::Keyboard::RAlt) alt = !release;
++	if (key == sf::Keyboard::Key::LShift || key == sf::Keyboard::Key::RShift) shift = !release;
++	if (key == sf::Keyboard::Key::LControl || key == sf::Keyboard::Key::RControl) control = !release;
++	if (key == sf::Keyboard::Key::LAlt || key == sf::Keyboard::Key::RAlt) alt = !release;
+ 
+ 	if (release) return;
+ 
+ 	int type = action->type[curr_act];
+ 	switch (key) {
+-		case sf::Keyboard::Tab:
++		case sf::Keyboard::Key::Tab:
+ 			SetToolMode(1);
+ 			break;
+-		case sf::Keyboard::Escape:
+-		case sf::Keyboard::Q:
++		case sf::Keyboard::Key::Escape:
++		case sf::Keyboard::Key::Q:
+ 			QuitTool();
+ 			break;
+-		case sf::Keyboard::F10:
+-		case sf::Keyboard::C:
++		case sf::Keyboard::Key::F10:
++		case sf::Keyboard::Key::C:
+ 			Winsys.TakeScreenshot();
+ 			break;
+-		case sf::Keyboard::S:
++		case sf::Keyboard::Key::S:
+ 			SaveToolCharacter();
+ 			break;
+-		case sf::Keyboard::M:
++		case sf::Keyboard::Key::M:
+ 			TestChar.useMaterials = !TestChar.useMaterials;
+ 			break;
+-		case sf::Keyboard::H:
++		case sf::Keyboard::Key::H:
+ 			TestChar.useHighlighting = !TestChar.useHighlighting;
+ 			break;
+-		case sf::Keyboard::R:
++		case sf::Keyboard::Key::R:
+ 			TestChar.Reset();
+ 			ReloadToolCharacter();
+ 			Tools.Enter();
+ 			break;
+-		case sf::Keyboard::U:
++		case sf::Keyboard::Key::U:
+ 			if (action != nullptr) {
+ 				RecallAction(action);
+ 				TestChar.RefreshNode(curr_node);
+ 			}
+ 			break;
+-		case sf::Keyboard::Add:
+-		case sf::Keyboard::Equal: // zoom in
++		case sf::Keyboard::Key::Add:
++		case sf::Keyboard::Key::Equal: // zoom in
+ 			zposition += 0.1f;
+ 			xposition -= 0.03f;
+ 			break;
+-		case sf::Keyboard::Dash: // zoom out
++		case sf::Keyboard::Key::Hyphen: // zoom out
+ 			zposition -= 0.1f;
+ 			xposition += 0.03f;
+ 			break;
+ 
+ 		// set rotations for view
+-		case sf::Keyboard::Num1:
++		case sf::Keyboard::Key::Num1:
+ 			SetRotation(0, 0, 0);
+ 			break;
+-		case sf::Keyboard::Num2:
++		case sf::Keyboard::Key::Num2:
+ 			SetRotation(-50, 180, 15);
+ 			break;
+-		case sf::Keyboard::Num3:
++		case sf::Keyboard::Key::Num3:
+ 			SetRotation(0, 180, 0);
+ 			break;
+-		case sf::Keyboard::Num4:
++		case sf::Keyboard::Key::Num4:
+ 			SetRotation(0, -80, 0);
+ 			break;
+ 
+ 		// select node
+-		case sf::Keyboard::PageUp:
++		case sf::Keyboard::Key::PageUp:
+ 			ChangeNode(-1);
+ 			break;
+-		case sf::Keyboard::PageDown:
++		case sf::Keyboard::Key::PageDown:
+ 			ChangeNode(1);
+ 			break;
+-		case sf::Keyboard::End:
++		case sf::Keyboard::Key::End:
+ 			ChangeNode(charbase);
+ 			break;
+-		case sf::Keyboard::Home:
++		case sf::Keyboard::Key::Home:
+ 			ChangeNode(-charbase);
+ 			break;
+ 
+ 		// select action
+-		case sf::Keyboard::Down:
++		case sf::Keyboard::Key::Down:
+ 			if (curr_act < lastact) curr_act++;
+ 			if (action->type[curr_act] == 4) comp = 0;
+ 			else comp = 1;
+ 			break;
+-		case sf::Keyboard::Up:
++		case sf::Keyboard::Key::Up:
+ 			if (curr_act > 0) curr_act--;
+ 			if (action->type[curr_act] == 4) comp = 0;
+ 			else comp = 1;
+ 			break;
+-		case sf::Keyboard::Left:
++		case sf::Keyboard::Key::Left:
+ 			ChangeValue(type, -1);
+ 			break;
+-		case sf::Keyboard::Right:
++		case sf::Keyboard::Key::Right:
+ 			ChangeValue(type, 1);
+ 			break;
+ 
+ 		// select value
+-		case sf::Keyboard::Space:
++		case sf::Keyboard::Key::Space:
+ 			if (type == 0 || type == 4) {
+ 				comp++;
+ 				if (comp > 3) comp = 0;
+diff --git a/src/tool_frame.cpp b/src/tool_frame.cpp
+index a8b15ed..87fb5c9 100644
+--- a/src/tool_frame.cpp
++++ b/src/tool_frame.cpp
+@@ -57,139 +57,139 @@ void SingleFrameKeys(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	TKeyframe *frame = TestFrame.GetFrame(curr_frame);
+ 
+ 	// setting the camera change state
+-	if (key == sf::Keyboard::F1) {GluCamera.turnright = !release; return;}
+-	else if (key == sf::Keyboard::F2) { GluCamera.turnleft = !release; return; }
+-	if (key == sf::Keyboard::F3) { GluCamera.nearer = !release; return; }
+-	else if (key == sf::Keyboard::F4) { GluCamera.farther = !release; return; }
++	if (key == sf::Keyboard::Key::F1) {GluCamera.turnright = !release; return;}
++	else if (key == sf::Keyboard::Key::F2) { GluCamera.turnleft = !release; return; }
++	if (key == sf::Keyboard::Key::F3) { GluCamera.nearer = !release; return; }
++	else if (key == sf::Keyboard::Key::F4) { GluCamera.farther = !release; return; }
+ 
+ 	// additional keys if needed
+-	if (key == sf::Keyboard::LShift || key == sf::Keyboard::RShift) shift = !release;
+-	if (key == sf::Keyboard::LControl) control = !release;
+-	if (key == sf::Keyboard::LAlt) alt = !release;
++	if (key == sf::Keyboard::Key::LShift || key == sf::Keyboard::Key::RShift) shift = !release;
++	if (key == sf::Keyboard::Key::LControl) control = !release;
++	if (key == sf::Keyboard::Key::LAlt) alt = !release;
+ 	if (shift) keyfact = -1;
+ 	else keyfact = 1;
+ 
+ 	if (release) return;
+ 
+ 	switch (key) {
+-		case sf::Keyboard::Y:
+-		case sf::Keyboard::J:
++		case sf::Keyboard::Key::Y:
++		case sf::Keyboard::Key::J:
+ 			if (ToolsFinalStage()) {
+ 				SaveToolCharacter();
+ 				SaveToolFrame();
+ 				State::manager.RequestQuit();
+ 			}
+ 			break;
+-		case sf::Keyboard::N:
++		case sf::Keyboard::Key::N:
+ 			if (ToolsFinalStage()) State::manager.RequestQuit();
+ 			break;
+ 
+-		case sf::Keyboard::Escape:
+-		case sf::Keyboard::Q:
++		case sf::Keyboard::Key::Escape:
++		case sf::Keyboard::Key::Q:
+ 			QuitTool();
+ 			break;
+-		case sf::Keyboard::S:
++		case sf::Keyboard::Key::S:
+ 			SaveToolFrame();
+ 			break;
+-		case sf::Keyboard::Tab:
++		case sf::Keyboard::Key::Tab:
+ 			SetToolMode(0);
+ 			break;
+ 
+-		case sf::Keyboard::A:
++		case sf::Keyboard::Key::A:
+ 			TestFrame.AddFrame();
+ 			SetFrameChanged(true);
+ 			break;
+-		case sf::Keyboard::Insert:
++		case sf::Keyboard::Key::Insert:
+ 			TestFrame.InsertFrame(curr_frame);
+ 			SetFrameChanged(true);
+ 			break;
+-		case sf::Keyboard::Delete:
++		case sf::Keyboard::Key::Delete:
+ 			curr_frame = TestFrame.DeleteFrame(curr_frame);
+ 			SetFrameChanged(true);
+ 			break;
+-		case sf::Keyboard::PageDown:
++		case sf::Keyboard::Key::PageDown:
+ 			if (curr_frame < TestFrame.numFrames()-1) curr_frame++;
+ 			break;
+-		case sf::Keyboard::PageUp:
++		case sf::Keyboard::Key::PageUp:
+ 			if (curr_frame > 0) curr_frame--;
+ 			break;
+-		case sf::Keyboard::Up:
++		case sf::Keyboard::Key::Up:
+ 			if (curr_joint > 0) curr_joint--;
+ 			break;
+-		case sf::Keyboard::Down:
++		case sf::Keyboard::Key::Down:
+ 			if (curr_joint < last_joint) curr_joint++;
+ 			break;
+-		case sf::Keyboard::Right:
++		case sf::Keyboard::Key::Right:
+ 			if (curr_joint < 4) frame->val[curr_joint] += 0.05;
+ 			else frame->val[curr_joint] += 1;
+ 			SetFrameChanged(true);
+ 			break;
+-		case sf::Keyboard::Left:
++		case sf::Keyboard::Key::Left:
+ 			if (curr_joint < 4) frame->val[curr_joint] -= 0.05;
+ 			else frame->val[curr_joint] -= 1;
+ 			SetFrameChanged(true);
+ 			break;
+-		case sf::Keyboard::Num0:
++		case sf::Keyboard::Key::Num0:
+ 			frame->val[curr_joint] = 0.0;
+ 			SetFrameChanged(true);
+ 			break;
+-		case sf::Keyboard::Space:
++		case sf::Keyboard::Key::Space:
+ 			if (curr_joint < 4) frame->val[curr_joint] += 0.05 * keyfact;
+ 			else frame->val[curr_joint] += 1 * keyfact;
+ 			SetFrameChanged(true);
+ 			break;
+ 
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			TestFrame.InitTest(ref_position, &TestChar);
+ 			SetToolMode(2);
+ 			must_render = true;
+ 			break;
+ 
+-		case sf::Keyboard::M :
++		case sf::Keyboard::Key::M :
+ 			TestChar.useMaterials = !TestChar.useMaterials;
+ 			break;
+-		case sf::Keyboard::H:
++		case sf::Keyboard::Key::H:
+ 			TestChar.useHighlighting = !TestChar.useHighlighting;
+ 			break;
+-		case sf::Keyboard::C:
++		case sf::Keyboard::Key::C:
+ 			if (control) TestFrame.CopyToClipboard(curr_frame);
+ 			else TestFrame.ClearFrame(curr_frame);
+ 			SetFrameChanged(true);
+ 			break;
+-		case sf::Keyboard::V:
++		case sf::Keyboard::Key::V:
+ 			if (control) TestFrame.PasteFromClipboard(curr_frame);
+ 			SetFrameChanged(true);
+ 			break;
+-		case sf::Keyboard::P:
++		case sf::Keyboard::Key::P:
+ 			if (curr_frame>0)
+ 				TestFrame.CopyFrame(curr_frame-1, curr_frame);
+ 			break;
+-		case sf::Keyboard::F10:
++		case sf::Keyboard::Key::F10:
+ 			Winsys.TakeScreenshot();
+ 			break;
+ 
+-		case sf::Keyboard::Num1:
++		case sf::Keyboard::Key::Num1:
+ 			GluCamera.angle = 0;
+ 			break;
+-		case sf::Keyboard::Num2:
++		case sf::Keyboard::Key::Num2:
+ 			GluCamera.angle = 45;
+ 			break;
+-		case sf::Keyboard::Num3:
++		case sf::Keyboard::Key::Num3:
+ 			GluCamera.angle = 90;
+ 			break;
+-		case sf::Keyboard::Num4:
++		case sf::Keyboard::Key::Num4:
+ 			GluCamera.angle = 135;
+ 			break;
+-		case sf::Keyboard::Num5:
++		case sf::Keyboard::Key::Num5:
+ 			GluCamera.angle = 180;
+ 			break;
+-		case sf::Keyboard::Num6:
++		case sf::Keyboard::Key::Num6:
+ 			GluCamera.angle = 225;
+ 			break;
+-		case sf::Keyboard::Num7:
++		case sf::Keyboard::Key::Num7:
+ 			GluCamera.angle = 270;
+ 			break;
+-		case sf::Keyboard::Num8:
++		case sf::Keyboard::Key::Num8:
+ 			GluCamera.angle = 315;
+ 			break;
+ 		default:
+@@ -291,14 +291,14 @@ void RenderSingleFrame(float timestep) {
+ void SequenceKeys(sf::Keyboard::Key key, bool release, int x, int y) {
+ 	if (release) return;
+ 	switch (key) {
+-		case sf::Keyboard::Return:
++		case sf::Keyboard::Key::Enter:
+ 			keyrun = true;
+ 			break;
+-		case sf::Keyboard::Escape:
+-		case sf::Keyboard::Tab:
++		case sf::Keyboard::Key::Escape:
++		case sf::Keyboard::Key::Tab:
+ 			SetToolMode(1);
+ 			break;
+-		case sf::Keyboard::Q:
++		case sf::Keyboard::Key::Q:
+ 			QuitTool();
+ 			break;
+ 		default:
+diff --git a/src/tux.cpp b/src/tux.cpp
+index bce100f..99e9a71 100644
+--- a/src/tux.cpp
++++ b/src/tux.cpp
+@@ -248,7 +248,7 @@ bool CCharShape::VisibleNode(std::size_t node_name, float level) {
+ 
+ 	if (node->visible) {
+ 		node->divisions =
+-		    clamp(MIN_SPHERE_DIV, (int)std::lround(param.tux_sphere_divisions * level / 10), MAX_SPHERE_DIV);
++		    etr_clamp(MIN_SPHERE_DIV, (int)std::lround(param.tux_sphere_divisions * level / 10), MAX_SPHERE_DIV);
+ 		node->radius = 1.0;
+ 	}
+ 	if (newActions && useActions) AddAction(node_name, 5, NullVec3, level);
+@@ -567,7 +567,7 @@ void CCharShape::AdjustJoints(double turnFact, bool isBraking,
+ 	turning_angle[0] = std::max(-turnFact,0.0) * MAX_ARM_ANGLE2;
+ 	turning_angle[1] = std::max(turnFact,0.0) * MAX_ARM_ANGLE2;
+ 	flap_angle = MAX_ARM_ANGLE2 * (0.5 + 0.5 * std::sin(M_PI * flap_factor * 6 - M_PI / 2));
+-	force_angle = clamp(-20.0, -net_force.z / 300.0, 20.0);
++	force_angle = etr_clamp(-20.0, -net_force.z / 300.0, 20.0);
+ 	turn_leg_angle = turnFact * 10;
+ 
+ 	ResetJoints();
+diff --git a/src/view.cpp b/src/view.cpp
+index 49e095f..bc332f7 100644
+--- a/src/view.cpp
++++ b/src/view.cpp
+@@ -179,7 +179,7 @@ void update_view(CControl *ctrl, float dt) {
+ 
+ 	double speed = ctrl->cvel.Length();
+ 	double time_constant_mult = 1.0 /
+-	                            clamp(0.0,
++	                            etr_clamp(0.0,
+ 	                                  (speed - NO_INTERPOLATION_SPEED) / (BASELINE_INTERPOLATION_SPEED - NO_INTERPOLATION_SPEED),
+ 	                                  1.0);
+ 
+diff --git a/src/winsys.cpp b/src/winsys.cpp
+index 7c4fd4b..af5c783 100644
+--- a/src/winsys.cpp
++++ b/src/winsys.cpp
+@@ -13,7 +13,7 @@ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+----------------------------------------------------------------------*/
++ ---------------------------------------------------------------------*/
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <etr_config.h>
+@@ -46,7 +46,7 @@ CWinsys::CWinsys()
+ 	}
+ 
+ 	sf::VideoMode desktopMode = sf::VideoMode::getDesktopMode();
+-	resolutions[0] = TScreenRes(desktopMode.width, desktopMode.height);
++	resolutions[0] = TScreenRes(desktopMode.size.x, desktopMode.size.y);
+ 	resolutions[1] = TScreenRes(800, 600);
+ 	resolutions[2] = TScreenRes(1024, 768);
+ 	resolutions[3] = TScreenRes(1152, 864);
+@@ -77,7 +77,7 @@ float CWinsys::CalcScreenScale() const {
+ }
+ 
+ void CWinsys::SetupVideoMode(const TScreenRes& res) {
+-	int bpp = 32;
++	std::uint32_t bpp = 32;
+ 	switch (param.bpp_mode) {
+ 		case 16:
+ 		case 32:
+@@ -89,20 +89,20 @@ void CWinsys::SetupVideoMode(const TScreenRes& res) {
+ 			bpp = sf::VideoMode::getDesktopMode().bitsPerPixel;
+ 			break;
+ 	}
+-	sf::Uint32 style = sf::Style::Close | sf::Style::Titlebar;
+-	if (param.fullscreen)
+-		style |= sf::Style::Fullscreen;
++	std::uint32_t style = sf::Style::Close | sf::Style::Titlebar;
+ 
+ 	resolution = res;
+ 
+ 	ResetRenderMode();
+ 
+ #ifdef USE_STENCIL_BUFFER
+-	sf::ContextSettings ctx(bpp, 8, 0, 1, 2);
++	sf::ContextSettings ctx{ bpp, 8, 0, 1, 2, sf::ContextSettings::Attribute::Default };
+ #else
+-	sf::ContextSettings ctx(bpp, 0, 0, 1, 2);
++	sf::ContextSettings ctx{ bpp, 0, 0, 1, 2, sf::ContextSettings::Attribute::Default };
+ #endif
+-	window.create(sf::VideoMode(resolution.width, resolution.height, bpp), WINDOW_TITLE, style, ctx);
++
++	sf::State state = param.fullscreen ? sf::State::Fullscreen : sf::State::Windowed;
++	window.create(sf::VideoMode({resolution.width, resolution.height}, bpp), WINDOW_TITLE, state, ctx);
+ 	if (param.framerate)
+ 		window.setFramerateLimit(param.framerate);
+ #ifdef _WIN32
+@@ -111,8 +111,8 @@ void CWinsys::SetupVideoMode(const TScreenRes& res) {
+ #else
+ 	HICON icon = LoadIcon(GetModuleHandle(NULL), (LPCSTR)IDI_APPLICATION);
+ #endif
+-	SendMessageW(window.getSystemHandle(), WM_SETICON, ICON_BIG, (LPARAM)icon);
+-	SendMessageW(window.getSystemHandle(), WM_SETICON, ICON_SMALL, (LPARAM)icon);
++	SendMessageW(window.getNativeHandle(), WM_SETICON, ICON_BIG, (LPARAM)icon);
++	SendMessageW(window.getNativeHandle(), WM_SETICON, ICON_SMALL, (LPARAM)icon);
+ #endif
+ 
+ 	scale = CalcScreenScale();
+@@ -158,19 +158,19 @@ void CWinsys::PrintJoystickInfo() const {
+ 		int buttons = sf::Joystick::getButtonCount(i);
+ 		std::cout << "Joystick has " << buttons << " button" << (buttons == 1 ? "" : "s") << '\n';
+ 		std::cout << "Axes: ";
+-		if (sf::Joystick::hasAxis(i, sf::Joystick::R)) std::cout << "R ";
+-		if (sf::Joystick::hasAxis(i, sf::Joystick::U)) std::cout << "U ";
+-		if (sf::Joystick::hasAxis(i, sf::Joystick::V)) std::cout << "V ";
+-		if (sf::Joystick::hasAxis(i, sf::Joystick::X)) std::cout << "X ";
+-		if (sf::Joystick::hasAxis(i, sf::Joystick::Y)) std::cout << "Y ";
+-		if (sf::Joystick::hasAxis(i, sf::Joystick::Z)) std::cout << "Z ";
++		if (sf::Joystick::hasAxis(i, sf::Joystick::Axis::R)) std::cout << "R ";
++		if (sf::Joystick::hasAxis(i, sf::Joystick::Axis::U)) std::cout << "U ";
++		if (sf::Joystick::hasAxis(i, sf::Joystick::Axis::V)) std::cout << "V ";
++		if (sf::Joystick::hasAxis(i, sf::Joystick::Axis::X)) std::cout << "X ";
++		if (sf::Joystick::hasAxis(i, sf::Joystick::Axis::Y)) std::cout << "Y ";
++		if (sf::Joystick::hasAxis(i, sf::Joystick::Axis::Z)) std::cout << "Z ";
+ 		std::cout << '\n';
+ 	}
+ }
+ 
+ void CWinsys::TakeScreenshot() const {
+ 	sf::Texture tex;
+-	tex.create(window.getSize().x, window.getSize().y);
++	tex.resize(window.getSize());
+ 	tex.update(window);
+ 	sf::Image img = tex.copyToImage();
+ 
+@@ -191,4 +191,4 @@ void CWinsys::TakeScreenshot() const {
+ 
+ 	path += SCREENSHOT_FORMAT;
+ 	img.saveToFile(path);
+-}
++}
+\ No newline at end of file
+diff --git a/src/winsys.h b/src/winsys.h
+index 89969ca..a31f2ff 100644
+--- a/src/winsys.h
++++ b/src/winsys.h
+@@ -62,7 +62,7 @@ public:
+ 	void clear() { window.clear(colBackgr); }
+ 	void beginSFML() { if (!sfmlRenders) window.pushGLStates(); sfmlRenders = true; }
+ 	void endSFML() { if (sfmlRenders) window.popGLStates(); sfmlRenders = false; }
+-	bool PollEvent(sf::Event& event) { return window.pollEvent(event); }
++	std::optional<sf::Event> PollEvent() { return window.pollEvent(); }
+ 	const sf::Window& getWindow() const { return window; }
+ 	void TakeScreenshot() const;
+ };
+-- 
+2.53.0
+
