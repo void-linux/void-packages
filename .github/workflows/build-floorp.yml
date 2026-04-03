@@ -1,0 +1,56 @@
+name: Build Floorp (from my void-packages fork)
+
+on:
+  workflow_dispatch:                    # Run manually from Actions tab
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'srcpkgs/floorp/template'
+      - '.github/workflows/build-floorp.yml'
+  pull_request:
+    paths:
+      - 'srcpkgs/floorp/template'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # Use your own buildroot image (change if you use a different tag)
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/void-buildroot-glibc:latest
+
+    steps:
+      - name: Checkout your void-packages fork
+        uses: actions/checkout@v4
+
+      - name: Build Floorp package
+        working-directory: /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+        run: |
+          # Use fakechroot (required in GitHub Actions containers)
+          echo 'XBPS_CHROOT_CMD=fakechroot' >> etc/xbps-src.conf
+
+          # Bootstrap if needed (usually fast if image is good)
+          ./xbps-src binary-bootstrap || true
+
+          # Build Floorp with maximum jobs
+          ./xbps-src -j$(nproc) pkg floorp
+
+      - name: Collect built packages
+        run: |
+          mkdir -p ./artifacts
+          # Copy normal and debug packages
+          cp /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}/hostdir/binpkgs/*/*.xbps ./artifacts/ 2>/dev/null || true
+
+      - name: Upload Floorp .xbps artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: floorp-xbps-packages
+          path: ./artifacts/
+          retention-days: 14
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "=== Built packages ==="
+          ls -lh /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}/hostdir/binpkgs/*/*.xbps 2>/dev/null || echo "No .xbps files found"
+          echo "=== Build completed ==="
