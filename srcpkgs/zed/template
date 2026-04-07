@@ -1,0 +1,78 @@
+# Template file for 'zed'
+pkgname=zed
+version=0.233.7
+revision=1
+archs="x86_64* aarch64*"
+build_style=cargo
+make_check_args="--workspace"
+hostmakedepends="pkg-config cmake gettext perl libzstd-devel bzip2-devel protobuf lld"
+makedepends="gettext-devel elfutils-devel alsa-lib-devel fontconfig-devel glib-devel libva-devel libxcb-devel libxkbcommon-devel libzstd-devel openssl-devel wayland-devel vulkan-loader sqlite-devel libX11-devel libgit2-1.9-devel"
+short_desc="High-performance, multiplayer code editor"
+maintainer="JudahJL <judahlegy@gmail.com>"
+license="GPL-3.0-or-later"
+homepage="https://zed.dev/"
+distfiles="https://github.com/zed-industries/zed/archive/refs/tags/v${version}.tar.gz"
+checksum=2428185c9a6981433e83ed4e979fed4370c73e6439b6352f291e5a9540378678
+make_check=ci-skip # too slow and memory-intensive for build environment(OS killed test process and tests on average used ~50 Gb of memory locally)
+# https://github.com/void-linux/void-packages/actions/runs/24108190211/job/70336496775 for reference
+
+pre_build() {
+	echo -n stable > crates/zed/RELEASE_CHANNEL
+	export RELEASE_VERSION="${version}"
+	export ZED_UPDATE_EXPLANATION="Please use 'xbps-install -Su' to update."
+	export ZED_BUNDLE=true
+
+	if [[ "$XBPS_TARGET_MACHINE" == "aarch64" ]]; then
+		export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=lld -C link-args=-Wl,--disable-new-dtags,-rpath,\$ORIGIN/../lib"
+	else
+		export RUSTFLAGS="${RUSTFLAGS:-} -C link-args=-Wl,--disable-new-dtags,-rpath,\$ORIGIN/../lib"
+	fi
+
+	if [ "$CROSS_BUILD" ]; then
+		export PKG_CONFIG_ALLOW_CROSS=1
+
+		# workaround the cc-rs mixing CFLAGS for host and target.
+		# https://github.com/rust-lang/cc-rs/issues/1469
+		export CFLAGS_${RUST_BUILD//-/_}="${CFLAGS_host}" \
+			   CXXFLAGS_${RUST_BUILD//-/_}="${CXXFLAGS_host}" \
+			   LDFLAGS_${RUST_BUILD//-/_}="${LDFLAGS_host}" \
+			   CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}" \
+			   CXXFLAGS_${RUST_TARGET//-/_}="${CXXFLAGS}" \
+			   LDFLAGS_${RUST_TARGET//-/_}="${LDFLAGS}" \
+			   CFLAGS="" CXXFLAGS="" LDFLAGS=""
+	fi
+}
+
+do_build() {
+	: ${make_cmd:=cargo auditable}
+	: ${make_verbose:=-v}
+
+	${make_cmd} build ${XBPS_VERBOSE+${make_verbose}} --release --locked --target ${RUST_TARGET} \
+		${configure_args} ${make_build_args} --package cli
+
+	${make_cmd} build ${XBPS_VERBOSE+${make_verbose}} --release --locked --target ${RUST_TARGET} \
+		${configure_args} ${make_build_args} --package zed
+
+	# TODO: https://github.com/zed-industries/zed/blob/c372f246a0790da012dddbe3935ee2758a3a9c3b/script/bundle-linux#L87-L88 seperately build remote_server. will include it later.
+	#${make_cmd} build ${XBPS_VERBOSE+${make_verbose}} --release --locked --target ${RUST_TARGET} \
+ 		#${configure_args} ${make_build_args} --package remote_server
+}
+
+do_install() {
+	vbin "target/${RUST_TARGET}/release/cli" zed-cli
+	vinstall "target/${RUST_TARGET}/release/zed" 755 usr/libexec zed-editor
+	# TODO 1: confirm install location of remote_server
+	# vinstall "target/${RUST_TARGET}/release/remote_server" 755 usr/libexec
+
+	export APP_NAME="Zed"
+	export APP_CLI="zed-cli"
+	export APP_ICON="zed"
+	export APP_ARGS="%U"
+	export DO_STARTUP_NOTIFY="true"
+
+	envsubst < "crates/zed/resources/zed.desktop.in" > "dev.zed.Zed.desktop"
+	vinstall "dev.zed.Zed.desktop" 644 usr/share/applications
+
+	vinstall "crates/zed/resources/app-icon.png" 644 usr/share/icons/hicolor/512x512/apps zed.png
+	vinstall "crates/zed/resources/app-icon@2x.png" 644 usr/share/icons/hicolor/1024x1024/apps zed.png
+}
