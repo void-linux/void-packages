@@ -1,0 +1,173 @@
+From 8d36fce61821c28ce5c051e3d2558ca778bea0eb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Tau=20G=C3=A4rtli?= <git@tau.garden>
+Date: Mon, 24 Nov 2025 22:33:17 +0100
+Subject: [PATCH 1/2] Accept activation token in `ShowFile`
+
+Passes an activation token when calling sushi over
+D-Bus which makes it work properly with mutter's
+'strict' focus mode.
+
+Depends on https://gitlab.gnome.org/GNOME/nautilus/-/merge_requests/1885
+Part of https://gitlab.gnome.org/GNOME/nautilus/-/issues/4058
+---
+ src/org.gnome.NautilusPreviewer2.xml |  1 +
+ src/ui/application.js                | 11 ++++++++---
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/org.gnome.NautilusPreviewer2.xml b/src/org.gnome.NautilusPreviewer2.xml
+index faa8c58..4ff218b 100644
+--- a/src/org.gnome.NautilusPreviewer2.xml
++++ b/src/org.gnome.NautilusPreviewer2.xml
+@@ -4,6 +4,7 @@
+       <arg type="s" direction="in" name="uri" />
+       <arg type="s" direction="in" name="windowHandle" />
+       <arg type="b" direction="in" name="closeIfAlreadyShown" />
++      <arg type="s" direction="in" name="activationToken" />
+     </method>
+     <method name="Close">
+     </method>
+diff --git a/src/ui/application.js b/src/ui/application.js
+index e019e7a..ac0ddfd 100644
+--- a/src/ui/application.js
++++ b/src/ui/application.js
+@@ -76,8 +76,9 @@ var NautilusPreviewer2Skeleton = class extends NautilusPreviewerSkeleton {
+         super(application, '/org/gnome/NautilusPreviewer/org.gnome.NautilusPreviewer2.xml');
+     }
+ 
+-    ShowFile(uri, windowHandle, closeIfAlreadyShown) {
+-        this.application.showFile(uri, windowHandle, closeIfAlreadyShown);
++    ShowFile(uri, windowHandle, closeIfAlreadyShown, activationToken) {
++        this.application.showFile(
++            uri, windowHandle, closeIfAlreadyShown, activationToken);
+     }
+ }
+ 
+@@ -148,9 +149,13 @@ var Application = GObject.registerClass(class Application extends Gtk.Applicatio
+             'ParentHandle', new GLib.Variant('s', handle));
+     }
+ 
+-    showFile(uri, windowHandle, closeIfAlreadyShown) {
++    showFile(uri, windowHandle, closeIfAlreadyShown, activationToken = "") {
+         this._ensureMainWindow();
+ 
++        if (activationToken) {
++            this._mainWindow.set_startup_id(activationToken);
++        }
++
+         let file = Gio.file_new_for_uri(uri);
+         if (closeIfAlreadyShown &&
+             this._mainWindow.file &&
+-- 
+GitLab
+
+
+From 4a7449ecdde60b0d3851b03d37447db769933e36 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Tau=20G=C3=A4rtli?= <git@tau.garden>
+Date: Tue, 2 Dec 2025 17:13:33 +0100
+Subject: [PATCH 2/2] Remove org.gnome.NautilusPreviewer interface
+
+Since the interface is only used by nautilus
+it can now be safely removed.
+---
+ ...org.gnome.NautilusPreviewer.data.gresource.xml |  1 -
+ src/org.gnome.NautilusPreviewer.xml               | 11 -----------
+ src/sushi.in                                      |  8 ++++++--
+ src/ui/application.js                             | 15 ---------------
+ 4 files changed, 6 insertions(+), 29 deletions(-)
+ delete mode 100644 src/org.gnome.NautilusPreviewer.xml
+
+diff --git a/src/org.gnome.NautilusPreviewer.data.gresource.xml b/src/org.gnome.NautilusPreviewer.data.gresource.xml
+index 134eec3..9682d40 100644
+--- a/src/org.gnome.NautilusPreviewer.data.gresource.xml
++++ b/src/org.gnome.NautilusPreviewer.data.gresource.xml
+@@ -1,7 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <gresources>
+   <gresource prefix="/org/gnome/NautilusPreviewer">
+-    <file>org.gnome.NautilusPreviewer.xml</file>
+     <file>org.gnome.NautilusPreviewer2.xml</file>
+   </gresource>
+ </gresources>
+diff --git a/src/org.gnome.NautilusPreviewer.xml b/src/org.gnome.NautilusPreviewer.xml
+deleted file mode 100644
+index cb5ac10..0000000
+--- a/src/org.gnome.NautilusPreviewer.xml
++++ /dev/null
+@@ -1,11 +0,0 @@
+-<node>
+-  <interface name="org.gnome.NautilusPreviewer">
+-    <method name="ShowFile">
+-      <arg type="s" direction="in" name="uri" />
+-      <arg type="i" direction="in" name="xid" />
+-      <arg type="b" direction="in" name="closeIfAlreadyShown" />
+-    </method>
+-    <method name="Close">
+-    </method>
+-  </interface>
+-</node>
+diff --git a/src/sushi.in b/src/sushi.in
+index 05323b0..14d4992 100644
+--- a/src/sushi.in
++++ b/src/sushi.in
+@@ -39,7 +39,7 @@ try {
+ }
+ 
+ let bytes = Gio.resources_lookup_data(
+-    '/org/gnome/NautilusPreviewer/org.gnome.NautilusPreviewer.xml', 0);
++    '/org/gnome/NautilusPreviewer/org.gnome.NautilusPreviewer2.xml', 0);
+ let wrapper = Gio.DBusProxy.makeProxyWrapper(ByteArray.toString(bytes.toArray()));
+ 
+ let proxy;
+@@ -51,4 +51,8 @@ try {
+     System.exit(1);
+ }
+ 
+-proxy.ShowFileSync(file.get_uri(), 0, false);
++const activationToken = GLib.getenv("XDG_ACTIVATION_TOKEN") ?? "";
++const windowHandle = "";
++const closeIfAlreadyShown = false;
++proxy.ShowFileSync(
++    file.get_uri(), windowHandle, closeIfAlreadyShown, activationToken);
+diff --git a/src/ui/application.js b/src/ui/application.js
+index ac0ddfd..f3e6786 100644
+--- a/src/ui/application.js
++++ b/src/ui/application.js
+@@ -60,17 +60,6 @@ var NautilusPreviewerSkeleton = class {
+     }
+ }
+ 
+-var NautilusPreviewer1Skeleton = class extends NautilusPreviewerSkeleton {
+-    constructor(application) {
+-        super(application, '/org/gnome/NautilusPreviewer/org.gnome.NautilusPreviewer.xml');
+-    }
+-
+-    ShowFile(uri, xid, closeIfAlreadyShown) {
+-        let handle = 'x11:%d'.format(xid);
+-        this.application.showFile(uri, handle, closeIfAlreadyShown);
+-    }
+-}
+-
+ var NautilusPreviewer2Skeleton = class extends NautilusPreviewerSkeleton {
+     constructor(application) {
+         super(application, '/org/gnome/NautilusPreviewer/org.gnome.NautilusPreviewer2.xml');
+@@ -92,17 +81,13 @@ var Application = GObject.registerClass(class Application extends Gtk.Applicatio
+     vfunc_dbus_register(connection, path) {
+         let actualPath = `/org/gnome/${pkg.name.split('.').at(-1)}`;
+ 
+-        this._skeleton = new NautilusPreviewer1Skeleton(this);
+         this._skeleton2 = new NautilusPreviewer2Skeleton(this);
+-
+-        this._skeleton.export(connection, actualPath);
+         this._skeleton2.export(connection, actualPath);
+ 
+         return super.vfunc_dbus_register(connection, path);
+     }
+ 
+     vfunc_dbus_unregister(connection, path) {
+-        this._skeleton.unexport(connection);
+         this._skeleton2.unexport(connection);
+ 
+         return super.vfunc_dbus_unregister(connection, path);
+-- 
+GitLab
+

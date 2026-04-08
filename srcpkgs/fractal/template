@@ -1,11 +1,11 @@
 # Template file for 'fractal'
 pkgname=fractal
-version=11.1
+version=13
 revision=1
 build_style=meson
 build_helper=rust
 hostmakedepends="cargo clang desktop-file-utils gettext glib-devel
- gtk4-update-icon-cache nodejs pkg-config"
+ gtk4-update-icon-cache nodejs pkg-config blueprint-compiler"
 makedepends="gst-plugins-base1-devel gtksourceview5-devel libadwaita-devel
  libseccomp-devel libshumate-devel pipewire-devel rust-std xdg-desktop-portal
  libwebp-devel"
@@ -16,27 +16,40 @@ license="GPL-3.0-or-later"
 homepage="https://wiki.gnome.org/Apps/Fractal"
 changelog="https://gitlab.gnome.org/World/fractal/-/releases"
 distfiles="https://gitlab.gnome.org/World/fractal/-/archive/${version}/fractal-${version}.tar.gz"
-checksum=64b84201976818d148a20351e4fcccc426739ccbfba485b911ca7625c559338f
+checksum=fae738e94f7ec9eb03712ddc0b9792397ea268bae859eaff5814a093953c7402
 
 export PATH="$PATH:$XBPS_BUILDDIR/${pkgname}-${version}/node_modules/.bin"
 
-if [ "$XBPS_TARGET_WORDSIZE" = 32 ]; then
-	broken="runs out of memory when linking"
-fi
-nocross=yes
-if [ "$XBPS_TARGET_LIBC" = musl ]; then
-	broken="broken"
-fi
+case "$XBPS_TARGET_MACHINE" in
+	i686*) broken="runs out of memory when linking" ;;
+	armv*) disable_parallel_build=yes ;;
+esac
 
 post_patch() {
 	if [ "$CROSS_BUILD" ]; then
 		vsed -i src/meson.build \
 			-e "s%rust_target /%'${RUST_TARGET}' / &%"
 	fi
+	# this package uses stupid amounts of memory when allowed to do LTO
+	# also, by setting codegen-units to 1, upstream tries to optimise more
+	# but just ends up using more memory
+	# disable debug information generation to further lower memory usage
+	vsed -i Cargo.toml -e 's/lto = "thin"/lto = "off"/; /codegen-units/d; s/debug = true/debug = false/'
 }
 
 pre_configure() {
 	npm i sass
+}
+
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		export GI_TYPELIB_PATH="${XBPS_CROSS_BASE}/usr/lib/girepository-1.0"
+	fi
+}
+
+# NOTE: explicitly prevent rebuild due to XBPS wrappers being regenerated
+do_check() {
+	meson test -C build --no-rebuild ${makejobs}
 }
 
 # NOTE: explicitly prevent rebuild: https://gitlab.gnome.org/GNOME/fractal/-/issues/1327

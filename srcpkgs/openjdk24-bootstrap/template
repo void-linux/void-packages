@@ -1,0 +1,97 @@
+# Template file for 'openjdk24-bootstrap'
+pkgname=openjdk24-bootstrap
+version=24.0.2+12
+revision=1
+_gtest_ver=1.14.0
+_java_ver="${version%%.*}"
+_jdk_update="${version#*+}"
+_base_version="${version%+*}"
+_jdk_home="usr/lib/jvm/openjdk${_java_ver}"
+archs="x86_64* aarch64*"
+build_style=gnu-configure
+configure_args="--disable-warnings-as-errors
+ --enable-unlimited-crypto
+ --with-zlib=system
+ --with-libjpeg=system
+ --with-giflib=system
+ --with-libpng=system
+ --with-lcms=system
+ --with-jtreg=no
+ --with-gtest=./gtest
+ --with-debug-level=release
+ --with-native-debug-symbols=internal
+ --with-jobs=${XBPS_ORIG_MAKEJOBS}
+ --with-version-pre=
+ --with-version-build=${_jdk_update}
+ --with-version-opt=void-r${revision}
+ --with-vendor-name=Void
+ --with-vendor-url=https://voidlinux.org/
+ --with-vendor-bug-url=https://github.com/void-linux/void-packages/issues
+ --with-vendor-vm-bug-url=https://github.com/void-linux/void-packages/issues
+ --with-boot-jdk=/usr/lib/jvm/openjdk$(( _java_ver - 1 ))"
+make_build_args="images"
+make_check_target="test-hotspot-gtest"
+hostmakedepends="pkg-config automake autoconf cpio tar unzip zip ca-certificates
+ openssl zlib-devel which openjdk$(( _java_ver - 1 ))-bootstrap"
+makedepends="libXrender-devel libXtst-devel libXt-devel libXrandr-devel
+ giflib-devel libjpeg-turbo-devel cups-devel freetype-devel alsa-lib-devel
+ fontconfig-devel zlib-devel lcms2-devel"
+short_desc="OpenJDK Java Development Kit (bootstrap version ${_java_ver})"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="GPL-2.0-only WITH Classpath-exception-2.0"
+homepage="http://openjdk.java.net/"
+distfiles="https://github.com/openjdk/jdk${_java_ver}u/archive/jdk-${version}.tar.gz
+ https://github.com/google/googletest/archive/refs/tags/v${_gtest_ver}.tar.gz"
+checksum="947087e85c4222f25e1b9a707cea89b04c00a0a9eb79ded489f0bab92ea42beb
+ 8ad598c73ad796e0d8280b082cebd82a630d73e73cd3c70057938a6501bba5d7"
+nocross=yes
+repository=bootstrap
+
+skip_extraction="v${_gtest_ver}.tar.gz"
+
+# Build and check are still parallel, but don't use -jN.
+disable_parallel_build=yes
+disable_parallel_check=yes
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*|arm*) broken="Unsupported architecture" ;;
+esac
+
+post_extract() {
+	mkdir -p gtest
+	vsrcextract -C gtest v${_gtest_ver}.tar.gz
+	chmod +x configure
+}
+
+do_configure() {
+	CFLAGS=${CFLAGS/-D_FORTIFY_SOURCE=2/}
+	CXXFLAGS=${CXXFLAGS/-D_FORTIFY_SOURCE=2/}
+
+	# force ELFv2 for ppc64 just in case
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			CFLAGS+=" -DABI_ELFv2"
+			CXXFLAGS+=" -DABI_ELFv2"
+			;;
+	esac
+
+	configure_args=${configure_args/--with-libtool-sysroot=$XBPS_CROSS_BASE}
+	if [ "$XBPS_CCACHE" ] && [ -z "$CROSS_BUILD" ]; then
+		configure_args+=" --enable-ccache"
+		CC="/usr/bin/cc"
+		CXX="/usr/bin/c++"
+	fi
+	./configure ${configure_args} \
+		--with-extra-cflags="$CFLAGS" \
+		--with-extra-cxxflags="$CXXFLAGS" \
+		--with-extra-ldflags="$LDFLAGS" \
+		READELF="$READELF" AR="$AR" STRIP="$STRIP" NM="$NM" \
+		OBJDUMP="$OBJDUMP" OBJCOPY="$OBJCOPY"
+}
+
+do_install() {
+	vmkdir $_jdk_home
+
+	vcopy "build/*-release/images/jdk/*" "${_jdk_home}"
+	rm -rf "${DESTDIR}/$_jdk_home"/lib/src.zip "${DESTDIR}/$_jdk_home"/demo
+}

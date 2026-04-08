@@ -48,10 +48,17 @@ store_pkgdestdir_rundeps() {
 parse_shlib_needed() {
     while read -r f; do
         lf=${f#${PKGDESTDIR}}
-	    if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
-		    msg_normal "Skipping dependency scan for ${lf}\n" >&3
-		    continue
-	    fi
+        for x in ${skiprdeps}; do
+            if [ "$x" = "$lf" -o "$x" = "${lf#$PKGDESTDIR}" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ -n "$found" ]; then
+            msg_normal "Skipping dependency scan for ${lf}\n" >&3
+            unset found
+            continue
+        fi
         read -n4 elfmagic < "$f"
         if [ "$elfmagic" = $'\177ELF' ]; then
             $OBJDUMP -p "$f" |
@@ -69,7 +76,7 @@ hook() {
     local _shlib_dir="${XBPS_STATEDIR}/shlib-provides"
     local _shlibtmp
 
-    local Qt_6_PRIVATE_API=6.10.0
+    local Qt_6_PRIVATE_API=6.10.2
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
