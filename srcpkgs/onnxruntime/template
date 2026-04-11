@@ -1,0 +1,105 @@
+# Template file for 'onnxruntime'
+pkgname=onnxruntime
+version=1.24.4
+revision=1
+build_style=cmake
+build_wrksrc=cmake
+
+_onnx_ver=1.20.1
+_eigen_commit=1d8b82b0740839c0de7f1242a3585e3390ff5f33
+_flatbuffers_ver=23.5.26
+
+configure_args="-Donnxruntime_BUILD_SHARED_LIB=ON
+ -Donnxruntime_BUILD_UNIT_TESTS=OFF -DBUILD_TESTING=OFF
+ -Donnxruntime_ENABLE_TRAINING=OFF -Donnxruntime_ENABLE_PYTHON=ON
+ -Donnxruntime_USE_PREINSTALLED_EIGEN=OFF
+ -Donnxruntime_USE_FULL_PROTOBUF=OFF
+ -Donnxruntime_USE_CUDA=OFF -Donnxruntime_USE_ROCM=OFF
+ -Donnxruntime_USE_DNNL=OFF -Donnxruntime_USE_OPENMP=ON
+ -DCMAKE_CXX_STANDARD=17
+ -DCMAKE_CXX_FLAGS=-Wno-error=maybe-uninitialized
+ -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+ -DFETCHCONTENT_SOURCE_DIR_ONNX=${XBPS_BUILDDIR}/onnx-${_onnx_ver}
+ -DFETCHCONTENT_SOURCE_DIR_EIGEN3=${XBPS_BUILDDIR}/eigen-${_eigen_commit}
+ -DFETCHCONTENT_SOURCE_DIR_FLATBUFFERS=${XBPS_BUILDDIR}/flatbuffers-${_flatbuffers_ver}"
+
+hostmakedepends="pkg-config cmake git ninja protobuf
+ python3-setuptools python3-build python3-installer
+ python3-wheel python3-pybind11 python3-numpy"
+
+makedepends="boost-devel python3-pybind11 python3-devel
+ abseil-cpp-devel protobuf-devel re2-devel
+ json-c++ chrono-date-devel
+ microsoft-gsl pytorch-cpuinfo-devel safeint dlpack"
+
+short_desc="Cross-platform, high performance scoring engine for ML models"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="MIT"
+homepage="https://onnxruntime.ai"
+distfiles="https://github.com/microsoft/onnxruntime/archive/refs/tags/v${version}.tar.gz
+ https://github.com/onnx/onnx/archive/refs/tags/v${_onnx_ver}.zip>onnx-${_onnx_ver}.zip
+ https://github.com/eigen-mirror/eigen/archive/${_eigen_commit}.zip>eigen-${_eigen_commit}.zip
+ https://github.com/google/flatbuffers/archive/refs/tags/v${_flatbuffers_ver}.zip>flatbuffers-${_flatbuffers_ver}.zip"
+checksum="0cf4d2ee4392fbb8aedaabc6b2ba11b4a680d1071fa4f75546c2289ca5b404cf
+ a003e1f628406382c61900db668aa86c27afa8570dde7b9aced159579a443ab7
+ 6a60d76351f97132669daeeb721d6bf14b008101883ad2d687a3201c5c461eb0
+ 57bd580c0772fd1a726c34ab8bf05325293bc5f9c165060a898afa1feeeb95e1"
+
+skip_extraction="onnx-${_onnx_ver}.zip
+ eigen-${_eigen_commit}.zip
+ flatbuffers-${_flatbuffers_ver}.zip"
+
+nocross="FetchContent and Python wheel build not set up for cross compilation"
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" protobuf"
+fi
+
+post_extract() {
+	vsrcextract -C "${XBPS_BUILDDIR}/onnx-${_onnx_ver}" "onnx-${_onnx_ver}.zip"
+	patch -d "${XBPS_BUILDDIR}/onnx-${_onnx_ver}" -Np1 < "${wrksrc}/cmake/patches/onnx/onnx.patch"
+
+	vsrcextract -C "${XBPS_BUILDDIR}/eigen-${_eigen_commit}" "eigen-${_eigen_commit}.zip"
+	patch -d "${XBPS_BUILDDIR}/eigen-${_eigen_commit}" -Np1 < "${wrksrc}/cmake/patches/eigen/s390x-build.patch"
+	patch -d "${XBPS_BUILDDIR}/eigen-${_eigen_commit}" -Np1 < "${wrksrc}/cmake/patches/eigen/s390x-build-werror.patch"
+
+	vsrcextract -C "${XBPS_BUILDDIR}/flatbuffers-${_flatbuffers_ver}" "flatbuffers-${_flatbuffers_ver}.zip"
+	patch -d "${XBPS_BUILDDIR}/flatbuffers-${_flatbuffers_ver}" -Np1 < "${wrksrc}/cmake/patches/flatbuffers/flatbuffers.patch"
+}
+
+post_build() {
+	cd "${wrksrc}"
+	mkdir -p onnxruntime/capi
+	python3 setup.py --help
+	cp -r cmake/build/onnxruntime/* onnxruntime/
+	mkdir -p onnxruntime/training
+	cp onnxruntime/python/training/__init__.py onnxruntime/training/
+	python3 -m build --wheel --no-isolation
+}
+
+post_install() {
+	vlicense "${wrksrc}/LICENSE"
+
+	cd "${wrksrc}"
+	python3 -m installer --overwrite-existing --destdir="${DESTDIR}" dist/*.whl
+}
+
+onnxruntime-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/*.so"
+		vmove usr/lib/pkgconfig
+		vmove usr/lib/cmake
+	}
+}
+
+python3-onnxruntime_package() {
+	short_desc+=" - Python3 bindings"
+	depends="${sourcepkg}>=${version}_${revision}
+	 python3-numpy python3-protobuf python3-packaging"
+	pkg_install() {
+		vmove "${py3_sitelib}"
+	}
+}
