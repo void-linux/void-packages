@@ -1086,6 +1086,8 @@ matching the `build_style` name, Example:
 - `texmf` For texmf zip/tarballs that need to go into /usr/share/texmf-dist. Includes
 duplicates handling.
 
+- `tree-sitter` for tree-sitter language grammars.
+
 <a id="build_helper"></a>
 ### build helper scripts
 
