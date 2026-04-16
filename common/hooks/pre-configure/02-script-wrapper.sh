@@ -101,7 +101,7 @@ pkgconfig_wrapper() {
 #!/bin/sh
 
 export PKG_CONFIG_SYSROOT_DIR="$XBPS_CROSS_BASE"
-export PKG_CONFIG_PATH="$XBPS_CROSS_BASE/usr/lib/pkgconfig:$XBPS_CROSS_BASE/usr/share/pkgconfig\${PKG_CONFIG_PATH:+:\${PKG_CONFIG_PATH}}"
+export PKG_CONFIG_PATH="$XBPS_CROSS_BASE/usr/lib/pkgconfig:$XBPS_CROSS_BASE/usr/share/pkgconfig:/usr/share/pkgconfig\${PKG_CONFIG_PATH:+:\${PKG_CONFIG_PATH}}"
 export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/usr/lib/pkgconfig\${PKG_CONFIG_LIBDIR:+:\${PKG_CONFIG_LIBDIR}}"
 exec /usr/bin/pkg-config "\$@"
 _EOF
