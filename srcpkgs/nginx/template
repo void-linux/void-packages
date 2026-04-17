@@ -3,12 +3,10 @@
 # Consider using mime.types from mime-types package
 # See comments in mime-types template
 pkgname=nginx
-version=1.28.3
+version=1.30.0
 revision=1
-_tests_commit=cf90a22921652731302e8a4dc2a88049c723377d
+_tests_commit=0f72f59c40de9977bd8f3deff5d200e761b8b683
 _njs_version=0.9.6
-create_wrksrc=yes
-build_wrksrc="nginx-${version}"
 build_style=gnu-makefile
 _cfgdir=/etc/nginx
 _tmpdir=/var/lib/nginx/tmp
@@ -53,9 +51,8 @@ configure_args="--prefix=${_cfgdir}
  --with-mail_ssl_module
  --with-pcre-jit
  --with-threads
- --add-dynamic-module=../njs-${_njs_version}/nginx"
-hostmakedepends="geoip geoip-devel openssl-devel pcre2-devel perl libxslt-devel
- which"
+ --add-dynamic-module=njs/nginx"
+hostmakedepends="perl geoip-devel openssl-devel pcre2-devel libxslt-devel"
 makedepends="${hostmakedepends}"
 checkdepends="perl perl-IO-Socket-SSL perl-GD perl-FCGI perl-CryptX which uwsgi uwsgi-python3"
 short_desc="High performance web and reverse proxy server"
@@ -64,11 +61,13 @@ license="BSD-2-Clause"
 homepage="https://nginx.org"
 changelog="https://nginx.org/en/CHANGES-${version%.*}"
 distfiles="https://nginx.org/download/nginx-${version}.tar.gz
- https://github.com/nginx/nginx-tests/archive/${_tests_commit}.tar.gz
- https://github.com/nginx/njs/archive/refs/tags/${_njs_version}.tar.gz"
-checksum="2c96a946bfb0882a21744ed429770a2123ae1828c7c48665092993ddee91a918
- 862b88bb86675546df9fb391f0ffb9a55fc4212c22097017e44c9d1b33f4d358
+ https://github.com/nginx/nginx-tests/archive/${_tests_commit}.tar.gz>nginx-tests-${_tests_commit}.tar.gz
+ https://github.com/nginx/njs/archive/refs/tags/${_njs_version}.tar.gz>njs-${_njs_version}.tar.gz"
+checksum="058188c64bf22baecaa72b809a6318a4f9ba623889c554feab03f7cb853ab31b
+ fb990b56c03a0923bf46e002dcc2701a0d79fb62564cb595f24955c8b00cbdbd
  713e931d1ffcd337f6304dc55e512dcf2099ba4cc3a996c9ea14f22d5d9cdd79"
+
+skip_extraction="nginx-tests-${_tests_commit}.tar.gz njs-${_njs_version}.tar.gz"
 
 # Tests fail when nginx run as root and there is no nginx user
 make_check=ci-skip
@@ -97,6 +96,11 @@ make_dirs="/var/log/nginx 0750 root root
  /var/lib/nginx 1777 root root
  /var/lib/nginx/tmp 0750 nginx root"
 
+post_extract() {
+	vsrcextract -C tests "nginx-tests-${_tests_commit}.tar.gz"
+	vsrcextract -C njs "njs-${_njs_version}.tar.gz"
+}
+
 do_configure() {
 	if [ "$CROSS_BUILD" ]; then
 		# fake configure run on host
@@ -119,24 +123,24 @@ do_configure() {
 	fi
 
 	./configure ${configure_args}
-	( cd ../njs-${_njs_version} && ./configure )
+	( cd njs && ./configure )
 }
 
 pre_build() {
 	if [ "$CROSS_BUILD" ]; then
-		mkdir -p ../njs-${_njs_version}/build
+		mkdir -p njs/build
 		case "$XBPS_TARGET_MACHINE" in
 		arm*)
 			cp "${FILESDIR}/ngx_auto_config.h.armv6l" objs/ngx_auto_config.h
-			cp "${FILESDIR}/njs_auto_config.h.armv6l" ../njs-${_njs_version}/build/njs_auto_config.h
+			cp "${FILESDIR}/njs_auto_config.h.armv6l" njs/build/njs_auto_config.h
 			;;
 		aarch64*)
 			cp "${FILESDIR}/ngx_auto_config.h.aarch64" objs/ngx_auto_config.h
-			cp "${FILESDIR}/njs_auto_config.h.aarch64" ../njs-${_njs_version}/build/njs_auto_config.h
+			cp "${FILESDIR}/njs_auto_config.h.aarch64" njs/build/njs_auto_config.h
 			;;
 		riscv64*)
 			cp "${FILESDIR}/ngx_auto_config.h.riscv64" objs/ngx_auto_config.h
-			cp "${FILESDIR}/njs_auto_config.h.riscv64" ../njs-${_njs_version}/build/njs_auto_config.h
+			cp "${FILESDIR}/njs_auto_config.h.riscv64" njs/build/njs_auto_config.h
 			;;
 		esac
 
@@ -148,22 +152,17 @@ pre_build() {
 	export LD="$CC"
 
 	(
-		cd ../njs-${_njs_version}
+		cd njs
 		make ${makejobs} NJS_CC="$CC" NJS_CFLAGS="$CFLAGS -fPIC" \
 			NJS_STATIC_LINK="$AR -r -c" NJS_LINK="$CC -O"
 	)
 }
 
 do_check() {
-	TEST_NGINX_BINARY="$PWD/objs/nginx" \
-		prove -j ${XBPS_MAKEJOBS} "../${pkgname}-tests-${_tests_commit}"
+	TEST_NGINX_BINARY="$PWD/objs/nginx" prove -j ${XBPS_MAKEJOBS} tests
 }
 
 post_install() {
-	sed -e 's|\<user\s\+\w\+;|user html;|g' \
-		-e '44s|html|/usr/share/nginx/html|' \
-		-e '54s|html|/usr/share/nginx/html|' \
-		-i "$DESTDIR/etc/nginx/nginx.conf"
 	rm -- "$DESTDIR"/etc/nginx/*.default
 
 	vmkdir usr/share/nginx
