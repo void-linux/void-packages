@@ -151,7 +151,7 @@ chroot_handler() {
     fi
 
     case "$action" in
-        fetch|extract|patch|configure|build|check|install|pkg|bootstrap-update|chroot|clean)
+        fetch|extract|patch|configure|build|check|install|pkg|bootstrap-update|chroot|clean|clean-repocache)
             chroot_prepare || return $?
             chroot_init || return $?
             ;;
