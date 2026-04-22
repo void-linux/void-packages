@@ -237,6 +237,7 @@ The description of these directories is as follows:
  - `builddir`: to unpack package source tarballs and where packages are built.
  - `destdir`: to install packages, aka **fake destdir**.
  - `hostdir/ccache`: to store ccache data if the `XBPS_CCACHE` option is enabled.
+ - `hostdir/sccache`: to store sccache data if the `XBPS_SCCACHE` option is enabled.
  - `hostdir/distcc-<arch>`: to store distcc data if the `XBPS_DISTCC` option is enabled.
  - `hostdir/repocache`: to store binary packages from remote repositories.
  - `hostdir/sources`: to store package sources.
