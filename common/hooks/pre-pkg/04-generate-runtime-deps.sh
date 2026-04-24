@@ -46,6 +46,8 @@ store_pkgdestdir_rundeps() {
 }
 
 parse_shlib_needed() {
+	local -A dependents
+
     while read -r f; do
         lf=${f#${PKGDESTDIR}}
         for x in ${skiprdeps}; do
@@ -61,14 +63,21 @@ parse_shlib_needed() {
         fi
         read -n4 elfmagic < "$f"
         if [ "$elfmagic" = $'\177ELF' ]; then
-            $OBJDUMP -p "$f" |
-            awk '
-                /NEEDED/{print $2;}
-                /Qt_5_PRIVATE_API/{next;}
-                /Qt_[0-9]*_PRIVATE_API/{print $NF;}
-            '
+			while read -r shlib; do
+				dependents[$shlib]+="$lf"
+			done < \
+				<($OBJDUMP -p "$f" |
+            	awk '
+                	/NEEDED/{print $2;}
+                	/Qt_5_PRIVATE_API/{next;}
+                	/Qt_[0-9]*_PRIVATE_API/{print $NF;}
+            	')
         fi
     done
+
+	for shlib in "${!dependents[@]}"; do
+		echo "$shlib ${dependents[$shlib]}"
+	done | sort
 }
 
 hook() {
@@ -93,22 +102,22 @@ hook() {
     depsftmp=$(mktemp) || exit 1
     find ${PKGDESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
 
-    for f in ${shlib_requires}; do
-        verify_deps+=" ${f}"
-    done
-
-    _shlibtmp=$(mktemp) || exit 1
-    parse_shlib_needed 3>&1 >"$_shlibtmp" <"$depsftmp"
+    verify_deps=$(parse_shlib_needed <"$depsftmp")
     rm -f "$depsftmp"
-    verify_deps=$(sort <"$_shlibtmp" | uniq)
-    rm -f "$_shlibtmp"
+
+    for f in ${shlib_requires}; do
+        verify_deps+="\n${f}"
+    done
 
     #
     # Add required run time packages by using required shlibs resolved
     # above, the mapping is done thru the common/shlibs file.
     #
-    for f in ${verify_deps}; do
+	while read -r f; do
         unset _rdep _pkgname _rdepver
+
+		linked_by="$(echo "$f" | cut -f2- -d ' ')"
+		f="$(echo "$f" | cut -f1 -d ' ')"
 
         case "$f" in
         Qt_*_PRIVATE_API)
@@ -144,14 +153,14 @@ hook() {
             _rdep="$(awk -v sl="$f" -v arch="$XBPS_TARGET_MACHINE" '$1 == sl && ($3 == "" || $3 == "ignore" || $3 == arch) { print $2; exit; }' "$mapshlibs")"
 
             if [ -z "$_rdep" ]; then
-                msg_red_nochroot "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!\n"
+                msg_red_nochroot "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX! linked by $linked_by\n"
                 broken_shlibs=1
                 continue
             fi
             _pkgname=$($XBPS_UHELPER_CMD getpkgname "${_rdep}" 2>/dev/null)
             _rdepver=$($XBPS_UHELPER_CMD getpkgversion "${_rdep}" 2>/dev/null)
             if [ -z "${_pkgname}" -o -z "${_rdepver}" ]; then
-                msg_red_nochroot "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!\n"
+                msg_red_nochroot "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX! linked by $linked_by\n"
                 broken_shlibs=1
                 continue
             fi
@@ -160,9 +169,9 @@ hook() {
             # By this point, SONAME can't be found in current pkg
             sorequires+="${f} "
         fi
-        echo "   SONAME: $f <-> ${_sdep}"
+        echo "   SONAME: $f <-> ${_sdep} linked by $linked_by"
         add_rundep "${_sdep}"
-    done
+	done < <(echo "$verify_deps")
     #
     # If pkg uses any unknown SONAME error out.
     #
