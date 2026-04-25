@@ -1,0 +1,133 @@
+--- a/pdf-backend.hh
++++ b/pdf-backend.hh
+@@ -26,7 +26,6 @@
+ #include <utility>
+ #include <vector>
+ 
+-#include "autoconf.hh"
+ 
+ // Poppler:
+ #include <PDFDoc.h>
+@@ -49,6 +48,7 @@
+ #include <splash/SplashPath.h>
+ #include <splash/SplashTypes.h>
+ 
++#include "autoconf.hh"
+ #include "i18n.hh"
+ 
+ namespace pdf
+--- a/pdf-backend.cc
++++ b/pdf-backend.cc
+@@ -181,7 +181,7 @@ static bool annotations_callback(pdf::ant::Annotation *annotation, void *user_da
+     border_colors.push_back("");
+     return true;
+   }
+-  const double *values = color->getValues();
++  const double *values = color->getValues().data();
+   switch (color->getSpace())
+   {
+   case pdf::ant::Color::colorTransparent:
+@@ -499,7 +499,7 @@ bool pdf::get_glyph(splash::Splash *splash, splash::Font *font,
+   if (font == nullptr)
+     return false;
+   splash::ClipResult clip_result;
+-  if (!font->getGlyph(code, 0, 0, bitmap, static_cast<int>(x), static_cast<int>(y), splash->getClip(), &clip_result))
++  if (!font->getGlyph(code, 0, 0, bitmap, static_cast<int>(x), static_cast<int>(y), const_cast<SplashClip*>(&splash->getClip()), &clip_result))
+     return false;
+   return (clip_result != splashClipAllOutside);
+ }
+--- a/system.hh
++++ b/system.hh
+@@ -223,7 +223,7 @@ namespace encoding
+   protected:
+     const std::string &string;
+   public:
+-    explicit proxy<from, to>(const std::string &string)
++    explicit proxy(const std::string &string)
+     : string(string)
+     { }
+     friend std::ostream &operator << <>(std::ostream &, const proxy<from, to> &);
+--- a/pdf-unicode.cc
++++ b/pdf-unicode.cc
+@@ -49,7 +49,7 @@ std::string pdf::string_as_utf8(const pdf::String *string)
+      */
+     const static uint32_t replacement_character = 0xFFFD;
+     const char *cstring = pdf::get_c_string(string);
+-    size_t clength = string->getLength();
++    size_t clength = string->size();
+     std::ostringstream stream;
+     if (clength >= 2 && (cstring[0] & 0xFF) == 0xFE && (cstring[1] & 0xFF) == 0xFF) {
+         /* UTF-16-BE Byte Order Mark */
+
+--- a/pdf-backend.cc
++++ b/pdf-backend.cc
+@@ -499,7 +499,7 @@
+   if (font == nullptr)
+     return false;
+   splash::ClipResult clip_result;
+-  if (!font->getGlyph(code, 0, 0, bitmap, static_cast<int>(x), static_cast<int>(y), const_cast<SplashClip*>(&splash->getClip()), &clip_result))
++  if (!font->getGlyph(code, 0, 0, bitmap, static_cast<int>(x), static_cast<int>(y), splash->getClip(), &clip_result))
+     return false;
+   return (clip_result != splashClipAllOutside);
+ }
+
+--- a/pdf-backend.cc
++++ b/pdf-backend.cc
+@@ -407,7 +407,11 @@ pdf::Metadata::Metadata(pdf::Document &document)
+     char tzs = 0; int tzh = 0, tzm = 0;
+     if (!pdf::dict_lookup(info_dict, field.first, &object)->isString())
+       continue;
++#if POPPLER_VERSION >= 260400
++    const char *input = object.getString().c_str();
++#else
+     const char *input = pdf::get_c_string(object.getString());
++#endif
+     if (input[0] == 'D' && input[1] == ':')
+       input += 2;
+     int year = scan_date_digits(input, 4);
+@@ -470,8 +474,13 @@ void pdf::set_color(splash::Color &result, uint8_t r, uint8_t g, uint8_t b)
+  */
+ 
+ bool pdf::Environment::antialias = false;
+ 
++#if POPPLER_VERSION >= 260400
++pdf::Renderer::Renderer(pdf::splash::Color &paper_color, bool monochrome)
++: pdf::splash::OutputDevice(monochrome ? splashModeMono1 : splashModeRGB8, 4, paper_color, true),
++#else
+ pdf::Renderer::Renderer(pdf::splash::Color &paper_color, bool monochrome)
+ : pdf::splash::OutputDevice(monochrome ? splashModeMono1 : splashModeRGB8, 4, false, paper_color),
++#endif
+   catalog(NULL)
+ {
+   this->setFontAntialias(pdf::Environment::antialias);
+
+--- a/pdf-dpi.cc
++++ b/pdf-dpi.cc
+@@ -91,7 +91,11 @@ public:
+ 
+ void DpiGuessDevice::process_image(pdf::gfx::State *state, int width, int height)
+ {
++#if POPPLER_VERSION >= 260400
++  const double *ctm = state->getCTM().data();
++#else
+   const double *ctm = state->getCTM();
++#endif
+   double h_dpi = 72.0 * width / hypot(ctm[0], ctm[1]);
+   double v_dpi = 72.0 * height / hypot(ctm[2], ctm[3]);
+   this->min_ = std::min(this->min_, std::min(h_dpi, v_dpi));
+
+--- a/pdf-unicode.cc
++++ b/pdf-unicode.cc
+@@ -104,7 +104,12 @@ std::string pdf::string_as_utf8(const pdf::String *string)
+ 
+ std::string pdf::string_as_utf8(pdf::Object &object)
+ {
++#if POPPLER_VERSION >= 260400
++    pdf::String poppler_str(object.getString().c_str());
++    return pdf::string_as_utf8(&poppler_str);
++#else
+     return pdf::string_as_utf8(object.getString());
++#endif
+ }
+ 
+ /* class pdf::FullNFKC
