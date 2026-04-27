@@ -1,0 +1,159 @@
+Port to PoDoFo 1.0.x API changes.
+
+diff --git a/src/export_pdf/canvas_pdf.cpp b/src/export_pdf/canvas_pdf.cpp
+index 413b07fe..d3fbe6a0 100644
+--- a/src/export_pdf/canvas_pdf.cpp
++++ b/src/export_pdf/canvas_pdf.cpp
+@@ -62,7 +62,7 @@ void CanvasPDF::img_line(const Coordi &p0, const Coordi &p1, const uint64_t widt
+         rp1 = transform.transform(p1);
+     }
+     auto color = get_pdf_layer_color(layer);
+-    painter.GraphicsState.SetStrokeColor(PoDoFo::PdfColor(color.r, color.g, color.b));
++    painter.GraphicsState.SetStrokingColor(PoDoFo::PdfColor(color.r, color.g, color.b));
+     painter.DrawLine(to_pt(rp0.x), to_pt(rp0.y), to_pt(rp1.x), to_pt(rp1.y));
+ }
+ 
+@@ -138,7 +138,7 @@ void CanvasPDF::img_draw_text(const Coordf &p, float size, const std::string &rt
+         Coordi p0(xshift, yshift);
+         Coordi pt = tf.transform(p0);
+ 
+-        painter.GraphicsState.SetCurrentMatrix(PoDoFo::Matrix::FromCoefficients(cos(fangle), sin(fangle), -sin(fangle),
++        painter.GraphicsState.ConcatenateTransformationMatrix(PoDoFo::Matrix(cos(fangle), sin(fangle), -sin(fangle),
+                                                                                 cos(fangle), to_pt(pt.x), to_pt(pt.y)));
+         painter.DrawText(line.c_str(), 0, to_pt(size) / -2);
+         painter.Restore();
+@@ -154,8 +154,8 @@ void CanvasPDF::img_polygon(const Polygon &ipoly, bool tr)
+         return;
+ 
+     auto color = get_pdf_layer_color(ipoly.layer);
+-    painter.GraphicsState.SetFillColor(PoDoFo::PdfColor(color.r, color.g, color.b));
+-    painter.GraphicsState.SetStrokeColor(PoDoFo::PdfColor(color.r, color.g, color.b));
++    painter.GraphicsState.SetNonStrokingColor(PoDoFo::PdfColor(color.r, color.g, color.b));
++    painter.GraphicsState.SetStrokingColor(PoDoFo::PdfColor(color.r, color.g, color.b));
+     painter.GraphicsState.SetLineWidth(to_pt(settings.min_line_width));
+     if (ipoly.usage == nullptr) { // regular patch
+         draw_polygon(ipoly, tr);
+@@ -195,8 +195,8 @@ void CanvasPDF::img_hole(const Hole &hole)
+         return;
+ 
+     auto color = get_pdf_layer_color(PDFExportSettings::HOLES_LAYER);
+-    painter.GraphicsState.SetFillColor(PoDoFo::PdfColor(color.r, color.g, color.b));
+-    painter.GraphicsState.SetStrokeColor(PoDoFo::PdfColor(color.r, color.g, color.b));
++    painter.GraphicsState.SetNonStrokingColor(PoDoFo::PdfColor(color.r, color.g, color.b));
++    painter.GraphicsState.SetStrokingColor(PoDoFo::PdfColor(color.r, color.g, color.b));
+     painter.GraphicsState.SetLineWidth(to_pt(settings.min_line_width));
+ 
+     auto hole2 = hole;
+diff --git a/src/export_pdf/export_pdf.cpp b/src/export_pdf/export_pdf.cpp
+index 71142919..ab2e8272 100644
+--- a/src/export_pdf/export_pdf.cpp
++++ b/src/export_pdf/export_pdf.cpp
+@@ -88,17 +88,16 @@ public:
+             auto &page = document.GetPages().GetPageAt(number);
+             auto &annot = page.GetAnnotations().CreateAnnot<PoDoFo::PdfAnnotationLink>(rect);
+             annot.SetBorderStyle(0, 0, 0);
+-            annot.SetDestination(first_pages.at(path));
++            annot.SetDestination(*first_pages.at(path));
+         }
+         for (auto &[url, number, rect] : datasheet_annotations) {
+             auto &page = document.GetPages().GetPageAt(number);
+             auto &annot = page.GetAnnotations().CreateAnnot<PoDoFo::PdfAnnotationLink>(rect);
+             annot.SetBorderStyle(0, 0, 0);
+ 
+-            auto action = std::make_shared<PoDoFo::PdfAction>(document, PoDoFo::PdfActionType::URI);
+-
++            auto action = document.CreateAction<PoDoFo::PdfActionURI>();
+             action->SetURI(PoDoFo::PdfString(url));
+-            annot.SetAction(action);
++            annot.SetAction(*action);
+         }
+ 
+         document.Save(filename);
+@@ -109,7 +108,7 @@ private:
+     PoDoFo::PdfPainter painter;
+     PoDoFo::PdfFont &font;
+     PoDoFo::PdfOutlines *outlines = nullptr;
+-    std::map<UUIDVec, std::shared_ptr<PoDoFo::PdfDestination>> first_pages;
++    std::map<UUIDVec, std::unique_ptr<PoDoFo::PdfDestination>> first_pages;
+     std::vector<std::tuple<UUIDVec, unsigned int, PoDoFo::Rect>> annotations;
+     std::vector<std::tuple<std::string, unsigned int, PoDoFo::Rect>> datasheet_annotations;
+ 
+@@ -138,7 +137,7 @@ private:
+             painter.SetCanvas(page);
+ 
+             painter.GraphicsState.SetLineCapStyle(PoDoFo::PdfLineCapStyle::Round);
+-            painter.GraphicsState.SetFillColor(PoDoFo::PdfColor(0, 0, 0));
++            painter.GraphicsState.SetNonStrokingColor(PoDoFo::PdfColor(0, 0, 0));
+             painter.TextState.SetFont(font, 10);
+             painter.TextState.SetRenderingMode(PoDoFo::PdfTextRenderingMode::Invisible);
+ 
+@@ -167,9 +166,10 @@ private:
+                 }
+             }
+ 
+-            auto dest = std::make_shared<PoDoFo::PdfDestination>(page);
++            auto dest = document.CreateDestination();
++            dest->SetDestination(page);
+             if (first) {
+-                first_pages.emplace(path, dest);
++                first_pages.emplace(path, std::move(dest));
+                 first = false;
+             }
+ 
+@@ -216,15 +216,16 @@ private:
+ 
+             PoDoFo::PdfOutlineItem *sheet_node;
+             if (parent) {
+-                sheet_node = parent->CreateChild(PoDoFo::PdfString(sheet->name), dest);
++                sheet_node = &parent->CreateChild(PoDoFo::PdfString(sheet->name));
++                sheet_node->SetDestination(*dest);
+             }
+             else {
+-                sheet_node = outlines->CreateRoot(PoDoFo::PdfString(sheet->name));
+-                sheet_node->SetDestination(dest);
++                sheet_node = &outlines->CreateRoot(PoDoFo::PdfString(sheet->name));
++                sheet_node->SetDestination(*dest);
+             }
+ 
+             for (auto sym : sheet->get_block_symbols_sorted()) {
+-                auto sym_node = sheet_node->CreateChild(PoDoFo::PdfString(sym->block_instance->refdes), dest);
++                auto sym_node = &sheet_node->CreateChild(PoDoFo::PdfString(sym->block_instance->refdes));
+                 sym_node->SetTextFormat(PoDoFo::PdfOutlineFormat::Italic);
+                 export_schematic(*sym->schematic, uuid_vec_append(path, sym->block_instance->uuid), prv, sym_node);
+             }
+diff --git a/src/export_pdf/export_pdf_board.cpp b/src/export_pdf/export_pdf_board.cpp
+index 717c3524..b30e23ae 100644
+--- a/src/export_pdf/export_pdf_board.cpp
++++ b/src/export_pdf/export_pdf_board.cpp
+@@ -39,15 +39,15 @@ void export_pdf(const class Board &brd, const class PDFExportSettings &settings,
+     auto &page = document.GetPages().CreatePage(PoDoFo::Rect(0, 0, to_pt(width), to_pt(height)));
+     painter.SetCanvas(page);
+     painter.GraphicsState.SetLineCapStyle(PoDoFo::PdfLineCapStyle::Round);
+-    painter.GraphicsState.SetFillColor(PoDoFo::PdfColor(0, 0, 0));
++    painter.GraphicsState.SetNonStrokingColor(PoDoFo::PdfColor(0, 0, 0));
+     painter.TextState.SetFont(font, 10);
+     painter.TextState.SetRenderingMode(PoDoFo::PdfTextRenderingMode::Invisible);
+     if (settings.mirror) {
+-        painter.GraphicsState.SetCurrentMatrix(PoDoFo::Matrix::FromCoefficients(
++        painter.GraphicsState.ConcatenateTransformationMatrix(PoDoFo::Matrix(
+                 -1, 0, 0, 1, to_pt(bbox.second.x + border_width), to_pt(-bbox.first.y + border_width)));
+     }
+     else {
+-        painter.GraphicsState.SetCurrentMatrix(PoDoFo::Matrix::FromCoefficients(
++        painter.GraphicsState.ConcatenateTransformationMatrix(PoDoFo::Matrix(
+                 1, 0, 0, 1, to_pt(-bbox.first.x + border_width), to_pt(-bbox.first.y + border_width)));
+     }
+     ca.layer_filter = true;
+diff --git a/src/export_pdf/export_pdf_util.cpp b/src/export_pdf/export_pdf_util.cpp
+index b3c4834f..b1ab924a 100644
+--- a/src/export_pdf/export_pdf_util.cpp
++++ b/src/export_pdf/export_pdf_util.cpp
+@@ -13,7 +13,7 @@ void render_picture(PoDoFo::PdfDocument &doc, PoDoFo::PdfPainter &painter, const
+ 
+     painter.Save();
+     const auto fangle = pl.get_angle_rad();
+-    painter.GraphicsState.SetCurrentMatrix(PoDoFo::Matrix::FromCoefficients(
++    painter.GraphicsState.ConcatenateTransformationMatrix(PoDoFo::Matrix(
+             cos(fangle), sin(fangle), -sin(fangle), cos(fangle), to_pt((double)pl.shift.x), to_pt((double)pl.shift.y)));
+     const int64_t w = pic.data->width * pic.px_size;
+     const int64_t h = pic.data->height * pic.px_size;
