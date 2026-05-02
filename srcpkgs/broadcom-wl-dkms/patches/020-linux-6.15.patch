@@ -1,0 +1,135 @@
+From a0acb522ad849b2e2a3019794a293fdeb717ba03 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Joan=20Bruguera=20Mic=C3=B3?= <joanbrugueram@gmail.com>
+Date: Sun, 23 Feb 2025 14:29:21 +0000
+Subject: [PATCH] Tentative patch for broadcom-wl 6.30.223.271 driver for Linux
+ 6.15-rc1
+
+Due to the fact that the driver is unmaintained, and can't be adapted
+to the current Linux kernel security standards (e.g. IBT), as it has a
+proprietary blob; and this is likely to be an ever-growing security
+risk, I have added a warning when the module is loaded.
+Use at your own risk; no warranty of any kind is provided.
+See also the objtool changes on the Makefile below.
+
+The changes to replace EXTRA_CFLAGS and EXTRA_LDFLAGS with ccflags-y
+and ldflags-y are rel. commit "kbuild: remove EXTRA_*FLAGS support"
+(Masahiro Yamada, 6 Feb 2025), according to which they have been
+deprecated since 2007, so no need to add any fallback for old kernels.
+
+NB: If the package build also contains references to EXTRA_*FLAGS
+(e.g. Arch Linux's broadcom-wl-dkms PKGBUILD), replace those as well!
+---
+ Makefile              | 33 ++++++++++++++++++++++++---------
+ src/wl/sys/wl_linux.c | 11 +++++++++++
+ 2 files changed, 35 insertions(+), 9 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index a323a0d..3cca0ca 100644
+--- a/Makefile
++++ b/Makefile
+@@ -117,15 +117,15 @@ GCCVERSION := $(subst $(space),$(empty),$(GCCVERSION))
+ GCCVERSION := $(shell expr `echo $(GCCVERSION)` | cut -b1-3)
+ GE_49 := $(shell expr `echo $(GCCVERSION)` \>= 490)
+ 
+-EXTRA_CFLAGS :=
++ccflags-y :=
+ 
+ ifeq ($(APIFINAL),CFG80211)
+-  EXTRA_CFLAGS += -DUSE_CFG80211
++  ccflags-y += -DUSE_CFG80211
+   $(info Using CFG80211 API)
+ endif
+ 
+ ifeq ($(APIFINAL),WEXT)
+-  EXTRA_CFLAGS += -DUSE_IW
++  ccflags-y += -DUSE_IW
+   $(info Using Wireless Extension API)
+ endif
+ 
+@@ -137,17 +137,17 @@ wl-objs            += src/wl/sys/wl_linux.o
+ wl-objs            += src/wl/sys/wl_iw.o
+ wl-objs            += src/wl/sys/wl_cfg80211_hybrid.o
+ 
+-EXTRA_CFLAGS       += -I$(src)/src/include -I$(src)/src/common/include
+-EXTRA_CFLAGS       += -I$(src)/src/wl/sys -I$(src)/src/wl/phy -I$(src)/src/wl/ppr/include
+-EXTRA_CFLAGS       += -I$(src)/src/shared/bcmwifi/include
+-#EXTRA_CFLAGS       += -DBCMDBG_ASSERT -DBCMDBG_ERR
++ccflags-y          += -I$(src)/src/include -I$(src)/src/common/include
++ccflags-y          += -I$(src)/src/wl/sys -I$(src)/src/wl/phy -I$(src)/src/wl/ppr/include
++ccflags-y          += -I$(src)/src/shared/bcmwifi/include
++#ccflags-y          += -DBCMDBG_ASSERT -DBCMDBG_ERR
+ ifeq "$(GE_49)" "1"
+-EXTRA_CFLAGS       += -Wno-date-time
++ccflags-y          += -Wno-date-time
+ endif
+ 
+-EXTRA_CFLAGS       += -Wno-date-time
++ccflags-y          += -Wno-date-time
+
+-EXTRA_LDFLAGS      := $(src)/lib/wlc_hybrid.o_shipped
++ldflags-y          := $(src)/lib/wlc_hybrid.o_shipped
+ 
+ KBASE              ?= /lib/modules/${KV_FULL}
+ KBUILD_DIR         ?= $(KBASE)/build
+@@ -155,6 +155,21 @@ MDEST_DIR          ?= $(KBASE)/kernel/drivers/net/wireless
+ CROSS_TOOLS        = /path/to/tools
+ CROSS_KBUILD_DIR   = /path/to/kernel/tree
+ 
++# Rel. commit "objtool: Always fail on fatal errors" (Josh Poimboeuf, 31 Mar 2025)
++# This is a *ugly* hack to disable objtool during the final processing of wl.o.
++# Since is embeds the proprietary blob (wlc_hybrid.o_shipped), objtool can't
++# process it, as it does not follow the requirements of current kernels,
++# including support for critical security features. As of Linux v6.15+, it causes
++# a build error. Disable it, at your own risk. Note the MIT license applies:
++# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++# SOFTWARE.
++wl.o: override objtool-enabled =
++
+ all:
+ 	KBUILD_NOPEDANTIC=1 make -C $(KBUILD_DIR) M=`pwd`
+ 
+diff --git a/src/wl/sys/wl_linux.c b/src/wl/sys/wl_linux.c
+index 5ddbc4d..09a4af5 100644
+--- a/src/wl/sys/wl_linux.c
++++ b/src/wl/sys/wl_linux.c
+@@ -168,6 +168,8 @@ static int wl_set_radio_block(void *data, bool blocked);
+ static void wl_report_radio_state(wl_info_t *wl);
+ #endif
+ 
++// Rel. commit "modpost: require a MODULE_DESCRIPTION()" (Jeff Johnson, 11 Mar 2025)
++MODULE_DESCRIPTION("Broadcom-wl wireless driver [unmaintained, out-of-tree]");
+ MODULE_LICENSE("MIXED/Proprietary");
+ 
+ static struct pci_device_id wl_id_table[] =
+@@ -914,6 +916,10 @@ static struct pci_driver wl_pci_driver __refdata = {
+ static int __init
+ wl_module_init(void)
+ {
++	printk(KERN_WARNING "You are using the broadcom-wl driver, which is not "
++		"maintained and is incompatible with Linux kernel security mitigations. "
++		"It is heavily recommended to replace the hardware and remove the driver. "
++		"Proceed at your own risk!");
+ 	int error = -ENODEV;
+ 
+ #ifdef BCMDBG
+@@ -2457,7 +2463,12 @@ wl_del_timer(wl_info_t *wl, wl_timer_t *t)
+ 	ASSERT(t);
+ 	if (t->set) {
+ 		t->set = FALSE;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
++		// Rel. commit "treewide: Switch/rename to timer_delete[_sync]()" (Thomas Gleixner, 5 Apr 2025)
++		if (!timer_delete(&t->timer)) {
++#else
+ 		if (!del_timer(&t->timer)) {
++#endif
+ #ifdef BCMDBG
+ 			WL_INFORM(("wl%d: Failed to delete timer %s\n", wl->unit, t->name));
+ #endif
+-- 
+2.49.0
+
