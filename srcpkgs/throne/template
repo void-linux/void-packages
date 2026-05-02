@@ -1,0 +1,56 @@
+# Template file for 'throne'
+pkgname=throne
+version=1.1.1
+revision=1
+build_style=cmake
+hostmakedepends="pkg-config cmake qt6-base qt6-declarative-host-tools
+ glib-devel protobuf go gendesk"
+makedepends="qt6-wayland-devel qt6-declarative-devel qt6-tools-private-devel"
+short_desc="Cross-platform GUI proxy utility (Empowered by sing-box)"
+maintainer="Nizarjh <chel773@tutamail.com>"
+license="GPL-3.0-or-later"
+homepage="https://github.com/throneproj/Throne"
+distfiles="https://github.com/throneproj/Throne/archive/${version}.tar.gz"
+checksum=31d1af802503d657796774bbb5cb55553cbeafe433efdcbbb209ebd16f8b045d
+nocross=yes
+
+post_fetch() {
+	xbps-fetch https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h
+}
+
+post_configure() {
+	cd $wrksrc
+	mv $XBPS_BUILDDIR/srslist.h $wrksrc/build/
+	gendesk -f -n \
+		--pkgname "${pkgname}" \
+		--pkgdesc "${short_desc}" \
+		--name "${pkgname^}" \
+		--categories 'Network'
+	export GOBIN="${wrksrc}/bin"
+	export PATH="${PATH}:${GOBIN}"
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	cd "$wrksrc/core/server/gen" || exit 1
+	protoc -I . --go_out=. --go-grpc_out=. libcore.proto
+}
+
+post_build() {
+	cd "$wrksrc/core/server"
+	export CGO_CPPFLAGS="${CPPFLAGS}"
+	export CGO_CFLAGS="${CFLAGS}"
+	export CGO_CXXFLAGS="${CXXFLAGS}"
+	export CGO_LDFLAGS="${LDFLAGS}"
+	export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
+	VERSION_SINGBOX=$(go list -m -f '{{.Version}}' github.com/sagernet/sing-box)
+	go build -o "${wrksrc}/build" \
+			-ldflags="-linkmode=external -w -s -X 'github.com/sagernet/sing-box/constant.Version=${VERSION_SINGBOX}'" \
+			-tags="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_dhcp,with_tailscale"
+}
+
+do_install() {
+	vinstall "build/Throne" 755 /usr/lib/$pkgname
+	vinstall "build/ThroneCore" 755 /usr/lib/$pkgname
+	vbin     "${FILESDIR}/throne"
+	vinstall "${pkgname}.desktop" 644 /usr/share/applications
+	vinstall res/public/Throne.png 644 /usr/share/pixmaps throne.png
+}
