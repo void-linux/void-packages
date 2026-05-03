@@ -27,6 +27,9 @@ Such forks require heavy patching, maintenance and hours of build time.
 
 Software need to be used in version announced by authors as ready to use by the general public - usually called releases.
 Betas, arbitrary VCS revisions, templates using tip of development branch taken at build time and releases created by the package maintainer won't be accepted.
+Software with a history of releases over time is preferred over brand-new software.
+
+Packages should be submitted by someone other than the developer of the software, though exceptions can be made for established contributors if the software meets other requirements.
 
 ## Creating, updating, and modifying packages in Void by yourself
 
@@ -72,6 +75,8 @@ You can use the helper tool `xnew`, from the [xtools](https://github.com/leahneu
 Templates must have the name `void-packages/srcpkgs/<pkgname>/template`, where `pkgname` is the same as the `pkgname` variable in the template.
 
 For deeper insights on the contents of template files, please read the [manual](./Manual.md), and be sure to browse the existing template files in the `srcpkgs` directory of this repository for concrete examples.
+
+To ensure packages stay maintained, we prefer that they are submitted by those with a history of contributions to existing packages.
 
 ### Updating a template
 
