@@ -27,7 +27,7 @@ Such forks require heavy patching, maintenance and hours of build time.
 
 Software need to be used in version announced by authors as ready to use by the general public - usually called releases.
 Betas, arbitrary VCS revisions, templates using tip of development branch taken at build time and releases created by the package maintainer won't be accepted.
-Software with a history of releases over time is preferred over brand-new software.
+Software should have an established and mature release history. New projects or those with an excessively frequent release cadence are not good candidates for system packages.
 
 Packages should be submitted by someone other than the developer of the software, though exceptions can be made for established contributors if the software meets other requirements.
 
@@ -77,6 +77,7 @@ Templates must have the name `void-packages/srcpkgs/<pkgname>/template`, where `
 For deeper insights on the contents of template files, please read the [manual](./Manual.md), and be sure to browse the existing template files in the `srcpkgs` directory of this repository for concrete examples.
 
 To ensure packages stay maintained, we prefer that they are submitted by those with a history of contributions to existing packages.
+A good way to do this is to work on orphaned packages (those maintained by `orphan@voidlinux.org`) that you use.
 
 ### Updating a template
 
