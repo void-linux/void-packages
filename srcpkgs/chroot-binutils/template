@@ -1,0 +1,119 @@
+# Template file for 'chroot-binutils'
+pkgname=chroot-binutils
+version=2.44
+revision=1
+bootstrap=yes
+hostmakedepends="pkgconf tar"
+makedepends="zlib-devel libzstd-devel"
+short_desc="GNU binary utilities"
+maintainer="kim <grufwub@gmail.com>"
+license="GPL-3.0-or-later"
+homepage="http://www.gnu.org/software/binutils/"
+distfiles="${GNU_SITE}/binutils/binutils-${version}.tar.xz"
+checksum=ce2017e059d63e67ddb9240e9d4ec49c2893605035cd60e92ad53177f4377237
+
+provides="binutils-${version}_${revision}"
+conflicts="binutils>=0"
+
+
+
+_get_triplet() {
+	if [ -z "$XBPS_TRIPLET" ]; then
+		echo $(
+			source "${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh"
+			echo "$XBPS_TRIPLET"
+		)
+	else
+		echo "$XBPS_TRIPLET"
+	fi
+}
+
+do_configure() {
+	local conf
+
+	sed -i "
+		s;zlibinc=\$;&-I${XBPS_MASTERDIR}/usr/include;
+		s;zlibdir=\$;&-L${XBPS_MASTERDIR}/usr/lib;
+	" */configure
+
+	if [ "$CROSS_BUILD" ]; then
+		# we don't want --with-sysroot=${XBPS_CROSS_BASE} like gnu-configure
+		conf+=" --host=${XBPS_CROSS_TRIPLET} --with-build-sysroot=${XBPS_CROSS_BASE}"
+		# pkgconf adds sysroot includes to cflags and ldflags, which breaks binutils cross-compile with zstd
+		vsed -e '/PKG_CONFIG_SYSROOT_DIR/d' -i ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
+	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*)
+			conf+=" --enable-secureplt"
+			;;
+		x86_64*|i686*)
+			extra_targets=x86_64-pep
+			;;
+	esac
+
+	# target archs supported by Void
+	void_targets="aarch64,armv5tel,armv6l,armv7l,i686,mips,mipsel,ppc,ppcle,ppc64,ppc64le,riscv64,x86_64"
+	conf+=" --enable-targets=$(echo "$void_targets" | sed -E -e 's/(,|$)/-linux-gnu\1/g'),${extra_targets}"
+
+	# enable multilib on x86_64 glibc
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		conf+=" --enable-multilib"
+	else
+		conf+=" --disable-multilib"
+	fi
+
+	# ensure softfloat on sf mips targets and set the default hash style
+	case "$XBPS_TARGET_MACHINE" in
+		mips*hf*) conf+=" --enable-default-hash-style=sysv" ;;
+		mips*) conf+=" --without-fp --enable-default-hash-style=sysv" ;;
+		*) conf+=" --enable-default-hash-style=gnu";;
+	esac
+
+	mkdir build && cd build
+	../configure --build=$(_get_triplet) \
+		--prefix=/usr \
+		--libdir=/usr/lib \
+		--sysconfdir=/etc \
+		--disable-werror \
+		--disable-nls \
+		--enable-threads \
+		--enable-deterministic-archives \
+		--without-debuginfod \
+		--disable-gprofng \
+		--disable-shared \
+		--enable-64-bit-bfd \
+		--enable-ld=default \
+		--with-system-zlib \
+		--with-mmap \
+		--with-pic \
+		--with-zstd \
+		$conf
+}
+
+do_build() {
+	cd ${wrksrc}/build && make ${makejobs} ${_makeinfo}
+}
+
+do_install() {
+	cd ${wrksrc}/build
+
+	local _triplet=$(_get_triplet)
+	make DESTDIR=${DESTDIR} tooldir=/usr install ${_makeinfo}
+
+	cd ..
+
+	# Remove ld (hardlink) and make a symlink to ld.bfd.
+	rm -f ${DESTDIR}/usr/bin/ld
+	ln -sfr ${DESTDIR}/usr/bin/ld.bfd ${DESTDIR}/usr/bin/ld
+
+	# Remove useless manpages.
+	for f in dlltool nlmconv windres windmc; do
+		rm -f ${DESTDIR}/usr/share/man/man1/${f}.1
+	done
+
+	# Create triplet symlinks
+	for f in ${DESTDIR}/usr/bin/*; do
+		ln -s ${f##*/} ${DESTDIR}/usr/bin/${XBPS_CROSS_TRIPLET:-${_triplet}}-${f##*/}
+	done
+}
