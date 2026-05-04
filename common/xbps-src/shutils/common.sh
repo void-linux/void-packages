@@ -397,32 +397,21 @@ get_subpkgs() {
     done
 }
 
-setup_pkg() {
-    local pkg="$1" cross="$2" show_problems="$3"
-    local basepkg val _vars f dbgflags extrarepo
-
-    [ -z "$pkg" ] && return 1
-    basepkg=${pkg%-32bit}
-
-    # Start with a sane environment
-    unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_FFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS XBPS_TARGET_QEMU_MACHINE
-    unset -v subpackages run_depends build_depends host_build_depends
-
-    unset_package_funcs
+setup_env() {
+    local cross="$1"
 
     if [ -n "$cross" ]; then
-        source_file $XBPS_CROSSPFDIR/${cross}.sh
+        source_file "${XBPS_CROSSPFDIR}/${cross}.sh"
 
-        _vars="TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS CROSS_FFLAGS TARGET_QEMU_MACHINE"
-        for f in ${_vars}; do
-            eval val="\$XBPS_$f"
-            if [ -z "$val" ]; then
-                echo "ERROR: XBPS_$f is not defined!"
+        for f in XBPS_TARGET_MACHINE XBPS_CROSS_TRIPLET XBPS_CROSS_CFLAGS \
+            XBPS_CROSS_CXXFLAGS XBPS_CROSS_FFLAGS XBPS_TARGET_QEMU_MACHINE; do
+            if [ -z "${!f}" ]; then
+                msg_error "xbps-src: ${f} is not defined!\n"
                 exit 1
             fi
         done
 
-        export XBPS_CROSS_BASE=/usr/$XBPS_CROSS_TRIPLET
+        export XBPS_CROSS_BASE="/usr/$XBPS_CROSS_TRIPLET"
         export XBPS_TARGET_QEMU_MACHINE
 
         XBPS_INSTALL_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_INSTALL_CMD -c /host/repocache-$XBPS_TARGET_MACHINE -r $XBPS_CROSS_BASE"
@@ -433,10 +422,10 @@ setup_pkg() {
         XBPS_UHELPER_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-uhelper -r $XBPS_CROSS_BASE"
         XBPS_CHECKVERS_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-checkvers -r $XBPS_CROSS_BASE"
     else
-        export XBPS_TARGET_MACHINE=${XBPS_ARCH:-$XBPS_MACHINE}
-        unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS
-        unset XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS
-        unset XBPS_CROSS_RUSTFLAGS XBPS_CROSS_RUST_TARGET
+        export XBPS_TARGET_MACHINE="${XBPS_ARCH:-$XBPS_MACHINE}"
+        unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS \
+            XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS \
+            XBPS_CROSS_RUSTFLAGS XBPS_CROSS_RUST_TARGET
 
         XBPS_INSTALL_XCMD="$XBPS_INSTALL_CMD"
         XBPS_QUERY_XCMD="$XBPS_QUERY_CMD"
@@ -447,17 +436,32 @@ setup_pkg() {
         XBPS_CHECKVERS_XCMD="$XBPS_CHECKVERS_CMD"
     fi
 
-    export XBPS_ENDIAN=$(get_endian ${XBPS_MACHINE})
-    export XBPS_TARGET_ENDIAN=$(get_endian ${XBPS_TARGET_MACHINE})
-    export XBPS_LIBC=$(get_libc ${XBPS_MACHINE})
-    export XBPS_TARGET_LIBC=$(get_libc ${XBPS_TARGET_MACHINE})
-    export XBPS_WORDSIZE=$(get_wordsize ${XBPS_MACHINE})
-    export XBPS_TARGET_WORDSIZE=$(get_wordsize ${XBPS_TARGET_MACHINE})
-    export XBPS_NO_ATOMIC8=$(get_no_atomic8 ${XBPS_MACHINE})
-    export XBPS_TARGET_NO_ATOMIC8=$(get_no_atomic8 ${XBPS_TARGET_MACHINE})
+    export XBPS_ENDIAN=$(get_endian "${XBPS_MACHINE}")
+    export XBPS_TARGET_ENDIAN=$(get_endian "${XBPS_TARGET_MACHINE}")
+    export XBPS_LIBC=$(get_libc "${XBPS_MACHINE}")
+    export XBPS_TARGET_LIBC=$(get_libc "${XBPS_TARGET_MACHINE}")
+    export XBPS_WORDSIZE=$(get_wordsize "${XBPS_MACHINE}")
+    export XBPS_TARGET_WORDSIZE=$(get_wordsize "${XBPS_TARGET_MACHINE}")
+    export XBPS_NO_ATOMIC8=$(get_no_atomic8 "${XBPS_MACHINE}")
+    export XBPS_TARGET_NO_ATOMIC8=$(get_no_atomic8 "${XBPS_TARGET_MACHINE}")
 
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD
+}
+
+setup_pkg() {
+    local pkg="$1" cross="$2" show_problems="$3"
+    local basepkg val _vars f dbgflags extrarepo
+
+    [ -z "$pkg" ] && return 1
+    basepkg=${pkg%-32bit}
+
+    # Start with a sane environment
+    unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_FFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS XBPS_TARGET_QEMU_MACHINE
+    unset -v subpackages run_depends build_depends host_build_depends
+    unset_package_funcs
+
+    setup_env "$cross"
 
     # Source all sourcepkg environment setup snippets.
     # Source all subpkg environment setup snippets.

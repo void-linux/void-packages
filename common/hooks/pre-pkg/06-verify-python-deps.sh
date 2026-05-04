@@ -12,6 +12,7 @@ hook() {
                 ${NOCOLORS:+-C} ${XBPS_STRICT:+-s} -S "${PKGDESTDIR}/${py3_sitelib}" -v "${pkgver}" \
                 depends -e "${python_extras}" \
                 -V <( $XBPS_QUERY_XCMD -R -p provides -s "py3:" ) -D "${XBPS_STATEDIR}/${pkgname}-rdeps" \
+                -G <( $XBPS_QUERY_XCMD -o '/usr/lib/girepository-*/*.typelib' ) \
                 || msg_error "$pkgver: failed to verify python module dependencies\n"
     fi
 }

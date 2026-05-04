@@ -1,47 +1,47 @@
 # Template file for 'libwebkit2gtk41'
 pkgname=libwebkit2gtk41
-version=2.46.6
+version=2.50.4
 revision=1
 build_style=cmake
 build_helper="gir"
 configure_args="-DPORT=GTK
  -DCMAKE_LINKER=${XBPS_CROSS_TRIPLET}-gcc -DCMAKE_SKIP_RPATH=ON
  -DENABLE_JOURNALD_LOG=OFF -DUSE_WOFF2=ON
- -DENABLE_MINIBROWSER=$(vopt_if minibrowser ON OFF)
- -DENABLE_JIT=$(vopt_if jit ON OFF)
- -DENABLE_C_LOOP=$(vopt_if jit OFF ON)
- -DENABLE_INTROSPECTION=$(vopt_if gir ON OFF)
- -DENABLE_DOCUMENTATION=$(vopt_if gtk_doc ON OFF)
- -DENABLE_WAYLAND_TARGET=$(vopt_if wayland ON OFF)
- -DENABLE_X11_TARGET=$(vopt_if x11 ON OFF)
- -DENABLE_SAMPLING_PROFILER=$(vopt_if sampling_profiler ON OFF)
- -DENABLE_BUBBLEWRAP_SANDBOX=$(vopt_if bubblewrap ON OFF)
+ -DENABLE_WAYLAND_TARGET=ON
+ $(vopt_bool minibrowser ENABLE_MINIBROWSER)
+ $(vopt_bool jit ENABLE_JIT)
+ $(vopt_bool gir ENABLE_INTROSPECTION)
+ $(vopt_bool gtk_doc ENABLE_DOCUMENTATION)
+ $(vopt_bool x11 ENABLE_X11_TARGET)
+ $(vopt_bool sampling_profiler ENABLE_SAMPLING_PROFILER)
+ $(vopt_bool bubblewrap ENABLE_BUBBLEWRAP_SANDBOX)
  -DUSE_JPEGXL=OFF -DUSE_LIBBACKTRACE=OFF -DUSE_GTK4=OFF"
 # Don't remove which from hostmakedepends
 # Otherwise, they invoke /usr/bin/ccache /usr/lib/ccache/bin/$CC
 hostmakedepends="perl python3 pkg-config gperf flex ruby gettext glib-devel
- geoclue2 libharfbuzz which libpsl unifdef $(vopt_if gtk_doc 'gi-docgen')
- $(vopt_if wayland 'wayland-devel libxml2-devel')"
+ geoclue2 libharfbuzz which libpsl unifdef wayland-devel libxml2-devel
+ $(vopt_if gtk_doc 'gi-docgen')"
 makedepends="at-spi2-core-devel libjpeg-turbo-devel libpng-devel
  harfbuzz-devel gst-plugins-base1-devel gst-plugins-bad1-devel sqlite-devel
  libsoup3-devel libxslt-devel gnutls-devel icu-devel enchant2-devel
  dbus-glib-devel libwebp-devel gtk+3-devel gtk4-devel libgudev-devel
  libsecret-devel ruby-devel geoclue2-devel libnotify-devel hyphen-devel
- woff2-devel freetype-devel libavif-devel qt5-devel libmanette-devel sysprof-devel
+ woff2-devel freetype-devel libavif-devel libmanette-devel sysprof-devel
+ flite-devel
  libgcrypt-devel libnuspell-devel libpsl-devel $(vopt_if x11 libXt-devel)
- $(vopt_if wayland 'MesaLib-devel libxkbcommon-devel wayland-devel wayland-protocols')"
+ MesaLib-devel libxkbcommon-devel wayland-devel wayland-protocols"
 depends="gst-plugins-good1"
 short_desc="GTK+3 port of the WebKit browser engine (soup3)"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="LGPL-2.1-or-later, BSD-2-Clause"
 homepage="https://webkitgtk.org/"
 distfiles="https://webkitgtk.org/releases/webkitgtk-${version}.tar.xz"
-checksum=f2b31de693220ba9bab76ce6ddfe5b0bfab2515cb2b0a70f3c54d4050766c32b
+checksum=d3bfa473845acfab72635bada5e0d134fda6792c5b95c5c5cd141b46125bd8e4
 make_check=no # TODO
 
-build_options="gir wayland x11 bubblewrap jit sampling_profiler minibrowser
+build_options="gir x11 bubblewrap jit sampling_profiler minibrowser
  clang lto gtk_doc"
-build_options_default="gir wayland x11 bubblewrap minibrowser"
+build_options_default="gir x11 bubblewrap minibrowser"
 
 desc_option_bubblewrap="Enable bubblewrap sandbox"
 desc_option_jit="JavaScript JIT (Only some architectures)"
@@ -85,15 +85,28 @@ if [ "$build_option_lto" ]; then
 	configure_args+=" -DLTO_MODE=thin"
 fi
 
+if [ "$build_option_sampling_profiler" ]; then
+	if [ $XBPS_TARGET_LIBC != glibc ]; then
+		broken="sampling_profiler is only supported on glibc"
+	elif [ -z "$build_option_jit" ]; then
+		broken="sampling_profiler requires JIT"
+	fi
+fi
+
+if [ "$build_option_jit" ]; then
+	configure_args+=" -DENABLE_C_LOOP=OFF"
+else
+	# ENABLE_WEBASSEMBLY conflicts with ENABLE_C_LOOP
+	configure_args+=" -DENABLE_WEBASSEMBLY=OFF -DENABLE_C_LOOP=ON"
+fi
+
 # only a few platform support JIT
 case "$XBPS_TARGET_MACHINE" in
+	aarch64|x86_64|riscv64)
+		build_options_default+=" jit sampling_profiler"
+		;;
 	aarch64*|x86_64*|riscv64*)
 		build_options_default+=" jit"
-		if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
-			build_options_default+=" sampling_profiler"
-		elif [ "$build_option_sampling_profiler" ]; then
-			broken="sampling_profiler is only supported on glibc"
-		fi
 		;;
 	i686*)
 		# JIT requires SSE2 so disabled by default
@@ -101,6 +114,7 @@ case "$XBPS_TARGET_MACHINE" in
 		if [ "$build_option_jit" ]; then
 			broken="OffsetExtractor: No magic values found."
 		fi
+		CXXFLAGS+=" --param ggc-min-expand=10"
 		;;
 	*)
 		if [ "$build_option_jit" ]; then
@@ -116,11 +130,6 @@ case "$XBPS_TARGET_MACHINE" in
 		configure_args+=" -DENABLE_WEBGL=OFF"
 		;;
 esac
-
-# extra validation
-if [ "$build_option_sampling_profiler" -a -z "$build_option_jit" ]; then
-	broken="sampling_profiler requires JIT"
-fi
 
 _depends="${depends}"
 
@@ -149,21 +158,20 @@ pre_configure() {
 }
 
 post_configure() {
-	mkdir -p webkit2gtk-60
-
-	(
-		cd webkit2gtk-60
-		configure_args="${configure_args} -DUSE_GTK4=ON -DENABLE_WEBDRIVER=OFF" \
-		do_configure
-	)
+	mkdir -p build-gtk4
+	configure_args="${configure_args} -DUSE_GTK4=ON -DENABLE_WEBDRIVER=OFF" \
+	cmake_builddir=build-gtk4 do_configure
 }
 
-post_build() {
-	(cd webkit2gtk-60 && NINJA_STATUS="[2/2][%f/%t] " do_build)
+do_build() {
+	export NINJA_STATUS="[1/2][%f/%t] "
+	ninja -C build ${makejobs}
+	export NINJA_STATUS="[2/2][%f/%t] "
+	ninja -C build-gtk4 ${makejobs}
 }
 
 post_install() {
-	(cd webkit2gtk-60 && do_install)
+	DESTDIR=${DESTDIR} cmake -P build-gtk4/cmake_install.cmake
 
 	vlicense Source/WebCore/LICENSE-APPLE
 	vlicense Source/WebCore/LICENSE-LGPL-2.1

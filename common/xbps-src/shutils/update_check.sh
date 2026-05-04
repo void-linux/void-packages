@@ -173,7 +173,9 @@ update_check() {
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'\.[\d.]+(?=\.tar\.xz)';;
             *cran.r-project.org/src/contrib*)
-                rx='\b\Q'"${pkgname#R-cran-}"'\E_\K\d+(\.\d+)*(-\d+)?(?=\.tar)';;
+                url="https://cran.r-project.org/package=${pkgname#R-cran-}"
+                # rx='\b\Q'"${pkgname#R-cran-}"'\E_\K\d+(\.\d+)*(-\d+)?(?=\.tar)';;
+                rx="(?<=${pkgname#R-cran-}_)[0-9.]+(-[0-9]*)?(?=\\.tar)" ;;
             *rubygems.org*)
                 url="https://rubygems.org/gems/${pkgname#ruby-}"
                 rx='href="/gems/'${pkgname#ruby-}'/versions/\K[\d.]*(?=")' ;;
@@ -220,7 +222,7 @@ update_check() {
         fi
 
         msg_verbose "fetching $url and scanning with $rx\n"
-        curl "${curlargs[@]}" -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' "$url" |
+        curl "${curlargs[@]}" -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml,application/json' "$url" |
             grep -Po -i "$rx"
         fetchedurls[$url]=yes
     done |

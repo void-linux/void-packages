@@ -100,7 +100,7 @@ pkgname=foo
 version=1.0
 revision=1
 build_style=gnu-configure
-short_desc="A short description max 72 chars"
+short_desc="Package description, no more than 72 characters"
 maintainer="name <email>"
 license="GPL-3.0-or-later"
 homepage="http://www.foo.org"
@@ -367,7 +367,7 @@ The following variables are defined by `xbps-src` and can be used on any templat
 
 - `makejobs` Set to `-jX` if `XBPS_MAKEJOBS` is defined, to allow parallel jobs with `GNU make`.
 
-- `sourcepkg`  Set to the to main package name, can be used to match the main package
+- `sourcepkg`  Set to the main package name, can be used to match the main package
 rather than additional binary package names.
 
 - `CHROOT_READY`  Set if the target chroot (masterdir) is ready for chroot builds.
@@ -1086,6 +1086,8 @@ matching the `build_style` name, Example:
 - `texmf` For texmf zip/tarballs that need to go into /usr/share/texmf-dist. Includes
 duplicates handling.
 
+- `tree-sitter` for tree-sitter language grammars.
+
 <a id="build_helper"></a>
 ### build helper scripts
 
@@ -1107,7 +1109,10 @@ additional paths to be searched when linking target binaries to be introspected.
 - `meson` creates a cross file, `${XBPS_WRAPPERDIR}/meson/xbps_meson.cross`, which configures
 meson for cross builds. This is particularly useful for building packages that wrap meson
 invocations (e.g., `python3-pep517` packages that use a meson backend) and is added by default
-for packages that use the `meson` build style.
+for packages that use the `meson` build style. It also sets `$MESON_PACKAGE_CACHE_DIR` to
+`$XBPS_SRCDISTDIR/$pkgname-$version/` so libraries specified as meson wraps can be added to
+distfiles and will be automatically used by meson. See also `common/scripts/gen-wrap-distfiles.py`
+for a script that generates distfiles entries for wraps.
 
 - `numpy` configures the environment for cross-compilation of python packages that provide
 compiled extensions linking to NumPy C libraries. If the `meson` build helper is also
@@ -1132,6 +1137,10 @@ This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-makefile` style, respectively. This is for Qt5 packages.
 
 - `qmake6` is like `qmake` but for Qt6.
+
+> NOTE: the qmake build helpers internally use the `qmake_default_version` variable
+to select the default qmake implementation (Qt5 or Qt6). This variable is part of
+the helper workflow and is not commonly set in templates.
 
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
 for compiling cargo -sys crates.
@@ -1755,14 +1764,13 @@ installs its fonts
 <a id="pkg_rename"></a>
 ### Renaming a package
 
-- Create empty package of old name, depending on new package. This is
+- Create an empty subpackage of old name, depending on new package. This is
 necessary to provide updates to systems where old package is already
-installed. This should be a subpackage of new one, except when version
-number of new package decreased: then create a separate template using
-old version and increased revision.
+installed. This should be a subpackage of new one. When the version
+number of the transitional package decreases, add `reverts` entries to it.
+- append `" (transitional dummy package)"` to the package's `short_desc`.
 - Edit references to package in other templates and common/shlibs.
-- Don't set `replaces=`, it can result in removing both packages from
-systems by xbps.
+- Set `replaces="old-name>=0` on the new package.
 
 <a id="pkg_remove"></a>
 ### Removing a package
