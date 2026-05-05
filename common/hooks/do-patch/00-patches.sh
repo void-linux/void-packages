@@ -31,7 +31,11 @@ _process_patch() {
 
 	cd "$wrksrc"
 	msg_normal "$pkgver: patching: ${_patch}.\n"
-	patch -s ${_args} <"${_patch}" 2>/dev/null
+	if [ -n "$XBPS_VERBOSE" ]; then
+		patch --verbose -s ${_args} <"${_patch}"
+	else
+		patch -s ${_args} <"${_patch}" 2>/dev/null
+	fi
 }
 
 hook() {
