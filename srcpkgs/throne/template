@@ -1,0 +1,54 @@
+# Template file for 'throne'
+pkgname=throne
+version=1.1.2
+revision=1
+build_style=cmake
+hostmakedepends="curl go protobuf grpc"
+makedepends="qt6-base-devel qt6-widgets qt6-network qt6-dbus qt6-tools libX11-devel libcap-devel protobuf-devel"
+depends="qt6-base libcap ca-certificates"
+short_desc="Cross-platform GUI proxy utility (Empowered by sing-box)"
+maintainer="rubygem17 <k0tlin75@yandex.ru>"
+license="GPL-3.0-or-later"
+homepage="https://throneproj.github.io/"
+distfiles="https://github.com/throneproj/Throne/archive/refs/tags/${version}.tar.gz"
+checksum=39bc041266033909b5d91f0d6b2db7af853c3de53564fd2905187f7e1aecbca4
+
+nopie_files="/usr/libexec/throne/ThroneCore"
+
+pre_configure() {
+	curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
+	PATH="$PATH:/tmp/go/bin"
+}
+
+pre_build() {
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	PATH="/tmp/go/bin:$PATH"
+
+	cd core/server/gen
+	protoc -I . --go_out=. --go-grpc_out=. libcore.proto
+	cd ..
+
+	go mod tidy
+	go build -v -trimpath -ldflags "-w -s" \
+		-tags "with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_dhcp" \
+		-o "${wrksrc}/build/ThroneCore" .
+	cd "${wrksrc}"
+}
+
+do_install() {
+	vinstall build/Throne 755 usr/libexec/throne
+	vinstall build/ThroneCore 755 usr/libexec/throne
+	mkdir -p "${PKGDESTDIR}/usr/share/throne/translations"
+	vcopy "build/*.qm" usr/share/throne/translations
+
+	mkdir -p "${PKGDESTDIR}/usr/bin"
+	cat > "${PKGDESTDIR}/usr/bin/throne" <<'EOF'
+#!/bin/sh
+_DATADIR="${HOME}/.config/throne"
+mkdir -p "${_DATADIR}"
+cd "${_DATADIR}" || exit 1
+exec /usr/libexec/throne/Throne -appdata ${_DATADIR} "$@"
+EOF
+	chmod 755 "${PKGDESTDIR}/usr/bin/throne"
+}
