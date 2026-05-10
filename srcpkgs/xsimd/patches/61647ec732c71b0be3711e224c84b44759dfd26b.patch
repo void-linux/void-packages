@@ -1,0 +1,37 @@
+From 61647ec732c71b0be3711e224c84b44759dfd26b Mon Sep 17 00:00:00 2001
+From: Marco Barbone <mbarbone@flatironinstitute.org>
+Date: Wed, 29 Apr 2026 13:30:37 -0400
+Subject: [PATCH] fix: avoid atan branch cut in complex trigonometric test
+
+The atan_input generator sampled (Re=0, Im=1.5) at i=N/2, which lies on
+the branch cut of complex atan at Re=0, |Im|>=1. C99 7.3.4.1 leaves the
+sign of Re(catan(+/-0 + i*y)) for |y|>1 implementation-defined: glibc
+returns +pi/2, musl returns -pi/2. xsimd matches glibc, so the test
+fails on musl-based CI (e.g. void-linux x86_64-musl) with two
+mismatches (one per complex<float>/complex<double> batch type).
+
+Shift the real start from -10 to -9.5 so Re=0 occurs at i=19000, where
+|Im|~0.975<1 - analytic territory where atan is uniquely defined and
+all libcs agree. Negative/positive real coverage is preserved; only
+the singular point on a region of unspecified behavior is dropped.
+---
+ test/test_complex_trigonometric.cpp | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/test/test_complex_trigonometric.cpp b/test/test_complex_trigonometric.cpp
+index 8a0163be5..16e577ce1 100644
+--- a/test/test_complex_trigonometric.cpp
++++ b/test/test_complex_trigonometric.cpp
+@@ -43,7 +43,11 @@ struct complex_trigonometric_test
+                                   real_value_type(0.1) + i * real_value_type(56.) / nb_input);
+             ainput[i] = value_type(real_value_type(-1.) + real_value_type(2.) * i / nb_input,
+                                    real_value_type(-1.1) + real_value_type(2.1) * i / nb_input);
+-            atan_input[i] = value_type(real_value_type(-10.) + i * real_value_type(20.) / nb_input,
++            // Avoid sampling the branch cut of complex atan at (Re=0, |Im|>=1):
++            // the sign of Re(catan(+/-0 + i*y)) for |y|>1 is implementation-defined
++            // (C99 7.3.4.1), and glibc and musl disagree there. Starting Re at -9.5
++            // makes Re=0 occur at i=19/40 of the range, where |Im|<1 (analytic).
++            atan_input[i] = value_type(real_value_type(-9.5) + i * real_value_type(20.) / nb_input,
+                                        real_value_type(-9.) + i * real_value_type(21.) / nb_input);
+         }
+         expected.resize(nb_input);
