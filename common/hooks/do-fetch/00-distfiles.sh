@@ -273,7 +273,7 @@ hook() {
 
 		# If file lock cannot be acquired wait until it's available.
 		while ! flock -w 1 "${distfile}.part" true; do
-			msg_warn "$pkgver: ${curfile} is already being downloaded, waiting for 1s ...\n"
+			msg_info "$pkgver: ${curfile} is already being downloaded, waiting for 1s ...\n"
 		done
 
 		if [[ -f "$distfile" ]]; then

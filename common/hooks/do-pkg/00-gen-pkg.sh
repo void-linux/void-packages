@@ -14,7 +14,7 @@ genpkg() {
 	[ ! -d $pkgdir ] && mkdir -p $pkgdir
 
 	while [ -f "$_pkglock" ]; do
-		msg_warn "${pkgver}: binpkg is being created, waiting for 1s...\n"
+		msg_info "${pkgver}: binpkg is being created, waiting for 1s...\n"
 		sleep 1
 	done
 

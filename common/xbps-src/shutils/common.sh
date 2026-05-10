@@ -186,6 +186,13 @@ msg_warn_nochroot() {
     fi
 }
 
+msg_info() {
+    # info messages in bright bold white
+    [ -n "$NOCOLORS" ] || printf "\033[97m\033[1m"
+    printf >&2 "=> INFO: $@"
+    [ -n "$NOCOLORS" ] || printf >&2  "\033[m"
+}
+
 msg_normal() {
     if [ -z "$XBPS_QUIET" ]; then
         # normal messages in bright bold white

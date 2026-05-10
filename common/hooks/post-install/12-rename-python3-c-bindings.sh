@@ -10,7 +10,7 @@ hook() {
 		| while read -r file; do
 		filename="${file##*/}"
 		modulename="${filename%%.*}"
-		msg_warn "${pkgver}: renamed '${filename}' to '${modulename}.so'.\n"
+		msg_info "${pkgver}: renamed '${filename}' to '${modulename}.so'.\n"
 		mv ${file} ${file%/*}/${modulename}.so
 	done
 }
