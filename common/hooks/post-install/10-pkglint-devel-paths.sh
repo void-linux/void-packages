@@ -8,8 +8,8 @@
 annotate_lint_devel() {
     msg_warn "$*\n"
     [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ] || return 0
-    local _lineno=$(awk '/${pkgname}_package/ {print FNR}' "${XBPS_SRCPKGDIR}/${sourcepkg}/template")
-    printf "\n::warning file=srcpkgs/${sourcepkg}/template,line=${_lineno},title=$*::$*\n"
+    local _lineno=$(awk '/-devel_package()/ {print FNR; exit}' "${XBPS_SRCPKGDIR}/${sourcepkg}/template")
+    printf "\n::warning file=srcpkgs/${sourcepkg}/template,line=${_lineno-1},title=$*::$*\n"
 }
 
 hook() {
