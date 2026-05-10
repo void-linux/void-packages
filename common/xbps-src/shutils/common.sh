@@ -148,6 +148,10 @@ msg_red() {
     [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[31m"
     printf >&2 "=> ERROR: $@"
     [ -n "$NOCOLORS" ] || printf >&2 "\033[m"
+
+    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+        printf '::error::%s' "$*"
+    fi
 }
 
 msg_red_nochroot() {
@@ -166,12 +170,20 @@ msg_warn() {
     [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[33m"
     printf >&2 "=> WARNING: $@"
     [ -n "$NOCOLORS" ] || printf >&2  "\033[m"
+
+    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+        printf '::warning::%s' "$*"
+    fi
 }
 
 msg_warn_nochroot() {
     [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[33m"
     printf >&2 "=> WARNING: $@"
     [ -n "$NOCOLORS" ] || printf >&2 "\033[m"
+
+    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+        printf '::warning::%s' "$*"
+    fi
 }
 
 msg_normal() {
