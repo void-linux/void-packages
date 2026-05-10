@@ -1,0 +1,61 @@
+# Template file for 'pixi'
+pkgname=pixi
+version=0.70.2
+revision=1
+# No support upstream
+archs="~i686* ~armv6l* ~armv7l*"
+build_style=cargo
+build_helper="qemu"
+make_check_args="-- --test-threads=1 --skip linux_clean_environment_variables"
+make_install_args="--path crates/pixi"
+hostmakedepends="cmake pkg-config"
+makedepends="libzstd-devel"
+checkdepends="git"
+short_desc="Fast conda & PyPI package manager"
+maintainer="UENO, M. <eunosium-1128@live.jp>"
+license="BSD-3-Clause"
+homepage="https://pixi.prefix.dev/"
+changelog="https://raw.githubusercontent.com/prefix-dev/pixi/refs/heads/main/CHANGELOG.md"
+distfiles="https://github.com/prefix-dev/pixi/archive/refs/tags/v${version}.tar.gz"
+checksum=4b0e1eaf12a2acbd99e1472a2c4a0c1ae71e0de312117c91d17de3130177467a
+
+post_patch() {
+	# Upstream's .cargo/config.toml hardcodes "aarch64-linux-gnu-gcc" as both
+	# CC and linker for the aarch64-unknown-linux-musl target, which doesn't
+	# exist in the cross-aarch64-linux-musl container. Drop the file: void's
+	# rust build_helper already exports CARGO_TARGET_<TRIPLE>_LINKER from
+	# $CC, so nothing here is required for the build.
+	rm -r .cargo
+}
+
+pre_build() {
+	# sha2-asm's build.rs calls .flag("-march=armv8-a+crypto") to enable the
+	# SHA256 ARMv8 intrinsics (sha256su0 / sha256h). cc-rs appends the env
+	# CFLAGS *after* programmatic flags, so void's cross profile's bare
+	# -march=armv8-a wins by being last on the gcc command line and the
+	# assembler then rejects the crypto opcodes. Rewrite the env -march in
+	# place so the trailing -march also has +crypto.
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*)
+			export CFLAGS="${CFLAGS//-march=armv8-a/-march=armv8-a+crypto}"
+			export CXXFLAGS="${CXXFLAGS//-march=armv8-a/-march=armv8-a+crypto}"
+			;;
+	esac
+}
+
+pre_check() {
+	# .cargo/config.toml was removed in post_patch() to drop the hardcoded
+	# aarch64-linux-gnu-gcc linker, but pixi_test_utils requires
+	# CARGO_WORKSPACE_DIR at compile time (env!() macro). Re-export it here
+	# so the test build succeeds.
+	export CARGO_WORKSPACE_DIR="${wrksrc}"
+}
+
+post_install() {
+	vlicense LICENSE
+
+	for shell in bash fish zsh; do
+		vtargetrun ${DESTDIR}/usr/bin/pixi completion -s ${shell} > pixi.${shell}
+		vcompletion pixi.${shell} ${shell}
+	done
+}
