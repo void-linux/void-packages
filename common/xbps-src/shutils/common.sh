@@ -170,20 +170,12 @@ msg_warn() {
     [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[33m"
     printf >&2 "=> WARNING: $@"
     [ -n "$NOCOLORS" ] || printf >&2  "\033[m"
-
-    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
-        printf "\n::warning file=srcpkgs/${sourcepkg}/template,line=1,title=${@%\n}::$@\n"
-    fi
 }
 
 msg_warn_nochroot() {
     [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[33m"
     printf >&2 "=> WARNING: $@"
     [ -n "$NOCOLORS" ] || printf >&2 "\033[m"
-
-    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
-        printf "\n::warning::$@"
-    fi
 }
 
 msg_info() {
