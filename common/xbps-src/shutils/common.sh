@@ -172,7 +172,7 @@ msg_warn() {
     [ -n "$NOCOLORS" ] || printf >&2  "\033[m"
 
     if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
-        printf "\n::warning::$@"
+        printf "\n::warning file=srcpkgs/${sourcepkg}/template,line=1::$@\n"
     fi
 }
 
