@@ -1,0 +1,150 @@
+From 022abaeacbc85d8409bad22375b16a8c07d3ae39 Mon Sep 17 00:00:00 2001
+From: Aurelien Jarno <aurelien@aurel32.net>
+Date: Tue, 20 Jan 2026 18:25:08 +0100
+Subject: [PATCH] Fix ldbl-128ibm ceill, floorl, roundl and truncl zero-sign
+ handling
+
+When the result of ceill, floorl, roundl and truncl is zero, the sign of
+the result must match the sign of the input. For the IBM 128-bit long
+double format, the sign is determined by the high part.
+
+Ensure the correct sign when the high part is the result of
+computations, by copying the sign from the input high part to the output
+high part. On POWER, this conveniently maps to the fcpsgn instruction.
+
+In addition add test for the values provided in BZ #33623, and for the
+opposite value when the result is 0.
+
+Fixes: BZ #33623
+
+Reviewed-by: Adhemerval Zanella  <adhemerval.zanella@linaro.org>
+(cherry picked from commit 6f4b28b20aa9161aeb42a7f34f4d3b96194e5666)
+---
+ NEWS                                   | 2 ++
+ math/libm-test-ceil.inc                | 3 +++
+ math/libm-test-floor.inc               | 3 +++
+ math/libm-test-round.inc               | 4 ++++
+ math/libm-test-trunc.inc               | 4 ++++
+ sysdeps/ieee754/ldbl-128ibm/s_ceill.c  | 3 +++
+ sysdeps/ieee754/ldbl-128ibm/s_floorl.c | 3 +++
+ sysdeps/ieee754/ldbl-128ibm/s_roundl.c | 3 +++
+ sysdeps/ieee754/ldbl-128ibm/s_truncl.c | 3 +++
+ 9 files changed, 28 insertions(+)
+
+diff --git a/math/libm-test-ceil.inc b/math/libm-test-ceil.inc
+index a471b43932..48be68cf91 100644
+--- a/math/libm-test-ceil.inc
++++ b/math/libm-test-ceil.inc
+@@ -79,6 +79,9 @@ static const struct test_f_f_data ceil_test_data[] =
+     TEST_f_f (ceil, -max_value, -max_value, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+ 
+ #if MANT_DIG >= 64
++    /* The input value can only be represented in long double.  */
++    TEST_f_f (ceil, -0x0.ffffffffffffffffp0L, minus_zero, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
++
+     /* The result can only be represented in long double.  */
+     TEST_f_f (ceil, 4503599627370495.5L, 4503599627370496.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+     TEST_f_f (ceil, 4503599627370496.25L, 4503599627370497.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+diff --git a/math/libm-test-floor.inc b/math/libm-test-floor.inc
+index dee4afff7a..bc945a6c22 100644
+--- a/math/libm-test-floor.inc
++++ b/math/libm-test-floor.inc
+@@ -79,6 +79,9 @@ static const struct test_f_f_data floor_test_data[] =
+     TEST_f_f (floor, -max_value, -max_value, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+ 
+ #if MANT_DIG >= 64
++    /* The input value can only be represented in long double.  */
++    TEST_f_f (floor, 0x0.ffffffffffffffffp0L, plus_zero, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
++
+     /* The result can only be represented in long double.  */
+     TEST_f_f (floor, 4503599627370495.5L, 4503599627370495.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+     TEST_f_f (floor, 4503599627370496.25L, 4503599627370496.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+diff --git a/math/libm-test-round.inc b/math/libm-test-round.inc
+index 898ff3791b..1395c51d5d 100644
+--- a/math/libm-test-round.inc
++++ b/math/libm-test-round.inc
+@@ -99,6 +99,10 @@ static const struct test_f_f_data round_test_data[] =
+ #endif
+ 
+ #if MANT_DIG >= 64
++    /* The input value can only be represented in long double.  */
++    TEST_f_f (round, 0x0.ffffffffffffffffp-1L, plus_zero, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
++    TEST_f_f (round, -0x0.ffffffffffffffffp-1L, minus_zero, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
++
+     /* The result can only be represented in long double.  */
+     TEST_f_f (round, 4503599627370495.5L, 4503599627370496.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+     TEST_f_f (round, 4503599627370496.25L, 4503599627370496.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+diff --git a/math/libm-test-trunc.inc b/math/libm-test-trunc.inc
+index 7df741f3ba..5d69cd4b5b 100644
+--- a/math/libm-test-trunc.inc
++++ b/math/libm-test-trunc.inc
+@@ -91,6 +91,10 @@ static const struct test_f_f_data trunc_test_data[] =
+     TEST_f_f (trunc, -4294967296.625L, -4294967296.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+ 
+ #if MANT_DIG >= 64
++    /* The input value can only be represented in long double.  */
++    TEST_f_f (trunc, 0x0.ffffffffffffffffp0L, plus_zero, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
++    TEST_f_f (trunc, -0x0.ffffffffffffffffp0L, minus_zero, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
++
+     /* The result can only be represented in long double.  */
+     TEST_f_f (trunc, 4503599627370495.5L, 4503599627370495.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+     TEST_f_f (trunc, 4503599627370496.25L, 4503599627370496.0L, NO_INEXACT_EXCEPTION|ERRNO_UNCHANGED),
+diff --git a/sysdeps/ieee754/ldbl-128ibm/s_ceill.c b/sysdeps/ieee754/ldbl-128ibm/s_ceill.c
+index 8038cf9fda..88bc364db5 100644
+--- a/sysdeps/ieee754/ldbl-128ibm/s_ceill.c
++++ b/sysdeps/ieee754/ldbl-128ibm/s_ceill.c
+@@ -54,6 +54,9 @@ __ceill (long double x)
+ 	  xh = hi;
+ 	  xl = lo;
+ 	  ldbl_canonicalize_int (&xh, &xl);
++
++	  /* Ensure we return -0 rather than +0 when appropriate.  */
++	  xh = copysign (xh, hi);
+ 	}
+     }
+   else
+diff --git a/sysdeps/ieee754/ldbl-128ibm/s_floorl.c b/sysdeps/ieee754/ldbl-128ibm/s_floorl.c
+index 23f45b773f..4a8294cc78 100644
+--- a/sysdeps/ieee754/ldbl-128ibm/s_floorl.c
++++ b/sysdeps/ieee754/ldbl-128ibm/s_floorl.c
+@@ -54,6 +54,9 @@ __floorl (long double x)
+ 	  xh = hi;
+ 	  xl = lo;
+ 	  ldbl_canonicalize_int (&xh, &xl);
++
++	  /* Ensure we return -0 rather than +0 when appropriate.  */
++	  xh = copysign (xh, hi);
+ 	}
+     }
+   else
+diff --git a/sysdeps/ieee754/ldbl-128ibm/s_roundl.c b/sysdeps/ieee754/ldbl-128ibm/s_roundl.c
+index e8948a0c05..340a63c76a 100644
+--- a/sysdeps/ieee754/ldbl-128ibm/s_roundl.c
++++ b/sysdeps/ieee754/ldbl-128ibm/s_roundl.c
+@@ -80,6 +80,9 @@ __roundl (long double x)
+ 	  xh = hi;
+ 	  ldbl_canonicalize_int (&xh, &xl);
+ 	}
++
++      /* Ensure we return -0 rather than +0 when appropriate.  */
++      xh = copysign(xh, hi);
+     }
+   else
+     /* Quiet signaling NaN arguments.  */
+diff --git a/sysdeps/ieee754/ldbl-128ibm/s_truncl.c b/sysdeps/ieee754/ldbl-128ibm/s_truncl.c
+index 7f0b77cd3f..21ecbd0c85 100644
+--- a/sysdeps/ieee754/ldbl-128ibm/s_truncl.c
++++ b/sysdeps/ieee754/ldbl-128ibm/s_truncl.c
+@@ -56,6 +56,9 @@ __truncl (long double x)
+ 	  xh = hi;
+ 	  xl = lo;
+ 	  ldbl_canonicalize_int (&xh, &xl);
++
++	  /* Ensure we return -0 rather than +0 when appropriate.  */
++	  xh = copysign (xh, hi);
+ 	}
+     }
+   else
+-- 
+GitLab
+

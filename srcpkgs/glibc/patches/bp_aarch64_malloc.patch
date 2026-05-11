@@ -1,0 +1,83 @@
+From 9898ea58b538e325a25f53bde021d0ca07d0a1c0 Mon Sep 17 00:00:00 2001
+From: Wilco Dijkstra <wilco.dijkstra@arm.com>
+Date: Fri, 27 Feb 2026 20:20:45 +0000
+Subject: [PATCH] malloc: Avoid accessing /sys/kernel/mm files
+
+On AArch64 malloc always checks /sys/kernel/mm/transparent_hugepage/enabled to
+set the THP mode.  However this check is quite expensive and the file may not
+be accessible in containers. If DEFAULT_THP_PAGESIZE is non-zero, use
+malloc_thp_mode_madvise so that we take advantage of THP in all cases.  Since
+madvise is a fast systemcall, it adds only a small overhead compared to the
+cost of mmap and populating the pages.
+
+Reviewed-by: Aurelien Jarno <aurelien@aurel32.net>
+(cherry picked from commit 2e8a940df14e9e03fd5bd01015ebbd00c1a5e9b4)
+---
+ malloc/arena.c  |  9 +++++++++
+ malloc/malloc.c | 18 ------------------
+ 2 files changed, 9 insertions(+), 18 deletions(-)
+
+diff --git a/malloc/arena.c b/malloc/arena.c
+index 5bfcd7f972..d83b4db068 100644
+--- a/malloc/arena.c
++++ b/malloc/arena.c
+@@ -276,6 +276,15 @@ __ptmalloc_init (void)
+     __always_fail_morecore = true;
+ #endif
+ 
++  /* Enable THP if DEFAULT_THP_PAGESIZE is non-zero.  Avoid quering the THP
++     page size or mode since accessing /sys/kernel/mm is relatively slow and
++     might not be accessible in containers.  */
++  if (DEFAULT_THP_PAGESIZE > 0)
++    {
++      mp_.thp_mode = malloc_thp_mode_madvise;
++      mp_.thp_pagesize = DEFAULT_THP_PAGESIZE;
++    }
++
+   thread_arena = &main_arena;
+ 
+   malloc_init_state (&main_arena);
+diff --git a/malloc/malloc.c b/malloc/malloc.c
+index a49e211925..771e7d40b7 100644
+--- a/malloc/malloc.c
++++ b/malloc/malloc.c
+@@ -1902,26 +1902,11 @@ free_perturb (char *p, size_t n)
+ 
+ /* ----------- Routines dealing with transparent huge pages ----------- */
+ 
+-static __always_inline void
+-thp_init (void)
+-{
+-  /* Initialize only once if DEFAULT_THP_PAGESIZE is defined.  */
+-  if (DEFAULT_THP_PAGESIZE == 0 || mp_.thp_mode != malloc_thp_mode_not_supported)
+-    return;
+-
+-  /* Set thp_pagesize even if thp_mode is never.  This reduces frequency
+-     of MORECORE () invocation.  */
+-  mp_.thp_mode = __malloc_thp_mode ();
+-  mp_.thp_pagesize = DEFAULT_THP_PAGESIZE;
+-}
+-
+ static inline void
+ madvise_thp (void *p, INTERNAL_SIZE_T size)
+ {
+ #ifdef MADV_HUGEPAGE
+ 
+-  thp_init ();
+-
+   /* Only use __madvise if the system is using 'madvise' mode and the size
+      is at least a huge page, otherwise the call is wasteful. */
+   if (mp_.thp_mode != malloc_thp_mode_madvise || size < mp_.thp_pagesize)
+@@ -2472,9 +2457,6 @@ sysmalloc (INTERNAL_SIZE_T nb, mstate av)
+          previous calls. Otherwise, we correct to page-align below.
+        */
+ 
+-      /* Ensure thp_pagesize is initialized.  */
+-      thp_init ();
+-
+       if (__glibc_unlikely (mp_.thp_pagesize != 0))
+ 	{
+ 	  uintptr_t lastbrk = (uintptr_t) MORECORE (0);
+-- 
+GitLab
+

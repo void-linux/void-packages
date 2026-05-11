@@ -1,0 +1,120 @@
+From 140c760d711d03c0230dff218b5268b11935f92e Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Fri, 13 Feb 2026 09:02:07 +0100
+Subject: [PATCH] nss: Introduce dedicated struct nss_database_for_fork type
+
+The initialized field in struct nss_database_data is rather confusing
+because it is not used by the regular NSS code, only by the fork
+state synchronization code.  Introduce a separate type and place
+the initialized field there.
+
+Reviewed-by: Sam James <sam@gentoo.org>
+(cherry picked from commit 7bb859f4198d0be19c31a9937eae4f6c2c9a079e)
+---
+ nss/nss_database.c | 14 +++++++-------
+ nss/nss_database.h | 12 +++++++++---
+ posix/fork.c       |  2 +-
+ 3 files changed, 17 insertions(+), 11 deletions(-)
+
+diff --git a/nss/nss_database.c b/nss/nss_database.c
+index 6997b5bb04..19e752ef65 100644
+--- a/nss/nss_database.c
++++ b/nss/nss_database.c
+@@ -56,7 +56,6 @@ global_state_allocate (void *closure)
+     {
+       result->data.nsswitch_conf.size = -1; /* Force reload.  */
+       memset (result->data.services, 0, sizeof (result->data.services));
+-      result->data.initialized = true;
+       result->data.reload_disabled = false;
+       __libc_lock_init (result->lock);
+       result->root_ino = 0;
+@@ -439,8 +438,8 @@ nss_database_check_reload_and_get (struct nss_database_state *local,
+   /* Avoid overwriting the global configuration until we have loaded
+      everything successfully.  Otherwise, if the file change
+      information changes back to what is in the global configuration,
+-     the lookups would use the partially-written  configuration.  */
+-  struct nss_database_data staging = { .initialized = true, };
++     the lookups would use the partially-written configuration.  */
++  struct nss_database_data staging = { };
+ 
+   bool ok = nss_database_reload (&staging, &initial);
+ 
+@@ -491,7 +490,7 @@ __nss_database_freeres (void)
+ }
+ 
+ void
+-__nss_database_fork_prepare_parent (struct nss_database_data *data)
++__nss_database_fork_prepare_parent (struct nss_database_for_fork *data)
+ {
+   /* Do not use allocate_once to trigger loading unnecessarily.  */
+   struct nss_database_state *local = atomic_load_acquire (&global_database_state);
+@@ -503,20 +502,21 @@ __nss_database_fork_prepare_parent (struct nss_database_data *data)
+          because it avoids acquiring the lock during the actual
+          fork.  */
+       __libc_lock_lock (local->lock);
+-      *data = local->data;
++      data->data = local->data;
+       __libc_lock_unlock (local->lock);
++      data->initialized = true;
+     }
+ }
+ 
+ void
+-__nss_database_fork_subprocess (struct nss_database_data *data)
++__nss_database_fork_subprocess (struct nss_database_for_fork *data)
+ {
+   struct nss_database_state *local = atomic_load_acquire (&global_database_state);
+   if (data->initialized)
+     {
+       /* Restore the state at the point of the fork.  */
+       assert (local != NULL);
+-      local->data = *data;
++      local->data = data->data;
+       __libc_lock_init (local->lock);
+     }
+   else if (local != NULL)
+diff --git a/nss/nss_database.h b/nss/nss_database.h
+index 1f2ff1639a..a4f3369eb0 100644
+--- a/nss/nss_database.h
++++ b/nss/nss_database.h
+@@ -70,15 +70,21 @@ struct nss_database_data
+   struct file_change_detection nsswitch_conf;
+   nss_action_list services[NSS_DATABASE_COUNT];
+   int reload_disabled;          /* Actually bool; int for atomic access.  */
+-  bool initialized;
++};
++
++/* Use to store a consistent state snapshot across fork.  */
++struct nss_database_for_fork
++{
++  bool initialized;  /* Set to true if the data field below is initialized.  */
++  struct nss_database_data data;
+ };
+ 
+ /* Called by fork in the parent process, before forking.  */
+-void __nss_database_fork_prepare_parent (struct nss_database_data *data)
++void __nss_database_fork_prepare_parent (struct nss_database_for_fork *)
+   attribute_hidden;
+ 
+ /* Called by fork in the new subprocess, after forking.  */
+-void __nss_database_fork_subprocess (struct nss_database_data *data)
++void __nss_database_fork_subprocess (struct nss_database_for_fork *)
+   attribute_hidden;
+ 
+ #endif /* _NSS_DATABASE_H */
+diff --git a/posix/fork.c b/posix/fork.c
+index 8e541ff985..933ac6fee7 100644
+--- a/posix/fork.c
++++ b/posix/fork.c
+@@ -50,7 +50,7 @@ __libc_fork (void)
+ 
+   lastrun = __run_prefork_handlers (multiple_threads);
+ 
+-  struct nss_database_data nss_database_data;
++  struct nss_database_for_fork nss_database_data;
+ 
+   /* If we are not running multiple threads, we do not have to
+      preserve lock state.  If fork runs from a signal handler, only
+-- 
+GitLab
+
