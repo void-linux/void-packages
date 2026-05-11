@@ -15,114 +15,24 @@
 @@ -3465,7 +3470,6 @@ __gnat_lwp_self (void)
  #endif
  
- #if defined (__linux__)
+ #if defined (__linux__) || defined (__ANDROID__)
 -#include <sched.h>
  
  /* glibc versions earlier than 2.7 do not define the routines to handle
     dynamically allocated CPU sets. For these targets, we use the static
-@@ -3475,7 +3479,7 @@ __gnat_lwp_self (void)
- 
- /* Dynamic cpu sets */
- 
--cpu_set_t *
-+void *
- __gnat_cpu_alloc (size_t count)
- {
-   return CPU_ALLOC (count);
-@@ -3488,33 +3492,33 @@ __gnat_cpu_alloc_size (size_t count)
- }
- 
- void
--__gnat_cpu_free (cpu_set_t *set)
-+__gnat_cpu_free (void *set)
- {
--  CPU_FREE (set);
-+  CPU_FREE ((cpu_set_t *) set);
- }
- 
- void
--__gnat_cpu_zero (size_t count, cpu_set_t *set)
-+__gnat_cpu_zero (size_t count, void *set)
- {
--  CPU_ZERO_S (count, set);
-+  CPU_ZERO_S (count, (cpu_set_t *) set);
- }
- 
- void
--__gnat_cpu_set (int cpu, size_t count, cpu_set_t *set)
-+__gnat_cpu_set (int cpu, size_t count, void *set)
- {
-   /* Ada handles CPU numbers starting from 1, while C identifies the first
-      CPU by a 0, so we need to adjust. */
--  CPU_SET_S (cpu - 1, count, set);
-+  CPU_SET_S (cpu - 1, count, (cpu_set_t *) set);
- }
- 
- #else /* !CPU_ALLOC */
- 
- /* Static cpu sets */
- 
--cpu_set_t *
-+void *
- __gnat_cpu_alloc (size_t count ATTRIBUTE_UNUSED)
- {
--  return (cpu_set_t *) xmalloc (sizeof (cpu_set_t));
-+  return xmalloc (sizeof (cpu_set_t));
- }
- 
- size_t
-@@ -3524,23 +3528,23 @@ __gnat_cpu_alloc_size (size_t count ATTR
- }
- 
- void
--__gnat_cpu_free (cpu_set_t *set)
-+__gnat_cpu_free (void *set)
- {
-   free (set);
- }
- 
- void
--__gnat_cpu_zero (size_t count ATTRIBUTE_UNUSED, cpu_set_t *set)
-+__gnat_cpu_zero (size_t count ATTRIBUTE_UNUSED, void *set)
- {
--  CPU_ZERO (set);
-+  CPU_ZERO ((cpu_set_t *) set);
- }
- 
- void
--__gnat_cpu_set (int cpu, size_t count ATTRIBUTE_UNUSED, cpu_set_t *set)
-+__gnat_cpu_set (int cpu, size_t count ATTRIBUTE_UNUSED, void *set)
- {
-   /* Ada handles CPU numbers starting from 1, while C identifies the first
-      CPU by a 0, so we need to adjust. */
--  CPU_SET (cpu - 1, set);
-+  CPU_SET (cpu - 1, (cpu_set_t *) set);
- }
- #endif /* !CPU_ALLOC */
- #endif /* __linux__ */
 --- a/gcc/ada/adaint.h
 +++ b/gcc/ada/adaint.h
-@@ -319,13 +319,11 @@ extern void   *__gnat_lwp_self			   (voi
+@@ -319,6 +319,7 @@ extern void   *__gnat_lwp_self			   (voi
  
  /* Routines for interface to required CPU set primitives */
  
--#include <sched.h>
--
--extern cpu_set_t *__gnat_cpu_alloc                 (size_t);
-+extern void * __gnat_cpu_alloc                 (size_t);
- extern size_t __gnat_cpu_alloc_size                (size_t);
--extern void   __gnat_cpu_free                  (cpu_set_t *);
--extern void   __gnat_cpu_zero                      (size_t, cpu_set_t *);
--extern void   __gnat_cpu_set                       (int, size_t, cpu_set_t *);
-+extern void   __gnat_cpu_free                  (void *);
-+extern void   __gnat_cpu_zero                      (size_t, void *);
-+extern void   __gnat_cpu_set                       (int, size_t, void *);
- #endif
++#define _GNU_SOURCE 1
+ #include <sched.h>
  
- #if defined (_WIN32)
+ extern cpu_set_t *__gnat_cpu_alloc                 (size_t);
 --- a/gcc/ada/Makefile.rtl
 +++ b/gcc/ada/Makefile.rtl
-@@ -1558,7 +1558,7 @@ ifeq ($(strip $(filter-out %86 linux%,$(
+@@ -1641,7 +1641,7 @@ ifeq ($(strip $(filter-out %86 linux%,$(
    s-intman.adb<libgnarl/s-intman__posix.adb \
    s-tpopsp.adb<libgnarl/s-tpopsp__tls.adb \
    $(TRASYM_DWARF_UNIX_PAIRS) \
@@ -131,16 +41,34 @@
    a-exetim.adb<libgnarl/a-exetim__posix.adb \
    a-exetim.ads<libgnarl/a-exetim__default.ads \
    s-linux.ads<libgnarl/s-linux.ads \
-@@ -2144,7 +2144,7 @@ ifeq ($(strip $(filter-out loongarch% li
-   g-sercom.adb<libgnat/g-sercom__linux.adb \
+@@ -2014,7 +2014,7 @@ ifeq ($(strip $(filter-out s390% linux%,
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   s-tpopsp.adb<libgnarl/s-tpopsp__posix-foreign.adb \
    $(TRASYM_DWARF_UNIX_PAIRS) \
-   $(GNATRTL_128BIT_PAIRS) \
 -  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
 +  s-tsmona.adb<libgnat/s-tsmona.adb \
+   system.ads<libgnat/system-linux-s390.ads
+ 
+   ifeq ($(strip $(filter-out s390x,$(target_cpu))),)
+@@ -2359,7 +2359,7 @@ ifeq ($(strip $(filter-out loongarch% li
+   s-taspri.ads<libgnarl/s-taspri__posix.ads \
+   g-sercom.adb<libgnat/g-sercom__linux.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   $(GNATRTL_128BIT_PAIRS) \
    $(ATOMICS_TARGET_PAIRS) \
    $(ATOMICS_BUILTINS_TARGET_PAIRS) \
-   system.ads<libgnat/system-linux-loongarch.ads
-@@ -2232,7 +2232,7 @@ ifeq ($(strip $(filter-out powerpc% linu
+@@ -2407,7 +2407,7 @@ ifeq ($(strip $(filter-out mips% linux%,
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   s-tpopsp.adb<libgnarl/s-tpopsp__posix-foreign.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   system.ads<libgnat/system-linux-mips.ads
+ 
+   ifeq ($(strip $(filter-out mips64% mipsisa64%,$(target_cpu))),)
+@@ -2463,7 +2463,7 @@ ifeq ($(strip $(filter-out powerpc% linu
    s-tasinf.adb<libgnarl/s-tasinf__linux.adb \
    s-taspri.ads<libgnarl/s-taspri__posix.ads \
    $(TRASYM_DWARF_UNIX_PAIRS) \
@@ -149,25 +77,70 @@
    $(ATOMICS_TARGET_PAIRS) \
    $(ATOMICS_BUILTINS_TARGET_PAIRS) \
    system.ads<libgnat/system-linux-ppc.ads
-@@ -2267,7 +2267,7 @@ ifeq ($(strip $(filter-out powerpc% linu
- endif
+@@ -2500,7 +2500,7 @@ endif
  
  # ARM linux, GNU eabi
+ ifeq ($(SELECTED_PAIRS),PAIRS_NONE)
 -ifeq ($(strip $(filter-out arm% linux-gnueabi%,$(target_cpu) $(target_os))),)
 +ifeq ($(strip $(filter-out arm% linux-gnueabi% linux-musleabi% linux-muslgnueabi%,$(target_cpu) $(target_os))),)
-   LIBGNAT_TARGET_PAIRS = \
-   a-intnam.ads<libgnarl/a-intnam__linux.ads \
-   s-inmaop.adb<libgnarl/s-inmaop__posix.adb \
-@@ -2311,7 +2311,7 @@ ifeq ($(strip $(filter-out aarch64% linu
-   s-intman.adb<libgnarl/s-intman__posix.adb \
-   s-linux.ads<libgnarl/s-linux.ads \
+ 
+   SELECTED_PAIRS=arm-linux-gnueabi
+ 
+@@ -2519,7 +2519,7 @@ ifeq ($(strip $(filter-out arm% linux-gn
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   s-tpopsp.adb<libgnarl/s-tpopsp__posix-foreign.adb \
    $(TRASYM_DWARF_UNIX_PAIRS) \
 -  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
 +  s-tsmona.adb<libgnat/s-tsmona.adb \
-   s-mudido.adb<libgnarl/s-mudido__affinity.adb \
-   s-osinte.ads<libgnarl/s-osinte__linux.ads \
-   s-osinte.adb<libgnarl/s-osinte__posix.adb \
-@@ -2488,7 +2488,7 @@ ifeq ($(strip $(filter-out %ia64 linux%,
+   $(ATOMICS_TARGET_PAIRS) \
+   $(ATOMICS_BUILTINS_TARGET_PAIRS) \
+   system.ads<libgnat/system-linux-arm.ads
+@@ -2566,7 +2566,7 @@ ifeq ($(strip $(filter-out aarch64% linu
+   s-tpopsp.adb<libgnarl/s-tpopsp__tls.adb \
+   s-taspri.ads<libgnarl/s-taspri__posix.ads \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   $(ATOMICS_TARGET_PAIRS) \
+   $(ATOMICS_BUILTINS_TARGET_PAIRS) \
+   $(GNATRTL_128BIT_PAIRS) \
+@@ -2608,7 +2608,7 @@ ifeq ($(strip $(filter-out sparc% linux%
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   s-tpopsp.adb<libgnarl/s-tpopsp__tls.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   system.ads<libgnat/system-linux-sparc.ads
+ 
+   ifeq ($(strip $(filter-out sparc64 sparcv9,$(target_cpu))),)
+@@ -2661,7 +2661,7 @@ ifeq ($(strip $(filter-out hppa% linux%,
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   s-tpopsp.adb<libgnarl/s-tpopsp__posix-foreign.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   system.ads<libgnat/system-linux-hppa.ads
+ 
+   TOOLS_TARGET_PAIRS = indepsw.adb<indepsw-gnu.adb
+@@ -2698,7 +2698,7 @@ ifeq ($(strip $(filter-out m68k% linux%,
+   s-taspri.ads<libgnarl/s-taspri__posix.ads \
+   s-tpopsp.adb<libgnarl/s-tpopsp__posix-foreign.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   system.ads<libgnat/system-linux-m68k.ads
+ 
+   TOOLS_TARGET_PAIRS = indepsw.adb<indepsw-gnu.adb
+@@ -2735,7 +2735,7 @@ ifeq ($(strip $(filter-out sh4% linux%,$
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   s-tpopsp.adb<libgnarl/s-tpopsp__posix-foreign.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   system.ads<libgnat/system-linux-sh4.ads
+ 
+   TOOLS_TARGET_PAIRS = indepsw.adb<indepsw-linux.adb
+@@ -2780,7 +2780,7 @@ ifeq ($(strip $(filter-out %ia64 linux%,
    s-tpopsp.adb<libgnarl/s-tpopsp__tls.adb \
    s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
    $(TRASYM_DWARF_UNIX_PAIRS) \
@@ -176,7 +149,16 @@
    $(ATOMICS_TARGET_PAIRS) \
    $(ATOMICS_BUILTINS_TARGET_PAIRS) \
    $(GNATRTL_128BIT_PAIRS) \
-@@ -2592,7 +2592,7 @@ ifeq ($(strip $(filter-out %x86_64 linux
+@@ -2860,7 +2860,7 @@ ifeq ($(strip $(filter-out alpha% linux%
+   s-tpopsp.adb<libgnarl/s-tpopsp__posix-foreign.adb \
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   $(ATOMICS_TARGET_PAIRS) \
+   $(ATOMICS_BUILTINS_TARGET_PAIRS) \
+   $(GNATRTL_128BIT_PAIRS) \
+@@ -2905,7 +2905,7 @@ ifeq ($(strip $(filter-out %x86_64 linux
    s-tpopsp.adb<libgnarl/s-tpopsp__tls.adb \
    s-taspri.ads<libgnarl/s-taspri__posix.ads \
    $(TRASYM_DWARF_UNIX_PAIRS) \
@@ -185,7 +167,7 @@
    $(ATOMICS_TARGET_PAIRS) \
    $(X86_64_TARGET_PAIRS) \
    $(SIMD_PATH_TARGET_PAIRS) \
-@@ -2637,7 +2637,7 @@ ifeq ($(strip $(filter-out %x32 linux%,$
+@@ -2955,7 +2955,7 @@ ifeq ($(strip $(filter-out %x32 linux%,$
    s-tpopsp.adb<libgnarl/s-tpopsp__tls.adb \
    s-taspri.ads<libgnarl/s-taspri__posix.ads \
    $(TRASYM_DWARF_UNIX_PAIRS) \
@@ -194,6 +176,15 @@
    $(ATOMICS_TARGET_PAIRS) \
    $(X86_64_TARGET_PAIRS) \
    $(SIMD_PATH_TARGET_PAIRS) \
+@@ -3000,7 +3000,7 @@ ifeq ($(strip $(filter-out riscv% linux%
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   s-tpopsp.adb<libgnarl/s-tpopsp__posix-foreign.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   system.ads<libgnat/system-linux-riscv.ads
+ 
+   ifeq ($(strip $(filter-out riscv64,$(target_cpu))),)
 --- a/gcc/ada/terminals.c
 +++ b/gcc/ada/terminals.c
 @@ -1134,7 +1134,7 @@ __gnat_setup_winsize (void *desc ATTRIBU
