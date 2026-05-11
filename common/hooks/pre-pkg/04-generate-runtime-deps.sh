@@ -48,10 +48,17 @@ store_pkgdestdir_rundeps() {
 parse_shlib_needed() {
     while read -r f; do
         lf=${f#${PKGDESTDIR}}
-	    if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
-		    msg_normal "Skipping dependency scan for ${lf}\n" >&3
-		    continue
-	    fi
+        for x in ${skiprdeps}; do
+            if [ "$x" = "$lf" -o "$x" = "${lf#$PKGDESTDIR}" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ -n "$found" ]; then
+            msg_normal "Skipping dependency scan for ${lf}\n" >&3
+            unset found
+            continue
+        fi
         read -n4 elfmagic < "$f"
         if [ "$elfmagic" = $'\177ELF' ]; then
             $OBJDUMP -p "$f" |
