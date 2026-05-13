@@ -1,0 +1,159 @@
+From 02ffd413cf83c07c5c419b5cba72990e1ed140ca Mon Sep 17 00:00:00 2001
+From: Adhemerval Zanella <adhemerval.zanella@linaro.org>
+Date: Thu, 12 Feb 2026 09:48:53 -0300
+Subject: [PATCH] elf: Use dl-symbol-redir-ifunc.h instead _dl_strlen
+
+Also replace the loop with strlen And remove
+-fno-tree-loop-distribute-patterns usage.
+
+It requires redirect the strlen to the baseline implementation
+for x86_64, aarch64, and loongarch64.
+
+Checked on x86_64-linux-gnu{-v2,v3} and aarch64-linux-gnu with
+both gcc-15 and clang-21.
+
+Reviewed-by: DJ Delorie <dj@redhat.com>
+(cherry picked from commit 15cc350e507101ac7b01e1343ac55087a6cd9317)
+---
+ elf/Makefile                                       |  6 ------
+ elf/dl-tunables.c                                  | 14 +-------------
+ string/Makefile                                    |  1 +
+ sysdeps/aarch64/multiarch/dl-symbol-redir-ifunc.h  |  1 +
+ sysdeps/aarch64/multiarch/strlen_generic.S         |  4 ++++
+ .../lp64/multiarch/dl-symbol-redir-ifunc.h         |  1 +
+ sysdeps/unix/sysv/linux/riscv/multiarch/Makefile   |  2 ++
+ sysdeps/x86_64/multiarch/dl-symbol-redir-ifunc.h   | 10 ++++++++++
+ 8 files changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/elf/Makefile b/elf/Makefile
+index 01cc51636e..11029be0ae 100644
+--- a/elf/Makefile
++++ b/elf/Makefile
+@@ -97,12 +97,6 @@ ifeq (yesyes,$(build-shared)$(run-built-tests))
+ tests-special += $(objpfx)list-tunables.out
+ endif
+ 
+-# Make sure that the compiler does not insert any library calls in tunables
+-# code paths.
+-ifeq (yes,$(have-loop-to-function))
+-CFLAGS-dl-tunables.c += -fno-tree-loop-distribute-patterns
+-endif
+-
+ all-dl-routines = $(dl-routines) $(sysdep-dl-routines)
+ # But they are absent from the shared libc, because that code is in ld.so.
+ elide-routines.os = \
+diff --git a/elf/dl-tunables.c b/elf/dl-tunables.c
+index 37ade374c6..bdb1de4ceb 100644
+--- a/elf/dl-tunables.c
++++ b/elf/dl-tunables.c
+@@ -37,16 +37,6 @@
+ #define TUNABLES_INTERNAL 1
+ #include "dl-tunables.h"
+ 
+-/* The function might be called before the process is self-relocated.  */
+-static size_t
+-__attribute_optimization_barrier__
+-_dl_strlen (const char *s)
+-{
+-  const char *p = s;
+-  for (; *s != '\0'; s++);
+-  return s - p;
+-}
+-
+ static char **
+ get_next_env (char **envp, char **name, char **val, char ***prev_envp)
+ {
+@@ -335,10 +325,8 @@ __tunables_init (char **envp)
+ 	  if (tunable_is_name (name, envname))
+ 	    {
+ 	      /* The environment variable is always null-terminated.  */
+-	      size_t envvallen = _dl_strlen (envval);
+-
+ 	      tunables_env_alias[i] =
+-		(struct tunable_toset_t) { cur, envval, envvallen };
++		(struct tunable_toset_t) { cur, envval, strlen (envval) };
+ 	      break;
+ 	    }
+ 	}
+diff --git a/string/Makefile b/string/Makefile
+index c4423c0437..aa0b0c2f57 100644
+--- a/string/Makefile
++++ b/string/Makefile
+@@ -286,6 +286,7 @@ CFLAGS-wordcopy.c += $(no-stack-protector)
+ # Called during static initialization
+ CFLAGS-strncmp.c += $(no-stack-protector)
+ CFLAGS-memset.c += $(no-stack-protector)
++CFLAGS-strlen.c += $(no-stack-protector)
+ 
+ ifeq ($(run-built-tests),yes)
+ $(objpfx)tst-svc-cmp.out: tst-svc.expect $(objpfx)tst-svc.out
+diff --git a/sysdeps/aarch64/multiarch/dl-symbol-redir-ifunc.h b/sysdeps/aarch64/multiarch/dl-symbol-redir-ifunc.h
+index 647bdd66dd..9f772614bf 100644
+--- a/sysdeps/aarch64/multiarch/dl-symbol-redir-ifunc.h
++++ b/sysdeps/aarch64/multiarch/dl-symbol-redir-ifunc.h
+@@ -20,5 +20,6 @@
+ #define _DL_IFUNC_GENERIC_H
+ 
+ asm ("memset = __memset_generic");
++asm ("strlen = __strlen_generic");
+ 
+ #endif
+diff --git a/sysdeps/aarch64/multiarch/strlen_generic.S b/sysdeps/aarch64/multiarch/strlen_generic.S
+index cb9d5759ac..a362328142 100644
+--- a/sysdeps/aarch64/multiarch/strlen_generic.S
++++ b/sysdeps/aarch64/multiarch/strlen_generic.S
+@@ -40,3 +40,7 @@
+ #endif
+ 
+ #include "../strlen.S"
++
++#if IS_IN (rtld)
++strong_alias (strlen, __strlen_generic)
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/dl-symbol-redir-ifunc.h b/sysdeps/loongarch/lp64/multiarch/dl-symbol-redir-ifunc.h
+index 9fdd039da0..8af00d2846 100644
+--- a/sysdeps/loongarch/lp64/multiarch/dl-symbol-redir-ifunc.h
++++ b/sysdeps/loongarch/lp64/multiarch/dl-symbol-redir-ifunc.h
+@@ -22,6 +22,7 @@
+ #ifndef SHARED
+ asm ("memset = __memset_aligned");
+ asm ("memcmp = __memcmp_aligned");
++asm ("strlen = __strlen_aligned");
+ #endif
+ 
+ #endif
+diff --git a/sysdeps/unix/sysv/linux/riscv/multiarch/Makefile b/sysdeps/unix/sysv/linux/riscv/multiarch/Makefile
+index 1d26966ded..a865090a53 100644
+--- a/sysdeps/unix/sysv/linux/riscv/multiarch/Makefile
++++ b/sysdeps/unix/sysv/linux/riscv/multiarch/Makefile
+@@ -9,4 +9,6 @@ sysdep_routines += \
+   # sysdep_routines
+ 
+ CFLAGS-memcpy_noalignment.c += -mno-strict-align
++# Called during static initialization
++CFLAGS-memset-generic.c += $(no-stack-protector)
+ endif
+diff --git a/sysdeps/x86_64/multiarch/dl-symbol-redir-ifunc.h b/sysdeps/x86_64/multiarch/dl-symbol-redir-ifunc.h
+index 04b6c1e6a3..b607e525f2 100644
+--- a/sysdeps/x86_64/multiarch/dl-symbol-redir-ifunc.h
++++ b/sysdeps/x86_64/multiarch/dl-symbol-redir-ifunc.h
+@@ -44,6 +44,16 @@ asm ("memset = " HAVE_MEMSET_IFUNC_GENERIC);
+ 
+ asm ("memcmp = " HAVE_MEMCMP_IFUNC_GENERIC);
+ 
++#if MINIMUM_X86_ISA_LEVEL >= 4
++# define HAVE_STRCMP_IFUNC_GENERIC "__strlen_evex"
++#elif MINIMUM_X86_ISA_LEVEL == 3
++# define HAVE_STRCMP_IFUNC_GENERIC "__strlen_avx2"
++#else
++# define HAVE_STRCMP_IFUNC_GENERIC "__strlen_sse2"
++#endif
++
++asm ("strlen = " HAVE_STRCMP_IFUNC_GENERIC);
++
+ #endif /* SHARED */
+ 
+ #endif
+-- 
+GitLab
+

@@ -1,0 +1,214 @@
+From 2ee41ba6ecd34bf7e5c4f90fdfa20376c1dcecb0 Mon Sep 17 00:00:00 2001
+From: Yury Khrustalev <yury.khrustalev@arm.com>
+Date: Mon, 2 Feb 2026 18:27:53 +0000
+Subject: [PATCH] aarch64: Lock GCS status at startup
+
+If GCS is enabled (see tunable glibc.cpu.aarch64_gcs), we lock all GCS
+operations (including status, write on shadow stack, and push to shadow
+stack) unless OPTIONAL policy is used.
+
+Reviewed-by: Adhemerval Zanella  <adhemerval.zanella@linaro.org>
+(cherry picked from commit 5061f524a2976daf3062dd34beae1d7d15502770)
+---
+ manual/tunables.texi                         | 54 ++++++++++++--------
+ sysdeps/aarch64/dl-gcs.c                     |  6 +++
+ sysdeps/aarch64/dl-start.S                   | 21 +++++++-
+ sysdeps/unix/sysv/linux/aarch64/libc-start.h | 29 +++++++++--
+ 4 files changed, 82 insertions(+), 28 deletions(-)
+
+diff --git a/manual/tunables.texi b/manual/tunables.texi
+index 7956df919b..29f2ba000f 100644
+--- a/manual/tunables.texi
++++ b/manual/tunables.texi
+@@ -620,42 +620,54 @@ This tunable controls Guarded Control Stack (GCS) for the process.
+ 
+ Accepted values are:
+ 
+-0 = disabled: do not enable GCS.
+-
+-1 = enforced: check markings and fail if any binary is not marked.
+-
+-2 = optional: check markings but keep GCS off if any binary is unmarked.
+-
+-3 = override: enable GCS, markings are ignored.
++@itemize @bullet
++@item @code{0} = disabled: do not enable GCS.
++@item @code{1} = enforced: check markings and abort if any binary is not
++marked, otherwise enable GCS and lock all GCS features.
++@item @code{2} = optional: check markings but keep GCS off if any binary
++is unmarked, otherwise enable GCS but do not lock any GCS features.
++@item @code{3} = override: enable GCS and lock all GCS features, markings
++are ignored.
++@end itemize
+ 
+ If unmarked binary is loaded via @code{dlopen} when GCS is enabled and
+-markings are not ignored (@code{aarch64_gcs == 1} or @code{2}), then
+-the process will be aborted.
++markings are not ignored (i.e. @code{aarch64_gcs == 1} or @code{2}), then
++@code{dlopen} will return an error.
+ 
+ Default is @code{0}, so GCS is disabled by default.
+ 
+-This tunable is specific to AArch64. On systems that do not support
++This tunable is specific to AArch64.  On systems that do not support
+ Guarded Control Stack this tunable has no effect.
+ 
++GCS features (or operations on shadow stack) such as @code{STATUS} (i.e.
++enabling and disabling GCS), @code{WRITE}, and @code{PUSH}, will be locked
++for the @code{enforced} and @code{override} tunable values.
++
+ Before enabling GCS for the process the value of this tunable is checked
+ and depending on it the following outcomes are possible.
+ 
+-@code{aarch64_gcs == 0}: GCS will not be enabled and GCS markings will not be
++@itemize @bullet
++@item
++@code{aarch64_gcs == 0}: GCS will remain disabled and GCS markings will not be
+ checked for any binaries.
+-
++@item
+ @code{aarch64_gcs == 1}: GCS markings will be checked for all binaries loaded
+-at startup and, only if all binaries are GCS-marked, GCS will be enabled. If
+-any of the binaries are not GCS-marked, the process will abort. Subsequent call
+-to @code{dlopen} for an unmarked binary will also result in abort.
+-
++at startup and, only if all binaries are GCS-marked, GCS will be enabled and
++all GCS features will be locked.  If any of the binaries are not GCS-marked,
++the process will abort.  Subsequent call to @code{dlopen} for an unmarked binary
++will result in @code{dlopen} returning an error.
++@item
+ @code{aarch64_gcs == 2}: GCS markings will be checked for all binaries loaded
+ at startup and, if any of such binaries are not GCS-marked, GCS will not be
+-enabled and there will be no more checks for GCS marking. If all binaries
+-loaded at startup are GCS-marked, then GCS will be enabled, in which case a
+-call to @code{dlopen} for an unmarked binary will also result in abort.
++enabled and there will be no more checks for GCS marking.  If all binaries
++loaded at startup are GCS-marked, then GCS will be enabled but GCS features
++will not be locked.  In this case a call to @code{dlopen} for an unmarked binary
++will result in @code{dlopen} returning an error.
++@item
++@code{aarch64_gcs == 3}: GCS will be enabled and all GCS features will be
++locked.  GCS markings will not be checked for any binaries.
++@end itemize
+ 
+-@code{aarch64_gcs == 3}: GCS will be enabled and GCS markings will not be
+-checked for any binaries.
+ @end deftp
+ 
+ @node Memory Related Tunables
+diff --git a/sysdeps/aarch64/dl-gcs.c b/sysdeps/aarch64/dl-gcs.c
+index e1d1db4852..841d6428d6 100644
+--- a/sysdeps/aarch64/dl-gcs.c
++++ b/sysdeps/aarch64/dl-gcs.c
+@@ -147,3 +147,9 @@ void _dl_gcs_enable_failed (int code)
+ {
+   _dl_fatal_printf ("failed to enable GCS: %d\n", -code);
+ }
++
++/* Used to report error when prctl system call to lock GCS fails.  */
++void _dl_gcs_lock_failed (int code)
++{
++  _dl_fatal_printf ("failed to lock GCS: %d\n", -code);
++}
+diff --git a/sysdeps/aarch64/dl-start.S b/sysdeps/aarch64/dl-start.S
+index 3b5ff2cccb..c278485cd3 100644
+--- a/sysdeps/aarch64/dl-start.S
++++ b/sysdeps/aarch64/dl-start.S
+@@ -35,12 +35,13 @@ ENTRY (_start)
+ 	/* Use GL(dl_aarch64_gcs) to set the shadow stack status.  */
+ 	adrp	x16, _rtld_local
+ 	add	x16, x16, :lo12:_rtld_local
+-	ldr	x1, [x16, GL_DL_AARCH64_GCS_OFFSET]
+-	cbz	x1, L(skip_gcs_enable)
++	ldr	x22, [x16, GL_DL_AARCH64_GCS_OFFSET]
++	cbz	x22, L(skip_gcs_enable)
+ 
+ 	/* Enable GCS before user code runs.  Note that IFUNC resolvers and
+ 	   LD_AUDIT hooks may run before, but should not create threads.  */
+ #define PR_SET_SHADOW_STACK_STATUS  75
++#define PR_LOCK_SHADOW_STACK_STATUS 76
+ #define PR_SHADOW_STACK_ENABLE      (1UL << 0)
+ 	mov	x0, PR_SET_SHADOW_STACK_STATUS
+ 	mov	x1, PR_SHADOW_STACK_ENABLE
+@@ -50,6 +51,19 @@ ENTRY (_start)
+ 	mov	x8, #SYS_ify(prctl)
+ 	svc	0x0
+ 	cbnz	w0, L(failed_gcs_enable)
++	/* Check if we need to lock GCS features.  */
++	/* If the aarch64_gcs tunable is either 0 or 2 do not lock GCS.  */
++	tst	x22, #-3
++	beq	L(skip_gcs_enable)
++	mov	x0, PR_LOCK_SHADOW_STACK_STATUS
++	/* Lock everything including future operations.  */
++	mov	x1, ~0
++	mov	x2, 0
++	mov	x3, 0
++	mov	x4, 0
++	mov	x8, #SYS_ify(prctl)
++	svc	0x0
++	cbnz	w0, L(failed_gcs_lock)
+ L(skip_gcs_enable):
+ 
+ .globl _dl_start_user
+@@ -75,4 +89,7 @@ _dl_start_user:
+ L(failed_gcs_enable):
+ 	b	_dl_gcs_enable_failed
+ 
++L(failed_gcs_lock):
++	b	_dl_gcs_lock_failed
++
+ END (_start)
+diff --git a/sysdeps/unix/sysv/linux/aarch64/libc-start.h b/sysdeps/unix/sysv/linux/aarch64/libc-start.h
+index 9eecc557fd..4ccd13741b 100644
+--- a/sysdeps/unix/sysv/linux/aarch64/libc-start.h
++++ b/sysdeps/unix/sysv/linux/aarch64/libc-start.h
+@@ -25,9 +25,17 @@
+ 
+ # ifndef PR_SET_SHADOW_STACK_STATUS
+ #  define PR_SET_SHADOW_STACK_STATUS	75
++#  define PR_LOCK_SHADOW_STACK_STATUS	76
+ #  define PR_SHADOW_STACK_ENABLE	(1UL << 0)
+ # endif
+ 
++# ifndef GCS_POLICY_DISABLED
++/* GCS is disabled.  */
++#  define GCS_POLICY_DISABLED 0
++/* Optionally enable GCS if all startup dependencies are marked.  */
++#  define GCS_POLICY_OPTIONAL 2
++# endif
++
+ /* Must be on a top-level stack frame that does not return.  */
+ static inline void __attribute__((always_inline))
+ aarch64_libc_setup_tls (void)
+@@ -46,12 +54,23 @@ aarch64_libc_setup_tls (void)
+ 
+   _rtld_main_check (main_map, _dl_argv[0]);
+ 
+-  if (GL(dl_aarch64_gcs) != 0)
++  uint64_t gcs = GL (dl_aarch64_gcs);
++  if (gcs != GCS_POLICY_DISABLED)
+     {
+-      int ret = INLINE_SYSCALL_CALL (prctl, PR_SET_SHADOW_STACK_STATUS,
+-				     PR_SHADOW_STACK_ENABLE, 0, 0, 0);
+-      if (ret)
+-        _dl_fatal_printf ("failed to enable GCS: %d\n", -ret);
++      int ret;
++      ret = INLINE_SYSCALL_CALL (prctl, PR_SET_SHADOW_STACK_STATUS,
++				 PR_SHADOW_STACK_ENABLE, 0, 0, 0);
++      if (ret != 0)
++	_dl_fatal_printf ("failed to enable GCS: %d\n", -ret);
++      /* Do not lock GCS features if policy is OPTIONAL.  */
++      if (gcs != GCS_POLICY_OPTIONAL)
++	{
++	  /* Lock all bits, including future bits.  */
++	  ret = INLINE_SYSCALL_CALL (prctl, PR_LOCK_SHADOW_STACK_STATUS,
++				     ~0, 0, 0, 0);
++	  if (ret != 0)
++	    _dl_fatal_printf ("failed to lock GCS: %d\n", -ret);
++	}
+     }
+ }
+ 
+-- 
+GitLab
+
