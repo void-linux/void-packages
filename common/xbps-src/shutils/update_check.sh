@@ -216,6 +216,13 @@ update_check() {
         rx=${pattern:-$rx}
         rx=${rx:-'(?<!-)\b\Q'"$pkgname"'\E[-_]?((src|source)[-_])?v?\K([^-/_\s]*?\d[^-/_\s]*?)(?=(?:[-_.](?:src|source|orig))?\.(?:[jt]ar|shar|t[bglx]z|tbz2|zip))\b'}
 
+        # When using a git forge's info/refs endpoint, custom patterns may
+        # omit the refs/tags/ anchor for brevity. Auto-prefix it if absent.
+        if [ -n "$pattern" ] && [[ "$url" == *info/refs* ]] && [[ "$rx" != refs/tags/* ]]; then
+            msg_verbose "auto-prefixing refs/tags/ to custom pattern\n"
+            rx="refs/tags/$rx"
+        fi
+
         if [ "${fetchedurls[$url]}" ]; then
             msg_verbose "already fetched $url\n"
             continue
