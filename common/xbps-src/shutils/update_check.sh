@@ -43,7 +43,7 @@ update_check() {
             *ftp.gnome.org*|*download.gnome.org*) ;;
             *archive.xfce.org*) ;;
             *)
-                printf '%s\n' "$homepage" ;;
+                [ "$distfiles_only" = yes ] || printf '%s\n' "$homepage" ;;
         esac
         for i in $distfiles; do
             printf '%s\n' "${i%/*}/"
