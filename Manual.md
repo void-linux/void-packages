@@ -913,6 +913,14 @@ file in the same directory as the relevant `template` file:
   mentioned.  If unset, defaults to `homepage` and the directories where
 `distfiles` reside.
 
+- `distfiles_only` if set to `yes`, the package homepage is excluded
+  from the URLs scanned for version detection.  Only the directories
+  derived from `distfiles` (and any URL set via `site`) are checked.
+  This is useful when a custom `pattern` is tuned for a specific
+  endpoint format (such as a git forge's `info/refs`) and would
+  produce spurious matches against unrelated numbers appearing in the
+  homepage HTML.
+
 - `pkgname` is the package name the default pattern checks for.
 If unset, defaults to `pkgname` from the template.
 
@@ -943,6 +951,51 @@ in url. Defaults to `(|\.x)`.
 - `disabled` can be set to disable update checking for the package,
 in cases where checking for updates is impossible or does not make sense.
 This should be set to a string describing why it is disabled.
+
+#### Git forge endpoints
+
+When `update_check.sh` scans URLs against a git forge's `info/refs`
+endpoint (used automatically for `github.com`, `gitlab.*`,
+`bitbucket.org`, `codeberg.org`, and `git.sr.ht` URLs), custom
+`pattern` entries may omit the `refs/tags/` prefix; it is auto-prefixed
+when not already present.  For example, these two patterns are
+equivalent for a GitHub-hosted package:
+
+	pattern='refs/tags/vulkan-sdk-\K[\d.]+'
+	pattern='vulkan-sdk-\K[\d.]+'
+
+The second form is preferred: it keeps the pattern focused on the
+package-specific tag convention rather than restating the endpoint
+format.
+
+This auto-prefixing only applies when the URL contains `info/refs`;
+patterns used against URLs set explicitly via `site` are matched
+as-written.
+
+#### Choosing between `site`, `distfiles_only` and the default behavior
+
+Most packages need neither `site` nor `distfiles_only`: the default
+behavior of scanning the homepage and distfiles directories works
+well when the `pattern` (or the default regex) has a strong anchor
+that won't match unrelated content.
+
+Use `distfiles_only=yes` when:
+
+- A custom `pattern` is specific enough to detect versions on the
+  distfiles URL, but matches unrelated numbers when applied to the
+  package homepage.
+
+Use `site=URL` when:
+
+- The version cannot be detected from `homepage` or `distfiles`
+  directories alone (e.g., upstream lists versions on a separate
+  release page).
+- One of the URLs in `distfiles` is a secondary file (such as a
+  pkg-config template fetched from `raw.githubusercontent.com`) that
+  produces unwanted matches independently of the homepage.
+- A non-standard `info/refs` endpoint must be targeted (e.g., a
+  self-hosted forge whose URL doesn't match the automatic patterns
+  above).
 
 <a id="patches"></a>
 ### Handling patches
