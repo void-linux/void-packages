@@ -23,9 +23,22 @@ if [ -z "$XBPS_TEMP_MASTERDIR" ]; then
 		--ro-bind "$DISTDIR" /void-packages \
 		--dev /dev --tmpfs /tmp --proc /proc \
 		${HOSTDIR:+--bind "$HOSTDIR" /host} ${EXTRA_ARGS} "$@"
-else
-	exec bwrap --overlay-src "$MASTERDIR" --tmp-overlay / \
-		--ro-bind "$DISTDIR" /void-packages \
-		--dev /dev --tmpfs /tmp --proc /proc \
-		${HOSTDIR:+--bind "$HOSTDIR" /host} ${EXTRA_ARGS} "$@"
 fi
+
+cleanup() {
+	[ -z "$tmpdir" ] && return
+	chmod -f 755 "${tmpdir}/workdir/work"
+	rm -rf "${tmpdir}"
+}
+
+trap 'cleanup' EXIT HUP INT QUIT TERM
+
+tmpdir="$(mktemp -d "$(realpath "$MASTERDIR").XXXXXXX")"
+[ -z "${tmpdir}" ] && exit 1
+mkdir -p "${tmpdir}/masterdir" "${tmpdir}/workdir"
+
+bwrap --overlay-src "$MASTERDIR" \
+	--overlay "${tmpdir}/masterdir" "${tmpdir}/workdir" / \
+	--ro-bind "$DISTDIR" /void-packages \
+	--dev /dev --tmpfs /tmp --proc /proc \
+	${HOSTDIR:+--bind "$HOSTDIR" /host} ${EXTRA_ARGS} "$@"
