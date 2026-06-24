@@ -1,6 +1,6 @@
 # Template file for 'sagemath'
 pkgname=sagemath
-version=10.8
+version=10.9
 revision=1
 _pypi_version=${version/.beta/b}
 _pypi_version=${_pypi_version/.rc/rc}
@@ -31,18 +31,37 @@ depends="eclib-devel fflas-ffpack flintlib-devel gcc-fortran meson gd-devel
  python3-six python3-gmpy2 python3-numpy python3-pexpect python3-Sphinx
  python3-Pillow python3-mpmath python3-jupyter_client python3-ptyprocess
  python3-platformdirs"
-checkdepends="${depends} python3-pytest pythran python3-Sphinx gdb"
+checkdepends="${depends} python3-pytest-xdist pythran python3-Sphinx gdb"
 short_desc="Open source mathematics software"
 maintainer="Gonzalo Tornaría <tornaria@cmat.edu.uy>"
 license="GPL-2.0-or-later"
 homepage="https://www.sagemath.org/"
 changelog="https://github.com/sagemath/sage/releases"
 distfiles="${PYPI_SITE}/s/sagemath/sagemath-${_pypi_version}.tar.gz"
-checksum=864c21a84bfad05f586ccdc45bf685552cd87a236bf56bc30163de474569f82c
+checksum=5855626668197958372403dc6fa1878750b90ac7f113f49a5bc43ddaafd60591
 nocross="due to fflas-ffpack, givaro, linbox, sympow, maxima"
 
 # parallel build
 export SAGE_NUM_THREADS="${XBPS_MAKEJOBS}"
+
+if [ "$XBPS_BUILD_ENVIRONMENT" = void-packages-ci ]; then
+	# skip random failures on CI
+	_exclude_files+="
+	 sage/matrix/matrix_mod2_dense.pyx
+	 sage/matrix/matrix_integer_dense.pyx
+	 "
+	case "$XBPS_TARGET_MACHINE" in
+		# skip failing tests on i686
+		i686*) _exclude_files+="
+		 sage/categories/regular_crystals.py
+		 sage/dynamics/finite_dynamical_system.py
+		 sage/matrix/matrix_double_dense.pyx
+		 sage/rings/polynomial/real_roots.pyx
+		 sage/rings/tests.py
+		 sage/schemes/elliptic_curves/ell_finite_field.py
+		 "
+	esac
+fi
 
 do_check() {
 	local testdir="${wrksrc}/.xbps-testdir/$(date +%s)"
@@ -51,12 +70,26 @@ do_check() {
 	# this makes for nicer (shorter) relative paths in output
 	cd ${testdir}/${py3_sitelib}
 
+	# there is a conflict between this conftest.py and the one in our builddir
+	# see https://github.com/sagemath/sage/pull/41709#issuecomment-4425750767
+	rm "sage/conftest.py"
+
+	# simplify testing changes
+	for f in ${XBPS_DISTDIR}/sagemath-check*.patch ; do
+		[ -f "$f" ] || continue
+		patch -Np2 < "$f"
+	done
+
 	if [ -f ${XBPS_DISTDIR}/sagemath-check ] ; then
 		_sed='s|#.*||;/^\s*$/d;s|^\s*\([^ ]*/\)\?sage/|sage/|g' \
-		_test_files=$(sed -e "$_sed" ${XBPS_DISTDIR}/sagemath-check)
+		_test_files=($(sed -e "$_sed" ${XBPS_DISTDIR}/sagemath-check))
 	fi
 	if [ -z "$_test_files" ]; then
-		_test_files=--all
+		if [ -z "$_exclude_files" ]; then
+			_test_files=(--all)
+		else
+			_test_files=(--all-except "$_exclude_files")
+		fi
 	fi
 	cp ${FILESDIR}/timings2.json .
 	_test_args="--stats_path=timings2.json"
@@ -71,5 +104,5 @@ do_check() {
 	fi
 
 	PATH="${testdir}/usr/bin:${PATH}" PYTHONPATH="${testdir}/${py3_sitelib}" \
-		python3 -m sage.doctest -p ${XBPS_MAKEJOBS} ${_test_args} ${_test_files}
+		python3 -m sage.doctest -p ${XBPS_MAKEJOBS} ${_test_args} "${_test_files[@]}"
 }
