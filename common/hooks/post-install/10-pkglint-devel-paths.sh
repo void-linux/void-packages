@@ -5,6 +5,13 @@
 #   - Searches for solinks (.so) and archives (.a) on usr/lib
 #   - Searches for executables in usr/bin that end with -config and a respective manpage
 
+annotate_lint_devel() {
+    msg_warn "$*\n"
+    [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ] || return 0
+    local _lineno=$(awk '/-devel_package()/ {print FNR; exit}' "${XBPS_SRCPKGDIR}/${sourcepkg}/template")
+    printf "\n::warning file=srcpkgs/${sourcepkg}/template,line=${_lineno-1},title=$*::$*\n"
+}
+
 hook() {
     local solink archive
 
@@ -19,37 +26,37 @@ hook() {
     for f in $(find $PKGDESTDIR -type d); do
         case "${f#$PKGDESTDIR}" in
             /usr/include)
-                msg_warn "usr/include should be in -devel package\n"
+                annotate_lint_devel "usr/include should be in -devel package"
                 ;;
             /usr/share/pkgconfig)
-                msg_warn "usr/share/pkgconfig should be in -devel package\n"
+                annotate_lint_devel "usr/share/pkgconfig should be in -devel package"
                 ;;
             /usr/lib/pkgconfig)
-                msg_warn "usr/lib/pkgconfig should be in -devel package\n"
+                annotate_lint_devel "usr/lib/pkgconfig should be in -devel package"
                 ;;
             /usr/share/vala)
-                msg_warn "usr/share/vala should be in -devel package\n"
+                annotate_lint_devel "usr/share/vala should be in -devel package"
                 ;;
             /usr/share/gir-1.0)
-                msg_warn "usr/share/gir-1.0 should be in -devel package\n"
+                annotate_lint_devel "usr/share/gir-1.0 should be in -devel package"
                 ;;
             /usr/share/man/man3)
-                msg_warn "usr/share/man/man3 should be in -devel package\n"
+                annotate_lint_devel "usr/share/man/man3 should be in -devel package"
                 ;;
             /usr/share/aclocal)
-                msg_warn "usr/share/aclocal should be in -devel package\n"
+                annotate_lint_devel "usr/share/aclocal should be in -devel package"
                 ;;
             /usr/share/cmake)
-                msg_warn "usr/share/cmake should be in -devel package\n"
+                annotate_lint_devel "usr/share/cmake should be in -devel package"
                 ;;
             /usr/lib/cmake)
-                msg_warn "usr/lib/cmake should be in -devel package\n"
+                annotate_lint_devel "usr/lib/cmake should be in -devel package"
                 ;;
             /usr/share/gtk-doc)
-                msg_warn "usr/share/gtk-doc should be in -devel package\n"
+                annotate_lint_devel "usr/share/gtk-doc should be in -devel package"
                 ;;
             /usr/lib/qt5/mkspecs)
-                msg_warn "usr/lib/qt5/mkspecs should be in -devel package\n"
+                annotate_lint_devel "usr/lib/qt5/mkspecs should be in -devel package"
                 ;;
         esac
     done
@@ -64,21 +71,21 @@ hook() {
 
     if [ -d $PKGDESTDIR/usr/bin ]; then
         for x in $(find $PKGDESTDIR/usr/bin -type f -executable -iname '*-config'); do
-            msg_warn "${x#$PKGDESTDIR\/} should be in -devel package\n"
+            annotate_lint_devel "${x#$PKGDESTDIR\/} should be in -devel package"
         done
     fi
 
     if [ -d $PKGDESTDIR/usr/man/man1 ]; then
         for m in $(find $PKGDESTDIR/usr/man/man1 -type f -iname '*-config.1'); do
-            msg_warn "${m#$PKGDESTDIR\/} should be in -devel package\n"
+            annotate_lint_devel "${m#$PKGDESTDIR\/} should be in -devel package"
         done
     fi
 
     if [ -n "$solink" ]; then
-        msg_warn "usr/lib/*.so should be in -devel package\n"
+        annotate_lint_devel "usr/lib/*.so should be in -devel package"
     fi
 
     if [ -n "$archive" ]; then
-        msg_warn "usr/lib/*.a should be in -devel package\n"
+        annotate_lint_devel "usr/lib/*.a should be in -devel package"
     fi
 }

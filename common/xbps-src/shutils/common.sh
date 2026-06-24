@@ -148,6 +148,10 @@ msg_red() {
     [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[31m"
     printf >&2 "=> ERROR: $@"
     [ -n "$NOCOLORS" ] || printf >&2 "\033[m"
+
+    if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+        printf "\n::error::$@"
+    fi
 }
 
 msg_red_nochroot() {
@@ -172,6 +176,13 @@ msg_warn_nochroot() {
     [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[33m"
     printf >&2 "=> WARNING: $@"
     [ -n "$NOCOLORS" ] || printf >&2 "\033[m"
+}
+
+msg_info() {
+    # info messages in bright bold white
+    [ -n "$NOCOLORS" ] || printf "\033[97m\033[1m"
+    printf >&2 "=> INFO: $@"
+    [ -n "$NOCOLORS" ] || printf >&2  "\033[m"
 }
 
 msg_normal() {
