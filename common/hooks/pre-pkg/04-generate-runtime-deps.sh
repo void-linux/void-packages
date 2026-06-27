@@ -76,7 +76,7 @@ hook() {
     local _shlib_dir="${XBPS_STATEDIR}/shlib-provides"
     local _shlibtmp
 
-    local Qt_6_PRIVATE_API=6.10.2
+    local Qt_6_PRIVATE_API=6.10
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
