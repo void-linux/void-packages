@@ -1,0 +1,114 @@
+Submitted By:            Joe Locash <jlocash at gmail dot com>
+Date:                    2025-11-18
+Initial Package Version: 1.2.13
+Upstream Status:         Applied
+Origin:                  Upstream commits 9bb397 and a8fffd
+Description:             Fixes building xine-lib against ffmpeg-8.
+
+
+diff -Nuarp xine-lib-1.2.13.orig/src/combined/ffmpeg/ffmpeg_compat.h xine-lib-1.2.13/src/combined/ffmpeg/ffmpeg_compat.h
+--- xine-lib-1.2.13.orig/src/combined/ffmpeg/ffmpeg_compat.h	2025-11-18 13:24:12.824655934 -0500
++++ xine-lib-1.2.13/src/combined/ffmpeg/ffmpeg_compat.h	2025-11-18 12:59:41.956696804 -0500
+@@ -319,4 +319,20 @@
+ #  error avcodec.h must be included first !
+ #endif /* defined(LIBAVCODEC_VERSION_INT) */
+ 
++#if LIBAVUTIL_VERSION_INT >= XFF_INT_VERSION(58,7,0)
++#  define XFF_FRAME_IS_INTERLACED(_frame) ((_frame)->flags & AV_FRAME_FLAG_INTERLACED)
++#  define XFF_FRAME_IS_TOP_FIELD_FIRST(_frame) ((_frame)->flags & AV_FRAME_FLAG_TOP_FIELD_FIRST)
++#  define XFF_FRAME_IS_KEY(_frame) ((_frame)->flags & AV_FRAME_FLAG_KEY)
++#else
++#  define XFF_FRAME_IS_INTERLACED(_frame) ((_frame)->interlaced_frame)
++#  define XFF_FRAME_IS_TOP_FIELD_FIRST(_frame) ((_frame)->top_field_first)
++#  define XFF_FRAME_IS_KEY(_frame) ((_frame)->key_frame)
++#endif
++
++#if LIBAVCODEC_VERSION_INT >= XFF_INT_VERSION(60,0,0)
++#  define XFF_FRAME_RATE 2 /* AV_CODEC_PROP_FIELDS */
++#else
++#  define XFF_FRAME_RATE 1 /* AVCodecContext.ticks_per_frame */
++#endif
++
+ #endif /* XINE_AVCODEC_COMPAT_H */
+diff -Nuarp xine-lib-1.2.13.orig/src/combined/ffmpeg/ff_video_decoder.c xine-lib-1.2.13/src/combined/ffmpeg/ff_video_decoder.c
+--- xine-lib-1.2.13.orig/src/combined/ffmpeg/ff_video_decoder.c	2025-11-18 13:24:12.825127146 -0500
++++ xine-lib-1.2.13/src/combined/ffmpeg/ff_video_decoder.c	2025-11-18 13:07:52.717841093 -0500
+@@ -60,6 +60,10 @@
+ 
+ #include "ffmpeg_compat.h"
+ 
++#if XFF_FRAME_RATE == 2
++#  include <libavcodec/codec_desc.h>
++#endif
++
+ #if LIBAVCODEC_VERSION_INT >= XFF_INT_VERSION(59,0,100)
+ # undef HAVE_POSTPROC
+ #endif
+@@ -2289,8 +2293,8 @@ static void ff_handle_mpeg12_buffer (ff_
+       }
+ 
+       /* transfer some more frame settings for deinterlacing */
+-      img->progressive_frame = !this->av_frame->interlaced_frame;
+-      img->top_field_first   = this->av_frame->top_field_first;
++      img->progressive_frame = !XFF_FRAME_IS_INTERLACED (this->av_frame);
++      img->top_field_first   = !!XFF_FRAME_IS_TOP_FIELD_FIRST (this->av_frame);
+ 
+       /* get back reordered pts */
+       img->pts = ff_untag_pts (this, this->av_frame);
+@@ -2370,20 +2374,29 @@ static void ff_postprocess (ff_video_dec
+ 
+ static int ff_video_step_get (ff_video_decoder_t *this) {
+   /* use externally provided video_step or fall back to stream's time_base otherwise */
+-  int step = this->video_step;
++  int step = this->video_step, num_fields;
+   if (step || !this->context->time_base.den)
+     return step;
+ 
++#if XFF_FRAME_RATE == 1
++  num_fields = this->context->ticks_per_frame;
++#else /* XFF_FRAME_RATE == 2 */
++  {
++    const AVCodecDescriptor *desc = avcodec_descriptor_get (this->context->codec_id);
++    if (desc)
++      num_fields = (desc->props & AV_CODEC_PROP_FIELDS) ? 2 : 1;
++    else
++      num_fields = 2;
++  }
++#endif
+   /* good: 2 * 1001 / 48000. */
+-  step = (int64_t)90000 * this->context->ticks_per_frame
+-       * this->context->time_base.num / this->context->time_base.den;
++  step = (int64_t)90000 * num_fields * this->context->time_base.num / this->context->time_base.den;
+   if (step >= 90)
+     return step;
+ 
+   /* bad: 2 * 1 / 60000. seen this once from broken h.264 video usability info (VUI).
+    * VAAPI seems to apply a similar HACK.*/
+-  step = (int64_t)90000000 * this->context->ticks_per_frame
+-       * this->context->time_base.num / this->context->time_base.den;
++  step = (int64_t)90000000 * num_fields * this->context->time_base.num / this->context->time_base.den;
+   return step;
+ }
+ 
+@@ -2675,8 +2688,8 @@ static void ff_handle_buffer (ff_video_d
+           img->duration = video_step_to_use;
+ 
+         /* transfer some more frame settings for deinterlacing */
+-        img->progressive_frame = !this->av_frame->interlaced_frame;
+-        img->top_field_first   = this->av_frame->top_field_first;
++        img->progressive_frame = !XFF_FRAME_IS_INTERLACED (this->av_frame);
++        img->top_field_first   = !!XFF_FRAME_IS_TOP_FIELD_FIRST (this->av_frame);
+ 
+         this->skipframes = img->draw(img, this->stream);
+         this->state = STATE_FRAME_SENT;
+@@ -2885,8 +2898,8 @@ static void ff_flush_internal (ff_video_
+     if (video_step_to_use <= 750)
+       video_step_to_use = 0;
+     img->duration = this->av_frame2->repeat_pict ? video_step_to_use * 3 / 2 : video_step_to_use;
+-    img->progressive_frame = !this->av_frame2->interlaced_frame;
+-    img->top_field_first   = this->av_frame2->top_field_first;
++    img->progressive_frame = !XFF_FRAME_IS_INTERLACED (this->av_frame2);
++    img->top_field_first   = !!XFF_FRAME_IS_TOP_FIELD_FIRST (this->av_frame2);
+ 
+     this->skipframes = img->draw (img, this->stream);
+     if (free_img)
