@@ -86,11 +86,15 @@ _EOF
 			local _uname="${f%:*}"
 			local _uid="${f#*:}"
 
+			eval user_name="\$${_uname}_uname"
 			eval homedir="\$${_uname}_homedir"
 			eval shell="\$${_uname}_shell"
 			eval descr="\$${_uname}_descr"
 			eval groups="\$${_uname}_groups"
 			eval pgroup="\$${_uname}_pgroup"
+			if [ -n "$user_name" ]; then
+				echo "export ${_uname}_uname=\"$user_name\"" >> $tmpf
+			fi
 			if [ -n "$homedir" ]; then
 				echo "export ${_uname}_homedir=\"$homedir\"" >> $tmpf
 			fi
