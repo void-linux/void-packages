@@ -1,5 +1,5 @@
 do_build() {
-	local zig_target zig_cpu
+	local zig_target zig_cpu zig_search_prefix
 
 	# TODO: This duplication between build-profiles and cross-profiles
 	# is totally unnecessary. It would be nice if there was some way to
@@ -7,9 +7,11 @@ do_build() {
 	if [ "$CROSS_BUILD" ]; then
 		zig_target="${XBPS_CROSS_ZIG_TARGET}"
 		zig_cpu="${XBPS_CROSS_ZIG_CPU}"
+		zig_search_prefix=/
 	else
 		zig_target="${XBPS_ZIG_TARGET}"
 		zig_cpu="${XBPS_ZIG_CPU}"
+		zig_search_prefix=/usr
 	fi
 
 	# Inform zig of the required libc include paths.
@@ -30,8 +32,8 @@ do_build() {
 	# prefix used by the zig build system.
 	DESTDIR="zig-out" zig build \
 		-j"${XBPS_MAKEJOBS}" \
-		--sysroot "${XBPS_CROSS_BASE}" \
-		--search-prefix "${XBPS_CROSS_BASE}/usr" \
+		--sysroot "${XBPS_CROSS_BASE:-/}" \
+		--search-prefix "${zig_search_prefix}" \
 		--prefix /usr \
 		--global-cache-dir /host/zig \
 		--libc xbps_zig_libc.txt \
