@@ -1,0 +1,429 @@
+From 2b9405a00a96a09e0183190ddc9f83d44963d4e0 Mon Sep 17 00:00:00 2001
+From: Jean Ghali <jghali@libertysurf.fr>
+Date: Wed, 3 Jun 2026 21:29:10 +0000
+Subject: [PATCH] #17832: Fix failure to build with poppler 26.06.0
+
+git-svn-id: svn://scribus.net/trunk/Scribus@27627 11d20701-8431-0410-a711-e3c959e3b870
+---
+ scribus/plugins/import/pdf/importpdf.cpp     |  35 +++++--
+ scribus/plugins/import/pdf/importpdfconfig.h |   6 ++
+ scribus/plugins/import/pdf/slaoutput.cpp     | 101 +++++++++++++++++--
+ scribus/plugins/import/pdf/slaoutput.h       |  26 ++++-
+ 4 files changed, 148 insertions(+), 20 deletions(-)
+
+--- a/scribus/plugins/import/pdf/importpdf.cpp
++++ b/scribus/plugins/import/pdf/importpdf.cpp
+@@ -378,8 +378,13 @@ bool PdfPlug::convert(const QString& fn)
+ 			bool useMediaBox = true;
+ 			bool crop = true;
+ 			bool printing = false;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++			const PDFRectangle& mediaBox = pdfDoc->getPage(1)->getMediaBox();
++			QRectF mediaRect = QRectF(QPointF(mediaBox.x1, mediaBox.y1), QPointF(mediaBox.x2, mediaBox.y2)).normalized();
++#else
+ 			const PDFRectangle *mediaBox = pdfDoc->getPage(1)->getMediaBox();
+ 			QRectF mediaRect = QRectF(QPointF(mediaBox->x1, mediaBox->y1), QPointF(mediaBox->x2, mediaBox->y2)).normalized();
++#endif
+ 			bool boxesAreDifferent = false;
+ 			if (getCBox(Crop_Box, 1) != mediaRect)
+ 				boxesAreDifferent = true;
+@@ -885,6 +890,21 @@ QImage PdfPlug::readPreview(int pgNum, i
+ 
+ QRectF PdfPlug::getCBox(int box, int pgNum)
+ {
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++	PDFRectangle cBox;
++	if (box == Media_Box)
++		cBox = m_pdfDoc->getPage(pgNum)->getMediaBox();
++	else if (box == Bleed_Box)
++		cBox = m_pdfDoc->getPage(pgNum)->getBleedBox();
++	else if (box == Trim_Box)
++		cBox = m_pdfDoc->getPage(pgNum)->getTrimBox();
++	else if (box == Crop_Box)
++		cBox = m_pdfDoc->getPage(pgNum)->getCropBox();
++	else if (box == Art_Box)
++		cBox = m_pdfDoc->getPage(pgNum)->getArtBox();
++	QRectF cRect = QRectF(QPointF(cBox.x1, cBox.y1), QPointF(cBox.x2, cBox.y2)).normalized();
++	return cRect;
++#else
+ 	const PDFRectangle *cBox = nullptr;
+ 	if (box == Media_Box)
+ 		cBox = m_pdfDoc->getPage(pgNum)->getMediaBox();
+@@ -898,6 +918,7 @@ QRectF PdfPlug::getCBox(int box, int pgN
+ 		cBox = m_pdfDoc->getPage(pgNum)->getArtBox();
+ 	QRectF cRect = QRectF(QPointF(cBox->x1, cBox->y1), QPointF(cBox->x2, cBox->y2)).normalized();
+ 	return cRect;
++#endif
+ }
+ 
+ QString PdfPlug::UnicodeParsedString(const GooString *s1) const
+--- a/scribus/plugins/import/pdf/importpdfconfig.h
++++ b/scribus/plugins/import/pdf/importpdfconfig.h
+@@ -25,4 +25,10 @@ for which a new license (GPL+exception)
+ using SplashCoord = double;
+ #endif
+ 
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++#define POPPLER_CONST_26_06 const
++#else
++#define POPPLER_CONST_26_06
++#endif
++
+ #endif
+--- a/scribus/plugins/import/pdf/slaoutput.cpp
++++ b/scribus/plugins/import/pdf/slaoutput.cpp
+@@ -17,6 +17,7 @@ for which a new license (GPL+exception)
+ #include <poppler/poppler-config.h>
+ #include <poppler/FileSpec.h>
+ #include <poppler/fofi/FoFiTrueType.h>
++#include <poppler/OptionalContent.h>
+ 
+ #include <QApplication>
+ #include <QFile>
+@@ -189,7 +190,11 @@ void AnoOutputDev::drawString(GfxState *
+ #endif
+ }
+ 
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 06, 0)
++QString AnoOutputDev::getColor(GfxColorSpace *color_space, const GfxColor &color, int* shade)
++#else
+ QString AnoOutputDev::getColor(GfxColorSpace *color_space, const GfxColor *color, int *shade)
++#endif
+ {
+ 	QString fNam;
+ 	QString namPrefix = "FromPDF";
+@@ -272,7 +277,11 @@ QString AnoOutputDev::getColor(GfxColorS
+ 		tmp.setSpotColor(true);
+ 
+ 		fNam = m_doc->PageColors.tryAddColor(name, tmp);
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 06, 0)
++		*shade = qRound(colToDbl(color.c[0]) * 100);
++#else
+ 		*shade = qRound(colToDbl(color->c[0]) * 100);
++#endif
+ 	}
+ 	else
+ 	{
+@@ -660,7 +669,7 @@ bool SlaOutputDev::handleWidgetAnnot(Ann
+ 		}
+ 		if (retVal)
+ 		{
+-			AnnotAppearanceCharacs *achar = ano->getAppearCharacs();
++			POPPLER_CONST_26_06 AnnotAppearanceCharacs *achar = ano->getAppearCharacs();
+ 			bool fgFound = false;
+ 			bool bgFound = false;
+ 			if (achar)
+@@ -696,7 +705,10 @@ bool SlaOutputDev::handleWidgetAnnot(Ann
+ 			if (apa || !achar)
+ 			{
+ 				auto annotOutDev = std::make_shared<AnoOutputDev>(m_doc, m_importedColors);
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++				const PDFRectangle& annotaRect = annota->getRect();
++				auto gfx = std::make_shared<Gfx>(m_pdfDoc, annotOutDev.get(), m_pdfDoc->getPage(m_actPage)->getResourceDict(), annota->getRect(), nullptr);
++#elif POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
+ 				const PDFRectangle& annotaRect = annota->getRect();
+ 				auto gfx = std::make_shared<Gfx>(m_pdfDoc, annotOutDev.get(), m_pdfDoc->getPage(m_actPage)->getResourceDict(), &annotaRect, nullptr);
+ #else
+@@ -732,7 +744,7 @@ bool SlaOutputDev::handleWidgetAnnot(Ann
+ 			}
+ 			ite->setIsAnnotation(true);
+ 			ite->AutoName = false;
+-			AnnotBorder *brd = annota->getBorder();
++			POPPLER_CONST_25_02 AnnotBorder *brd = annota->getBorder();
+ 			if (brd)
+ 			{
+ 				int bsty = brd->getStyle();
+@@ -853,7 +865,11 @@ bool SlaOutputDev::handleWidgetAnnot(Ann
+ 				{
+ 					if (wtyp == 5)
+ 						ite->annotation().addToFlag(Annotation::Flag_Combo);
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++					size_t co = btn->getChoices().size();
++#else
+ 					int co = btn->getNumChoices();
++#endif
+ 					if (co > 0)
+ 					{
+ 						QString inh = UnicodeParsedString(btn->getChoice(0));
+@@ -958,7 +974,7 @@ void SlaOutputDev::applyTextStyle(PageIt
+ 
+ void SlaOutputDev::handleActions(PageItem* ite, AnnotWidget *ano)
+ {
+-	LinkAction *Lact = ano->getAction();
++	POPPLER_CONST_26_06 LinkAction *Lact = ano->getAction();
+ 	if (Lact)
+ 	{
+ 		if (Lact->getKind() == actionJavaScript)
+@@ -1508,7 +1524,9 @@ void SlaOutputDev::endTransparencyGroup(
+ 	m_tmpSel->clear();
+ }
+ 
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(25, 9, 0)
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++void SlaOutputDev::setSoftMask(GfxState* /*state*/, const std::array<double, 4>& bbox, bool alpha, Function* transferFunc, const GfxColor& /*backdropColor*/)
++#elif POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(25, 9, 0)
+ void SlaOutputDev::setSoftMask(GfxState* /*state*/, const std::array<double, 4>& bbox, bool alpha, Function* transferFunc, GfxColor* /*backdropColor*/)
+ #else
+ void SlaOutputDev::setSoftMask(GfxState* /*state*/, const double* bbox, bool alpha, Function* transferFunc, GfxColor* /*backdropColor*/)
+@@ -2303,7 +2321,11 @@ bool SlaOutputDev::tilingPatternFill(Gfx
+ 	QTransform mm(mat[0], mat[1], mat[2], mat[3], mat[4], mat[5]);
+ 	QTransform mmx = mm * m_ctm;
+ 
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++	auto gfx = std::make_shared<Gfx>(m_pdfDoc, this, resDict, box, nullptr);
++#else
+ 	auto gfx = std::make_shared<Gfx>(m_pdfDoc, this, resDict, &box, nullptr);
++#endif
+ 	m_inPattern++;
+ 	// Unset the clip path as it is unrelated to the pattern's coordinate space.
+ 	QPainterPath savedClip = m_graphicStack.top().clipPath;
+@@ -2551,7 +2573,11 @@ void SlaOutputDev::drawSoftMaskedImage(G
+ 	if (matteColor != nullptr)
+ 	{
+ 		GfxRGB matteRgb;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++		colorMap->getColorSpace()->getRGB(*matteColor, &matteRgb);
++#else
+ 		colorMap->getColorSpace()->getRGB(matteColor, &matteRgb);
++#endif
+ 		matteRc = qRound(colToDbl(matteRgb.r) * 255);
+ 		matteGc = qRound(colToDbl(matteRgb.g) * 255);
+ 		matteBc = qRound(colToDbl(matteRgb.b) * 255);
+@@ -2939,10 +2965,18 @@ void SlaOutputDev::beginMarkedContent(co
+ 	m_mcStack.push(mSte);
+ }
+ 
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++void SlaOutputDev::beginMarkedContent(const std::string& name, Dict* properties)
++#else
+ void SlaOutputDev::beginMarkedContent(const char *name, Dict *properties)
++#endif
+ {
+ //	qDebug() << "Begin Marked Content with Name " << QString(name);
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++	QString nam = QString::fromStdString(name);
++#else
+ 	QString nam(name);
++#endif
+ 	mContent mSte;
+ 	mSte.name = nam;
+ 	mSte.ocgName = "";
+@@ -3021,16 +3055,31 @@ void SlaOutputDev::endMarkedContent(GfxS
+ 	}
+ }
+ 
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++void SlaOutputDev::markPoint(const std::string& name)
++{
++	//	qDebug() << "Begin Marked Point with Name " << QString(name);
++}
++#else
+ void SlaOutputDev::markPoint(const char *name)
+ {
+ //	qDebug() << "Begin Marked Point with Name " << QString(name);
+ }
++#endif
+ 
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++void SlaOutputDev::markPoint(const std::string& name, Dict* properties)
++{
++	//	qDebug() << "Begin Marked Point with Name " << QString(name) << "and Properties";
++	beginMarkedContent(name.c_str(), properties);
++}
++#else
+ void SlaOutputDev::markPoint(const char *name, Dict *properties)
+ {
+ //	qDebug() << "Begin Marked Point with Name " << QString(name) << "and Properties";
+ 	beginMarkedContent(name, properties);
+ }
++#endif
+ 
+ void SlaOutputDev::updateFont(GfxState *state)
+ {
+@@ -3762,6 +3811,13 @@ void SlaOutputDev::endTextObject(GfxStat
+ 
+ QString SlaOutputDev::getColor(GfxColorSpace *color_space, const GfxColor *color, int *shade)
+ {
++	if (!color)
++		return CommonStrings::None;
++	return getColor(color_space, *color, shade);
++}
++
++QString SlaOutputDev::getColor(GfxColorSpace *color_space, const GfxColor &color, int *shade)
++{
+ 	QString fNam;
+ 	QString namPrefix = "FromPDF";
+ 	ScColor tmp;
+@@ -3777,31 +3833,43 @@ QString SlaOutputDev::getColor(GfxColorS
+ 	if ((color_space->getMode() == csDeviceRGB) || (color_space->getMode() == csCalRGB))
+ 	{
+ 		GfxRGB rgb;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
+ 		color_space->getRGB(color, &rgb);
++#else
++		color_space->getRGB(&color, &rgb);
++#endif
+ 		double Rc = colToDbl(rgb.r);
+ 		double Gc = colToDbl(rgb.g);
+ 		double Bc = colToDbl(rgb.b);
+ 		tmp.setRgbColorF(Rc, Gc, Bc);
+-		fNam = m_doc->PageColors.tryAddColor(namPrefix+tmp.name(), tmp);
++		fNam = m_doc->PageColors.tryAddColor(namPrefix + tmp.name(), tmp);
+ 	}
+ 	else if (color_space->getMode() == csDeviceCMYK)
+ 	{
+ 		GfxCMYK cmyk;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
+ 		color_space->getCMYK(color, &cmyk);
++#else
++		color_space->getCMYK(&color, &cmyk);
++#endif
+ 		double Cc = colToDbl(cmyk.c);
+ 		double Mc = colToDbl(cmyk.m);
+ 		double Yc = colToDbl(cmyk.y);
+ 		double Kc = colToDbl(cmyk.k);
+ 		tmp.setCmykColorF(Cc, Mc, Yc, Kc);
+-		fNam = m_doc->PageColors.tryAddColor(namPrefix+tmp.name(), tmp);
++		fNam = m_doc->PageColors.tryAddColor(namPrefix + tmp.name(), tmp);
+ 	}
+ 	else if ((color_space->getMode() == csCalGray) || (color_space->getMode() == csDeviceGray))
+ 	{
+ 		GfxGray gray;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
+ 		color_space->getGray(color, &gray);
++#else
++		color_space->getGray(&color, &gray);
++#endif
+ 		double Kc = 1.0 - colToDbl(gray);
+ 		tmp.setCmykColorF(0, 0, 0, Kc);
+-		fNam = m_doc->PageColors.tryAddColor(namPrefix+tmp.name(), tmp);
++		fNam = m_doc->PageColors.tryAddColor(namPrefix + tmp.name(), tmp);
+ 	}
+ 	else if (color_space->getMode() == csSeparation)
+ 	{
+@@ -3839,7 +3907,11 @@ QString SlaOutputDev::getColor(GfxColorS
+ 		else
+ 		{
+ 			GfxCMYK cmyk;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
+ 			color_space->getCMYK(color, &cmyk);
++#else
++			color_space->getCMYK(&color, &cmyk);
++#endif
+ 			double Cc = colToDbl(cmyk.c);
+ 			double Mc = colToDbl(cmyk.m);
+ 			double Yc = colToDbl(cmyk.y);
+@@ -3849,20 +3921,24 @@ QString SlaOutputDev::getColor(GfxColorS
+ 		tmp.setSpotColor(true);
+ 
+ 		fNam = m_doc->PageColors.tryAddColor(name, tmp);
+-		*shade = qRound(colToDbl(color->c[0]) * 100);
++		*shade = qRound(colToDbl(color.c[0]) * 100);
+ 	}
+ 	else
+ 	{
+ 		GfxRGB rgb;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
+ 		color_space->getRGB(color, &rgb);
++#else
++		color_space->getRGB(&color, &rgb);
++#endif
+ 		double Rc = colToDbl(rgb.r);
+ 		double Gc = colToDbl(rgb.g);
+ 		double Bc = colToDbl(rgb.b);
+ 		tmp.setRgbColorF(Rc, Gc, Bc);
+-		fNam = m_doc->PageColors.tryAddColor(namPrefix+tmp.name(), tmp);
++		fNam = m_doc->PageColors.tryAddColor(namPrefix + tmp.name(), tmp);
+ //		qDebug() << "update fill color other colorspace" << color_space->getMode() << "treating as rgb" << Rc << Gc << Bc;
+ 	}
+-	if (fNam == namPrefix+tmp.name())
++	if (fNam == namPrefix + tmp.name())
+ 		m_importedColors->append(fNam);
+ 	return fNam;
+ }
+@@ -4109,6 +4185,11 @@ void SlaOutputDev::pushGroup(const QStri
+ 	m_groupStack.push(gElements);
+ }
+ 
++QString SlaOutputDev::UnicodeParsedString(const GooString& s1) const
++{
++	return UnicodeParsedString(&s1);
++}
++
+ QString SlaOutputDev::UnicodeParsedString(const GooString *s1) const
+ {
+ #if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(25, 10, 0)
+--- a/scribus/plugins/import/pdf/slaoutput.h
++++ b/scribus/plugins/import/pdf/slaoutput.h
+@@ -22,6 +22,7 @@ for which a new license (GPL+exception)
+ 
+ #include <array>
+ #include <memory>
++#include <string>
+ 
+ #include "fpointarray.h"
+ #include "importpdfconfig.h"
+@@ -156,9 +157,14 @@ public:
+ 	std::unique_ptr<GooString> itemText;
+ 
+ private:
+-	QString getColor(GfxColorSpace *color_space, const GfxColor *color, int *shade);
+ 	ScribusDoc* m_doc { nullptr };
+ 	QStringList *m_importedColors { nullptr };
++
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 06, 0)
++	QString getColor(GfxColorSpace *color_space, const GfxColor &color, int *shade);
++#else
++	QString getColor(GfxColorSpace *color_space, const GfxColor *color, int* shade);
++#endif
+ };
+ 
+ 
+@@ -239,11 +245,21 @@ public:
+ 	virtual void endMaskClip(GfxState *state) { qDebug() << "End Mask Clip"; }
+ 
+   //----- grouping operators
+-	void beginMarkedContent(const char *name, Dict *properties) override;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++	void beginMarkedContent(const std::string& name, Dict* properties) override;
++#else
++	void beginMarkedContent(const char* name, Dict* properties) override;
++#endif
+ 	virtual void beginMarkedContent(const char *name, Object *dictRef);
+ 	void endMarkedContent(GfxState *state) override;
++
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++	void markPoint(const std::string& name) override;
++	void markPoint(const std::string& name, Dict* properties) override;
++#else
+ 	void markPoint(const char *name) override;
+ 	void markPoint(const char *name, Dict *properties) override;
++#endif
+ 
+ 	//----- image drawing
+ 	void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg) override;
+@@ -275,7 +291,9 @@ public:
+ #endif
+ 	void endTransparencyGroup(GfxState *state) override;
+ 
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(25, 9, 0)
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(26, 6, 0)
++	void setSoftMask(GfxState * /*state*/, const std::array<double, 4> & /*bbox*/, bool /*alpha*/, Function * /*transferFunc*/, const GfxColor & /*backdropColor*/) override;
++#elif POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(25, 9, 0)
+ 	void setSoftMask(GfxState * /*state*/, const std::array<double, 4> & /*bbox*/, bool /*alpha*/, Function * /*transferFunc*/, GfxColor * /*backdropColor*/) override;
+ #else
+ 	void setSoftMask(GfxState * /*state*/, const double * /*bbox*/, bool /*alpha*/, Function * /*transferFunc*/, GfxColor * /*backdropColor*/) override;
+@@ -384,10 +402,12 @@ protected:
+ private:
+ 	void getPenState(GfxState *state);
+ 	QString getColor(GfxColorSpace *color_space, const GfxColor *color, int *shade);
++	QString getColor(GfxColorSpace* color_space, const GfxColor &color, int* shade);
+ 	QString getAnnotationColor(const AnnotColor *color);
+ 	QString convertPath(const GfxPath *path);
+ 	int getBlendMode(GfxState *state) const;
+ 	QString UnicodeParsedString(const GooString *s1) const;
++	QString UnicodeParsedString(const GooString &s1) const;
+ 	QString UnicodeParsedString(const std::string& s1) const;
+ 	bool checkClip();
+ 

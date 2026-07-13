@@ -1,0 +1,74 @@
+From e6a376836e5c891577eae6369263152106b9bc02 Mon Sep 17 00:00:00 2001
+From: Christian Heusel <christian@heusel.eu>
+Date: Tue, 21 Jan 2025 01:01:58 +0100
+Subject: [PATCH] Migrate to boost::asio::io_context
+
+The code previously used the deprecated (and with bost 1.87.0 removed)
+`boost::asio::io_service`, which used to be an alias to `io_context`.
+The new version heavily changes the `io_context` API and therefore is no
+the old interface was removed.
+
+Fixes https://github.com/luceneplusplus/LucenePlusPlus/issues/208
+
+Signed-off-by: Christian Heusel <christian@heusel.eu>
+---
+ include/lucene++/ThreadPool.h | 10 ++++++----
+ src/core/util/ThreadPool.cpp  |  9 +++++----
+ 2 files changed, 11 insertions(+), 8 deletions(-)
+
+--- a/include/lucene++/ThreadPool.h
++++ b/include/lucene++/ThreadPool.h
+@@ -14,7 +14,9 @@
+ 
+ namespace Lucene {
+ 
+-typedef boost::shared_ptr<boost::asio::io_service::work> workPtr;
++
++typedef boost::asio::io_context io_context_t;
++typedef boost::asio::executor_work_guard<io_context_t::executor_type> work_t;
+ 
+ /// A Future represents the result of an asynchronous computation. Methods are provided to check if the computation
+ /// is complete, to wait for its completion, and to retrieve the result of the computation. The result can only be
+@@ -51,8 +53,8 @@ public:
+     LUCENE_CLASS(ThreadPool);
+ 
+ protected:
+-    boost::asio::io_service io_service;
+-    workPtr work;
++    io_context_t io_context;
++    work_t work;
+     boost::thread_group threadGroup;
+ 
+     static const int32_t THREADPOOL_SIZE;
+@@ -64,7 +66,7 @@ public:
+     template <typename FUNC>
+     FuturePtr scheduleTask(FUNC func) {
+         FuturePtr future(newInstance<Future>());
+-        io_service.post(boost::bind(&ThreadPool::execute<FUNC>, this, func, future));
++        boost::asio::post(io_context, boost::bind(&ThreadPool::execute<FUNC>, this, func, future));
+         return future;
+     }
+ 
+--- a/src/core/util/ThreadPool.cpp
++++ b/src/core/util/ThreadPool.cpp
+@@ -14,15 +14,16 @@ Future::~Future() {
+ 
+ const int32_t ThreadPool::THREADPOOL_SIZE = 5;
+ 
+-ThreadPool::ThreadPool() {
+-    work.reset(new boost::asio::io_service::work(io_service));
++ThreadPool::ThreadPool()
++    :
++        work(boost::asio::make_work_guard(io_context))
++{
+     for (int32_t i = 0; i < THREADPOOL_SIZE; ++i) {
+-        threadGroup.create_thread(boost::bind(&boost::asio::io_service::run, &io_service));
++        threadGroup.create_thread(boost::bind(&boost::asio::io_context::run, &io_context));
+     }
+ }
+ 
+ ThreadPool::~ThreadPool() {
+-    work.reset(); // stop all threads
+     threadGroup.join_all(); // wait for all competition
+ }
+ 

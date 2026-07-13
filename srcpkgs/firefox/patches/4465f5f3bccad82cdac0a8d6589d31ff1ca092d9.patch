@@ -1,0 +1,297 @@
+# HG changeset patch
+# User Tymur Boiko <tboiko@nvidia.com>
+# Date 1779099602 0
+# Node ID 4465f5f3bccad82cdac0a8d6589d31ff1ca092d9
+# Parent  84e96ab672c5039f12c4efffe123eac03095b1f4
+Bug 2039878 - Use VK_NULL_HANDLE for Vulkan object handles in FFmpegVulkanVideoDecoder on 32-bit. r=stransky
+
+Non-dispatchable handles (VkImage, VkDeviceMemory, VkSemaphore, etc.) and
+VkDevice are not pointer-sized on all ABIs; nullptr is ill-typed. Use
+VK_NULL_HANDLE for clears/defaults and explicit != VK_NULL_HANDLE guards.
+PFN_vk* and Vulkan pAllocator parameters stay nullptr.
+
+Differential Revision: https://phabricator.services.mozilla.com/D300757
+
+
+diff --git a/dom/media/platforms/ffmpeg/FFmpegVulkanVideoDecoder.cpp b/dom/media/platforms/ffmpeg/FFmpegVulkanVideoDecoder.cpp
+--- a/dom/media/platforms/ffmpeg/FFmpegVulkanVideoDecoder.cpp
++++ b/dom/media/platforms/ffmpeg/FFmpegVulkanVideoDecoder.cpp
+@@ -53,77 +53,78 @@ namespace mozilla {
+ FFmpegVideoDecoder<
+     LIBAV_VER>::FFmpegVulkanVideoDecoder::~FFmpegVulkanVideoDecoder() {
+   if (!StaticPrefs::media_ffvpx_hw_enabled()) {
+     return;
+   }
+   // Resources should already be cleaned up by ProcessShutdown()
+   // If mDevice is not null here, it means ProcessShutdown wasn't called
+   // and the device may already be destroyed - don't try to clean up
+-  if (mDevice) {
++  if (mDevice != VK_NULL_HANDLE) {
+     NS_WARNING(
+         "~FFmpegVulkanVideoDecoder called with device still set - resources "
+         "may leak");
+   }
+ }
+ 
+ void FFmpegVideoDecoder<LIBAV_VER>::FFmpegVulkanVideoDecoder::Cleanup() {
+   FFMPEGV_LOG("FFmpegVulkanVideoDecoder::Cleanup()");
+-  if (mDevice) {
++  if (mDevice != VK_NULL_HANDLE) {
+     if (mDeviceWaitIdle) {
+       mDeviceWaitIdle(mDevice);
+     }
+     for (uint32_t qi = 0; qi < mCopyQueueCount; qi++) {
+-      if (mCopyCmdBuf[qi] && mCopyCmdPool[qi] && mFreeCommandBuffers) {
++      if ((mCopyCmdBuf[qi] != VK_NULL_HANDLE) &&
++          (mCopyCmdPool[qi] != VK_NULL_HANDLE) && mFreeCommandBuffers) {
+         mFreeCommandBuffers(mDevice, mCopyCmdPool[qi], 1, &mCopyCmdBuf[qi]);
+       }
+-      if (mCopyCmdPool[qi] && mDestroyCommandPool) {
++      if (mCopyCmdPool[qi] != VK_NULL_HANDLE && mDestroyCommandPool) {
+         mDestroyCommandPool(mDevice, mCopyCmdPool[qi], nullptr);
+       }
+-      if (mCopyFence[qi] && mDestroyFence) {
++      if (mCopyFence[qi] != VK_NULL_HANDLE && mDestroyFence) {
+         mDestroyFence(mDevice, mCopyFence[qi], nullptr);
+       }
+     }
+ 
+     for (int i = 0; i < kNumBuffers; i++) {
+       if (mCopyDoneSemFd[i] >= 0) {
+         close(mCopyDoneSemFd[i]);
+         mCopyDoneSemFd[i] = -1;
+       }
+       mCopyDoneSemValue[i] = 0;
+       mCopyDoneSemSignaled[i] = false;
+-      if (mCopyDoneSem[i] && mDestroySemaphore) {
++      if ((mCopyDoneSem[i] != VK_NULL_HANDLE) && mDestroySemaphore) {
+         mDestroySemaphore(mDevice, mCopyDoneSem[i], nullptr);
+         mCopyDoneSem[i] = VK_NULL_HANDLE;
+       }
+       if (mNv12BaseFd[i] >= 0) {
+         close(mNv12BaseFd[i]);
+       }
+-      if (mNv12Image[i] && mDestroyImage) {
++      if ((mNv12Image[i] != VK_NULL_HANDLE) && mDestroyImage) {
+         mDestroyImage(mDevice, mNv12Image[i], nullptr);
+       }
+-      if (mNv12Mem[i] && mFreeMemory) {
++      if ((mNv12Mem[i] != VK_NULL_HANDLE) && mFreeMemory) {
+         mFreeMemory(mDevice, mNv12Mem[i], nullptr);
+       }
+     }
+   }
+ 
+-  mDevice = nullptr;
++  mDevice = VK_NULL_HANDLE;
+   mCopyQueueCount = 0;
+   mCopyQueueIsDedicatedTransfer = false;
+   mCopyQueueRoundRobin = 0;
+   mCopyQueue.Clear();
+   mCopyCmdPool.Clear();
+   mCopyCmdBuf.Clear();
+   mCopyFence.Clear();
+   mDeviceFunctions.Clear();
+ 
+   for (int i = 0; i < kNumBuffers; i++) {
+-    mNv12Image[i] = nullptr;
+-    mNv12Mem[i] = nullptr;
++    mNv12Image[i] = VK_NULL_HANDLE;
++    mNv12Mem[i] = VK_NULL_HANDLE;
+     mNv12BaseFd[i] = -1;
+     mCopyDoneSem[i] = VK_NULL_HANDLE;
+     mCopyDoneSemFd[i] = -1;
+     mCopyDoneSemValue[i] = 0;
+     mCopyDoneSemSignaled[i] = false;
+   }
+   mCurrentBuffer = 0;
+ 
+@@ -769,17 +770,17 @@ bool FFmpegVideoDecoder<LIBAV_VER>::FFmp
+     cleanUp.release();
+ 
+     NS_WARNING(nsPrintfCString("[VULKAN] Initialized Vulkan Firefox context, "
+                                "vkGetMemoryFdKHR=%p\n",
+                                (void*)mGetMemoryFdKHR)
+                    .get());
+   }
+ 
+-  return mDevice != nullptr;
++  return mDevice != VK_NULL_HANDLE;
+ }
+ 
+ MediaResult
+ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVulkanVideoDecoder::InitCopyRingBuffer(
+     uint32_t aWidth, uint32_t aHeight, AVPixelFormat aSwFormat,
+     AVBufferRef* aVulkanDevCtx) {
+   VkPhysicalDevice physDev =
+       ((AVVulkanDeviceContext*)((AVHWDeviceContext*)aVulkanDevCtx->data)->hwctx)
+@@ -789,23 +790,23 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVul
+     return MediaResult(NS_OK);
+   }
+ 
+   for (int buf = 0; buf < kNumBuffers; buf++) {
+     if (mNv12BaseFd[buf] >= 0) {
+       close(mNv12BaseFd[buf]);
+       mNv12BaseFd[buf] = -1;
+     }
+-    if (mNv12Image[buf]) {
++    if (mNv12Image[buf] != VK_NULL_HANDLE) {
+       mDestroyImage(mDevice, mNv12Image[buf], nullptr);
+-      mNv12Image[buf] = nullptr;
++      mNv12Image[buf] = VK_NULL_HANDLE;
+     }
+-    if (mNv12Mem[buf]) {
++    if (mNv12Mem[buf] != VK_NULL_HANDLE) {
+       mFreeMemory(mDevice, mNv12Mem[buf], nullptr);
+-      mNv12Mem[buf] = nullptr;
++      mNv12Mem[buf] = VK_NULL_HANDLE;
+     }
+   }
+ 
+   VkExternalMemoryImageCreateInfo extImgInfo = {};
+   extImgInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+   extImgInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+ 
+   VkExportMemoryAllocateInfo exportInfo = {};
+@@ -835,23 +836,23 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVul
+ 
+   // Clean up any partially-allocated buffers on failure.
+   auto cleanup = mozilla::MakeScopeExit([&] {
+     for (int b = 0; b <= buf; b++) {
+       if (mNv12BaseFd[b] >= 0) {
+         close(mNv12BaseFd[b]);
+         mNv12BaseFd[b] = -1;
+       }
+-      if (mNv12Mem[b]) {
++      if (mNv12Mem[b] != VK_NULL_HANDLE) {
+         mFreeMemory(mDevice, mNv12Mem[b], nullptr);
+-        mNv12Mem[b] = nullptr;
++        mNv12Mem[b] = VK_NULL_HANDLE;
+       }
+-      if (mNv12Image[b]) {
++      if (mNv12Image[b] != VK_NULL_HANDLE) {
+         mDestroyImage(mDevice, mNv12Image[b], nullptr);
+-        mNv12Image[b] = nullptr;
++        mNv12Image[b] = VK_NULL_HANDLE;
+       }
+     }
+   });
+ 
+   VkMemoryRequirements memReqs;
+   bool useDedicated = true;
+ 
+   for (buf = 0; buf < kNumBuffers; buf++) {
+@@ -919,17 +920,17 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVul
+     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
+       if (memReqs.memoryTypeBits & (1 << i)) {
+         memTypeIndex = i;
+         break;
+       }
+     }
+     if (memTypeIndex == UINT32_MAX) {
+       mDestroyImage(mDevice, mNv12Image[buf], nullptr);
+-      mNv12Image[buf] = nullptr;
++      mNv12Image[buf] = VK_NULL_HANDLE;
+       return MediaResult(
+           NS_ERROR_DOM_MEDIA_FATAL_ERR,
+           RESULT_DETAIL("No compatible memory type for NV12 image"));
+     }
+ 
+     VkMemoryDedicatedAllocateInfo dedicatedInfo = {};
+     dedicatedInfo.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+     dedicatedInfo.pNext = &exportInfo;
+@@ -939,27 +940,27 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVul
+     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+     allocInfo.pNext = useDedicated ? (void*)&dedicatedInfo : (void*)&exportInfo;
+     allocInfo.allocationSize = memReqs.size;
+     allocInfo.memoryTypeIndex = memTypeIndex;
+ 
+     res = mAllocateMemory(mDevice, &allocInfo, nullptr, &mNv12Mem[buf]);
+     if (res != VK_SUCCESS) {
+       mDestroyImage(mDevice, mNv12Image[buf], nullptr);
+-      mNv12Image[buf] = nullptr;
++      mNv12Image[buf] = VK_NULL_HANDLE;
+       return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                          RESULT_DETAIL("Failed to alloc NV12 memory"));
+     }
+ 
+     res = mBindImageMemory(mDevice, mNv12Image[buf], mNv12Mem[buf], 0);
+     if (res != VK_SUCCESS) {
+       mFreeMemory(mDevice, mNv12Mem[buf], nullptr);
+       mDestroyImage(mDevice, mNv12Image[buf], nullptr);
+-      mNv12Mem[buf] = nullptr;
+-      mNv12Image[buf] = nullptr;
++      mNv12Mem[buf] = VK_NULL_HANDLE;
++      mNv12Image[buf] = VK_NULL_HANDLE;
+       return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                          RESULT_DETAIL("Failed to bind NV12 memory"));
+     }
+ 
+     mTotalSize = memReqs.size;
+ 
+     VkImageSubresource subresY = {VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT, 0, 0};
+     VkSubresourceLayout layoutY = {};
+@@ -976,18 +977,18 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVul
+     VkMemoryGetFdInfoKHR fdInfo = {};
+     fdInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+     fdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+     fdInfo.memory = mNv12Mem[buf];
+     res = mGetMemoryFdKHR(mDevice, &fdInfo, &mNv12BaseFd[buf]);
+     if (res != VK_SUCCESS) {
+       mFreeMemory(mDevice, mNv12Mem[buf], nullptr);
+       mDestroyImage(mDevice, mNv12Image[buf], nullptr);
+-      mNv12Mem[buf] = nullptr;
+-      mNv12Image[buf] = nullptr;
++      mNv12Mem[buf] = VK_NULL_HANDLE;
++      mNv12Image[buf] = VK_NULL_HANDLE;
+       return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                          RESULT_DETAIL("Failed to export NV12 FD"));
+     }
+ 
+     NS_WARNING(nsPrintfCString("[VULKAN] Created NV12 buffer[%d]: fd=%d", buf,
+                                mNv12BaseFd[buf])
+                    .get());
+   }
+@@ -1047,17 +1048,18 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVul
+     }
+     VkSemaphoreCreateInfo semInfo = {};
+     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+     semInfo.pNext = &semTypeInfo;
+     VkResult res =
+         mCreateSemaphore(mDevice, &semInfo, nullptr, &mCopyDoneSem[buf]);
+     if (res != VK_SUCCESS) {
+       for (int b = 0; b < kNumBuffers; b++) {
+-        if (created[b] && mCopyDoneSem[b] && mDestroySemaphore) {
++        if (created[b] && (mCopyDoneSem[b] != VK_NULL_HANDLE) &&
++            mDestroySemaphore) {
+           mDestroySemaphore(mDevice, mCopyDoneSem[b], nullptr);
+           mCopyDoneSem[b] = VK_NULL_HANDLE;
+         }
+       }
+       return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                          RESULT_DETAIL("Failed to create copyDone semaphore"));
+     }
+     created[buf] = true;
+diff --git a/dom/media/platforms/ffmpeg/FFmpegVulkanVideoDecoder.h b/dom/media/platforms/ffmpeg/FFmpegVulkanVideoDecoder.h
+--- a/dom/media/platforms/ffmpeg/FFmpegVulkanVideoDecoder.h
++++ b/dom/media/platforms/ffmpeg/FFmpegVulkanVideoDecoder.h
+@@ -12,17 +12,17 @@
+ 
+ #ifndef DOM_MEDIA_PLATFORMS_FFMPEG_FFMPEGVULKANVIDEODECODER_H_
+ #define DOM_MEDIA_PLATFORMS_FFMPEG_FFMPEGVULKANVIDEODECODER_H_
+ 
+ struct FFmpegVulkanVideoDecoder {
+   static constexpr int kNumBuffers = 32;
+ 
+   // Device & copy queues (decode queue is owned by FFmpeg)
+-  VkDevice mDevice = nullptr;
++  VkDevice mDevice = VK_NULL_HANDLE;
+   uint32_t mQueueFamilyIndex = 0;
+   uint32_t mCopyQueueCount = 0;
+   bool mCopyQueueIsDedicatedTransfer = false;
+   std::atomic<uint32_t> mCopyQueueRoundRobin{0};
+   nsTArray<VkQueue> mCopyQueue;
+   nsTArray<VkCommandPool> mCopyCmdPool;
+   nsTArray<VkCommandBuffer> mCopyCmdBuf;
+   nsTArray<VkFence> mCopyFence;
+

@@ -1,0 +1,98 @@
+From: Jan Beulich <jbeulich@suse.com>
+Subject: IOMMU/x86: the bus-to-bridge lock needs to be acquired IRQ-safe
+
+The function's use from set_msi_source_id() is guaranteed to be in an
+IRQs-off region. While the invocation of that function could be moved
+ahead in msi_msg_to_remap_entry() (doesn't need to be in the IOMMU-
+intremap-locked region), the call tree from map_domain_pirq() holds an
+IRQ descriptor lock. Hence all use sites of the lock need become IRQ-
+safe ones.
+
+In find_upstream_bridge() do a tiny bit of tidying in adjacent code:
+Change a variable's type to unsigned and merge a redundant assignment
+into another variable's initializer.
+
+This is XSA-467 / CVE-2025-1713.
+
+Fixes: 476bbccc811c ("VT-d: fix MSI source-id of interrupt remapping")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Roger Pau Monné <roger.pau@citrix.com>
+
+--- a/xen/drivers/passthrough/pci.c
++++ b/xen/drivers/passthrough/pci.c
+@@ -354,20 +354,21 @@ static struct pci_dev *alloc_pdev(struct
+     switch ( pdev->type = pdev_type(pseg->nr, bus, devfn) )
+     {
+         unsigned int cap, sec_bus, sub_bus;
++        unsigned long flags;
+ 
+         case DEV_TYPE_PCIe2PCI_BRIDGE:
+         case DEV_TYPE_LEGACY_PCI_BRIDGE:
+             sec_bus = pci_conf_read8(pdev->sbdf, PCI_SECONDARY_BUS);
+             sub_bus = pci_conf_read8(pdev->sbdf, PCI_SUBORDINATE_BUS);
+ 
+-            spin_lock(&pseg->bus2bridge_lock);
++            spin_lock_irqsave(&pseg->bus2bridge_lock, flags);
+             for ( ; sec_bus <= sub_bus; sec_bus++ )
+             {
+                 pseg->bus2bridge[sec_bus].map = 1;
+                 pseg->bus2bridge[sec_bus].bus = bus;
+                 pseg->bus2bridge[sec_bus].devfn = devfn;
+             }
+-            spin_unlock(&pseg->bus2bridge_lock);
++            spin_unlock_irqrestore(&pseg->bus2bridge_lock, flags);
+             break;
+ 
+         case DEV_TYPE_PCIe_ENDPOINT:
+@@ -437,16 +438,17 @@ static void free_pdev(struct pci_seg *ps
+     switch ( pdev->type )
+     {
+         unsigned int sec_bus, sub_bus;
++        unsigned long flags;
+ 
+         case DEV_TYPE_PCIe2PCI_BRIDGE:
+         case DEV_TYPE_LEGACY_PCI_BRIDGE:
+             sec_bus = pci_conf_read8(pdev->sbdf, PCI_SECONDARY_BUS);
+             sub_bus = pci_conf_read8(pdev->sbdf, PCI_SUBORDINATE_BUS);
+ 
+-            spin_lock(&pseg->bus2bridge_lock);
++            spin_lock_irqsave(&pseg->bus2bridge_lock, flags);
+             for ( ; sec_bus <= sub_bus; sec_bus++ )
+                 pseg->bus2bridge[sec_bus] = pseg->bus2bridge[pdev->bus];
+-            spin_unlock(&pseg->bus2bridge_lock);
++            spin_unlock_irqrestore(&pseg->bus2bridge_lock, flags);
+             break;
+ 
+         default:
+@@ -1053,8 +1055,9 @@ enum pdev_type pdev_type(u16 seg, u8 bus
+ int find_upstream_bridge(u16 seg, u8 *bus, u8 *devfn, u8 *secbus)
+ {
+     struct pci_seg *pseg = get_pseg(seg);
+-    int ret = 0;
+-    int cnt = 0;
++    int ret = 1;
++    unsigned long flags;
++    unsigned int cnt = 0;
+ 
+     if ( *bus == 0 )
+         return 0;
+@@ -1065,8 +1068,7 @@ int find_upstream_bridge(u16 seg, u8 *bu
+     if ( !pseg->bus2bridge[*bus].map )
+         return 0;
+ 
+-    ret = 1;
+-    spin_lock(&pseg->bus2bridge_lock);
++    spin_lock_irqsave(&pseg->bus2bridge_lock, flags);
+     while ( pseg->bus2bridge[*bus].map )
+     {
+         *secbus = *bus;
+@@ -1080,7 +1082,7 @@ int find_upstream_bridge(u16 seg, u8 *bu
+     }
+ 
+ out:
+-    spin_unlock(&pseg->bus2bridge_lock);
++    spin_unlock_irqrestore(&pseg->bus2bridge_lock, flags);
+     return ret;
+ }
+ 

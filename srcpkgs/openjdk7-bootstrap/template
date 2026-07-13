@@ -1,0 +1,192 @@
+# Template file for 'openjdk7-bootstrap'
+# Adapted from openjdk7 from Alpine
+pkgname=openjdk7-bootstrap
+_icedtea_ver=2.6.28
+_bootstrap_jdk_home="/usr/lib/jvm/java-1.5-gcj"
+_final_jdk_home="/usr/lib/jvm/java-1.7-openjdk"
+version=7u321b01
+revision=1
+archs="x86_64* i686* aarch64* arm* ppc64*"
+create_wrksrc=yes
+build_style=gnu-configure
+configure_args="
+ --with-parallel-jobs=${XBPS_MAKEJOBS}
+ --disable-dependency-tracking
+ --disable-downloading
+ --disable-system-gtk
+ --disable-arm32-jit
+ --with-jdk-home=${_bootstrap_jdk_home}
+ --prefix=${_final_jdk_home}"
+make_build_target=icedtea-boot
+make_build_args="SHELL=/bin/bash"
+hostmakedepends="cpio tar unzip zip ca-certificates autoconf automake pkg-config
+ libxslt wget gcc6-gcj-jdk-compat which"
+makedepends="nss-devel cups-devel libjpeg-turbo-devel giflib-devel libpng-devel
+ libXt-devel libXtst-devel libXrender-devel libXinerama-devel
+ libXcomposite-devel libmpc-devel libgcj-devel lcms2-devel zlib-devel
+ alsa-lib-devel freetype-devel fontconfig-devel libglib-devel mit-krb5-devel
+ pcsclite-devel lksctp-tools-devel"
+short_desc="OpenJDK 7 via IcedTea (bootstrap)"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="GPL-2.0-only WITH Classpath-exception-2.0"
+homepage="https://icedtea.classpath.org/"
+lib32disabled=yes
+make_check=no # requires full jdk build
+repository=bootstrap
+
+if [ -n "$XBPS_DEBUG_PKGS" ]; then
+	configure_args+=" --enable-native-debuginfo"
+else
+	configure_args+=" --disable-native-debuginfo"
+fi
+
+# using ccache causes ICEs with pregenerated headers
+export CCACHE_DISABLE=1
+
+_rhino_ver=1.7.7.2
+_ant_ver=1.9.16
+
+_drops_ver=$_icedtea_ver
+_drops_url=https://icedtea.classpath.org/download/drops/icedtea7/${_drops_ver}
+
+distfiles="
+ https://icedtea.classpath.org/download/source/icedtea-${_icedtea_ver}.tar.xz
+ ${_drops_url}/openjdk.tar.bz2>openjdk-${_drops_ver}.tar.bz2
+ ${_drops_url}/corba.tar.bz2>corba-${_drops_ver}.tar.bz2
+ ${_drops_url}/jaxp.tar.bz2>jaxp-${_drops_ver}.tar.bz2
+ ${_drops_url}/jaxws.tar.bz2>jaxws-${_drops_ver}.tar.bz2
+ ${_drops_url}/jdk.tar.bz2>jdk-${_drops_ver}.tar.bz2
+ ${_drops_url}/langtools.tar.bz2>langtools-${_drops_ver}.tar.bz2
+ ${_drops_url}/hotspot.tar.bz2>hotspot-${_drops_ver}.tar.bz2
+ https://archive.apache.org/dist/ant/binaries/apache-ant-${_ant_ver}-bin.tar.gz
+ https://github.com/mozilla/rhino/releases/download/Rhino${_rhino_ver//./_}_Release/rhino-${_rhino_ver}.zip"
+
+checksum="
+ 951188e6c0e3599de22f5cb2d95b5da9bf480763b5c8c600dae9fec88cff1735
+ 78e5e89fc510280401e227d980abe30d49ea508c3eec537035481fd21a3b2c32
+ b002240621be404783ed0117fe052552b4ef86adade4f2c8561ccee60ecba845
+ fd93e65a4692593c2100963be2c75d697a32ba51ee2c02c7e7dccc524dfb1788
+ 23b2c621752608f03f8b61753e19b21246dd5850648bcdfa49f2c6b8cd930a2f
+ 0812269b1f8a3884d2c2659d944e20fcfb054d916a5712e405d7a54fab2b5167
+ 24799d5ebebfb1e316f9434db1db5a360ac7c86e5783ce58693536f978a0aa47
+ b6897cd5dd70af201e6ca107b2759217f92ca207643c5128dcca9e0a33b34cfc
+ 7db54556acf6d5654bf3e2882e3ff45220dea689160ac2e5964ac94635843df8
+ b223595717dd360061b35aaa7e952271fcbbd6a763a78927283480227aaa0247"
+
+skip_extraction="
+ openjdk-${_drops_ver}.tar.bz2
+ corba-${_drops_ver}.tar.bz2
+ jaxp-${_drops_ver}.tar.bz2
+ jaxws-${_drops_ver}.tar.bz2
+ jdk-${_drops_ver}.tar.bz2
+ langtools-${_drops_ver}.tar.bz2
+ hotspot-${_drops_ver}.tar.bz2"
+
+shlib_provides="libawt.so libawt_xawt.so libjava.so libjli.so libjvm.so libjawt.so"
+nocross=yes
+
+CFLAGS="-fcommon -fpermissive"
+
+post_extract() {
+	mv icedtea-*/* .
+	# ensure they're cleaned up
+	mv apache-ant-${_ant_ver} apache-ant
+	mv rhino${_rhino_ver} rhino
+
+	# distrib patches are relative to wrksrc
+	for patch in $(cat ${FILESDIR}/dist_patches_${XBPS_TARGET_LIBC}.txt); do
+		case "$patch" in
+			icedtea-*.patch) cp ${FILESDIR}/$patch ${wrksrc};;
+		esac
+	done
+	cp ${FILESDIR}/openjdk.future.patch ${wrksrc}
+}
+
+# we need to set up these vars for both configure and build
+_setup_build_env() {
+	[ -n "$DISTRIBUTION_PATCHES" ] && return 0
+
+	export ALT_PARALLEL_COMPILE_JOBS=$XBPS_MAKEJOBS
+	export HOTSPOT_BUILD_JOBS=$XBPS_MAKEJOBS
+
+	export JAVA_HOME=${_bootstrap_jdk_home}
+	export PATH=$JAVA_HOME/bin:${wrksrc}/apache-ant/bin:$PATH
+
+	# force ELFv2 for ppc64 just in case
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			CFLAGS+=" -DABI_ELFv2"
+			CXXFLAGS+=" -DABI_ELFv2"
+			;;
+	esac
+
+	CFLAGS+=" -D_LARGE_FILE_SOURCE=1 -D_FILE_OFFSET_BITS=64"
+	CXXFLAGS+=" -D_LARGE_FILE_SOURCE=1 -D_FILE_OFFSET_BITS=64"
+
+	# from alpine: disable jvm-breaking optimizations and c++ std
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*)
+			EXTRA_CPP_FLAGS=" "
+			EXTRA_CFLAGS=" "
+			;;
+		*)
+			EXTRA_CPP_FLAGS="-std=gnu++98"
+			EXTRA_CFLAGS="-std=gnu++98"
+			;;
+	esac
+	export EXTRA_CPP_FLAGS="$CXXFLAGS $EXTRA_CPP_FLAGS -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-strict-overflow"
+	export EXTRA_CFLAGS="$CFLAGS $EXTRA_CPP_FLAGS -Wno-error -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-strict-overflow"
+
+	local _patches=
+	for patch in $(cat ${FILESDIR}/dist_patches_${XBPS_TARGET_LIBC}.txt); do
+		case "$patch" in
+			icedtea-*.patch) _patches+=" $patch";;
+		esac
+	done
+
+	export DISTRIBUTION_PATCHES="$_patches"
+	export OPENJDK_PATCHES="openjdk.future.patch"
+}
+
+pre_configure() {
+	./autogen.sh
+}
+
+do_configure() {
+	_setup_build_env
+
+	local _args=
+	local _src_prefix="${XBPS_SRCDISTDIR}/${pkgname}-${version}"
+
+	_args+=" --with-rhino=${wrksrc}/rhino/lib/rhino-${_rhino_ver}.jar"
+	_args+=" --with-openjdk-src-zip=${_src_prefix}/openjdk-${_drops_ver}.tar.bz2"
+	_args+=" --with-hotspot-src-zip=${_src_prefix}/hotspot-${_drops_ver}.tar.bz2"
+	_args+=" --with-corba-src-zip=${_src_prefix}/corba-${_drops_ver}.tar.bz2"
+	_args+=" --with-jaxp-src-zip=${_src_prefix}/jaxp-${_drops_ver}.tar.bz2"
+	_args+=" --with-jaxws-src-zip=${_src_prefix}/jaxws-${_drops_ver}.tar.bz2"
+	_args+=" --with-jdk-src-zip=${_src_prefix}/jdk-${_drops_ver}.tar.bz2"
+	_args+=" --with-langtools-src-zip=${_src_prefix}/langtools-${_drops_ver}.tar.bz2"
+
+	./configure ${configure_args} ${_args}
+}
+
+pre_build() {
+	_setup_build_env
+}
+
+do_build() {
+	make -j1 ${make_build_args} ${make_build_target}
+}
+
+do_install() {
+	mkdir -p ${DESTDIR}/${_final_jdk_home}
+	cp -a ${wrksrc}/openjdk.build-boot/j2sdk-image/* ${DESTDIR}/${_final_jdk_home}
+	cp -a ${wrksrc}/openjdk.build-boot/include ${DESTDIR}/${_final_jdk_home}
+	rm -f ${DESTDIR}/${_final_jdk_home}/src.zip
+}
+
+post_install() {
+	rm -rf ${DESTDIR}/usr/lib/bin
+	vlicense ${DESTDIR}/${_final_jdk_home}/ASSEMBLY_EXCEPTION
+	vlicense ${DESTDIR}/${_final_jdk_home}/LICENSE
+}

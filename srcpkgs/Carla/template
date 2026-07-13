@@ -1,0 +1,138 @@
+# Template file for 'Carla'
+pkgname=Carla
+version=2.5.10
+revision=2
+archs="x86_64* i686* aarch64* arm*"
+build_style=gnu-makefile
+pycompile_dirs="usr/share/carla"
+hostmakedepends="pkg-config python3 python3-PyQt5-devel-tools which
+ qt5-host-tools"
+makedepends="python3-PyQt5 libmagic file-devel libsndfile-devel
+ liblo-devel alsa-lib-devel pulseaudio-devel libX11-devel
+ qt5-devel fluidsynth-devel fftw-devel zlib-devel
+ python3-rdflib"
+depends="python3 python3-PyQt5 python3-PyQt5-svg python3-pyliblo3 which"
+short_desc="Audio plugin host"
+maintainer="Rutpiv <roger_freitas@live.com>"
+license="GPL-2.0-or-later"
+homepage="https://kx.studio/Applications:Carla"
+distfiles="https://github.com/falkTX/Carla/archive/v${version}.tar.gz"
+checksum=ae2835b12081f7271a6b0b25d34b87d36b022c40370028ca4a10f90fcedfa661
+python_version=3
+
+build_options="win linux32"
+desc_option_win="Enable building windows bridge"
+desc_option_linux32="Enable building linux32 bridge"
+
+subpackages="Carla-devel"
+
+CFLAGS="-D_LARGEFILE64_SOURCE"
+CXXFLAGS="-D_LARGEFILE64_SOURCE"
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" Carla-devel"
+else
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64) build_options_default=" win linux32" ;;
+		i686)   build_options_default=" win" ;;
+	esac
+fi
+
+if [ "$build_option_win" ]; then
+	subpackages+=" Carla-bridge-win"
+	hostmakedepends+=" wine-tools"
+	makedepends+=" wine-devel"
+	case $XBPS_TARGET_MACHINE in
+		x86_64) hostmakedepends+=" cross-x86_64-w64-mingw32" ;;
+		i686)   hostmakedepends+=" cross-i686-w64-mingw32" ;;
+		*) broken=yes ;;
+	esac
+fi
+
+if [ "$build_option_linux32" ]; then
+	if [ "$XBPS_TARGET_MACHINE" = x86_64 ]; then
+		makedepends+=" gcc-multilib freetype-devel-32bit libX11-devel-32bit"
+	else
+		broken=yes
+	fi
+fi
+
+case $XBPS_TARGET_MACHINE in
+	x86_64* | i686*);;
+	*) make_build_args+=" NOOPT=true"
+	   make_install_args+=" NOOPT=true";;
+esac
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	makedepends+=" musl-fts-devel"
+	export LDFLAGS="-lfts"
+fi
+
+post_patch() {
+	if [ "$CROSS_BUILD" ]; then
+		vsed -i -e 's#\./carla-lv2-export#/usr/bin/carla-lv2-export#g' \
+			source/plugin/Makefile
+	fi
+}
+
+pre_build() {
+	make ${make_build_args} features
+}
+
+post_build() {
+	if [ "$build_option_win" ]; then
+		case $XBPS_TARGET_MACHINE in
+			x86_64)
+				CXXFLAGS="" CFLAGS="" LDFLAGS="" \
+					make ${makejobs} ${make_build_args} win64 CC="x86_64-w64-mingw32-gcc" CXX="x86_64-w64-mingw32-g++"
+				make ${make_build_args} wine64
+			;;
+			i686)
+				CXXFLAGS="" CFLAGS="" LDFLAGS="" \
+					make ${makejobs} ${make_build_args} win32 CC="i686-w64-mingw32-gcc" CXX="i686-w64-mingw32-g++"
+				make ${make_build_args} wine32
+			;;
+		esac
+	fi
+
+	if [ "$build_option_linux32" ]; then
+		make posix32
+	fi
+}
+
+post_install() {
+	vbin bin/carla-lv2-export
+}
+
+Carla-devel_package() {
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/bin/carla-lv2-export
+		vmove usr/lib/pkgconfig
+		vmove usr/include
+	}
+}
+
+Carla-bridge-win_package() {
+	lib32mode=full
+	lib32symlinks="carla/carla-bridge-win32.exe
+		carla/carla-discovery-win32.exe
+		carla/jackbridge-wine32.dll
+		vst/carla.vst/carla-bridge-win32.exe
+		vst/carla.vst/carla-carla-win32.exe
+		vst/carla.vst/jackbridge-wine32.dll
+		lv2/carla.lv2/carla-bridge-win32.exe
+		lv2/carla.lv2/carla-carla-win32.exe
+		lv2/carla.lv2/jackbridge-wine32.dll"
+
+	depends="Carla>=${version} wine"
+	short_desc+=" - windows bridge"
+	pkg_install() {
+		vmove usr/lib/carla/*.exe
+		vmove usr/lib/carla/*.dll
+		vmove usr/lib/vst/carla.vst/*.exe
+		vmove usr/lib/vst/carla.vst/*.dll
+		vmove usr/lib/lv2/carla.lv2/*.exe
+		vmove usr/lib/lv2/carla.lv2/*.dll
+	}
+}

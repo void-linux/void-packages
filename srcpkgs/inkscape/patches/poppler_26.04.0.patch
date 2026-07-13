@@ -1,0 +1,573 @@
+diff --git a/src/extension/internal/pdfinput/pdf-input.cpp b/src/extension/internal/pdfinput/pdf-input.cpp
+index 7b5e0ecb1db7aaa062fe0c9c2b0ee5476ada1329..45df931f00ea462c70ec78e1236ed4c383172eab 100644
+--- a/src/extension/internal/pdfinput/pdf-input.cpp
++++ b/src/extension/internal/pdfinput/pdf-input.cpp
+@@ -33,6 +33,7 @@
+ #include <poppler/glib/poppler.h>
+ #include <poppler/glib/poppler-document.h>
+ #include <poppler/glib/poppler-page.h>
++#include <poppler/goo/gmem.h>
+ #endif
+ 
+ #include <gdkmm/general.h>
+diff --git a/src/extension/internal/pdfinput/svg-builder.cpp b/src/extension/internal/pdfinput/svg-builder.cpp
+index 6c78247dfbd21e3680dcac1396cfdda470d7995e..8b2e6f3d54341273eac5630ad95bc927d3519b7b 100644
+--- a/src/extension/internal/pdfinput/svg-builder.cpp
++++ b/src/extension/internal/pdfinput/svg-builder.cpp
+@@ -32,6 +32,7 @@
+ #include <poppler/GfxState.h>
+ #include <poppler/Page.h>
+ #include <poppler/Stream.h>
++#include <poppler/goo/gmem.h>
+ 
+ #include "color.h"
+ #include "color/cms-util.h"
+@@ -2093,7 +2094,11 @@ Inkscape::XML::Node *SvgBuilder::_createImage(Stream *str, int width, int height
+         } else {
+             image_stream = new ImageStream(str, width, 1, 1);
+         }
++#if POPPLER_CHECK_VERSION(26, 0, 0)
++        image_stream->rewind();
++#else
+         image_stream->reset();
++#endif
+ 
+         // Convert grayscale values
+         unsigned char *buffer = new unsigned char[width];
+@@ -2119,7 +2124,11 @@ Inkscape::XML::Node *SvgBuilder::_createImage(Stream *str, int width, int height
+         image_stream = new ImageStream(str, width,
+                                        color_map->getNumPixelComps(),
+                                        color_map->getBits());
++#if POPPLER_CHECK_VERSION(26, 0, 0)
++        image_stream->rewind();
++#else
+         image_stream->reset();
++#endif
+ 
+         // Convert RGB values
+         unsigned int *buffer = new unsigned int[width];
+
+         From 7e74f51fc097d725dde29fadff5440cc69658172 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ji=C5=99=C3=AD=20Faist?= <faist@rexcontrols.cz>
+Date: Mon, 2 Feb 2026 17:39:08 +0100
+Subject: [PATCH] Fix warning with poppler 26.x.x
+
+---
+ .../internal/pdfinput/svg-builder.cpp         | 24 +++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/src/extension/internal/pdfinput/svg-builder.cpp b/src/extension/internal/pdfinput/svg-builder.cpp
+index 8b2e6f3d54..94d4342dc4 100644
+--- a/src/extension/internal/pdfinput/svg-builder.cpp
++++ b/src/extension/internal/pdfinput/svg-builder.cpp
+@@ -2095,7 +2095,17 @@ Inkscape::XML::Node *SvgBuilder::_createImage(Stream *str, int width, int height
+             image_stream = new ImageStream(str, width, 1, 1);
+         }
+ #if POPPLER_CHECK_VERSION(26, 0, 0)
+-        image_stream->rewind();
++        if(!image_stream->rewind())
++        {
++            g_warning("ImageStream: Failed to rewind image stream");
++            png_destroy_write_struct(&png_ptr, &info_ptr);
++            if (!_embed_images) {
++                fclose(fp);
++                g_free(file_name);
++            }
++            delete image_stream;
++            return nullptr;
++        }
+ #else
+         image_stream->reset();
+ #endif
+@@ -2125,7 +2135,17 @@ Inkscape::XML::Node *SvgBuilder::_createImage(Stream *str, int width, int height
+                                        color_map->getNumPixelComps(),
+                                        color_map->getBits());
+ #if POPPLER_CHECK_VERSION(26, 0, 0)
+-        image_stream->rewind();
++        if(!image_stream->rewind())
++        {
++            g_warning("ImageStream: Failed to rewind image stream");
++            png_destroy_write_struct(&png_ptr, &info_ptr);
++            if (!_embed_images) {
++                fclose(fp);
++                g_free(file_name);
++            }
++            delete image_stream;
++            return nullptr;
++        }
+ #else
+         image_stream->reset();
+ #endif
+-- 
+GitLab
+
+From cbea002d86f70ddbb525ac7633dfceedb73ff652 Mon Sep 17 00:00:00 2001
+From: KrIr17 <elendil.krir17@gmail.com>
+Date: Thu, 12 Feb 2026 20:58:50 +0100
+Subject: [PATCH] Fix building with Poppler 0.26.02
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adapted from [1] with changes to make it backwards-compatible with older
+versions of Poppler.
+
+[1] github.com/OpenMandrivaAssociation/inkscape/blob/master/inkscape-poppler-26.02.patch#L29
+
+Credits: Bernhard Rosenkränzer <bero@lindev.ch>
+
+Fixes https://gitlab.com/inkscape/inkscape/-/issues/6054
+---
+ .../internal/pdfinput/pdf-parser.cpp          | 36 ++++++++++++++++---
+ .../pdfinput/poppler-transition-api.h         | 10 ++++++
+ .../internal/pdfinput/svg-builder.cpp         | 10 +++---
+ 3 files changed, 47 insertions(+), 9 deletions(-)
+
+diff --git a/src/extension/internal/pdfinput/pdf-parser.cpp b/src/extension/internal/pdfinput/pdf-parser.cpp
+index ba6c448513..c44bef277f 100644
+--- a/src/extension/internal/pdfinput/pdf-parser.cpp
++++ b/src/extension/internal/pdfinput/pdf-parser.cpp
+@@ -653,7 +653,11 @@ void PdfParser::opSetFlat(Object args[], int /*numArgs*/)
+ void PdfParser::opSetLineJoin(Object args[], int /*numArgs*/)
+ {
+   builder->beforeStateChange(state);
++#if POPPLER_CHECK_VERSION(26,2,0)
++  state->setLineJoin((GfxState::LineJoinStyle) args[0].getInt());
++#else
+   state->setLineJoin(args[0].getInt());
++#endif
+   builder->updateStyle(state);
+ }
+ 
+@@ -661,7 +665,11 @@ void PdfParser::opSetLineJoin(Object args[], int /*numArgs*/)
+ void PdfParser::opSetLineCap(Object args[], int /*numArgs*/)
+ {
+   builder->beforeStateChange(state);
++#if POPPLER_CHECK_VERSION(26,2,0)
++  state->setLineCap((GfxState::LineCapStyle) args[0].getInt());
++#else
+   state->setLineCap(args[0].getInt());
++#endif
+   builder->updateStyle(state);
+ }
+ 
+@@ -1565,7 +1573,13 @@ void PdfParser::doShadingPatternFillFallback(GfxShadingPattern *sPat,
+ 
+   // restore graphics state
+   restoreState();
++#if POPPLER_CHECK_VERSION(26, 2, 0)
++  state->clearPath();
++  GfxPath *currPath = const_cast<GfxPath*>(state->getPath());
++  currPath->append(savedPath);
++#else
+   state->setPath(savedPath);
++#endif
+ }
+ 
+ // TODO not good that numArgs is ignored but args[] is used:
+@@ -1626,7 +1640,13 @@ void PdfParser::opShFill(Object args[], int /*numArgs*/)
+   // restore graphics state
+   if (savedState) {
+     restoreState();
++#if POPPLER_CHECK_VERSION(26, 2, 0)
++    state->clearPath();
++    GfxPath *currPath = const_cast<GfxPath*>(state->getPath());
++    currPath->append(savedPath);
++#else
+     state->setPath(savedPath);
++#endif
+   }
+ }
+ 
+@@ -2213,7 +2233,7 @@ void PdfParser::opShowSpaceText(Object args[], int /*numArgs*/)
+ {
+   Array *a = nullptr;
+   Object obj;
+-  int wMode = 0; // Writing mode (horizontal/vertical).
++  _POPPLER_WMODE wMode = _POPPLER_WMODE_HORIZONTAL; // Writing mode (horizontal/vertical).
+ 
+   if (!state->getFont()) {
+     error(errSyntaxError, getPos(), "No font in show/space");
+@@ -2227,7 +2247,7 @@ void PdfParser::opShowSpaceText(Object args[], int /*numArgs*/)
+     if (obj.isNum()) {
+       // this uses the absolute value of the font size to match
+       // Acrobat's behavior
+-      if (wMode) {
++      if (wMode != _POPPLER_WMODE_HORIZONTAL) {
+ 	state->textShift(0, -obj.getNum() * 0.001 *
+ 			    fabs(state->getFontSize()));
+       } else {
+@@ -2254,7 +2274,7 @@ void PdfParser::doShowText(const GooString *s) {
+ void PdfParser::doShowText(GooString *s) {
+ #endif
+     auto font = state->getFont();
+-    int wMode = font->getWMode(); // Vertical/Horizontal/Invalid
++    _POPPLER_WMODE wMode = font->getWMode(); // Vertical/Horizontal/Invalid
+ 
+     builder->beginString(state, get_goostring_length(*s));
+ 
+@@ -2289,7 +2309,7 @@ void PdfParser::doShowText(GooString *s) {
+         auto ax = dx;
+         auto ay = dy;
+ 
+-        if (wMode != 0) {
++        if (wMode != _POPPLER_WMODE_HORIZONTAL) {
+             // Vertical text (or invalid value).
+             dy += state->getCharSpace();
+             if (n == 1 && *p == ' ') {
+@@ -2964,7 +2984,11 @@ Stream *PdfParser::buildImageStream() {
+   // make stream
+ #if defined(POPPLER_NEW_OBJECT_API)
+   str = new EmbedStream(parser->getStream(), dict.copy(), gFalse, 0);
++#if POPPLER_CHECK_VERSION(26, 2, 0)
++  str = str->addFilters(std::unique_ptr<Stream>(str), dict.getDict()).release();
++#else
+   str = str->addFilters(dict.getDict());
++#endif
+ #else
+   str = new EmbedStream(parser->getStream(), &dict, gFalse, 0);
+   str = str->addFilters(&dict);
+@@ -3138,7 +3162,11 @@ void PdfParser::loadOptionalContentLayers(Dict *resources)
+             // Normally we'd use poppler optContentIsVisible, but these dict
+             // objects don't retain their references so can't be used directly.
+             for (auto &[ref, ocg] : ocgs->getOCGs()) {
++#if POPPLER_CHECK_VERSION(26, 2, 0)
++                if (ocg->getName()->toStr() == label)
++#else
+                 if (ocg->getName()->cmp(label) == 0)
++#endif
+                     visible = ocg->getState() == OptionalContentGroup::On;
+             }
+             builder->addOptionalGroup(dict->getKey(j), label, visible);
+diff --git a/src/extension/internal/pdfinput/poppler-transition-api.h b/src/extension/internal/pdfinput/poppler-transition-api.h
+index 866b630bb6..65788128b7 100644
+--- a/src/extension/internal/pdfinput/poppler-transition-api.h
++++ b/src/extension/internal/pdfinput/poppler-transition-api.h
+@@ -15,6 +15,16 @@
+ #include <glib/poppler-features.h>
+ #include <poppler/UTF.h>
+ 
++#if POPPLER_CHECK_VERSION(26, 2, 0)
++#define _POPPLER_WMODE GfxFont::WritingMode
++#define _POPPLER_WMODE_HORIZONTAL GfxFont::WritingMode::Horizontal
++#define _POPPLER_WMODE_VERTICAL GfxFont::WritingMode::Vertical
++#else
++#define _POPPLER_WMODE int
++#define _POPPLER_WMODE_HORIZONTAL 0
++#define _POPPLER_WMODE_VERTICAL 1
++#endif
++
+ #if POPPLER_CHECK_VERSION(25, 7, 0)
+ #define _POPPLER_TEXT_SHIFT_WITH_USER_COORDS(dx, dy) textShiftWithUserCoords(dx, dy)
+ #define _POPPLER_FOFI_TRUETYPE_MAKE(font_data, faceIndex) FoFiTrueType::make(std::span(font_data), faceIndex)
+diff --git a/src/extension/internal/pdfinput/svg-builder.cpp b/src/extension/internal/pdfinput/svg-builder.cpp
+index 94d4342dc4..d854ed8a2e 100644
+--- a/src/extension/internal/pdfinput/svg-builder.cpp
++++ b/src/extension/internal/pdfinput/svg-builder.cpp
+@@ -1386,7 +1386,7 @@ void SvgBuilder::updateFont(GfxState *state, std::shared_ptr<CairoFont> cairo_fo
+     sp_repr_css_set_property(_css_font, "font-variant", "normal");
+ 
+     // Writing mode
+-    if ( font->getWMode() == 0 ) {
++    if ( font->getWMode() == _POPPLER_WMODE_HORIZONTAL ) {
+         sp_repr_css_set_property(_css_font, "writing-mode", "lr");
+     } else {
+         sp_repr_css_set_property(_css_font, "writing-mode", "tb");
+@@ -1398,7 +1398,7 @@ void SvgBuilder::updateFont(GfxState *state, std::shared_ptr<CairoFont> cairo_fo
+  */
+ void SvgBuilder::updateTextShift(GfxState *state, double shift) {
+     double shift_value = -shift * 0.001 * fabs(state->getFontSize());
+-    if (state->getFont()->getWMode()) {
++    if (state->getFont()->getWMode() != _POPPLER_WMODE_HORIZONTAL) {
+         _text_position[1] += shift_value;
+     } else {
+         _text_position[0] += shift_value;
+@@ -1452,7 +1452,7 @@ Inkscape::XML::Node* SvgBuilder::_flushTextText(GfxState *state, double text_sca
+ 
+     // Text direction is a property of the <text> element.
+     auto font = state->getFont();
+-    if (font->getWMode() == 1) {
++    if (font->getWMode() == _POPPLER_WMODE_VERTICAL) {
+         // Only set if vertical.
+         auto css_text = sp_repr_css_attr_new();
+         sp_repr_css_set_property(css_text, "writing-mode", "tb");
+@@ -1546,8 +1546,8 @@ Inkscape::XML::Node* SvgBuilder::_flushTextText(GfxState *state, double text_sca
+         bool output_tspan =
+             next_it == _glyphs.end() ||
+             next_it->style_changed   ||
+-            (writing_mode == 0 && std::abs(glyph.text_position[1] - next_it->text_position[1]) > 0.1) ||
+-            (writing_mode == 1 && std::abs(glyph.text_position[0] - next_it->text_position[0]) > 0.1);
++            (writing_mode == _POPPLER_WMODE_HORIZONTAL && std::abs(glyph.text_position[1] - next_it->text_position[1]) > 0.1) ||
++            (writing_mode == _POPPLER_WMODE_VERTICAL   && std::abs(glyph.text_position[0] - next_it->text_position[0]) > 0.1);
+ 
+         if (output_tspan) {
+ 
+-- 
+GitLab
+
+From 244771b2dc3e565cb02ad3d46812d0c4add3b7c0 Mon Sep 17 00:00:00 2001
+From: Matthias Kilian <kili@outback.escape.de>
+Date: Wed, 11 Mar 2026 23:17:00 +0100
+Subject: [PATCH] Fix build with poppler-26.03.0.
+
+(cherry picked from commit 754a866b878623554ade26d53496eeb8687c4685)
+---
+ src/extension/internal/pdfinput/pdf-parser.cpp    | 4 ++++
+ src/extension/internal/pdfinput/poppler-utils.cpp | 4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/src/extension/internal/pdfinput/pdf-parser.cpp b/src/extension/internal/pdfinput/pdf-parser.cpp
+index c44bef277f..9f9fcea40a 100644
+--- a/src/extension/internal/pdfinput/pdf-parser.cpp
++++ b/src/extension/internal/pdfinput/pdf-parser.cpp
+@@ -2951,7 +2951,11 @@ Stream *PdfParser::buildImageStream() {
+ 
+   // build dictionary
+ #if defined(POPPLER_NEW_OBJECT_API)
++#if POPPLER_CHECK_VERSION(26, 3, 0)
++  dict = Object(std::make_unique<Dict>(xref));
++#else
+   dict = Object(new Dict(xref));
++#endif
+ #else
+   dict.initDict(xref);
+ #endif
+diff --git a/src/extension/internal/pdfinput/poppler-utils.cpp b/src/extension/internal/pdfinput/poppler-utils.cpp
+index fac42152eb..b85963e65e 100644
+--- a/src/extension/internal/pdfinput/poppler-utils.cpp
++++ b/src/extension/internal/pdfinput/poppler-utils.cpp
+@@ -88,7 +88,11 @@ InkFontDict::InkFontDict(XRef *xref, Ref *fontDictRef, Dict *fontDict)
+                 r.num = hashFontObject(&obj2);
+             }
+             // Newer poppler will require some reworking as it gives a shared ptr.
++#if POPPLER_CHECK_VERSION(26,3,0)
++            fonts[i] = GfxFont::makeFont(xref, fontDict->getKey(i), r, *obj2.getDict());
++#else
+             fonts[i] = GfxFont::makeFont(xref, fontDict->getKey(i), r, obj2.getDict());
++#endif
+             if (fonts[i] && !fonts[i]->isOk()) {
+                 fonts[i] = nullptr;
+             }
+-- 
+GitLab
+
+From f7a93dd8e28a08bb039d929df8415a838ba5642e Mon Sep 17 00:00:00 2001
+From: KrIr17 <elendil.krir17@gmail.com>
+Date: Thu, 9 Apr 2026 12:45:19 +0200
+Subject: [PATCH] Fix building with Poppler 26.04.0
+
+Poppler's getString() et al now return &std::string and not
+*GooString. So functions that expected *Goostring have been
+modified to accept std::string, with wrappers for backwards
+compatibility
+
+Fixes https://gitlab.com/inkscape/inkscape/-/work_items/6090
+
+(cherry-picked from 9fcd1ec79652e8092b4838ddafd1802f52c0642b)
+---
+ .../internal/pdfinput/pdf-parser.cpp          | 21 +++++---
+ src/extension/internal/pdfinput/pdf-parser.h  |  5 +-
+ .../pdfinput/poppler-transition-api.h         |  8 +--
+ .../internal/pdfinput/poppler-utils.cpp       | 50 +++++++++++++++----
+ .../internal/pdfinput/poppler-utils.h         |  2 +
+ 5 files changed, 62 insertions(+), 24 deletions(-)
+
+diff --git a/src/extension/internal/pdfinput/pdf-parser.cpp b/src/extension/internal/pdfinput/pdf-parser.cpp
+index 9f9fcea40a..d24dc05dab 100644
+--- a/src/extension/internal/pdfinput/pdf-parser.cpp
++++ b/src/extension/internal/pdfinput/pdf-parser.cpp
+@@ -2268,15 +2268,11 @@ void PdfParser::opShowSpaceText(Object args[], int /*numArgs*/)
+  * This adds a string from a PDF file that is contained in one command ('Tj', ''', '"')
+  * or is one string in ShowSpacetext ('TJ').
+  */
+-#if POPPLER_CHECK_VERSION(0,64,0)
+-void PdfParser::doShowText(const GooString *s) {
+-#else
+-void PdfParser::doShowText(GooString *s) {
+-#endif
++void PdfParser::doShowText(const std::string &s) {
+     auto font = state->getFont();
+     _POPPLER_WMODE wMode = font->getWMode(); // Vertical/Horizontal/Invalid
+ 
+-    builder->beginString(state, get_goostring_length(*s));
++    builder->beginString(state, s.size());
+ 
+     // handle a Type 3 char
+     if (font->getType() == fontType3) {
+@@ -2286,8 +2282,8 @@ void PdfParser::doShowText(GooString *s) {
+     double riseX, riseY;
+     state->textTransformDelta(0, state->getRise(), &riseX, &riseY);
+ 
+-    auto p = s->getCString(); // char* or const char*
+-    int len = get_goostring_length(*s);
++    auto p = s.c_str(); // char* or const char*
++    int len = s.size();
+ 
+     while (len > 0) {
+ 
+@@ -2344,6 +2340,15 @@ void PdfParser::doShowText(GooString *s) {
+     builder->endString(state);
+ }
+ 
++#if POPPLER_CHECK_VERSION(0,64,0)
++void PdfParser::doShowText(const GooString *s) {
++#else
++void PdfParser::doShowText(GooString *s) {
++#endif
++    const std::string str = s->toStr();
++    doShowText(str);
++}
++
+ 
+ //------------------------------------------------------------------------
+ // XObject operators
+diff --git a/src/extension/internal/pdfinput/pdf-parser.h b/src/extension/internal/pdfinput/pdf-parser.h
+index 2c3a57bf50..c136ebf1ef 100644
+--- a/src/extension/internal/pdfinput/pdf-parser.h
++++ b/src/extension/internal/pdfinput/pdf-parser.h
+@@ -283,10 +283,11 @@ private:
+     void opMoveShowText(Object args[], int numArgs);
+     void opMoveSetShowText(Object args[], int numArgs);
+     void opShowSpaceText(Object args[], int numArgs);
++    void doShowText(const std::string &s);
+ #if POPPLER_CHECK_VERSION(0,64,0)
+-  void doShowText(const GooString *s);
++    void doShowText(const GooString *s);
+ #else
+-  void doShowText(GooString *s);
++    void doShowText(GooString *s);
+ #endif
+   
+ 
+diff --git a/src/extension/internal/pdfinput/poppler-transition-api.h b/src/extension/internal/pdfinput/poppler-transition-api.h
+index 65788128b7..7f299bd05a 100644
+--- a/src/extension/internal/pdfinput/poppler-transition-api.h
++++ b/src/extension/internal/pdfinput/poppler-transition-api.h
+@@ -72,11 +72,11 @@
+ #endif
+ 
+ #if POPPLER_CHECK_VERSION(24, 5, 0)
+-#define _POPPLER_HAS_UNICODE_BOM(value) (hasUnicodeByteOrderMark(value->toStr()))
+-#define _POPPLER_HAS_UNICODE_BOMLE(value) (hasUnicodeByteOrderMarkLE(value->toStr()))
++#define _POPPLER_HAS_UNICODE_BOM(value) (hasUnicodeByteOrderMark(value))
++#define _POPPLER_HAS_UNICODE_BOMLE(value) (hasUnicodeByteOrderMarkLE(value))
+ #else
+-#define _POPPLER_HAS_UNICODE_BOM(value) (value->hasUnicodeMarker())
+-#define _POPPLER_HAS_UNICODE_BOMLE(value) (value->hasUnicodeMarkerLE())
++#define _POPPLER_HAS_UNICODE_BOM(value) (GooString(value).hasUnicodeMarker())
++#define _POPPLER_HAS_UNICODE_BOMLE(value) (GooString(value).hasUnicodeMarkerLE())
+ #endif
+ 
+ #if POPPLER_CHECK_VERSION(24, 3, 0)
+diff --git a/src/extension/internal/pdfinput/poppler-utils.cpp b/src/extension/internal/pdfinput/poppler-utils.cpp
+index b85963e65e..a65a5780ee 100644
+--- a/src/extension/internal/pdfinput/poppler-utils.cpp
++++ b/src/extension/internal/pdfinput/poppler-utils.cpp
+@@ -149,7 +149,6 @@ int InkFontDict::hashFontObject(Object *obj)
+ 
+ void InkFontDict::hashFontObject1(const Object *obj, FNVHash *h)
+ {
+-    const GooString *s;
+     const char *p;
+     double r;
+     int n, i;
+@@ -169,11 +168,16 @@ void InkFontDict::hashFontObject1(const Object *obj, FNVHash *h)
+             r = obj->getReal();
+             h->hash((char *)&r, sizeof(double));
+             break;
+-        case objString:
++        case objString: {
+             h->hash('s');
+-            s = obj->getString();
++#if POPPLER_CHECK_VERSION(26, 4, 0)
++            const auto &s = obj->getString();
++            h->hash(s.c_str(), s.size());
++#else
++            const GooString* s = obj->getString();
+             h->hash(s->c_str(), get_goostring_length(*s));
+-            break;
++#endif
++            } break;
+         case objName:
+             h->hash('n');
+             p = obj->getName();
+@@ -587,23 +591,45 @@ std::string getDictString(Dict *dict, const char *key)
+     if (!obj.isString()) {
+         return "";
+     }
++    std::cout << obj.getString() << std::endl;
+     return getString(obj.getString());
+ }
+ 
++std::string getString(const std::unique_ptr<GooString> &value)
++{
++    return getString(value.get());
++}
++
++std::string getString(const GooString *value)
++{
++    if (value) {
++        return getString(value->toStr());
++    }
++    return "";
++}
++
+ /**
+  * Convert PDF strings, which can be formatted as UTF8, UTF16BE or UTF16LE into
+  * a predictable UTF8 string consistant with svg requirements.
+  */
+-std::string getString(const GooString *value)
++std::string getString(const std::string &value)
+ {
++    char *str = nullptr;
++
+     if (_POPPLER_HAS_UNICODE_BOM(value)) {
+-        return g_convert(value->getCString () + 2, get_goostring_length(*value) - 2,
+-                         "UTF-8", "UTF-16BE", NULL, NULL, NULL);
++        str = g_convert(value.c_str() + 2, value.size() - 2,
++                        "UTF-8", "UTF-16BE", NULL, NULL, NULL);
+     } else if (_POPPLER_HAS_UNICODE_BOMLE(value)) {
+-        return g_convert(value->getCString () + 2, get_goostring_length(*value) - 2,
+-                         "UTF-8", "UTF-16LE", NULL, NULL, NULL);
++        str = g_convert(value.c_str() + 2, value.size() - 2,
++                        "UTF-8", "UTF-16LE", NULL, NULL, NULL);
++    }
++    if (str) {
++        std::string copy = str;
++        g_free(str);
++        return copy;
+     }
+-    return value->toStr();
++    g_warning("Couldn't parse text in PDF from UTF16.");
++    return value;
+ }
+ 
+ void pdf_debug_array(const Array *array, int depth, XRef *xref)
+@@ -660,7 +686,11 @@ void pdf_debug_object(const Object *obj, int depth, XRef *xref)
+     } else if (obj->isArray()) {
+         pdf_debug_array(obj->getArray(), depth, xref);
+     } else if (obj->isString()) {
++#if POPPLER_CHECK_VERSION(26, 4, 0)
++        std::cout << " STR '" << obj->getString().c_str() << "'";
++#else
+         std::cout << " STR '" << obj->getString()->getCString() << "'";
++#endif
+     } else if (obj->isName()) {
+         std::cout << " NAME '" << obj->getName() << "'";
+     } else if (obj->isBool()) {
+diff --git a/src/extension/internal/pdfinput/poppler-utils.h b/src/extension/internal/pdfinput/poppler-utils.h
+index c19f30d0bc..13123d79a9 100644
+--- a/src/extension/internal/pdfinput/poppler-utils.h
++++ b/src/extension/internal/pdfinput/poppler-utils.h
+@@ -83,6 +83,8 @@ typedef std::shared_ptr<std::map<FontPtr, FontData>> FontList;
+ FontList getPdfFonts(std::shared_ptr<PDFDoc> pdf_doc);
+ std::string getNameWithoutSubsetTag(std::string name);
+ std::string getDictString(Dict *dict, const char *key);
++std::string getString(const std::string &value);
++std::string getString(const std::unique_ptr<GooString> &value);
+ std::string getString(const GooString *value);
+ std::string validateString(std::string const &in);
+ 
+-- 
+GitLab
+
