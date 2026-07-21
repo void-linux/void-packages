@@ -1,0 +1,82 @@
+# Template file for 'vscode'
+pkgname=vscode
+version=1.100.3
+revision=1
+_electronver=35.7.2
+_npmver=10.8.3
+hostmakedepends="pkg-config python3 python3-setuptools nodejs tar git ripgrep"
+makedepends="libxkbfile-devel libsecret-devel libxml2-devel mit-krb5-devel nodejs-devel ncurses-devel electron${_electronver%%.*}-devel"
+depends="libXtst ncurses nss xdg-utils ripgrep electron${_electronver%%.*}"
+short_desc="Microsoft Code for Linux"
+maintainer="Alex Lohr <alexthkloss@web.de>"
+license="MIT"
+homepage="https://code.visualstudio.com/"
+distfiles="https://github.com/microsoft/vscode/archive/refs/tags/${version}.tar.gz"
+checksum=41aea581620e48f7ba33e29ab6a9b43d25632ce11d06480cdfe0e8f904fe3637
+nocross=yes # x64 build does not cut it, it contains native code
+
+if [ "$XBPS_TARGET_WORDSIZE" = "32" ]; then
+	broken="FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory"
+fi
+
+# avoid downloading electron binaries for target platform; we use
+# the system electron, and downloading does not work for all archs
+export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+
+do_configure() {
+	# Use npm to install dependencies
+	echo "" > build/npm/preinstall.js
+
+	# redirect telemetry urls to 0.0.0.0
+	# src: vscodium/undo_telemetry.sh
+	_TELEMETRY_URLS="(dc\.services\.visualstudio\.com)|(vortex\.data\.microsoft\.com)|(mobile\.events\.data\.microsoft\.com)"
+	_REPLACEMENT="s/$_TELEMETRY_URLS/0\.0\.0\.0/g"
+	grep -rl --exclude-dir=.git -E $_TELEMETRY_URLS | xargs sed -i -E $_REPLACEMENT
+
+	# set used electron version
+	vsed -e "s/^target=\".*\"/target=\"${_electronver}\"/" -i .npmrc
+}
+
+do_build() {
+	# Update to a more recent npm version to fix some issues
+	npm install -g npm@${_npmver}
+
+	# The default memory limit may be too low for current versions of node
+	# to successfully build vscode.  This sets it to 8GB, but
+	# change this number if it still doesn't work for your system.
+	_mem_limit="--max_old_space_size=16384"
+
+	export NODE_OPTIONS="${_mem_limit}"
+
+	# ignore nodejs version checks, we can not pass it as an argument to
+	# npm install because it doesn't inherit properly
+	echo "ignore-engines=true" >> .npmrc
+
+	npm ci
+
+	# do not checksum electron, since we're using our own build
+	vsed -e "s/validateChecksum: true/validateChecksum: false/g" -i build/lib/electron.*s
+
+	export CFLAGS="$CFLAGS -I/usr/include/node"
+	node_modules/.bin/gulp --max_old_space_size=16384 --optimize-for-size --series vscode-linux-x64-min
+}
+
+do_install() {
+	vmkdir usr/lib/code-oss
+	vcopy ../VSCode-linux-x64/resources usr/lib/code-oss
+	vcopy ../VSCode-linux-x64/bin usr/lib/code-oss
+	# Replace statically included binary with system copy
+	ln -sf /usr/bin/rg ${DESTDIR}/usr/lib/code-oss/resources/app/node_modules/@vscode/ripgrep/bin/rg
+	vmkdir usr/bin
+	ln -sf /usr/lib/code-oss/bin/code-oss ${DESTDIR}/usr/bin/
+	vmkdir usr/share/applications
+	ln -sf /usr/lib/code-oss/resources/app/resources/linux/code.desktop ${DESTDIR}/usr/share/applications/code-oss.desktop
+	vmkdir usr/share/pixmaps
+	ln -sf /usr/lib/code-oss/resources/app/resources/linux/code.png ${DESTDIR}/usr/share/pixmaps/code-oss.png
+	vsed \
+	-e "s|ELECTRON=.*|ELECTRON=/usr/lib/electron${_electronver%%.*}/electron|g" \
+	-e 's|"$CLI"|"$CLI" --app="${VSCODE_PATH}/resources/app"|g' \
+	-i "$DESTDIR"/usr/lib/code-oss/bin/code-oss
+	vlicense LICENSE.txt
+	chmod -R o-w ${DESTDIR}/usr/lib/code-oss/resources/app/
+}

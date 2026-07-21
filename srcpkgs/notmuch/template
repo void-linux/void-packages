@@ -1,0 +1,132 @@
+# Template file for 'notmuch'
+pkgname=notmuch
+version=0.39
+revision=4
+build_style=configure
+build_helper=python3
+configure_args="--prefix=/usr
+ --emacslispdir=/usr/share/emacs/site-lisp/notmuch
+ --emacsetcdir=/usr/share/emacs/site-lisp/notmuch"
+hostmakedepends="perl pkg-config python3-Sphinx python3-devel texinfo
+ desktop-file-utils emacs gnupg python3-setuptools python3-cffi
+ python3-build python3-installer doxygen ruby-devel"
+makedepends="bash-completion gmime3-devel talloc-devel xapian-core-devel
+ python3-cffi ruby-devel"
+depends="gmime3>=3.2.7"
+checkdepends="python3-pytest mdocml dtach gdb tar xz xapian-core
+ openssl"
+short_desc="Thread-based email index, search, and tagging"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="GPL-3.0-or-later"
+homepage="https://notmuchmail.org"
+distfiles="https://notmuchmail.org/releases/notmuch-${version}.tar.xz
+ https://notmuchmail.org/releases/test-databases/database-v1.tar.xz"
+checksum="b88bb02a76c46bad8d313fd2bb4f8e39298b51f66fcbeb304d9f80c3eef704e3
+ 4299e051b10e1fa7b33ea2862790a09ebfe96859681804e5251e130f800e69d2"
+skip_extraction="database-v1.tar.xz"
+replaces="notmuch-emacs>=0"
+
+make_check="ci-skip" # dtach based tests fail in CI due to no pty
+
+subpackages="libnotmuch libnotmuch-devel notmuch-mutt
+ notmuch-python3 python3-notmuch2 notmuch-ruby"
+
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		_TARGET_PLATFORM="$(ruby -r \
+			$(find ${XBPS_CROSS_BASE}/usr/lib/ruby -iname rbconfig.rb) \
+			-e 'puts RbConfig::CONFIG["arch"]' 2>/dev/null)"
+		VOID_TARGET_CFLAGS="$CFLAGS"
+		export _TARGET_PLATFORM XBPS_CROSS_BASE VOID_TARGET_CFLAGS \
+		       XBPS_TARGET_WORDSIZE
+	fi
+	make ${makejobs}
+	make -C contrib/notmuch-mutt
+	cd ${wrksrc}/bindings/python-cffi
+	python -m build --wheel --skip-dependency-check --no-isolation
+	cd ${wrksrc}/contrib/python-legacy
+	python -m build --wheel --skip-dependency-check --no-isolation
+}
+
+do_check() {
+	vsrccopy database-v1.tar.xz test/test-databases
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		# Seem like gpgconf's problem,
+		# mutt on musl also have problems with smime
+		NOTMUCH_SKIP_TESTS="smime.3 smime.5"
+		# bad regex test fails on musl
+		NOTMUCH_SKIP_TESTS+=" as-text.10"
+	fi
+	if [ $(id -u) = 0 ]; then
+		NOTMUCH_SKIP_TESTS+=" new.36 new.39 tagging.25"
+	fi
+	# fails due to our gmime configure patches
+	NOTMUCH_SKIP_TESTS+=" smime.4"
+	export NOTMUCH_SKIP_TESTS
+	make test
+}
+
+do_install() {
+	make DESTDIR=${DESTDIR} install
+	rm -f ${DESTDIR}/usr/share/applications/mimeinfo.cache
+}
+
+libnotmuch_package() {
+	short_desc+=" - runtime library"
+	pkg_install() {
+		vmove usr/lib/*.so.*
+	}
+}
+
+libnotmuch-devel_package() {
+	short_desc+=" - development files"
+	depends="libnotmuch-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/*.so
+		vmove usr/share/man/man3
+	}
+}
+
+notmuch-mutt_package() {
+	short_desc+=" - Mutt interface"
+	depends="notmuch mutt perl-Mail-Box perl-MailTools
+	 perl-String-ShellQuote perl-Term-ReadLine-Gnu perl-File-Which"
+	pkg_install() {
+		vbin contrib/notmuch-mutt/notmuch-mutt
+		vman contrib/notmuch-mutt/notmuch-mutt.1
+	}
+}
+
+notmuch-python3_package() {
+	depends="libnotmuch python3"
+	short_desc+=" - Python 3 bindings (legacy)"
+	pkg_install() {
+		cd ${wrksrc}/contrib/python-legacy
+		python -m installer --destdir="$PKGDESTDIR" dist/*.whl
+	}
+}
+
+python3-notmuch2_package() {
+	depends="libnotmuch python3 python3-cffi"
+	short_desc+=" - Python 3 cffi bindings"
+	pkg_install() {
+		cd ${wrksrc}/bindings/python-cffi
+		python -m installer --destdir="$PKGDESTDIR" dist/*.whl
+	}
+}
+
+notmuch-ruby_package() {
+	short_desc+=" - Ruby bindings"
+	pkg_install() {
+		if [ "$CROSS_BUILD" ]; then
+			_TARGET_PLATFORM="$(ruby -r \
+				$(find ${XBPS_CROSS_BASE}/usr/lib/ruby -iname rbconfig.rb) \
+				-e 'puts RbConfig::CONFIG["arch"]' 2>/dev/null)"
+			VOID_TARGET_CFLAGS="$CFLAGS"
+			export _TARGET_PLATFORM XBPS_CROSS_BASE VOID_TARGET_CFLAGS \
+			       XBPS_TARGET_WORDSIZE
+		fi
+		make DESTDIR=${PKGDESTDIR} -C bindings/ruby install
+	}
+}

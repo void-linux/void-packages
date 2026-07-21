@@ -1,0 +1,1 @@
+kdsoap-ws-discovery-client

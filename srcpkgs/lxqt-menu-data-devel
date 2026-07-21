@@ -1,0 +1,1 @@
+lxqt-menu-data

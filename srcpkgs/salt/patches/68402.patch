@@ -1,0 +1,167 @@
+From 0e5312535388d603a80c2c54dc9900f01e9a37d8 Mon Sep 17 00:00:00 2001
+From: Toyam Cox <Vaelatern@voidlinux.org>
+Date: Wed, 5 Mar 2025 22:42:29 -0500
+Subject: [PATCH 1/2] Remove uses of spwd
+
+Module deprecated and no longer shipped with Python 3.13.
+
+Co-authored-by: Toyam Cox <Vaelatern@voidlinux.org>
+Co-authored-by: Georg Pfuetzenreuter <mail@georg-pfuetzenreuter.net>
+Signed-off-by: Georg Pfuetzenreuter <mail@georg-pfuetzenreuter.net>
+---
+ changelog/67119.fixed.md     |  1 +
+ salt/modules/linux_shadow.py | 30 ++++++++++++++++++++----------
+ 2 files changed, 21 insertions(+), 10 deletions(-)
+ create mode 100644 changelog/67119.fixed.md
+
+diff --git a/changelog/67119.fixed.md b/changelog/67119.fixed.md
+new file mode 100644
+index 000000000000..34eca2d3b2a7
+--- /dev/null
++++ b/changelog/67119.fixed.md
+@@ -0,0 +1 @@
++Remove usage of spwd
+diff --git a/salt/modules/linux_shadow.py b/salt/modules/linux_shadow.py
+index 09fe73fdb548..09cba9f3b296 100644
+--- a/salt/modules/linux_shadow.py
++++ b/salt/modules/linux_shadow.py
+@@ -8,6 +8,7 @@
+     <module-provider-override>`.
+ """
+ 
++import collections
+ import datetime
+ import functools
+ import logging
+@@ -17,12 +18,6 @@
+ import salt.utils.files
+ from salt.exceptions import CommandExecutionError
+ 
+-try:
+-    import spwd
+-except ImportError:
+-    pass
+-
+-
+ try:
+     import salt.utils.pycrypto
+ 
+@@ -34,6 +29,21 @@
+ 
+ log = logging.getLogger(__name__)
+ 
++struct_spwd = collections.namedtuple(
++    "struct_spwd",
++    [
++        "sp_namp",
++        "sp_pwdp",
++        "sp_lstchg",
++        "sp_min",
++        "sp_max",
++        "sp_warn",
++        "sp_inact",
++        "sp_expire",
++        "sp_flag",
++    ],
++)
++
+ 
+ def __virtual__():
+     return __virtualname__ if __grains__.get("kernel", "") == "Linux" else False
+@@ -71,7 +81,7 @@ def info(name, root=None):
+     if root is not None:
+         getspnam = functools.partial(_getspnam, root=root)
+     else:
+-        getspnam = functools.partial(spwd.getspnam)
++        getspnam = functools.partial(_getspnam, root="/")
+ 
+     try:
+         data = getspnam(name)
+@@ -509,7 +519,7 @@ def list_users(root=None):
+     if root is not None:
+         getspall = functools.partial(_getspall, root=root)
+     else:
+-        getspall = functools.partial(spwd.getspall)
++        getspall = functools.partial(_getspall, root="/")
+ 
+     return sorted(
+         user.sp_namp if hasattr(user, "sp_namp") else user.sp_nam for user in getspall()
+@@ -529,7 +539,7 @@ def _getspnam(name, root=None):
+                 # Generate a getspnam compatible output
+                 for i in range(2, 9):
+                     comps[i] = int(comps[i]) if comps[i] else -1
+-                return spwd.struct_spwd(comps)
++                return struct_spwd(*comps)
+     raise KeyError
+ 
+ 
+@@ -545,4 +555,4 @@ def _getspall(root=None):
+             # Generate a getspall compatible output
+             for i in range(2, 9):
+                 comps[i] = int(comps[i]) if comps[i] else -1
+-            yield spwd.struct_spwd(comps)
++            yield struct_spwd(*comps)
+
+From 783ac120a16ee7165aaae30bd0c7765a1d8f6845 Mon Sep 17 00:00:00 2001
+From: Georg Pfuetzenreuter <mail@georg-pfuetzenreuter.net>
+Date: Thu, 16 Oct 2025 20:38:06 +0200
+Subject: [PATCH 2/2] Replace spwd in linux_shadow tests
+
+Signed-off-by: Georg Pfuetzenreuter <mail@georg-pfuetzenreuter.net>
+---
+ .../pytests/unit/modules/test_linux_shadow.py | 23 ++++++++-----------
+ 1 file changed, 9 insertions(+), 14 deletions(-)
+
+diff --git a/tests/pytests/unit/modules/test_linux_shadow.py b/tests/pytests/unit/modules/test_linux_shadow.py
+index 0c742672750b..723e3a8ad26f 100644
+--- a/tests/pytests/unit/modules/test_linux_shadow.py
++++ b/tests/pytests/unit/modules/test_linux_shadow.py
+@@ -1,5 +1,5 @@
+ """
+-    :codeauthor: Erik Johnson <erik@saltstack.com>
++:codeauthor: Erik Johnson <erik@saltstack.com>
+ """
+ 
+ import types
+@@ -175,6 +175,11 @@ def test_info(password):
+     Test if info shows the correct user information
+     """
+ 
++    data = {
++        "/etc/shadow": f"foo:{password.pw_hash}:31337:0:99999:7:::",
++        "*": Exception("Attempted to open something other than /etc/shadow"),
++    }
++
+     # First test is with a succesful call
+     expected_result = [
+         ("expire", -1),
+@@ -186,10 +191,7 @@ def test_info(password):
+         ("passwd", password.pw_hash),
+         ("warn", 7),
+     ]
+-    getspnam_return = spwd.struct_spwd(
+-        ["foo", password.pw_hash, 31337, 0, 99999, 7, -1, -1, -1]
+-    )
+-    with patch("spwd.getspnam", return_value=getspnam_return):
++    with patch("salt.utils.files.fopen", mock_open(read_data=data)):
+         result = shadow.info("foo")
+         assert expected_result == sorted(result.items(), key=lambda x: x[0])
+ 
+@@ -204,15 +206,8 @@ def test_info(password):
+         ("passwd", ""),
+         ("warn", ""),
+     ]
+-    # We get KeyError exception for non-existent users in glibc based systems
+-    getspnam_return = KeyError
+-    with patch("spwd.getspnam", side_effect=getspnam_return):
+-        result = shadow.info("foo")
+-        assert expected_result == sorted(result.items(), key=lambda x: x[0])
+-    # And FileNotFoundError in musl based systems
+-    getspnam_return = FileNotFoundError
+-    with patch("spwd.getspnam", side_effect=getspnam_return):
+-        result = shadow.info("foo")
++    with patch("salt.utils.files.fopen", mock_open(read_data=data)):
++        result = shadow.info("bar")
+         assert expected_result == sorted(result.items(), key=lambda x: x[0])
+ 
+ 
