@@ -1,0 +1,46 @@
+From 045528cd43c9d57ab2eafd1523764c60038079f6 Mon Sep 17 00:00:00 2001
+From: Duncan Overbruck <mail@duncano.de>
+Date: Wed, 22 Jul 2026 00:01:43 +0200
+Subject: [PATCH] sandbox: fix seccomp sandbox with musl libc
+
+musl uses readv and writev for stdio read and writes, so allow them like
+normal read and write.
+
+musl also checks whether stdout is a tty when writing to stdout, for
+that it uses ioctl with TIOCGWINSZ.
+
+https://git.musl-libc.org/cgit/musl/commit/?id=2de85a985654d2c944931267645d9a0686242dfe
+---
+ main/seccomp.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/main/seccomp.c b/main/seccomp.c
+index d60133d45..f44da3c5a 100644
+--- a/main/seccomp.c
++++ b/main/seccomp.c
+@@ -15,6 +15,7 @@
+ 
+ #ifdef HAVE_SECCOMP
+ #include <seccomp.h>
++#include <sys/ioctl.h>
+ 
+ 
+ int installSyscallFilter (void)
+@@ -34,7 +35,14 @@ int installSyscallFilter (void)
+ 
+ 	// I/O
+ 	seccomp_rule_add (ctx, SCMP_ACT_ALLOW, SCMP_SYS (read), 0);
++	seccomp_rule_add (ctx, SCMP_ACT_ALLOW, SCMP_SYS (readv), 0);
+ 	seccomp_rule_add (ctx, SCMP_ACT_ALLOW, SCMP_SYS (write), 0);
++	seccomp_rule_add (ctx, SCMP_ACT_ALLOW, SCMP_SYS (writev), 0);
++
++	// musl libc uses this to check whether stdout is a tty when writing to it
++	seccomp_rule_add (ctx, SCMP_ACT_ALLOW, SCMP_SYS (ioctl), 2,
++		SCMP_CMP (0, SCMP_CMP_EQ, 1),           // fd == 1
++		SCMP_CMP (1, SCMP_CMP_EQ, TIOCGWINSZ)); // request == TIOCGWINSZ
+ 
+ 	// Clean exit
+ 	seccomp_rule_add (ctx, SCMP_ACT_ALLOW, SCMP_SYS (exit), 0);
+-- 
+2.55.0
+
