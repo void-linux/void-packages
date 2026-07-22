@@ -1,0 +1,48 @@
+cosmic-comp always attempts to connect to systemd-journald at startup
+(src/logger/mod.rs), regardless of the "systemd" cargo feature (this
+template already builds with --no-default-features --features logind,
+but tracing-journald is an unconditional dependency in Cargo.toml, not
+gated on that feature). On a runit system there is no journald socket,
+so the connection always fails and cosmic-comp prints a WARN on every
+boot ("Failed to init journald logging.") before falling back to its
+normal stdout/stderr logger. Remove the journald attempt entirely
+instead of just accepting the warning -- the stdout/stderr fmt_layer is
+the only logger that ever actually works here anyway.
+
+--- a/src/logger/mod.rs
++++ b/src/logger/mod.rs
+@@ -4,8 +4,7 @@
+
+ use anyhow::Result;
+
+-use tracing::{debug, info, warn};
+-use tracing_journald as journald;
++use tracing::{debug, info};
+ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
+
+ pub fn init_logger() -> Result<()> {
+@@ -29,20 +28,10 @@
+
+     let fmt_layer = fmt::layer().compact();
+
+-    match journald::layer() {
+-        Ok(journald_layer) => tracing_subscriber::registry()
+-            .with(fmt_layer)
+-            .with(journald_layer)
+-            .with(filter)
+-            .init(),
+-        Err(err) => {
+-            tracing_subscriber::registry()
+-                .with(fmt_layer)
+-                .with(filter)
+-                .init();
+-            warn!(?err, "Failed to init journald logging.");
+-        }
+-    };
++    tracing_subscriber::registry()
++        .with(fmt_layer)
++        .with(filter)
++        .init();
+     log_panics::init();
+
+     info!("Version: {}", std::env!("CARGO_PKG_VERSION"));
