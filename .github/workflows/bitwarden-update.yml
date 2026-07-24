@@ -1,0 +1,95 @@
+name: 'bitwarden auto-update'
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * *'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for new release, update template
+        id: update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          template="srcpkgs/bitwarden/template"
+
+          current="$(grep -oP '^version=\K.*' "$template")"
+          latest_tag="$(curl -fsSL "https://api.github.com/repos/bitwarden/clients/releases?per_page=30" | jq -r '[.[] | select(.tag_name | startswith("desktop-v"))][0].tag_name')"
+          latest="${latest_tag#desktop-v}"
+          echo "current=$current latest=$latest"
+
+          if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+            echo "Could not determine latest desktop- release; aborting." >&2
+            exit 1
+          fi
+          if [ "$latest" = "$current" ]; then
+            echo "Already up to date ($current); nothing to do."
+            exit 0
+          fi
+
+          branch="auto/bitwarden-$latest"
+          if [ -n "$(gh pr list --state open --head "$branch" --json number --jq '.[].number')" ]; then
+            echo "An open PR already exists for $branch; nothing to do."
+            exit 0
+          fi
+
+          base="https://github.com/bitwarden/clients/releases/download/desktop-v$latest"
+          sum_x86_64="$(curl -fsSL "$base/bitwarden_${latest}_x64.tar.gz" | sha256sum | cut -d' ' -f1)"
+          sum_aarch64="$(curl -fsSL "$base/bitwarden_${latest}_arm64.tar.gz" | sha256sum | cut -d' ' -f1)"
+          echo "x86_64=$sum_x86_64 aarch64=$sum_aarch64"
+
+          sed -i -E "s/^version=.*/version=$latest/" "$template"
+          sed -i -E "s/^revision=.*/revision=1/" "$template"
+
+          awk -v x="$sum_x86_64" -v a="$sum_aarch64" '
+            /_x64\.tar\.gz"$/ { arch="x86_64" }
+            /_arm64\.tar\.gz"$/ { arch="aarch64" }
+            /^[[:space:]]*checksum=/ {
+              if (arch == "x86_64")  { sub(/checksum=.*/, "checksum=" x) }
+              if (arch == "aarch64") { sub(/checksum=.*/, "checksum=" a) }
+            }
+            { print }
+          ' "$template" > "$template.new"
+          mv "$template.new" "$template"
+
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "changed=1" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and open PR
+        if: steps.update.outputs.changed == '1'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.update.outputs.branch }}
+          LATEST: ${{ steps.update.outputs.latest }}
+        run: |
+          set -euo pipefail
+          git config user.name "Zoa Hickenlooper"
+          git config user.email "zoa@router.sex"
+          git checkout -B "$BRANCH"
+          git add srcpkgs/bitwarden/template
+          git commit -m "bitwarden: update to $LATEST."
+          git push --force origin "$BRANCH"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "bitwarden: update to $LATEST." \
+            --body "Automated update to bitwarden $LATEST.
+
+          No GPG verification available (bitwarden/clients uses unsigned lightweight tags) — checksum-pinned from the GitHub release tarballs only.
+
+          Release notes: https://github.com/bitwarden/clients/releases/tag/desktop-v$LATEST"
