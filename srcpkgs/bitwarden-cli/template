@@ -1,0 +1,44 @@
+# Template file for 'bitwarden-cli'
+pkgname=bitwarden-cli
+version=2026.7.0
+revision=1
+archs="x86_64"
+hostmakedepends="nodejs"
+depends="nodejs"
+short_desc="Bitwarden command-line vault (bw)"
+maintainer="Zoa Hickenlooper <zoa@router.sex>"
+license="GPL-3.0-only"
+homepage="https://bitwarden.com/help/cli/"
+changelog="https://github.com/bitwarden/clients/releases"
+distfiles="https://github.com/bitwarden/clients/archive/refs/tags/cli-v${version}.tar.gz"
+checksum=cb5496999537d8b947bf8c995479be4055d1807f438e33f9a9fe2d38c5411343
+
+do_build() {
+	npm ci
+	npx nx build cli --configuration=oss
+
+	# apps/cli/webpack.base.js externalizes third-party npm dependencies
+	# (webpack-node-externals) instead of bundling them into bw.js, so
+	# they must be resolved separately and shipped alongside the bundle
+	# for require() to find them at runtime. Resolve a standalone
+	# production-only node_modules from the CLI's own package.json
+	# dependency list (versions are exact pins, enforced by the upstream
+	# .npmrc's save-exact=true).
+	mkdir -p _runtime_deps
+	cp apps/cli/package.json _runtime_deps/package.json
+	( cd _runtime_deps && npm install --omit=dev --ignore-scripts --no-audit --no-fund )
+}
+
+do_install() {
+	vmkdir usr/lib/bitwarden-cli
+	# webpack emits bw.js plus additional async chunk files and locale
+	# data alongside it; ship the whole output directory, not just bw.js
+	vcopy "dist/apps/cli/oss/*" usr/lib/bitwarden-cli/
+	vcopy _runtime_deps/node_modules usr/lib/bitwarden-cli/
+	vmkdir usr/bin
+	cat <<-EOF > bw
+	#!/bin/sh
+	exec node /usr/lib/bitwarden-cli/bw.js "\$@"
+	EOF
+	vbin bw
+}
