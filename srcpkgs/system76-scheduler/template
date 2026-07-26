@@ -1,0 +1,55 @@
+# Template file for 'system76-scheduler'
+pkgname=system76-scheduler
+version=2.0.2
+revision=2
+build_style=cargo
+hostmakedepends="pkg-config libclang"
+makedepends="dbus-devel pipewire-devel"
+depends="dbus bcc-tools"
+short_desc="Auto-configure CFS and process priorities for improved desktop responsiveness"
+maintainer="Bella109 <belladev109@proton.me>"
+license="MPL-2.0"
+homepage="https://github.com/pop-os/system76-scheduler"
+distfiles="https://github.com/pop-os/system76-scheduler/archive/refs/tags/${version}.tar.gz"
+checksum=8fc1845136fd2b346617599d3e01df32584d6d1974381ce36c8e33338d1a2867
+
+# xbps-src runs each build phase in its own subshell, so this needs
+# re-calling in every phase that invokes cargo directly (do_install here
+# uses a custom cargo invocation, not the build_style's default do_build).
+_build_env() {
+	# clang-sys/bindgen (pulled in via the pipewire crate) looks for an
+	# unversioned libclang.so; Void's libclang21 only ships versioned
+	# sonames, so shim one in locally rather than touching /usr.
+	local _libclang_so="$(find /usr/lib -maxdepth 1 -name 'libclang.so.*' | sort -V | tail -1)"
+	local _llvm_ver="$(basename "${_libclang_so}" | sed -E 's/^libclang\.so\.([0-9]+).*/\1/')"
+	mkdir -p "${XBPS_BUILDDIR}/.libclang-shim"
+	ln -sf "${_libclang_so}" "${XBPS_BUILDDIR}/.libclang-shim/libclang.so"
+	export LIBCLANG_PATH="${XBPS_BUILDDIR}/.libclang-shim"
+	# loading libclang via the shim symlink breaks its automatic
+	# resource-dir detection (stdbool.h etc.), so point bindgen at it directly.
+	export BINDGEN_EXTRA_CLANG_ARGS="-resource-dir=/usr/lib/llvm/${_llvm_ver}/lib/clang/${_llvm_ver}"
+
+	# Void's bcc-tools package names the binary plain "execsnoop" (no
+	# -bpfcc suffix), matching the first branch of upstream's own
+	# fallback logic (justfile: which execsnoop || which execsnoop-bpfcc).
+	export EXECSNOOP_PATH="/usr/bin/execsnoop"
+}
+
+pre_build() {
+	_build_env
+}
+
+do_install() {
+	_build_env
+	cargo auditable install -v --target ${RUST_TARGET} --root="${DESTDIR}/usr" \
+		--offline --locked --path daemon
+	rm -f "${DESTDIR}"/usr/.crates.toml
+	rm -f "${DESTDIR}"/usr/.crates2.json
+
+	vmkdir etc/system76-scheduler/process-scheduler
+	vinstall data/config.kdl 644 etc/system76-scheduler config.kdl
+	vinstall data/pop_os.kdl 644 etc/system76-scheduler/process-scheduler pop_os.kdl
+	vinstall data/com.system76.Scheduler.conf 644 usr/share/dbus-1/system.d com.system76.Scheduler.conf
+	vsv system76-scheduler
+	vlicense LICENSE
+}
