@@ -542,8 +542,8 @@ If a distfile changes its checksum for every download because it is packaged
 on the fly on the server, like e.g. snapshot tarballs from any of the
 `https://*.googlesource.com/` sites, the checksum of the `archive contents`
 can be specified by prepending a commercial at (@).
-For tarballs you can find the contents checksum by using the command
-`tar xf <tarball.ext> --to-stdout | sha256sum`.
+For tarballs you can find the checksum by using the command
+`xbps-digest <tarball.ext>` or `sha256sum <tarball.ext>`.
 
 - `wrksrc` The directory name where the package sources are extracted, set to `${pkgname}-${version}`.
 
