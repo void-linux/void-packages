@@ -1,18 +1,18 @@
 # Template file for 'apparmor'
 pkgname=apparmor
 version=4.1.7
-revision=1
+revision=2
 build_wrksrc=libraries/libapparmor
+build_helper="python3"
 build_style=gnu-configure
 conf_files="/etc/apparmor.d/local/* /etc/apparmor/*"
 make_dirs="/etc/apparmor.d/disable 0755 root root"
 configure_args="$(vopt_with python) $(vopt_with perl)"
-hostmakedepends="bison flex gettext python3 which python3-setuptools pkg-config
- perl autoconf-archive automake libtool python3-packaging-bootstrap $(vopt_if python swig)"
-makedepends="$(vopt_if python python3-devel)"
-depends="runit-void-apparmor libapparmor-${version}_${revision} python3-notify2
- python3-psutil python3-dbus iproute2"
-checkdepends="dejagnu"
+hostmakedepends="bison flex gettext pkg-config autoconf-archive automake which libtool
+ python3 python3-setuptools python3-packaging-bootstrap $(vopt_if perl perl)"
+makedepends="$(vopt_if python python3-devel) pam-devel $(vopt_if perl perl)"
+depends="runit-void-apparmor iproute2"
+checkdepends="dejagnu "
 short_desc="Mandatory access control to restrict programs"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="GPL-2.0-only"
@@ -27,56 +27,58 @@ CFLAGS="-D_LARGEFILE64_SOURCE"
 CXXFLAGS="-D_LARGEFILE64_SOURCE"
 
 build_options="python perl"
+build_options_default="python"
 
-case "$XBPS_TARGET_MACHINE" in
-	x86_64*|aarch64*|i686*)
-		build_options_default+=" python"
-	;;
-esac
-
-if [ -z "$CROSS_BUILD" ]; then
-	build_options_default+=" perl"
+if [ "${build_option_perl}" -o "${build_option_python}" ]; then
+	hostmakedepends+=" swig"
 fi
 
+if [ "${build_option_python}" ]; then
+	depends+=" python3-notify2 python3-psutil python3-dbus python3-tkinter python3-gobject"
+	checkdepends+=" flake8 python3-notify2 python3-psutil python3-dbus python3-tkinter python3-gobject"
+fi
+
+post_patch() {
+	# add custom profiles
+	cp -vn "${FILESDIR}"/profiles/* "${wrksrc}/profiles/apparmor.d/"
+}
+
 pre_configure() {
-	cd ${wrksrc}/libraries/libapparmor
 	autoreconf -fiv
 }
 
-pre_build() {
-	# Replace release profiles with our own
-	cd ${wrksrc}
-	cp ${FILESDIR}/profiles/* profiles/apparmor.d/
-}
-
 post_build() {
-	cd ${wrksrc}
-
-	make ${makejobs} -C binutils
-	make ${makejobs} -C utils
-	make ${makejobs} -C parser
-	make ${makejobs} -C profiles
+	make ${makejobs} -C "${wrksrc}/binutils"
+	make ${makejobs} -C "${wrksrc}/parser"
+	make ${makejobs} -C "${wrksrc}/utils"
+	make ${makejobs} -C "${wrksrc}/changehat/pam_apparmor"
+	make ${makejobs} -C "${wrksrc}/profiles"
 }
 
-post_install() {
-	cd ${wrksrc}
-	commonflags="DESTDIR=\"${DESTDIR}\" SBINDIR=\"${DESTDIR}/usr/bin\" USR_SBINDIR=\"${DESTDIR}/usr/bin\""
-	make $commonflags install -C binutils
-	make $commonflags \
-		BINDIR="${DESTDIR}/usr/bin" \
-		VIM_INSTALL_PATH="${DESTDIR}/usr/share/vim/vimfiles/syntax" \
-		install -C utils
-	make $commonflags \
-		APPARMOR_BIN_PREFIX="${DESTDIR}/usr/lib/apparmor" \
-		install -C parser
-	make DESTDIR="${DESTDIR}" install -C profiles
+do_check() {
+	make ${makejobs} -C "${wrksrc}/libraries/libapparmor" check
+	make ${makejobs} -C "${wrksrc}/binutils" check
+	make ${makejobs} -C "${wrksrc}/parser" check
+	make ${makejobs} -C "${wrksrc}/utils" check
+	# make ${makejobs} -C "${wrksrc}/profiles" check # broken
+	make ${makejobs} -C "${wrksrc}/profiles" check-parser
+	make ${makejobs} -C "${wrksrc}/profiles" check-abstractions.d
+}
 
-	# requires perl bindings not generated when cross-compiling
-	if [ -z "$build_option_perl" ]; then
-		rm -f ${DESTDIR}/usr/bin/aa-notify
-	fi
+do_install() {
+	local _args=(
+		"DESTDIR=\"${DESTDIR}\""
+		"SBINDIR=\"${DESTDIR}/usr/bin\""
+		"BINDIR=\"${DESTDIR}/usr/bin\""
+		"USR_SBINDIR=\"${DESTDIR}/usr/bin\""
+	)
+	make -C "${wrksrc}/libraries/libapparmor" "${_args[@]}" install
+	make -C "${wrksrc}/binutils" "${_args[@]}" install
+	make -C "${wrksrc}/utils" "${_args[@]}" VIM_INSTALL_PATH="${DESTDIR}/usr/share/vim/vimfiles/syntax" install
+	make -C "${wrksrc}/parser" "${_args[@]}" APPARMOR_BIN_PREFIX="${DESTDIR}/usr/lib/apparmor" install
+	make -C "${wrksrc}/profiles" "${_args[@]}" install
 
-	vinstall utils/aa-notify.desktop 644 usr/share/applications
+	vinstall "${wrksrc}/utils/aa-notify.desktop" 644 usr/share/applications
 	vdoc "${FILESDIR}/README.voidlinux"
 }
 
@@ -90,6 +92,7 @@ libapparmor_package() {
 		fi
 		if [ "$build_option_python" ]; then
 			vmove "${py3_sitelib}/LibAppArmor*"
+			vmove "${py3_sitelib}/_LibAppArmor*.so"
 		fi
 		vmove usr/share/man/man2
 		vmove usr/share/man/man3
@@ -99,7 +102,7 @@ libapparmor_package() {
 libapparmor-devel_package() {
 	short_desc+=" - Library development files"
 	license="LGPL-2.1-only"
-	depends="lib${sourcepkg}-${version}_${revision}"
+	depends="libapparmor-${version}_${revision}"
 	pkg_install() {
 		vmove usr/include
 		vmove "usr/lib/*.a"
