@@ -512,7 +512,7 @@ can be separated by whitespaces. The files must end in `.tar.lzma`, `.tar.xz`,
 `.txz`, `.tar.bz2`, `.tbz`, `.tar.gz`, `.tgz`, `.gz`, `.bz2`, `.tar` or
 `.zip`. To define a target filename, append `>filename` to the URL.
 Example:
-	distfiles="http://foo.org/foo-1.0.tar.gz http://foo.org/bar-1.0.tar.gz>bar.tar.gz"
+`distfiles="http://foo.org/foo-1.0.tar.gz http://foo.org/bar-1.0.tar.gz>bar.tar.gz"`.
 
   To avoid repetition, several variables for common hosting sites
   exist:
