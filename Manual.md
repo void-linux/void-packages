@@ -536,7 +536,8 @@ Example:
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
 separated by blanks. Please note that the order must be the same than
-was used in `${distfiles}`. Example: `checksum="kkas00xjkjas"`
+was used in `${distfiles}`.
+Example: `checksum=ee43eb65b005b1adf2914a8e462466d0cc4b4b639bf7ba1e62741f2ab2a6fb0f`.
 
 If a distfile changes its checksum for every download because it is packaged
 on the fly on the server, like e.g. snapshot tarballs from any of the
