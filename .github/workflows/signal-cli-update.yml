@@ -1,0 +1,89 @@
+name: 'signal-cli auto-update'
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * *'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for new release, update template
+        id: update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          template="srcpkgs/signal-cli/template"
+
+          current="$(grep -oP '^version=\K.*' "$template")"
+          release_json="$(curl -fsSL "https://api.github.com/repos/AsamK/signal-cli/releases/latest")"
+          latest_tag="$(echo "$release_json" | jq -r '.tag_name')"
+          latest="${latest_tag#v}"
+          echo "current=$current latest=$latest"
+
+          if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+            echo "Could not determine latest release; aborting." >&2
+            exit 1
+          fi
+          if [ "$latest" = "$current" ]; then
+            echo "Already up to date ($current); nothing to do."
+            exit 0
+          fi
+
+          asset_url="$(echo "$release_json" | jq -r --arg name "signal-cli-${latest}.tar.gz" '.assets[] | select(.name == $name) | .browser_download_url')"
+          if [ -z "$asset_url" ]; then
+            echo "Latest release $latest_tag has no signal-cli-${latest}.tar.gz asset; aborting." >&2
+            exit 1
+          fi
+
+          branch="auto/signal-cli-$latest"
+          if [ -n "$(gh pr list --state open --head "$branch" --json number --jq '.[].number')" ]; then
+            echo "An open PR already exists for $branch; nothing to do."
+            exit 0
+          fi
+
+          sum="$(curl -fsSL "$asset_url" | sha256sum | cut -d' ' -f1)"
+
+          sed -i -E "s/^version=.*/version=$latest/" "$template"
+          sed -i -E "s/^revision=.*/revision=1/" "$template"
+          sed -i -E "s/^checksum=.*/checksum=$sum/" "$template"
+
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "changed=1" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and open PR
+        if: steps.update.outputs.changed == '1'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.update.outputs.branch }}
+          LATEST: ${{ steps.update.outputs.latest }}
+        run: |
+          set -euo pipefail
+          git config user.name "Zoa Hickenlooper"
+          git config user.email "zoa@router.sex"
+          git checkout -B "$BRANCH"
+          git add srcpkgs/signal-cli/template
+          git commit -m "signal-cli: update to $LATEST."
+          git push --force origin "$BRANCH"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "signal-cli: update to $LATEST." \
+            --body "Automated update to signal-cli $LATEST.
+
+          signal-cli publishes GPG-signed release tarballs (.asc), but this workflow does not verify them — checksum-pinned from the GitHub release tarball only.
+
+          Release notes: https://github.com/AsamK/signal-cli/releases/tag/v$LATEST"
