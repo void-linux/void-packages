@@ -1,0 +1,75 @@
+--- a/src/wayland/handlers/corner_radius.rs	2026-07-23 16:45:03.163699569 +0300
++++ b/src/wayland/handlers/corner_radius.rs	2026-07-23 16:45:03.164591943 +0300
+@@ -3,7 +3,7 @@
+ 
+ use crate::wayland::protocols::corner_radius::{
+     CacheableCorners, CacheablePadding, CornerRadiusData, CornerRadiusHandler, CornerRadiusState,
+-    delegate_corner_radius,
++    CornerRadiusSurface, delegate_corner_radius,
+ };
+ 
+ use crate::state::State;
+@@ -13,13 +13,59 @@
+         &mut self.common.corner_radius_state
+     }
+ 
+-    fn set_corner_radius(&mut self, _data: &CornerRadiusData) {}
++    fn set_corner_radius(&mut self, data: &CornerRadiusData) {
++        if force_redraw(self, data).is_none() {
++            tracing::warn!("Failed to force redraw for corner radius change.");
++        }
++    }
++
++    fn unset_corner_radius(&mut self, data: &CornerRadiusData) {
++        if force_redraw(self, data).is_none() {
++            tracing::warn!("Failed to force redraw for corner radius reset.");
++        }
++    }
+ 
+-    fn unset_corner_radius(&mut self, _data: &CornerRadiusData) {}
++    fn set_padding(&mut self, data: &CornerRadiusData) {
++        if force_redraw(self, data).is_none() {
++            tracing::warn!("Failed to force redraw for corner radius change.");
++        }
++    }
++
++    fn unset_padding(&mut self, data: &CornerRadiusData) {
++        if force_redraw(self, data).is_none() {
++            tracing::warn!("Failed to force redraw for corner radius reset.");
++        }
++    }
++}
+ 
+-    fn set_padding(&mut self, _data: &CornerRadiusData) {}
++fn force_redraw(state: &mut State, data: &CornerRadiusData) -> Option<()> {
++    let guard = data.lock().unwrap();
++    let shell = state.common.shell.read();
++
++    let output = match &guard.surface {
++        CornerRadiusSurface::Toplevel(toplevel) => {
++            let toplevel = toplevel.upgrade().ok()?;
++            let surface = state.common.xdg_shell_state.get_toplevel(&toplevel)?;
++            shell.visible_output_for_surface(surface.wl_surface())?
++        }
++        CornerRadiusSurface::Popup(popup) => {
++            let popup = popup.upgrade().ok()?;
++            let surface = state.common.xdg_shell_state.get_popup(&popup)?;
++            shell.visible_output_for_surface(surface.wl_surface())?
++        }
++        CornerRadiusSurface::Layer(layer) => {
++            let layer = layer.upgrade().ok()?;
++            let surface = state
++                .common
++                .layer_shell_state
++                .layer_surfaces()
++                .find(|l| l.shell_surface() == &layer)?;
++            shell.visible_output_for_surface(surface.wl_surface())?
++        }
++    };
+ 
+-    fn unset_padding(&mut self, _data: &CornerRadiusData) {}
++    state.backend.schedule_render(output);
++    Some(())
+ }
+ 
+ pub fn surface_corners(states: &SurfaceData, size: Size<i32, Logical>) -> Option<[u8; 4]> {

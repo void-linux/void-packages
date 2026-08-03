@@ -1,0 +1,44 @@
+cosmic-session spawns cosmic-settings-daemon and, without waiting for it
+to actually come up on the session bus, immediately goes on to start
+cosmic-osd and the rest of the session components. Every COSMIC app
+(via libcosmic's cosmic-config crate) watches a handful of configs
+(com.system76.CosmicTk, com.system76.CosmicTheme.Mode,
+com.system76.CosmicTheme.Dark, ...) by asking cosmic-settings-daemon
+over D-Bus to set up the watch. Because process_manager.start() only
+waits for the process to spawn -- not for it to register its
+"com.system76.CosmicSettingsDaemon" bus name -- cosmic-osd's first
+watch_config/watch_state calls can hit the bus before the daemon is
+actually there, which logs a "Failed to create watcher for ..." error
+(cosmic-config retries with exponential backoff and succeeds a moment
+later, but the spurious error is printed on every boot). Wait for the
+daemon's D-Bus name to actually be owned before starting the components
+that depend on it, closing the race at the source instead of relying on
+the retry to paper over it.
+
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -254,6 +254,24 @@
+ 		.await
+ 		.expect("failed to start settings daemon");
+
++	// Wait for cosmic-settings-daemon to register its D-Bus name before
++	// starting the components below (cosmic-osd, cosmic-panel, etc.) that
++	// watch configs through it. Without this, their first watch_config /
++	// watch_state call can race the daemon's own startup and log a
++	// spurious "Failed to create watcher" error before the daemon-side
++	// retry (with backoff) papers over it a few seconds later.
++	if let Ok(session_conn) = zbus::Connection::session().await
++		&& let Ok(dbus_proxy) = zbus::fdo::DBusProxy::new(&session_conn).await
++		&& let Ok(name) = zbus::names::BusName::from_static_str("com.system76.CosmicSettingsDaemon")
++	{
++		for _ in 0..50 {
++			if matches!(dbus_proxy.name_has_owner(name.clone()).await, Ok(true)) {
++				break;
++			}
++			tokio::time::sleep(Duration::from_millis(100)).await;
++		}
++	}
++
+ 	// notifying the user service manager that we've reached the
+ 	// graphical-session.target, which should only happen after:
+ 	// - cosmic-comp is ready
