@@ -1,0 +1,32 @@
+start-cosmic assumes XDG_RUNTIME_DIR already exists, created earlier by
+pam_systemd/pam_elogind during login. That holds when COSMIC is started
+from a greeter (cosmic-greeter, lightdm, ...) since the greeter's PAM
+session sets it up first. It does NOT hold when start-cosmic is invoked
+from a shell profile (e.g. ~/.zprofile) on a manual TTY login, if
+elogind hasn't finished registering the session and creating
+/run/user/$UID yet -- cosmic-comp then panics (exit code 101) trying to
+create its Wayland socket in a directory that doesn't exist, and
+restart-loops silently since .zprofile doesn't surface stderr anywhere
+visible. Reported as a hang with a blinking cursor:
+https://codeberg.org/Bella109/void-packages/issues/7
+
+Bootstrap XDG_RUNTIME_DIR ourselves if it's unset or missing, instead of
+trusting that something else already created it. This is a no-op on
+setups where a greeter already did the job correctly.
+
+--- a/data/start-cosmic
++++ b/data/start-cosmic
+@@ -3,6 +3,13 @@
+ set -e
+
+ # From: https://people.debian.org/~mpitt/systemd.conf-2016-graphical-session.pdf
++
++# Bootstrap XDG_RUNTIME_DIR if whatever started this session (e.g. a
++# manual TTY login via ~/.zprofile, without a greeter) didn't already
++# set it up via pam_elogind/pam_systemd. cosmic-comp panics if this
++# directory doesn't exist when it tries to create its Wayland socket.
++export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
++mkdir -p -m 0700 "${XDG_RUNTIME_DIR}"
+
+ if command -v systemctl >/dev/null; then
+     # robustness: if the previous graphical session left some failed units,
