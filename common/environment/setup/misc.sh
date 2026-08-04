@@ -5,7 +5,7 @@
 set -a
 
 SOURCEFORGE_SITE="https://downloads.sourceforge.net/sourceforge"
-NONGNU_SITE="https://download.savannah.nongnu.org/releases"
+NONGNU_SITE="https://download-mirror.savannah.nongnu.org/releases"
 UBUNTU_SITE="http://archive.ubuntu.com/ubuntu/pool"
 XORG_SITE="https://www.x.org/releases/individual"
 DEBIAN_SITE="https://ftp.debian.org/debian/pool"
