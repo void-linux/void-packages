@@ -3,14 +3,15 @@
 # major ffmpeg updates have a high likelyhood of breaking video playback
 pkgname=ppsspp
 version=1.20.4
-revision=1
+revision=2
 build_style=cmake
-configure_args="-DHEADLESS=1 -DUSE_SYSTEM_FFMPEG=1 -DUNITTEST=ON
- -DUSING_QT_UI=OFF -DUSE_SYSTEM_ZSTD=ON
+configure_args="-DHEADLESS=ON -DUSE_SYSTEM_FFMPEG=OFF
+ -DUNITTEST=ON -DUSING_QT_UI=OFF -DUSE_SYSTEM_ZSTD=ON
  -DARMIPS_USE_STD_FILESYSTEM=ON -DUSE_SYSTEM_RAPIDJSON=ON
- -DUSE_SYSTEM_FREETYPE=ON -DUSE_SYSTEM_SNAPPY=ON -DUSE_SYSTEM_LIBZIP=ON"
+ -DUSE_SYSTEM_FREETYPE=ON -DUSE_SYSTEM_SNAPPY=ON -DUSE_SYSTEM_LIBZIP=ON
+ -DFFMPEG_DIR=ffmpeg/linux/void"
 hostmakedepends="pkg-config python3"
-makedepends="zlib-devel glew-devel ffmpeg-devel libzip-devel
+makedepends="zlib-devel glew-devel libzip-devel
  snappy-devel rapidjson libpng-devel libzstd-devel
  SDL2_ttf-devel SDL2-devel wayland-devel"
 depends="desktop-file-utils"
@@ -19,7 +20,12 @@ maintainer="John <me@johnnynator.dev>"
 license="GPL-2.0-or-later"
 homepage="https://www.ppsspp.org/"
 distfiles="https://github.com/hrydgard/ppsspp/releases/download/v${version}/ppsspp-${version}.tar.xz"
-checksum=4de21db3105d9d81a465a8a7e78c68ee3c0e0bf6597d1c1d530f7555f3ad8b31
+checksum="4de21db3105d9d81a465a8a7e78c68ee3c0e0bf6597d1c1d530f7555f3ad8b31"
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*|x86_64*)
+		hostmakedepends+=" nasm"
+esac
 
 # ppsspp always tries to compile x86 unittest
 # https://gist.github.com/Johnnynator/e18d59274451cff890b7235009d2e93d
@@ -33,6 +39,35 @@ esac
 post_patch() {
 	# disable git versioning
 	vsed -e 's|find_package(Git)|# &|' -i git-version.cmake
+}
+
+pre_configure() {
+	cd ffmpeg
+	(
+	source shared_options.sh
+
+	if [ "$CROSS_BUILD" ]; then
+		case "$XBPS_TARGET_MACHINE" in
+			arm*) _arch="arm";;
+			aarch64*) _arch="aarch64";;
+			mips*) _arch="mips";;
+			ppc64*) _arch="ppc64";;
+			ppc*) _arch="ppc";;
+			*) _arch="${XBPS_TARGET_MACHINE%%-musl}";;
+		esac
+		_args+=" --enable-cross-compile
+				--sysroot=$XBPS_CROSS_BASE
+				--cross-prefix=${XBPS_CROSS_TRIPLET}-
+				--target-os=linux --arch=${_arch}"
+	fi
+
+	./configure --prefix=/usr ${_args} ${CONFIGURE_OPTS}
+	)
+	make ${makejobs}
+	ln -sfr linux/x86_64 linux/void
+	for p in libavcodec libavformat libavutil libswresample libswscale ; do
+		mv $p/*.a linux/void/lib
+	done
 }
 
 post_configure() {
