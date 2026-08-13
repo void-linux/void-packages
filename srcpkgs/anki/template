@@ -1,20 +1,145 @@
 # Template file for 'anki'
 pkgname=anki
-version=2.1.15
-revision=7
-build_style=gnu-makefile
-depends="python3-PyQt5-webengine python3-requests python3-SQLAlchemy
- python3-PyAudio python3-mpv python3-Markdown python3-send2trash
- python3-BeautifulSoup4 python3-decorator python3-jsonschema"
+version=26.05
+revision=1
+_anki_core_i18n_commit=af7c60d7f1aa1b831eb3b893558e4c625309ac2b
+_anki_desktop_ftl_commit=3a35d0aba2b1d04a69ddb471fb4d62645f6763d3
+build_helper="rust"
+# Leaving out the texlive optional dependency.
+# Its use case is niche, is a large package, and increases install time significantly.
+# lame and mpv are also optional, but are common enough while small enoough packages.
+hostmakedepends="cargo cargo-auditable rust rust-std ninja nodejs pkg-config
+ protobuf python3-installer python3-packaging-bootstrap python3-pyqt6
+ python3-pyqt6-devel-tools python3-wheel rsync uv yarn
+ libzstd-devel liblzma-devel"
+makedepends="rust-std libzstd-devel sqlite-devel"
+depends="lame mpv python3 python3-BeautifulSoup4 python3-decorator
+ python3-distro python3-Flask python3-Flask-Cors python3-jsonschema
+ python3-Markdown python3-orjson python3-packaging python3-protobuf
+ python3-pyqt6 python3-pyqt6-declarative python3-pyqt6-gui
+ python3-pyqt6-multimedia python3-pyqt6-network python3-pyqt6-printsupport
+ python3-pyqt6-webchannel python3-pyqt6-webengine python3-pyqt6-widgets
+ python3-pysocks python3-requests python3-send2trash python3-truststore
+ python3-typing_extensions python3-waitress qt6-multimedia qt6-svg"
 short_desc="Spaced repetition flashcard program"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="AGPL-3.0-or-later"
 homepage="https://apps.ankiweb.net"
-changelog="https://apps.ankiweb.net/docs/changes.html"
-distfiles="https://apps.ankiweb.net/downloads/archive/anki-$version-source.tgz"
-checksum=5a53760164c77d619f55107a13099cffe620566a7f610b61b6c4b52487f3bb89
+changelog="https://github.com/ankitects/anki/releases"
+distfiles="
+ https://github.com/ankitects/anki/archive/refs/tags/${version}.tar.gz
+ https://github.com/ankitects/anki-core-i18n/archive/${_anki_core_i18n_commit}.tar.gz>anki-core-i18n-${_anki_core_i18n_commit}.tar.gz
+ https://github.com/ankitects/anki-desktop-ftl/archive/${_anki_desktop_ftl_commit}.tar.gz>anki-desktop-ftl-${_anki_desktop_ftl_commit}.tar.gz"
+checksum="1890f30f04996f87fee2449bd5903156f3e28ea715c0bd307f075777047df101
+ 4900cc528c810b2849561afdd8d6a23653f92fb06562efd07b053bcde8f9fc13
+ 346ef7dc2ab336d645ed8b4e2a47c7546f3b1f1e059a62f2d73d17a0b958c58f"
 
-python_version=3
+skip_extraction="
+ anki-core-i18n-${_anki_core_i18n_commit}.tar.gz
+ anki-desktop-ftl-${_anki_desktop_ftl_commit}.tar.gz"
+
+post_extract() {
+	vsrcextract -C ftl/core-repo "anki-core-i18n-${_anki_core_i18n_commit}.tar.gz"
+	vsrcextract -C ftl/qt-repo "anki-desktop-ftl-${_anki_desktop_ftl_commit}.tar.gz"
+
+	# use system versions of rust and python
+	echo >rust-toolchain.toml
+	rm .python-version
+
+	cargo auditable fetch --locked --target "${RUST_TARGET}"
+	cargo auditable fetch --locked --target "${XBPS_RUST_TARGET}"
+
+	mkdir -p out
+}
+
+pre_configure() {
+	yarn install --immutable --modules-folder out/node_modules --ignore-scripts
+	ln -sf out/node_modules ./
+	python3 -m venv --system-site-packages --without-pip out/pyenv/
+
+	# build.rs::maybe_update_buildhash() in the build process complains without this.
+	echo "xbps000" > out/buildhash
+
+	# Needed for build.ninja
+	mkdir -p .git
+}
+
+do_configure() {
+	# Necessary for LTO + Rust crate "ring", see
+	# https://gitlab.archlinux.org/archlinux/packaging/packages/pacman/-/issues/20
+	# https://github.com/briansmith/ring/issues/1444
+	export CFLAGS+=' -ffat-lto-objects'
+
+	# Use local binaries instead of downloading them
+	export PYTHON_BINARY=/usr/bin/python3
+	export PROTOC_BINARY=/usr/bin/protoc
+	export NODE_BINARY=/usr/bin/node
+	export YARN_BINARY=/usr/bin/yarn
+	export UV_BINARY=/usr/bin/uv
+
+	export RELEASE=2       # Optimized build
+	export OFFLINE_BUILD=1 # Do not download anything, disables git checks
+
+	export CARGO_TARGET_DIR="$PWD/out/rust"
+	export CARGO_BUILD_TARGET="${RUST_TARGET}"
+
+	# workaround the cc-rs mixing CFLAGS for host and target.
+	# https://github.com/rust-lang/cc-rs/issues/1469
+	export CFLAGS_${RUST_BUILD//-/_}="${CFLAGS_host}" \
+		   CXXFLAGS_${RUST_BUILD//-/_}="${CXXFLAGS_host}" \
+		   LDFLAGS_${RUST_BUILD//-/_}="${LDFLAGS_host}" \
+		   CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}" \
+		   CXXFLAGS_${RUST_TARGET//-/_}="${CXXFLAGS}" \
+		   LDFLAGS_${RUST_TARGET//-/_}="${LDFLAGS}" \
+		   CFLAGS="" CXXFLAGS="" LDFLAGS=""
+
+	RUSTFLAGS= cargo auditable build -p runner --release --target "${XBPS_RUST_TARGET}"
+	RUSTFLAGS= cargo auditable run -p configure --release --target "${XBPS_RUST_TARGET}"
+}
+
+do_build() {
+	# Stop uv from downloading their prefered python version
+	export UV_NO_MANAGED_PYTHON=1
+
+	# Use local binaries instead of downloading them
+	export PYTHON_BINARY=/usr/bin/python3
+	export PROTOC_BINARY=/usr/bin/protoc
+	export NODE_BINARY=/usr/bin/node
+	export YARN_BINARY=/usr/bin/yarn
+	export UV_BINARY=/usr/bin/uv
+
+	export CARGO_TARGET_DIR="$PWD/out/rust"
+	export CARGO_BUILD_TARGET="${RUST_TARGET}"
+
+	if [ "$CROSS_BUILD" ]; then
+		case "${XBPS_TARGET_MACHINE}" in
+		aarch64*) export LIN_ARM64=1 ;;
+		esac
+	fi
+
+	# workaround the cc-rs mixing CFLAGS for host and target.
+	# https://github.com/rust-lang/cc-rs/issues/1469
+	export CFLAGS_${RUST_BUILD//-/_}="${CFLAGS_host}" \
+		   CXXFLAGS_${RUST_BUILD//-/_}="${CXXFLAGS_host}" \
+		   LDFLAGS_${RUST_BUILD//-/_}="${LDFLAGS_host}" \
+		   CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}" \
+		   CXXFLAGS_${RUST_TARGET//-/_}="${CXXFLAGS}" \
+		   LDFLAGS_${RUST_TARGET//-/_}="${LDFLAGS}" \
+		   CFLAGS="" CXXFLAGS="" LDFLAGS=""
+	"./out/rust/${XBPS_RUST_TARGET}/release/runner" build -- wheels -v
+}
+
+do_install() {
+	for file in out/wheels/*.whl; do
+		python3 -m installer --destdir="${DESTDIR}" "${file}"
+	done
+
+	vinstall qt/launcher/lin/anki.desktop 644 usr/share/applications
+	vinstall qt/launcher/lin/anki.png 644 usr/share/pixmaps
+	vinstall qt/launcher/lin/anki.xpm 644 usr/share/pixmaps
+	vinstall qt/launcher/lin/anki.xml 644 usr/share/mime/packages
+	vman qt/launcher/lin/anki.1
+}
 
 post_install() {
 	vlicense LICENSE
