@@ -47,9 +47,9 @@ store_pkgdestdir_rundeps() {
 
 parse_shlib_needed() {
     while read -r f; do
-        lf=${f#${PKGDESTDIR}}
+        lf=${f#"$PKGDESTDIR"}
         for x in ${skiprdeps}; do
-            if [ "$x" = "$lf" -o "$x" = "${lf#$PKGDESTDIR}" ]; then
+            if [ "$x" = "$lf" ] || [ "$x" = "${lf#"$PKGDESTDIR"}" ]; then
                 found=1
                 break
             fi
@@ -67,6 +67,35 @@ parse_shlib_needed() {
                 /Qt_5_PRIVATE_API/{next;}
                 /Qt_[0-9]*_PRIVATE_API/{print $NF;}
             '
+        fi
+    done
+}
+
+parse_dlopen_elfnote() {
+    local PYTHON="$(command -v python3)"
+    while read -r f; do
+        lf="${f#"$PKGDESTDIR"}"
+        for x in ${skiprdeps}; do
+            if [ "$x" = "$lf" ] || [ "$x" = "${lf#"$PKGDESTDIR"}" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ -n "$found" ]; then
+            msg_normal "Skipping dependency scan for ${lf}\n" >&3
+            unset found
+            continue
+        fi
+        read -rn4 elfmagic < "$f"
+        if [ "$elfmagic" = $'\177ELF' ]; then
+            if $READELF -n "$f" | grep -q .note.dlopen; then
+                if [ -n "$PYTHON" ]; then
+                    $OBJCOPY --dump-section .note.dlopen=/dev/stdout "$f" 2>/dev/null |
+                        $PYTHON "${XBPS_COMMONDIR}"/scripts/parse-dlopen-notes.py
+                else
+                    msg_error "Cannot read dlopen metadata (python3 not available)\n"
+                fi
+            fi
         fi
     done
 }
@@ -95,6 +124,7 @@ hook() {
 
     _shlibtmp=$(mktemp) || exit 1
     parse_shlib_needed 3>&1 >"$_shlibtmp" <"$depsftmp"
+    parse_dlopen_elfnote 3>&1 >"$_shlibtmp" <"$depsftmp"
     rm -f "$depsftmp"
     verify_deps=$(sort <"$_shlibtmp" | uniq)
     rm -f "$_shlibtmp"
