@@ -1,0 +1,37 @@
+From ee5c971d77e04e2978484f4191e8aca1160991a0 Mon Sep 17 00:00:00 2001
+From: Zygo Blaxell <bees@furryterror.org>
+Date: Thu, 3 Jul 2025 21:48:40 -0400
+Subject: [PATCH] fsync: fix signed comparison of stf.f_type
+
+Build fails on 32-bit Slackware because GCC 11's `-Werror=sign-compare`
+is stricter than necessary:
+
+	cc -Wall -Wextra -Werror -O3 -I../include -D_FILE_OFFSET_BITS=64 -std=c99 -O2 -march=i586 -mtune=i686 -o bees-version.o -c bees-version.c
+	bees.cc: In function 'void bees_fsync(int)':
+	bees.cc:426:24: error: comparison of integer expressions of different signedness: '__fsword_t' {aka 'int'} and 'unsigned int' [-Werror=sign-compare]
+	  426 |         if (stf.f_type != BTRFS_SUPER_MAGIC) {
+	      |                        ^
+
+To work around this, cast `stf.f_type` to the same type as
+`BTRFS_SUPER_MAGIC`, so it has the same number of bits that we're looking
+for in the magic value.
+
+Fixes: https://github.com/Zygo/bees/issues/317
+Signed-off-by: Zygo Blaxell <bees@furryterror.org>
+---
+ src/bees.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/bees.cc b/src/bees.cc
+index 80523a5c..1130bede 100644
+--- a/src/bees.cc
++++ b/src/bees.cc
+@@ -423,7 +423,7 @@ bees_fsync(int const fd)
+ 	// can fill in the f_type field.
+ 	struct statfs stf = { 0 };
+ 	DIE_IF_NON_ZERO(fstatfs(fd, &stf));
+-	if (stf.f_type != BTRFS_SUPER_MAGIC) {
++	if (static_cast<decltype(BTRFS_SUPER_MAGIC)>(stf.f_type) != BTRFS_SUPER_MAGIC) {
+ 		BEESLOGONCE("Using fsync on non-btrfs filesystem type " << to_hex(stf.f_type));
+ 		BEESNOTE("fsync non-btrfs " << name_fd(fd));
+ 		DIE_IF_NON_ZERO(fsync(fd));
