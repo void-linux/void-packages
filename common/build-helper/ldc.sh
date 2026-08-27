@@ -4,18 +4,8 @@ _ldc_helper() {
 	if [ "$CROSS_BUILD" ]; then
 		_xbps_ldc_target="$XBPS_CROSS_LDC_TARGET"
 		_xbps_ldc_dflags="$XBPS_CROSS_LDC_DFLAGS"
-		if [ -f /etc/ldc2.conf ] &&
-		   [ -d $wrksrc ] && [ ! -f $wrksrc/ldc2.conf ]; then
-			cp /etc/ldc2.conf $wrksrc
-			cat <<-_EOF >>"$wrksrc/ldc2.conf"
-
-			"$(echo $XBPS_CROSS_LDC_TARGET | sed 's/-/-.*/')":
-			{
-			  lib-dirs = [
-			    "$XBPS_CROSS_BASE/usr/lib",
-			  ];
-			};
-			_EOF
+		if [ "$sourcepkg" != ldc ]; then
+			hostmakedepends+=" ldc-cross-config"
 		fi
 	fi
 	if [ ! -x "${XBPS_WRAPPERDIR}/ldmd2" ]; then
