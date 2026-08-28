@@ -1,0 +1,154 @@
+From 0909bb29d5a2f4e0c8facf6207398d9456e70d20 Mon Sep 17 00:00:00 2001
+From: "Joseph D. Gaeddert" <joseph@liquidsdr.org>
+Date: Sat, 22 Aug 2026 15:29:29 -0400
+Subject: [PATCH] logging: fixing issue with stale file handle when closed
+
+---
+ examples/logging_example.c |  4 +--
+ include/liquid.h           | 12 +++++--
+ src/core/src/logging.c     | 65 ++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 80 insertions(+), 5 deletions(-)
+
+diff --git a/examples/logging_example.c b/examples/logging_example.c
+index 12a0e8f48..08045aa7c 100644
+--- a/examples/logging_example.c
++++ b/examples/logging_example.c
+@@ -27,9 +27,9 @@ int main(int argc, char*argv[])
+         if (i==4)
+             fid = liquid_logger_add_filename(NULL,filename,LIQUID_INFO);
+ 
+-        // close the file part-way through the program
++        // close the file part-way through the program and remove callback
+         if (i==8)
+-            fclose(fid);
++            liquid_logger_close_file(NULL,fid);
+     }
+ 
+     return 0;
+diff --git a/include/liquid.h b/include/liquid.h
+index 77db0d1fe..17a392521 100644
+--- a/include/liquid.h
++++ b/include/liquid.h
+@@ -437,8 +437,8 @@ int liquid_logger_add_callback(liquid_logger       _q,
+                                void *              _context,
+                                int                 _level);
+ 
+-// add file pointer for which to append logs; when file is closed, the callback
+-// will cease appending to the file
++// add file pointer for which to append logs; use :api:`liquid_logger_close_file`
++// to cease appending to the file
+ //  _q      : logger object
+ //  _fid    : file handle
+ //  _level  : minimum log level for which callback will be invoked
+@@ -447,7 +447,7 @@ int liquid_logger_add_file(liquid_logger _q,
+                            int           _level);
+ 
+ // open file for appending logs, returning pointer to file handle (or NULL upon
+-// error); when file is closed, the callback will cease appending to the file
++// error); use :api:`liquid_logger_close_file` to cease appending to the file
+ //  _q      : logger object
+ //  _fid    : file handle
+ //  _level  : minimum log level for which callback will be invoked
+@@ -456,6 +456,12 @@ FILE * liquid_logger_add_filename(liquid_logger _q,
+                                   const char*   _filename,
+                                   int           _level);
+ 
++// close file and remove from callback list
++//  _q      : logger object
++//  _fid    : file handle
++int liquid_logger_close_file(liquid_logger _q,
++                             FILE *        _fid);
++
+ // get the number of callbacks currently used
+ //  _return : the number of callbacks currently used
+ unsigned int liquid_logger_get_num_callbacks(liquid_logger q);
+diff --git a/src/core/src/logging.c b/src/core/src/logging.c
+index 190a5d504..3fca0ab24 100644
+--- a/src/core/src/logging.c
++++ b/src/core/src/logging.c
+@@ -208,6 +208,7 @@ int liquid_logger_callback_file(liquid_log_event _event,
+                                 void *           _fid,
+                                 int              _config)
+ {
++    // HELP: check that file is open?
+     // use same format, but explicitly disable color
+     return liquid_logger_callback_stream(_event, (FILE*)_fid, _config & ~LIQUID_LOG_COLOR);
+ }
+@@ -485,6 +486,65 @@ FILE * liquid_logger_add_filename(liquid_logger _q,
+     return fid;
+ }
+ 
++// close file and remove from callback list
++int liquid_logger_close_file(liquid_logger _q,
++                             FILE *        _fid)
++{
++    _q = liquid_logger_safe_cast(_q);
++
++    // validate input
++    if (_fid == NULL)
++        return liquid_error(LIQUID_EIOBJ,"liquid_logger_close_file(), file handle is NULL");
++
++    // lock
++    if (_q->lock_callback != NULL)
++        _q->lock_callback(1, _q->lock_context);
++
++    // look for entry matching _fid in callback list
++    unsigned int i;
++    int           found = 0;
++    unsigned int  num   = liquid_logger_get_num_callbacks(_q);
++    for (i=0; i<num; i++) {
++        if (_q->cb_function[i] == liquid_logger_callback_file &&
++            _q->cb_context [i] == _fid)
++        {
++            // close the file before dropping the callback
++            fclose(_fid);
++
++            // shift remaining entries down by one to keep the array dense
++            unsigned int j;
++            for (j=i; j<num-1; j++) {
++                _q->cb_function[j] = _q->cb_function[j+1];
++                _q->cb_context [j] = _q->cb_context [j+1];
++                _q->cb_level   [j] = _q->cb_level   [j+1];
++            }
++            // terminate the new (now empty) last slot
++            _q->cb_function[num-1] = NULL;
++            _q->cb_context [num-1] = NULL;
++            _q->cb_level   [num-1] = 0;
++
++            found = 1;
++            break;
++        }
++    }
++
++    // recompute minimum level across all remaining callbacks and the
++    // logger's own level (mirrors liquid_logger_set_level)
++    _q->min_level = _q->level;
++    for (i=0; i<LIQUID_LOGGER_MAX_CALLBACKS && _q->cb_function[i] != NULL; i++) {
++        _q->min_level = (_q->cb_level[i] < _q->min_level) ? _q->cb_level[i] : _q->min_level;
++    }
++
++    // unlock
++    if (_q->lock_callback != NULL)
++        _q->lock_callback(0, _q->lock_context);
++
++    if (!found)
++        return liquid_error(LIQUID_EICONFIG,"liquid_logger_close_file(), file handle not registered with logger");
++
++    return LIQUID_OK;
++}
++
+ unsigned int liquid_logger_get_num_callbacks(liquid_logger _q)
+ {
+     _q = liquid_logger_safe_cast(_q);
+@@ -670,6 +730,11 @@ FILE * liquid_logger_add_filename(liquid_logger _q,
+     return NULL;
+ }
+ 
++// close file and remove from callback list
++int liquid_logger_close_file(liquid_logger _q,
++                             FILE *        _fid)
++    { return liquid_error(LIQUID_EICONFIG,"compile-time logging disabled"); }
++
+ // get the number of callbacks currently used
+ unsigned int liquid_logger_get_num_callbacks(liquid_logger _q)
+ {

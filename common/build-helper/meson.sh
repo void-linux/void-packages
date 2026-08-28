@@ -62,6 +62,7 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	${_MESON_EXE_WRAPPER:-# exe_wrapper is not set}
 	c = '${CC}'
 	cpp = '${CXX}'
+	d = 'ldc2'
 	ar = '${XBPS_CROSS_TRIPLET}-gcc-ar'
 	nm = '${NM}'
 	strip = '${STRIP}'
