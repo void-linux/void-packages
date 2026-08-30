@@ -1,0 +1,90 @@
+# Template file for 'guix'
+pkgname=guix
+version=1.5.0
+revision=1
+# Guix currently requires a glibc-based host system.
+archs="x86_64 aarch64"
+build_style=gnu-configure
+configure_args="
+ --prefix=${XBPS_CROSS_BASE}/usr
+ --sysconfdir=${XBPS_CROSS_BASE}/etc
+ --localstatedir=${XBPS_CROSS_BASE}/var
+ --disable-rpath
+ --with-bash-completion-dir=${XBPS_CROSS_BASE}/usr/share/bash-completion/completions
+ --with-fish-completion-dir=${XBPS_CROSS_BASE}/usr/share/fish/vendor_completions.d
+"
+hostmakedepends="pkgconf texinfo help2man git gettext po4a guile-devel guile-gnutls guile-gcrypt guile-git guile-gnutls
+ guile-json guile-lzlib guile-sqlite3 guile-lib guile-semver guile-ssh guile-zlib guile-zstd guile-avahi"
+makedepends="bzip2-devel guile-devel zlib-devel libgcrypt-devel linux-headers sqlite-devel"
+depends="guile guile-gcrypt guile-git guile-gnutls guile-json guile-lzlib guile-semver guile-zlib guile-sqlite3 guile-lib
+ guile-zstd guile-avahi guile-ssh shadow"
+short_desc="Functional package manager based on Guile Scheme"
+maintainer="nerdyslacker <karyan40024@gmail.com>"
+license="GPL-3.0-or-later"
+homepage="https://guix.gnu.org"
+changelog="https://guix.gnu.org/en/blog/tags/releases"
+distfiles="${GNU_SITE}/guix/guix-${version}.tar.gz"
+checksum=df2102eed00aff0b17275654a42f094c8a1117ec065884eb1ff76005e47415c5
+system_groups="_guix_daemon _guixbuild kvm"
+system_accounts="_guix_daemon _guixbuild"
+_guix_daemon_pgroup="_guix_daemon"
+_guix_daemon_groups="kvm"
+_guixbuild_pgroup="_guixbuild"
+make_dirs="
+ /gnu 0755 _guix_daemon _guix_daemon
+ /etc/guix 0755 _guix_daemon _guix_daemon
+ /var/guix 0755 _guix_daemon _guix_daemon
+ /var/guix/daemon-socket 0755 _guix_daemon _guix_daemon
+ /var/guix/db 0755 _guix_daemon _guix_daemon
+ /var/guix/discover 0755 _guix_daemon _guix_daemon
+ /var/guix/gcroots 0755 _guix_daemon _guix_daemon
+ /var/guix/offload 0755 _guix_daemon _guix_daemon
+ /var/guix/substitute 0755 _guix_daemon _guix_daemon
+ /var/guix/temproots 0755 _guix_daemon _guix_daemon
+ /var/log/guix 0755 _guix_daemon _guix_daemon
+"
+# Tests are disabled because they require:
+# - network access and bootstrap downloads
+# - unprivileged user/pid/mount namespaces
+make_check=no
+
+pre_configure() {
+	local guix_system="${XBPS_TARGET_MACHINE}-linux"
+
+	case "${XBPS_TARGET_MACHINE}" in
+		i686) guix_system="i686-linux" ;;
+		armv7l) guix_system="armhf-linux" ;;
+		ppc64le) guix_system="powerpc64le-linux" ;;
+	esac
+
+	configure_args+=" --with-system=${guix_system}"
+
+	export GUILE_LOAD_PATH="/usr/share/guile/site/3.0:/usr/share/guile/3.0"
+	export GUILE_LOAD_COMPILED_PATH="/usr/lib/guile/3.0/site-ccache:/usr/lib/guile/3.0/ccache"
+}
+
+post_install() {
+	vmkdir etc/profile.d
+	vcopy "${FILESDIR}/guix.sh" etc/profile.d
+
+	rm -rf \
+		"${DESTDIR}/usr/lib/upstart" \
+		"${DESTDIR}/etc/init.d" \
+		"${DESTDIR}/etc/openrc" \
+		"${DESTDIR}/usr/lib/systemd" \
+		"${DESTDIR}/usr/share/selinux" \
+		"${DESTDIR}/etc/apparmor.d"
+
+	vsv guix-daemon
+
+	vmkdir etc/guix
+	{
+		printf '(acl\n (entry\n'
+		sed -e 's,^,  ,g' -e 's, $$,,g' \
+			etc/substitutes/ci.guix.gnu.org.pub
+		printf '  (tag\n   (guix import)\n   )\n  )\n (entry\n'
+		sed -e 's,^,  ,g' -e 's, $$,,g' \
+			etc/substitutes/bordeaux.guix.gnu.org.pub
+		printf '  (tag\n   (guix import)\n   )\n  )\n )\n'
+	} > "${DESTDIR}/etc/guix/acl"
+}
