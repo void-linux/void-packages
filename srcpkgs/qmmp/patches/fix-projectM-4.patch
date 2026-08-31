@@ -1,0 +1,391 @@
+diff --git a/src/plugins/Visual/projectm/projectm4widget.cpp b/src/plugins/Visual/projectm/projectm4widget.cpp
+--- a/src/plugins/Visual/projectm/projectm4widget.cpp
++++ b/src/plugins/Visual/projectm/projectm4widget.cpp
+@@ -74,12 +74,15 @@
+ 
+ void ProjectM4Widget::addPCM(float *left, float *right)
+ {
+-    for(size_t i = 0; i < QMMP_VISUAL_NODE_SIZE; ++i)
+-    {
+-        m_buf[i * 2] = left[i];
+-        m_buf[i * 2 + 1] = right[i];
+-    }
+-    projectm_pcm_add_float(m_handle, m_buf, QMMP_VISUAL_NODE_SIZE, PROJECTM_STEREO);
++    if(m_handle)
++    {
++        for(size_t i = 0; i < QMMP_VISUAL_NODE_SIZE; ++i)
++        {
++            m_buf[i * 2] = left[i];
++            m_buf[i * 2 + 1] = right[i];
++        }
++        projectm_pcm_add_float(m_handle, m_buf, QMMP_VISUAL_NODE_SIZE, PROJECTM_STEREO);
++    }
+ }
+ 
+ void ProjectM4Widget::initializeGL()
+@@ -176,7 +179,7 @@
+ {
+     QDir presetDir(path);
+     presetDir.setFilter(QDir::Files);
+-    const QFileInfoList files = presetDir.entryInfoList({ "*.prjm", "*.milk" }, QDir::Files);
++    const QFileInfoList files = presetDir.entryInfoList({ u"*.prjm"_s, u"*.milk"_s }, QDir::Files);
+ 
+     for(const QFileInfo &info : std::as_const(files))
+     {
+
+diff --git a/src/plugins/Visual/projectm/CMakeLists.txt b/src/plugins/Visual/projectm/CMakeLists.txt
+--- a/src/plugins/Visual/projectm/CMakeLists.txt
++++ b/src/plugins/Visual/projectm/CMakeLists.txt
+@@ -10,10 +10,14 @@
+         set(PROJECTM_FOUND TRUE CACHE INTERNAL "projectm")
+         set(PROJECTM_PRESET_PATH ${CMAKE_INSTALL_DATADIR}/presets CACHE STRING "projectM preset search path")
+         set(PROJECTM_TEXTURE_PATH ${CMAKE_INSTALL_DATADIR}/textures CACHE STRING "projectM texture search path")
++        option(PROJECTM_FORCE_GLES "force OpenGL ES for projectM" OFF)
+         set(libprojectm_DEFINES ${libprojectm_DEFINES}
+            PROJECTM_PRESET_PATH=\"${PROJECTM_PRESET_PATH}\"
+            PROJECTM_TEXTURE_PATH=\"${PROJECTM_TEXTURE_PATH}\"
+         )
++        if(PROJECTM_FORCE_GLES)
++            set(libprojectm_DEFINES ${libprojectm_DEFINES} PROJECTM_FORCE_GLES)
++        endif()
+         message(STATUS "Found projectM 4.x")
+     else(projectM4_FOUND)
+         # projectM 2.x/3.x 
+@@ -45,7 +49,7 @@
+ )
+ 
+ if(projectM4_FOUND)
+-    set(libprojectm_SRCS ${libprojectm_SRCS} projectm4widget.cpp)
++    set(libprojectm_SRCS ${libprojectm_SRCS} projectm4window.cpp)
+ else(projectM4_FOUND)
+     set(libprojectm_SRCS ${libprojectm_SRCS} projectmwidget.cpp projectmwrapper.cpp)
+ endif(projectM4_FOUND)
+
+diff --git a/src/plugins/Visual/projectm/projectm.pro b/src/plugins/Visual/projectm/projectm.pro
+--- a/src/plugins/Visual/projectm/projectm.pro
++++ b/src/plugins/Visual/projectm/projectm.pro
+@@ -14,13 +14,16 @@
+ 
+ #DEFINES += PROJECTM_31
+ #DEFINES += PROJECTM_4
++DEFINES += PROJECTM_FORCE_GLES
+ 
+ freebsd:DEFINES += PROJECTM_31
+ 
+ contains(DEFINES, PROJECTM_4) {
+-    HEADERS += projectm4widget.h
++    HEADERS += \
++    projectm4window.h
+ 
+-    SOURCES += projectm4widget.cpp
++    SOURCES += \
++    projectm4window.cpp
+ } else {
+     HEADERS += projectmwidget.h \
+                projectmwrapper.h
+diff --git a/src/plugins/Visual/projectm/projectmplugin.cpp b/src/plugins/Visual/projectm/projectmplugin.cpp
+--- a/src/plugins/Visual/projectm/projectmplugin.cpp
++++ b/src/plugins/Visual/projectm/projectmplugin.cpp
+@@ -29,7 +29,7 @@
+ #include <locale.h>
+ #include <qmmp/qmmp.h>
+ #ifdef PROJECTM_4
+-#include "projectm4widget.h"
++#include "projectm4window.h"
+ #else
+ #include "projectmwidget.h"
+ #endif
+@@ -48,21 +48,21 @@
+     m_splitter->addWidget(listWidget);
+ #ifdef PROJECTM_4
+     m_projectMWidget = new ProjectM4Widget(listWidget, m_splitter);
++    m_splitter->addWidget(createWindowContainer(m_projectMWidget, this));
+ #else
+     m_projectMWidget = new ProjectMWidget(listWidget, m_splitter);
++    m_splitter->addWidget(m_projectMWidget);
+ #endif
+-    m_splitter->addWidget(m_projectMWidget);
+-
+-    m_splitter->setStretchFactor(1,1);
++    m_splitter->setStretchFactor(1, 1);
+     QHBoxLayout *layout = new QHBoxLayout;
+     layout->addWidget(m_splitter);
+-    layout->setContentsMargins(0,0,0,0);
++    layout->setContentsMargins(0, 0, 0, 0);
+     setLayout(layout);
+-    addActions(m_projectMWidget->actions());
+ #ifdef PROJECTM_4
+     connect(m_projectMWidget, &ProjectM4Widget::showMenuToggled, listWidget, &QListWidget::setVisible);
+     connect(m_projectMWidget, &ProjectM4Widget::fullscreenToggled, this, &ProjectMPlugin::setFullScreen);
+ #else
++    addActions(m_projectMWidget->actions());
+     connect(m_projectMWidget, &ProjectMWidget::showMenuToggled, listWidget, &QListWidget::setVisible);
+     connect(m_projectMWidget, &ProjectMWidget::fullscreenToggled, this, &ProjectMPlugin::setFullScreen);
+ #endif
+diff --git a/src/plugins/Visual/projectm/projectmplugin.h b/src/plugins/Visual/projectm/projectmplugin.h
+--- a/src/plugins/Visual/projectm/projectmplugin.h
++++ b/src/plugins/Visual/projectm/projectmplugin.h
+@@ -59,7 +59,6 @@
+     ProjectMWidget *m_projectMWidget;
+ #endif
+     QSplitter *m_splitter;
+-    short m_buf[2][512];
+     float m_left[QMMP_VISUAL_NODE_SIZE];
+     float m_right[QMMP_VISUAL_NODE_SIZE];
+ };
+
+
+diff --git a/src/plugins/Visual/projectm/projectm4widget.cpp b/src/plugins/Visual/projectm/projectm4window.cpp
+similarity index 90%
+rename from src/plugins/Visual/projectm/projectm4widget.cpp
+rename to src/plugins/Visual/projectm/projectm4window.cpp
+index aaaaaaaa..bbbbbbbb 100644
+--- a/src/plugins/Visual/projectm/projectm4widget.cpp
++++ b/src/plugins/Visual/projectm/projectm4window.cpp
+@@ -27,12 +27,14 @@
+ #include <QMenu>
+ #include <QApplication>
+ #include <QListWidget>
++#include <QColorSpace>
+ #include <QOpenGLContext>
++#include <QOpenGLWindow>
+ #include <projectM-4/projectM.h>
+ #include <projectM-4/playlist.h>
+ #include <qmmp/soundcore.h>
+ #include <qmmp/qmmp.h>
+-#include "projectm4widget.h"
++#include "projectm4window.h"
+ 
+ #ifndef PROJECTM_PRESET_PATH
+ #define PROJECTM_PRESET_PATH "/usr/share/projectM/presets"
+@@ -42,13 +44,20 @@
+ #define PROJECTM_TEXTURE_PATH "/usr/share/projectM/textures"
+ #endif
+ 
+-
+ ProjectM4Widget::ProjectM4Widget(QListWidget *listWidget, QWidget *parent)
+-        : QOpenGLWidget(parent)
+-{
+-    setMouseTracking(true);
++    : QOpenGLWindow(QOpenGLWindow::NoPartialUpdate), m_parent(parent)
++{
++#ifdef PROJECTM_FORCE_GLES
++    QSurfaceFormat f = format();
++    if(f.renderableType() != QSurfaceFormat::OpenGLES)
++    {
++        f.setRenderableType(QSurfaceFormat::OpenGLES);
++        setFormat(f);
++    }
++#endif
++
+     m_listWidget = listWidget;
+-    m_menu = new QMenu(this);
++    m_menu = new QMenu(parent);
+     createActions();
+ }
+ 
+@@ -87,25 +96,14 @@
+ 
+ void ProjectM4Widget::initializeGL()
+ {
+-    glShadeModel(GL_SMOOTH);
+-    glClearColor(0,0,0,0);
+-    // Setup our viewport
+-    glViewport(0, 0, width(), height());
+-    // Change to the projection matrix and set our viewing volume.
+-    glMatrixMode(GL_TEXTURE);
+-    glLoadIdentity();
+-    glMatrixMode(GL_PROJECTION);
+-    glLoadIdentity();
+-    glMatrixMode(GL_MODELVIEW);
+-    glLoadIdentity();
++    initializeOpenGLFunctions();
++
++    glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
++    glViewport(0, 0, width() * devicePixelRatio(), height() * devicePixelRatio());
+     glDrawBuffer(GL_BACK);
+     glReadBuffer(GL_BACK);
+     glEnable(GL_BLEND);
+     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+-    glEnable(GL_LINE_SMOOTH);
+-    glEnable(GL_POINT_SMOOTH);
+-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+-    glLineStipple(2, 0xAAAA);
+ 
+     if(!m_handle)
+     {
+@@ -127,6 +125,7 @@
+         projectm_set_hard_cut_sensitivity(m_handle, 1.0);
+         projectm_set_beat_sensitivity(m_handle, 1.0);
+         projectm_set_easter_egg(m_handle, 1.0);
++        projectm_set_window_size(m_handle, width(), height());
+ 
+         m_playlistHandle = projectm_playlist_create(m_handle);
+         projectm_playlist_set_shuffle(m_playlistHandle, false);
+@@ -141,7 +140,7 @@
+     if(m_handle)
+     {
+         initializeGL();
+-        projectm_set_window_size(m_handle, w, h);
++        projectm_set_window_size(m_handle, w * devicePixelRatio(), h * devicePixelRatio());
+     }
+ }
+ 
+@@ -155,9 +154,9 @@
+     }
+ }
+ 
+-void ProjectM4Widget::mousePressEvent (QMouseEvent *event)
+-{
+-    if(event->button() == Qt::RightButton)
++void ProjectM4Widget::mousePressEvent(QMouseEvent *event)
++{
++     if(event->button() == Qt::RightButton)
+         m_menu->exec(event->globalPosition().toPoint());
+ }
+ 
+@@ -172,7 +171,7 @@
+     m_menu->addSeparator();
+     m_menu->addAction(tr("&Fullscreen"), tr("F"), this, &ProjectM4Widget::fullscreenToggled)->setCheckable(true);
+     m_menu->addSeparator();
+-    addActions(m_menu->actions());
++    m_parent->addActions(m_menu->actions());
+ }
+ 
+ void ProjectM4Widget::findPresets(const QString &path)
+
+diff --git a/src/plugins/Visual/projectm/projectm4widget.h b/src/plugins/Visual/projectm/projectm4window.h
+similarity index 98%
+rename from src/plugins/Visual/projectm/projectm4widget.h
+rename to src/plugins/Visual/projectm/projectm4window.h
+index aaaaaaaa..bbbbbbbb 100644
+--- a/src/plugins/Visual/projectm/projectm4widget.h
++++ b/src/plugins/Visual/projectm/projectm4window.h
+@@ -17,10 +17,12 @@
+  *   Free Software Foundation, Inc.,                                       *
+  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
+  ***************************************************************************/
+-#ifndef PROJECTM4WIDGET_H
+-#define PROJECTM4WIDGET_H
++#ifndef PROJECTM4WINDOW_H
++#define PROJECTM4WINDOW_H
+ 
+ #include <QOpenGLWidget>
++#include <QOpenGLWindow>
++#include <QOpenGLFunctions>
+ #include <projectM-4/types.h>
+ #include <projectM-4/playlist_core.h>
+ #include <qmmp/visual.h>
+@@ -32,7 +34,7 @@
+ /**
+     @author Ilya Kotov <forkotov02@ya.ru>
+ */
+-class ProjectM4Widget : public QOpenGLWidget
++class ProjectM4Widget : public QOpenGLWindow, protected QOpenGLFunctions
+ {
+     Q_OBJECT
+ public:
+@@ -70,6 +72,7 @@
+     projectm_playlist_handle m_playlistHandle = nullptr;
+     QMenu *m_menu;
+     QListWidget *m_listWidget;
++    QWidget *m_parent;
+     float m_buf[QMMP_VISUAL_NODE_SIZE * 2] = { 0 };
+ };
+ 
+diff --git a/src/plugins/Visual/projectm/CMakeLists.txt b/src/plugins/Visual/projectm/CMakeLists.txt
+--- a/src/plugins/Visual/projectm/CMakeLists.txt
++++ b/src/plugins/Visual/projectm/CMakeLists.txt
+@@ -1,46 +1,41 @@
+ project(libprojectm)
+ 
+-# projectM
+-if(QT_FEATURE_opengl)
++# projectM 4.x
++find_package(projectM4 COMPONENTS Playlist)
++if(projectM4_FOUND)
++    message(STATUS "Found projectM 4.x")
++    set(PROJECTM_FOUND TRUE CACHE INTERNAL "projectm")
++    set(PROJECTM_PRESET_PATH ${CMAKE_INSTALL_FULL_DATADIR}/projectM/presets CACHE STRING "projectM preset search path")
++    set(PROJECTM_TEXTURE_PATH ${CMAKE_INSTALL_FULL_DATADIR}/projectM/textures CACHE STRING "projectM texture search path")
++    option(PROJECTM_FORCE_GLES "force OpenGL ES for projectM" OFF)
++    set(libprojectm_DEFINES ${libprojectm_DEFINES}
++        PROJECTM_4
++        PROJECTM_PRESET_PATH=\"${PROJECTM_PRESET_PATH}\"
++        PROJECTM_TEXTURE_PATH=\"${PROJECTM_TEXTURE_PATH}\"
++    )
++    if(PROJECTM_FORCE_GLES)
++        set(libprojectm_DEFINES ${libprojectm_DEFINES} PROJECTM_FORCE_GLES)
++    endif()
++elseif(QT_FEATURE_opengl)
+     message(STATUS "Found desktop OpenGL implementation")
+-    # projectM 4.0
+-    find_package(projectM4 COMPONENTS Playlist)
+-    if(projectM4_FOUND)
+-        add_definitions(-DPROJECTM_4)
+-        set(PROJECTM_FOUND TRUE CACHE INTERNAL "projectm")
+-        set(PROJECTM_PRESET_PATH ${CMAKE_INSTALL_DATADIR}/presets CACHE STRING "projectM preset search path")
+-        set(PROJECTM_TEXTURE_PATH ${CMAKE_INSTALL_DATADIR}/textures CACHE STRING "projectM texture search path")
+-        option(PROJECTM_FORCE_GLES "force OpenGL ES for projectM" OFF)
+-        set(libprojectm_DEFINES ${libprojectm_DEFINES}
+-           PROJECTM_PRESET_PATH=\"${PROJECTM_PRESET_PATH}\"
+-           PROJECTM_TEXTURE_PATH=\"${PROJECTM_TEXTURE_PATH}\"
+-        )
+-        if(PROJECTM_FORCE_GLES)
+-            set(libprojectm_DEFINES ${libprojectm_DEFINES} PROJECTM_FORCE_GLES)
++    # projectM 2.x/3.x
++    pkg_search_module(PROJECTM libprojectM>=2.0.0 IMPORTED_TARGET)
++    if(PROJECTM_FOUND)
++        find_file(PROJECTM_CONFIG config.inp PATHS "/usr/share/projectM/" "/usr/local/share/projectM/")
++        if(PROJECTM_VERSION VERSION_GREATER_EQUAL 3.1.0)
++            set(libprojectm_DEFINES ${libprojectm_DEFINES} PROJECTM_31)
++            message(STATUS "Found projectM 3.x")
++        else()
++            message(STATUS "Found projectM 2.x")
+         endif()
+-        message(STATUS "Found projectM 4.x")
+-    else(projectM4_FOUND)
+-        # projectM 2.x/3.x 
+-        pkg_search_module(PROJECTM libprojectM>=2.0.0 IMPORTED_TARGET)
+-        if(PROJECTM_FOUND)
+-           find_file(PROJECTM_CONFIG config.inp
+-                     PATHS "/usr/share/projectM/" "/usr/local/share/projectM/")
+-           if(PROJECTM_VERSION VERSION_GREATER_EQUAL 3.1.0)
+-               ADD_DEFINITIONS(-DPROJECTM_31)
+-               MESSAGE(STATUS "Found projectM 3.x")
+-           else()
+-               MESSAGE(STATUS "Found projectM 2.x")
+-           endif()
+-        endif(PROJECTM_FOUND)
+-     endif(projectM4_FOUND)
+-else(QT_FEATURE_opengl)
++        if(PROJECTM_CONFIG)
++            set(libprojectm_DEFINES ${libprojectm_DEFINES} PROJECTM_CONFIG=\"${PROJECTM_CONFIG}\")
++            message(STATUS "Found projectM configuration: ${PROJECTM_CONFIG}")
++        endif()
++    endif()
++else()
+     message(WARNING "Unsuppoted OpenGL implementation, projectM disabled")
+-endif(QT_FEATURE_opengl)
+-
+-if(PROJECTM_CONFIG)
+-    set(libprojectm_DEFINES ${libprojectm_DEFINES} PROJECTM_CONFIG=\"${PROJECTM_CONFIG}\")
+-    message(STATUS "Found projectM configuration: ${PROJECTM_CONFIG}")
+-endif(PROJECTM_CONFIG)
++endif()
+ 
+ set(libprojectm_SRCS
+     projectmplugin.cpp
+@@ -56,11 +51,11 @@
+ 
+ if(PROJECTM_FOUND)
+     add_library(projectm MODULE ${libprojectm_SRCS})
++    target_compile_definitions(projectm PRIVATE ${libprojectm_DEFINES})
+ 
+     if(projectM4_FOUND)
+         target_link_libraries(projectm PRIVATE Qt6::OpenGLWidgets libqmmp libprojectM::playlist)
+     else(projectM4_FOUND)
+-        target_compile_definitions(projectm PRIVATE ${libprojectm_DEFINES})
+         target_link_libraries(projectm PRIVATE Qt6::OpenGLWidgets libqmmp PkgConfig::PROJECTM)
+         if(WIN32)
+             target_link_libraries(projectm PRIVATE -lopengl32)
