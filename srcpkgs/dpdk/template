@@ -1,87 +1,67 @@
 # Template file for 'dpdk'
 pkgname=dpdk
-version=19.08
-revision=6
-# no musl - uses error.h, execinfo.h and argp.h
-archs="x86_64 aarch64 ppc64le i686 armv7l"
+version=25.11.3
+revision=1
+# no armv6 support
+archs="~armv6l ~armv6l-musl *"
 build_style=meson
-# XXX: meson error with meson 1.2.0 when enable_docs=true
-# also needs hostmakedepends+="doxygen python3-Sphinx"
-# doc/api/meson.build:23:11: ERROR: File /builddir/dpdk-19.08/examples does not exist.
-configure_args="-Denable_kmods=false -Denable_docs=false -Db_lto=false"
-hostmakedepends="pkg-config elfutils"
+configure_args="-Db_lto=false"
+hostmakedepends="pkg-config python3-pyelftools"
 makedepends="libnuma-devel jansson-devel libpcap-devel
- zlib-devel openssl-devel libbsd-devel libelf libmnl"
+ zlib-devel openssl-devel libbsd-devel elfutils-devel"
 depends="python3-pyelftools"
 short_desc="Data Plane Development Kit"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="BSD-3-Clause, GPL-2.0-only"
 homepage="https://www.dpdk.org/"
 distfiles="https://github.com/DPDK/${pkgname}/archive/v${version}.tar.gz"
-checksum=1ceff1a6f4f8d5f6f62c1682097249227ac5225ccd9638e0af09f5411c681038
-# import py3compat
-python_version=3
+checksum=92e6114778f99f6c53bf7c2d3b979407fe4461f1b83fb53262d47a43f828957c
+# tests require hugepages
+make_check=no
 
+if [ "$XBPS_TARGET_LIBC" = musl ]; then
+	makedepends+=" libexecinfo-devel musl-legacy-compat"
+fi
+
+_dpdk_platform=generic
 case "${XBPS_TARGET_MACHINE}" in
-	armv7l*) configure_args+=" -Dmachine=armv7-a";;
-	aarch64*) configure_args+=" -Dmachine=armv8-a";;
-	ppc64le*) configure_args+=" -Dmachine=power8";;
-	*) configure_args+=" -Dmachine=default"
+	armv7l*) _cpu_instruction_set=armv8-a; _dpdk_platform=generic_aarch32;;
+	aarch64*) _cpu_instruction_set=armv8-a;;
+	*) _cpu_instruction_set=generic;;
 esac
 
-CFLAGS="-fcommon"
+if [ "$CROSS_BUILD" ]; then
+	meson_crossfile="${XBPS_WRAPPERDIR}/meson/xbps_dpdk.cross"
+else
+	configure_args+=" -Dcpu_instruction_set=${_cpu_instruction_set}"
+fi
 
-post_install() {
-	vmkdir usr/lib/modules-load.d
-	vlicense license/bsd-3-clause.txt
+post_patch() {
+	if [ "$CROSS_BUILD" ]; then
+		sed -e "s/^cpu = .*/cpu = '${_cpu_instruction_set}'/" \
+			-e "/^\[properties\]/a platform = '${_dpdk_platform}'" \
+			"${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" > "${meson_crossfile}"
+	fi
 }
 
-# XXX: re-enable when docs can be re-enabled
-# dpdk-doc_package() {
-# 	short_desc+=" - documentation"
-# 	pkg_install() {
-# 		vmove usr/share/doc
-# 	}
-# }
-
-do_check() {
-	:
+post_install() {
+	vlicense license/bsd-3-clause.txt
 }
 
 dpdk-devel_package() {
 	depends="${sourcepkg}>=${version}_${revision} jansson-devel zlib-devel libbsd-devel openssl-devel"
 	short_desc+=" - development files"
 	pkg_install() {
-		vmove usr/bin/dpdk-pdump
+		if [ -e "${DESTDIR}/usr/bin/dpdk-pdump" ]; then
+			vmove usr/bin/dpdk-pdump
+		fi
 		vmove usr/bin/dpdk-proc-info
 		vmove usr/bin/dpdk-test*
 		vmove usr/include
 		vmove usr/lib/*.so
 		vmove usr/lib/*.a
-		vmove usr/lib/dpdk/pmds-${version}/*.so
+		vmove usr/lib/dpdk/pmds-*/*.so
 		vmove usr/lib/pkgconfig
 		vmove usr/share/dpdk/examples
-	}
-}
-
-dpdk-dkms_package() {
-	short_desc+=" - DKMS kernel modules"
-	dkms_modules="dpdk-igb-uio $version dpdk-rte-kni $version"
-	depends="dkms dpdk-devel"
-	pkg_install() {
-		vmkdir usr/src/dpdk-igb-uio-${version}
-		vmkdir usr/src/dpdk-rte-kni-${version}
-		vcopy "kernel/linux/igb_uio/*" usr/src/dpdk-igb-uio-${version}
-		vcopy "kernel/linux/kni/*" usr/src/dpdk-rte-kni-${version}
-		vcopy ${FILESDIR}/dkms_igb_uio.conf usr/src/dpdk-igb-uio-${version}/dkms.conf
-		vcopy ${FILESDIR}/dkms_rte_kni.conf usr/src/dpdk-rte-kni-${version}/dkms.conf
-		sed -i -e "s/@VERSION@/${version}/" ${PKGDESTDIR}/usr/src/dpdk-igb-uio-${version}/dkms.conf
-		sed -i -e "s/@VERSION@/${version}/" ${PKGDESTDIR}/usr/src/dpdk-rte-kni-${version}/dkms.conf
-		# load modules at boot time
-		echo igb_uio > ${DESTDIR}/usr/lib/modules-load.d/igb_uio.conf
-		echo rte_kni > ${DESTDIR}/usr/lib/modules-load.d/rte_kni.conf
-		chmod 644 ${DESTDIR}/usr/lib/modules-load.d/igb_uio.conf
-		chmod 644 ${DESTDIR}/usr/lib/modules-load.d/rte_kni.conf
-		vmove usr/lib/modules-load.d
 	}
 }
