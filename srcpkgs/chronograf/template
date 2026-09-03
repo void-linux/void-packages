@@ -1,30 +1,45 @@
 # Template file for 'chronograf'
 pkgname=chronograf
-version=1.10.7
+version=1.11.4
 revision=1
 build_style=go
+build_helper="rust"
 go_import_path="github.com/influxdata/${pkgname}"
 go_package="${go_import_path}/cmd/chronograf"
 go_ldflags="-X main.version=${version}"
-hostmakedepends="dep go-bindata nodejs yarn python3"
+# flux parse pulls in libflux cgo, built with cargo
+hostmakedepends="nodejs yarn pkg-config cargo"
 short_desc="Open source monitoring and visualization UI for the TICK stack"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="AGPL-3.0-or-later"
 homepage="https://www.influxdata.com/time-series-platform/chronograf/"
 changelog="https://raw.githubusercontent.com/influxdata/chronograf/master/CHANGELOG.md"
 distfiles="https://github.com/influxdata/chronograf/archive/${version}.tar.gz"
-checksum=1b88a6a1d7eb36d8b6b5ac1506d9647c978bc9bd466cba37c45bed2d86bd20e5
+checksum=7d3c567b38e0c38807aedbc63fb0840db68ab08a8aeeb57a719c77f579baf538
 system_accounts="_chronograf"
 _chronograf_homedir="/var/lib/${pkgname}"
 make_dirs="${_chronograf_homedir} 0755 _chronograf _chronograf"
+# flux pkg-config sets an absolute path for include/lib
+no_generic_pkgconfig_link=yes
 
 case "$XBPS_TARGET_MACHINE" in
+	aarch64*) broken="influxdata pkg-config sets build to arch-unknown-linux-gnu" ;;
+	armv7l*) broken="influxdata pkg-config sets build to arch-unknown-linux-gnu" ;;
 	i686*) broken="yarn not available" ;;
 	ppc*) broken="ftbfs in some js module" ;;
 esac
 
+# https://github.com/influxdata/pkg-config/blob/253d5125c1700dc14df710559f413a941d17d4c1/libs/flux/build.go#L45
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	broken="influxdata pkg-config sets build to arch-unknown-linux-gnu"
+fi
+
 pre_build() {
-	CFLAGS="$CFLAGS -fPIC" CXXFLAGS="$CXXFLAGS -fPIC" make .jsdep assets
+	make .jsdep assets
+
+	# chronograf embeds influxdata/flux cgo bindings
+	CGO_ENABLED=0 GOOS="$(go env GOHOSTOS)" GOARCH="$(go env GOHOSTARCH)" GOFLAGS=-mod=mod go build -o "${wrksrc}/.flux-pkg-config" github.com/influxdata/pkg-config
+	export PKG_CONFIG="${wrksrc}/.flux-pkg-config"
 }
 
 post_install() {
