@@ -1,0 +1,122 @@
+--- a/camera-relay/camera-relay	2026-09-02 01:16:39.637718957 +0700
++++ b/camera-relay/camera-relay	2026-09-02 01:16:44.231689928 +0700
+@@ -14,6 +14,8 @@
+
+ set -euo pipefail
+
++[[ -r /etc/default/samsung-camera-relay ]] && . /etc/default/samsung-camera-relay
++
+ CARD_LABEL="Camera Relay"
+ PID_FILE="${XDG_RUNTIME_DIR:-/tmp}/camera-relay.pid"
+ CACHE_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+@@ -22,9 +24,9 @@
+ STATE_CACHE="${CACHE_DIR}/camera-relay-state"
+ SERVICE_DIR="${HOME}/.config/systemd/user"
+ SERVICE_NAME="camera-relay.service"
+-LOOPBACK_CONF="/etc/modprobe.d/99-camera-relay-loopback.conf"
+-MONITOR_BIN="/usr/local/bin/camera-relay-monitor"
+-LAUNCHER_BIN="/usr/local/bin/camera-relay-gst"
++LOOPBACK_CONF="/usr/lib/modprobe.d/99-camera-relay-loopback.conf"
++MONITOR_BIN="/usr/bin/camera-relay-monitor"
++LAUNCHER_BIN="/usr/bin/camera-relay-gst"
+
+ # Arguments shared by every launcher invocation. The launcher is setgid, so it
+ # replaces its environment wholesale rather than trusting what it inherited —
+@@ -94,8 +96,8 @@
+     local -a cam_cmd=()
+     if [[ -x "$LAUNCHER_BIN" ]] && "$LAUNCHER_BIN" --list-cameras &>/dev/null; then
+         cam_cmd=("$LAUNCHER_BIN" --list-cameras)
+-    elif [[ -x /usr/local/bin/cam ]] && /usr/local/bin/cam -l &>/dev/null; then
+-        cam_cmd=(/usr/local/bin/cam -l)
++    elif [[ -x /usr/bin/cam ]] && /usr/bin/cam -l &>/dev/null; then
++        cam_cmd=(/usr/bin/cam -l)
+     elif command -v cam &>/dev/null; then
+         cam_cmd=(cam -l)
+     fi
+@@ -223,7 +225,7 @@
+
+     if ! detect_loopback_device &>/dev/null; then
+         die "v4l2loopback loaded but no loopback device found.
+-Check /etc/modprobe.d/ for v4l2loopback configuration."
++Check /usr/lib/modprobe.d/ for v4l2loopback configuration."
+     fi
+ }
+
+@@ -241,7 +243,7 @@
+ }
+
+ is_persistent() {
+-    systemctl --user is-enabled "$SERVICE_NAME" &>/dev/null 2>&1
++    return 1
+ }
+
+ # Both relay modes keep the loopback open for as long as they run: the always-on
+@@ -729,7 +731,6 @@
+
+ nudge_wireplumber() {
+     local dev="$1"
+-    command -v systemctl &>/dev/null || return 0
+     command -v pw-cli &>/dev/null || return 0
+
+     local real node advertised
+@@ -767,10 +768,8 @@
+     fi
+
+     info "WirePlumber has stale formats for $dev (sees ${advertised:-none}, device offers $want)"
+-    info "Restarting WirePlumber so PipeWire-based apps (Chrome, Brave) see a usable camera"
+-    # --no-block: this unit is ordered After=wireplumber.service, so waiting on
+-    # a wireplumber job from inside our own ExecStartPost can deadlock.
+-    systemctl --user restart --no-block wireplumber 2>/dev/null || true
++    info "Killing WirePlumber — PipeWire will respawn it with correct formats"
++    pkill -x wireplumber 2>/dev/null || true
+ }
+
+ cmd_nudge_wireplumber() {
+@@ -1225,7 +1224,7 @@
+     # first is not a curiosity — it is the bug.
+     local want_pin="" unit_pin="" env_pin="${__EGL_VENDOR_LIBRARY_FILENAMES:-}"
+     want_pin=$(detect_egl_vendor_pin) || want_pin=""
+-    if systemctl --user cat "$SERVICE_NAME" &>/dev/null; then
++    if false; then
+         unit_pin=$(systemctl --user cat "$SERVICE_NAME" 2>/dev/null \
+             | grep -oP '^Environment=__EGL_VENDOR_LIBRARY_FILENAMES=\K.*' | tail -1) || unit_pin=""
+     fi
+@@ -1245,12 +1244,11 @@
+     # manager, and this service inherits it — so a pin can be present and inert.
+     # Report all three layers, because only the effective one is the answer.
+     local unit_mode="" inherited_mode="" mode_file="" mf effective_mode
+-    if systemctl --user cat "$SERVICE_NAME" &>/dev/null; then
++    if false; then
+         unit_mode=$(systemctl --user cat "$SERVICE_NAME" 2>/dev/null \
+             | grep -oP '^Environment=LIBCAMERA_SOFTISP_MODE=\K.*' | tail -1) || unit_mode=""
+     fi
+-    inherited_mode=$(systemctl --user show-environment 2>/dev/null \
+-        | grep -oP '^LIBCAMERA_SOFTISP_MODE=\K.*' | tail -1) || inherited_mode=""
++    inherited_mode="${LIBCAMERA_SOFTISP_MODE:-}"
+     [[ -z "$inherited_mode" ]] && inherited_mode="${LIBCAMERA_SOFTISP_MODE:-}"
+     for mf in /etc/environment.d/*.conf "$HOME/.config/environment.d"/*.conf; do
+         [[ -f "$mf" ]] || continue
+@@ -1364,12 +1362,12 @@
+     else
+         echo "  monitor binary: MISSING ($MONITOR_BIN) — on-demand mode cannot start"
+     fi
+-    if systemctl --user cat "$SERVICE_NAME" &>/dev/null; then
++    if false; then
+         # is-enabled/is-active print their answer AND exit non-zero when the
+         # answer is negative, so `|| echo ...` would print it a second time.
+         echo "  service: $(systemctl --user is-enabled "$SERVICE_NAME" 2>/dev/null || true)/$(systemctl --user is-active "$SERVICE_NAME" 2>/dev/null || true)"
+     else
+-        echo "  service: not installed"
++        echo "  service: managed by xdg-autostart"
+     fi
+
+     # The decisive check. Everything above can look healthy while the loopback
+@@ -1664,7 +1662,7 @@
+             echo "  $lf: empty or missing"
+         fi
+     done
+-    if systemctl --user cat "$SERVICE_NAME" &>/dev/null; then
++    if false; then
+         echo "  systemctl --user status $SERVICE_NAME:"
+         { systemctl --user status "$SERVICE_NAME" --no-pager -n 15 2>&1 | sed 's/^/    /'; } || true
+     fi
