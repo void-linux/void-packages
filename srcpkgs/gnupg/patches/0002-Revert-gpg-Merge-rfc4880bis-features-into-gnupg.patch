@@ -1,114 +1,76 @@
-From 810bc3c40fd262533f20e77a043b35583deeaa6e Mon Sep 17 00:00:00 2001
-From: psykose <alice@ayaya.dev>
-Date: Tue, 7 Feb 2023 10:14:34 +0100
-Subject: [PATCH 2/2] Revert "gpg: Merge --rfc4880bis features into --gnupg"
+From: Anthony Accioly <54103-aaccioly@users.gitlab.alpinelinux.org>
+Date: Fri, 18 Sep 2026 03:12:29 +0000
+Subject: [PATCH] gpg: generate RFC4880-compatible keys by default
 
-This reverts commit 4583f4fe2e11b3dd070066628c3f16776cc74f72
+GnuPG 2.5.x defaults to the LibrePGP standard and the v5 key format,
+which can cause interoperability problems with RFC4880 clients.  This
+patch keeps compatible defaults for RSA and classic ECC curves, while
+allowing advanced users to opt in to LibrePGP by choosing one of the
+newer algorithms (e.g. Kyber, Curve 448) or by explicitly using a
+compatibility mode such as --gnupg or --rfc4880bis (an alias for
+--gnupg), which also implements authenticated encryption (AEAD) over
+OCB.
 
-see:
-https://lore.kernel.org/distributions/F30D6590-3E0C-4865-A944-7DE118A619CF@gentoo.org/
+  compliance mode    pref-aead-algos   features subpacket
+  (default)          (none)            01 (MDC)
+  --gnupg            2 (OCB)           07 (MDC + AEAD + v5)
+  --rfc4880          (none)            01 (MDC)
 
-this reverts to the pre-2.4 default of key generation. the new one is
-(apparently) not compatible with a potential future specification, and
-generates incompatible keys by default.
+This replaces the previous patches that targeted gnupg 2.4.x:
 
-once this is figured out, find a better solution than this
+See original discussion for 2.4.x at https://lore.kernel.org/distributions/F30D6590-3E0C-4865-A944-7DE118A619CF@gentoo.org/
+Old superseded patch for 2.4.x: https://gitlab.alpinelinux.org/alpine/aports/-/blob/5198d9ceccba6bdf4bff6e4bcb2e3c7e745e254a/main/gnupg/HACK-revert-rfc4880bis-default.patch
 ---
- g10/gpg.c    | 35 ++++++++++++++++++++++++++++++++---
- g10/keygen.c | 30 ++++++++++++++++++------------
- 2 files changed, 50 insertions(+), 15 deletions(-)
+ g10/gpg.c    | 20 ++++++++++++++++++--
+ g10/keygen.c | 33 +++++++++++++++++++++------------
+ 2 files changed, 39 insertions(+), 14 deletions(-)
 
 diff --git a/g10/gpg.c b/g10/gpg.c
-index 2ae3750a9..06b762ff7 100644
+index 053cdce..77278b8 100644
 --- a/g10/gpg.c
 +++ b/g10/gpg.c
-@@ -249,6 +249,7 @@ enum cmd_and_opt_values
-     oGnuPG,
-     oRFC2440,
-     oRFC4880,
-+    oRFC4880bis,
-     oOpenPGP,
-     oPGP7,
-     oPGP8,
-@@ -638,6 +639,7 @@ static gpgrt_opt_t opts[] = {
-   ARGPARSE_s_n (oGnuPG, "no-pgp8", "@"),
-   ARGPARSE_s_n (oRFC2440, "rfc2440", "@"),
-   ARGPARSE_s_n (oRFC4880, "rfc4880", "@"),
-+  ARGPARSE_s_n (oRFC4880bis, "rfc4880bis", "@"),
-   ARGPARSE_s_n (oOpenPGP, "openpgp", N_("use strict OpenPGP behavior")),
-   ARGPARSE_s_n (oPGP7, "pgp6", "@"),
-   ARGPARSE_s_n (oPGP7, "pgp7", "@"),
-@@ -983,7 +985,6 @@ static gpgrt_opt_t opts[] = {
+@@ -1020,7 +1020,7 @@ static gpgrt_opt_t opts[] = {
    ARGPARSE_s_n (oNoop, "no-allow-multiple-messages", "@"),
    ARGPARSE_s_s (oNoop, "aead-algo", "@"),
    ARGPARSE_s_s (oNoop, "personal-aead-preferences","@"),
 -  ARGPARSE_s_n (oNoop, "rfc4880bis", "@"),
++  ARGPARSE_s_n (oGnuPG, "rfc4880bis", "@"),
    ARGPARSE_s_n (oNoop, "override-compliance-check", "@"),
  
  
-@@ -2232,7 +2233,7 @@ static struct gnupg_compliance_option compliance_options[] =
-   {
-     { "gnupg",      oGnuPG },
-     { "openpgp",    oOpenPGP },
--    { "rfc4880bis", oGnuPG },
-+    { "rfc4880bis", oRFC4880bis },
-     { "rfc4880",    oRFC4880 },
-     { "rfc2440",    oRFC2440 },
-     { "pgp6",       oPGP7 },
-@@ -2248,8 +2249,28 @@ static struct gnupg_compliance_option compliance_options[] =
- static void
- set_compliance_option (enum cmd_and_opt_values option)
- {
-+  opt.flags.rfc4880bis = 0;  /* Clear because it is initially set.  */
-+
-   switch (option)
-     {
-+    case oRFC4880bis:
-+      opt.flags.rfc4880bis = 1;
-+      opt.compliance = CO_RFC4880;
-+      opt.flags.dsa2 = 1;
-+      opt.flags.require_cross_cert = 1;
-+      opt.rfc2440_text = 0;
-+      opt.allow_non_selfsigned_uid = 1;
-+      opt.allow_freeform_uid = 1;
-+      opt.escape_from = 1;
-+      opt.not_dash_escaped = 0;
-+      opt.def_cipher_algo = 0;
-+      opt.def_digest_algo = 0;
-+      opt.cert_digest_algo = 0;
-+      opt.compress_algo = -1;
-+      opt.s2k_mode = 3; /* iterated+salted */
-+      opt.s2k_digest_algo = DIGEST_ALGO_SHA256;
-+      opt.s2k_cipher_algo = CIPHER_ALGO_AES256;
-+      break;
-     case oOpenPGP:
-     case oRFC4880:
-       /* This is effectively the same as RFC2440, but with
-@@ -2293,6 +2314,7 @@ set_compliance_option (enum cmd_and_opt_values option)
-     case oPGP8:  opt.compliance = CO_PGP8;  break;
+@@ -2309,6 +2309,7 @@ set_compliance_option (enum cmd_and_opt_values option)
      case oGnuPG:
+       /* set up default options affected by policy compliance: */
        opt.compliance = CO_GNUPG;
 +      opt.flags.rfc4880bis = 1;
-       break;
+       opt.flags.dsa2 = 0;
+       opt.flags.require_cross_cert = 1;
+       opt.rfc2440_text = 0;
+@@ -2374,6 +2375,12 @@ set_compliance_option (enum cmd_and_opt_values option)
+     default:
+       BUG ();
+     }
++
++  /* The strict compliance cases above recurse into the oGnuPG case,
++     which re-enables the LibrePGP features.  Disable them again for
++     every mode but --gnupg/--rfc4880bis.  */
++  if (option != oGnuPG)
++    opt.flags.rfc4880bis = 0;
+ }
  
-     case oDE_VS:
-@@ -2495,6 +2517,7 @@ main (int argc, char **argv)
-     opt.emit_version = 0;
-     opt.weak_digests = NULL;
-     opt.compliance = CO_GNUPG;
-+    opt.flags.rfc4880bis = 1;
  
+@@ -2556,6 +2563,10 @@ main (int argc, char **argv)
+     opt.with_subkey_fingerprint = 1;
+     set_compliance_option (oGnuPG);
+ 
++    /* Only an explicit compliance option enables the LibrePGP features;
++       the implicit default keeps generating RFC4880-compatible keys.  */
++    opt.flags.rfc4880bis = 0;
++
      /* Check special options given on the command line.  */
      orig_argc = argc;
-@@ -3041,6 +3064,7 @@ main (int argc, char **argv)
-           case oOpenPGP:
-           case oRFC2440:
-           case oRFC4880:
-+          case oRFC4880bis:
-           case oPGP7:
-           case oPGP8:
-           case oGnuPG:
-@@ -3883,6 +3907,11 @@ main (int argc, char **argv)
+     orig_argv = argv;
+@@ -4035,6 +4046,11 @@ main (int argc, char **argv)
      if( may_coredump && !opt.quiet )
  	log_info(_("WARNING: program may create a core file!\n"));
  
@@ -120,7 +82,7 @@ index 2ae3750a9..06b762ff7 100644
      if (eyes_only) {
        if (opt.set_filename)
  	  log_info(_("WARNING: %s overrides %s\n"),
-@@ -4099,7 +4128,7 @@ main (int argc, char **argv)
+@@ -4257,7 +4273,7 @@ main (int argc, char **argv)
      /* Check our chosen algorithms against the list of legal
         algorithms. */
  
@@ -130,19 +92,19 @@ index 2ae3750a9..06b762ff7 100644
  	const char *badalg=NULL;
  	preftype_t badtype=PREFTYPE_NONE;
 diff --git a/g10/keygen.c b/g10/keygen.c
-index d5099dbb9..58bc9caba 100644
+index bb30a1d..9d8e996 100644
 --- a/g10/keygen.c
 +++ b/g10/keygen.c
-@@ -404,7 +404,7 @@ keygen_set_std_prefs (const char *string,int personal)
- 	      strcat(dummy_string,"S7 ");
- 	    strcat(dummy_string,"S2 "); /* 3DES */
+@@ -492,7 +492,7 @@ keygen_set_std_prefs (const char *string,int personal)
+ 	    if ( !openpgp_cipher_test_algo (CIPHER_ALGO_3DES) )
+               strcat(dummy_string,"S2 "); /* 3DES - RFC4880 default. */
  
 -            if (!openpgp_aead_test_algo (AEAD_ALGO_OCB))
 +            if (opt.flags.rfc4880bis && !openpgp_aead_test_algo (AEAD_ALGO_OCB))
  	      strcat(dummy_string,"A2 ");
  
              if (personal)
-@@ -889,7 +889,7 @@ keygen_upd_std_prefs (PKT_signature *sig, void *opaque)
+@@ -999,7 +999,7 @@ keygen_upd_std_prefs (PKT_signature *sig, void *opaque)
    /* Make sure that the MDC feature flag is set if needed.  */
    add_feature_mdc (sig,mdc_available);
    add_feature_aead (sig, aead_available);
@@ -151,7 +113,7 @@ index d5099dbb9..58bc9caba 100644
    add_keyserver_modify (sig,ks_modify);
    keygen_add_keyserver_url(sig,NULL);
  
-@@ -3382,7 +3382,10 @@ parse_key_parameter_part (ctrl_t ctrl,
+@@ -4153,7 +4153,10 @@ parse_key_parameter_part (ctrl_t ctrl,
                  }
              }
            else if (!ascii_strcasecmp (s, "v5"))
@@ -163,16 +125,26 @@ index d5099dbb9..58bc9caba 100644
            else if (!ascii_strcasecmp (s, "v4"))
              keyversion = 4;
            else
-@@ -3641,7 +3644,7 @@ parse_key_parameter_part (ctrl_t ctrl,
+@@ -4334,6 +4337,9 @@ parse_key_parameter_part (ctrl_t ctrl,
+   /* Ed448, X448 and the PQC algos must only be used as v5 keys.  */
+   if (is_448 || is_pqc)
+     {
++      /* Kyber and the 448-bit curves are LibrePGP by nature, so always
++         enable the LibrePGP features regardless of the compliance mode.  */
++      opt.flags.rfc4880bis = 1;
+       if (keyversion == 4)
+         log_info (_("WARNING: v4 is specified, but overridden by v5.\n"));
+ 
+@@ -4414,7 +4420,7 @@ parse_key_parameter_part (ctrl_t ctrl,
   *   ecdsa := Use algorithm ECDSA.
   *   eddsa := Use algorithm EdDSA.
   *   ecdh  := Use algorithm ECDH.
 - *   v5    := Create version 5 key
-+ *   v5    := Create version 5 key (requires option --rfc4880bis)
++ *   v5    := Create version 5 key (only when LibrePGP features are enabled; Kyber/448 always are)
   *
   * There are several defaults and fallbacks depending on the
   * algorithm.  PART can be used to select which part of STRING is
-@@ -4513,9 +4516,9 @@ read_parameter_file (ctrl_t ctrl, const char *fname )
+@@ -5396,9 +5402,9 @@ read_parameter_file (ctrl_t ctrl, const char *fname )
  	    }
  	}
  
@@ -181,13 +153,13 @@ index d5099dbb9..58bc9caba 100644
 -          ; /* Ignore version.  */
 +        if (!opt.flags.rfc4880bis && (keywords[i].key == pVERSION
 +                                      || keywords[i].key == pSUBVERSION))
-+          ; /* Ignore version unless --rfc4880bis is active.  */
++          ; /* Ignore version unless the LibrePGP features are active.  */
          else
            {
              r = xmalloc_clear( sizeof *r + strlen( value ) );
-@@ -4610,11 +4613,14 @@ quickgen_set_para (struct para_data_s *para, int for_subkey,
-       para = r;
-     }
+@@ -5493,11 +5499,14 @@ quickgen_set_para (struct para_data_s *para, int for_subkey,
+   r->next = para;
+   para = r;
  
 -  r = xmalloc_clear (sizeof *r + 20);
 -  r->key = for_subkey? pSUBVERSION : pVERSION;
@@ -205,6 +177,3 @@ index d5099dbb9..58bc9caba 100644
  
    if (keytime)
      {
--- 
-2.41.0
-
