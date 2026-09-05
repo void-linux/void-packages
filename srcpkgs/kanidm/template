@@ -1,0 +1,146 @@
+# Template file for 'kanidm'
+pkgname=kanidm
+version=1.10.1
+revision=1
+build_style=cargo
+metapackage="yes"
+hostmakedepends="pkg-config protobuf clang lld sqlite-devel"
+makedepends="sqlite-devel openssl-devel pam-devel eudev-libudev-devel"
+depends="kanidm-client>=${version}_${revision} kanidm-server>=${version}_${revision}"
+short_desc="Simple and secure identity management platform"
+maintainer="Adrian Cybulski <adrian@cybulski.cc>"
+license="MPL-2.0"
+homepage="https://kanidm.com/"
+distfiles="https://github.com/kanidm/kanidm/archive/refs/tags/v${version}.tar.gz"
+checksum=338911c568f44957ef2d0f2136c6dc71218701b5f018e359720289238a3b8e86
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*) broken="rustc OOMs building kanidmd_lib in release mode on i686" ;;
+esac
+
+make_install_args="--path ."
+
+system_accounts="_kanidm _kanidm_unixd"
+
+_kanidm_homedir="/var/lib/kanidm"
+_kanidm_descr="Kanidm server user"
+
+_kanidm_unixd_homedir="/var/lib/kanidm-unixd"
+_kanidm_unixd_descr="Kanidm UNIX integration daemon"
+
+make_dirs="
+ /var/lib/kanidm 0750 _kanidm _kanidm
+ /var/lib/kanidm-unixd 0750 _kanidm_unixd _kanidm_unixd
+ /var/log/kanidm 0750 _kanidm _kanidm
+ /var/log/kanidm-unixd 0755 root root
+ /var/log/kanidm-unixd-tasks 0755 root root
+ /etc/kanidm 0755 root root
+"
+
+
+subpackages="kanidm-server kanidm-client"
+
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		export CC_${RUST_TARGET//-/_}="${CC}"
+		export CXX_${RUST_TARGET//-/_}="${CXX}"
+		export CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}"
+		export CXXFLAGS_${RUST_TARGET//-/_}="${CXXFLAGS}"
+
+		export CC_${RUST_BUILD//-/_}="${BUILD_CC}"
+		export CXX_${RUST_BUILD//-/_}="${BUILD_CXX}"
+		export CFLAGS_${RUST_BUILD//-/_}="${BUILD_CFLAGS}"
+		export CXXFLAGS_${RUST_BUILD//-/_}="${BUILD_CXXFLAGS}"
+
+		export CC="${BUILD_CC}"
+		export CXX="${BUILD_CXX}"
+		export CFLAGS="${BUILD_CFLAGS}"
+		export CXXFLAGS="${BUILD_CXXFLAGS}"
+	fi
+
+	if [ -z "$CROSS_BUILD" ]; then
+		export CC=clang
+		export CXX=clang++
+		export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C linker=clang -C link-arg=-fuse-ld=lld"
+	fi
+
+	# Client tools
+	cargo build --release --locked --target "${RUST_TARGET}" \
+		-p kanidm_tools \
+		--bin kanidm \
+		--bin kanidm_ssh_authorizedkeys_direct
+
+	# Server daemon
+	cargo build --release --locked --target "${RUST_TARGET}" \
+		--bin kanidmd
+
+	# Unix integration daemon/tools
+	cargo build --release --locked --target "${RUST_TARGET}" \
+		-p kanidm_unix_int \
+		--bin kanidm_unixd \
+		--bin kanidm_unixd_tasks \
+		--bin kanidm_ssh_authorizedkeys
+
+	# NSS/PAM shared objects
+	cargo build --release --locked --target "${RUST_TARGET}" \
+		-p nss_kanidm \
+		-p pam_kanidm
+
+}
+
+do_install() {
+	local cargo_target_dir="target/${RUST_TARGET}/release"
+
+	vbin "${cargo_target_dir}/kanidm"
+	vbin "${cargo_target_dir}/kanidmd"
+	vbin "${cargo_target_dir}/kanidm_ssh_authorizedkeys_direct"
+
+	vbin "${cargo_target_dir}/kanidm_unixd"
+	vbin "${cargo_target_dir}/kanidm_unixd_tasks"
+	vbin "${cargo_target_dir}/kanidm_ssh_authorizedkeys"
+
+	# NSS wants .so.2
+	vinstall "${cargo_target_dir}/libnss_kanidm.so" 0755 usr/lib libnss_kanidm.so.2
+
+	# PAM module path on Void/glibc should be this
+	vinstall "${cargo_target_dir}/libpam_kanidm.so" 0755 usr/lib/security pam_kanidm.so
+
+	vinstall "${FILESDIR}/server.toml" 0644 etc/kanidm server.toml
+	vinstall "${FILESDIR}/unixd" 0644 etc/kanidm unixd
+
+	vsv kanidm
+	vsv kanidm-unixd
+	vsv kanidm-unixd-tasks
+	#vdoc "${FILESDIR}/README.voidlinux"
+}
+
+kanidm-client_package() {
+	short_desc+=" - client tools"
+	conf_files="/etc/kanidm/unixd"
+
+	pkg_install() {
+		vmove usr/bin/kanidm
+		vmove usr/bin/kanidm_ssh_authorizedkeys_direct
+		vmove usr/bin/kanidm_unixd
+		vmove usr/bin/kanidm_unixd_tasks
+		vmove usr/bin/kanidm_ssh_authorizedkeys
+
+		vmove usr/lib/libnss_kanidm.so.2
+		vmove usr/lib/security/pam_kanidm.so
+
+		vmove etc/kanidm/unixd
+		vmove etc/sv/kanidm-unixd
+		vmove etc/sv/kanidm-unixd-tasks
+	}
+}
+
+kanidm-server_package() {
+	short_desc+=" - server daemon"
+	conf_files="/etc/kanidm/server.toml"
+
+	pkg_install() {
+		vmove usr/bin/kanidmd
+		vmove etc/kanidm/server.toml
+		vmove etc/sv/kanidm
+	}
+}
