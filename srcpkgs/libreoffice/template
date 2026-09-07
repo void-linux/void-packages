@@ -1,7 +1,7 @@
 # Template file for 'libreoffice'
 pkgname=libreoffice
 version=26.8.0.3
-revision=1
+revision=2
 _jdk_ver=21
 build_helper="gir rust"
 build_style=configure # hack, avoid sourcing common/.../gnu-configure-args.sh
@@ -35,7 +35,7 @@ makedepends="$_xdeps openssl-devel libXrender-devel libbluetooth-devel
  qt6-base-devel qt6-multimedia-devel
  kf6-kio-devel kf6-frameworkintegration-devel
  libmariadbclient-devel postgresql-libs-devel
- $(vopt_if rust rust-std)
+ $(vopt_if rust rust-std) $(vopt_if java "openjdk${_jdk_ver}")
  $(vopt_if firebird 'libfbclient3-devel libatomic_ops-devel')"
 # Add the previously installed default languages as well
 depends="libreoffice-common>=${version}_${revision}
@@ -154,12 +154,15 @@ case "$XBPS_TARGET_MACHINE" in
 	armv[56]*) broken="untested" ;;
 esac
 
+if [ "$XBPS_TARGET_WORDSIZE" = 64 ]; then
+	build_options_default="java"
+fi
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" $_xdeps"
 else
 	build_options_default+=" firebird"
 	if [ "$XBPS_TARGET_WORDSIZE" = 64 ]; then
-		build_options_default+=" rust java"
+		build_options_default+=" rust"
 	fi
 fi
 
@@ -443,9 +446,13 @@ do_configure() {
 
 	if [ "$build_option_java" ]; then
 		opts+=" --with-java"
+		bopts+=" --with-java"
 		opts+=" --with-jdk-home=/usr/lib/jvm/openjdk${_jdk_ver}"
+		bopts+=" --with-jdk-home=/usr/lib/jvm/openjdk${_jdk_ver}"
+		LDFLAGS+=" -L$XBPS_CROSS_BASE/usr/lib/jvm/openjdk${_jdk_ver}/lib"
 		# also disables hamcrest
 		opts+=" --without-junit"
+		bopts+=" --without-junit"
 	else
 		opts+=" --without-java"
 	fi
@@ -465,9 +472,8 @@ do_configure() {
 	opts+=" --with-tls=nss"
 	opts+=" --with-system-hsqldb"
 	opts+=" --with-hsqldb-jar=/usr/share/java/hsqldb-1.8.0.jar"
-	# https://github.com/tdf/libcmis/pull/43 changes ABI
-	# opts+=" --without-system-libcmis"
-	# bopts+=" --without-system-libcmis"
+	opts+=" --with-system-beanshell"
+	opts+=" --with-system-rhino"
 	opts+=" --without-system-libtommath"
 	bopts+=" --without-system-libtommath"
 	opts+=" --without-system-jfreereport"
@@ -506,8 +512,13 @@ do_configure() {
 }
 
 do_build() {
-	make ${makejobs} ${make_build_target}
-	make ${makejobs} -C libreofficekit
+	if [ "$build_option_java" ]; then
+		mkdir -p instdir/program/classes
+		cp /usr/share/java/hsqldb-1.8.0.jar instdir/program/classes/hsqldb.jar
+	fi
+	# verbose=1
+	make ${make_build_target} PARALLELISM=$MAKEJOBS
+	make -C libreofficekit PARALLELISM=$MAKEJOBS
 }
 
 do_check() {
@@ -538,6 +549,11 @@ libreoffice-common_package() {
 	replaces="libreoffice-epub>=0"
 	pkg_install() {
 		_split common
+		if [ "$build_option_java" ]; then
+			rm -f $PKGDESTDIR/usr/lib/libreoffice/program/classes/hsqldb.jar
+			ln -s /usr/share/java/hsqldb-1.8.0.jar \
+				$PKGDESTDIR/usr/lib/libreoffice/program/classes/hsqldb.jar
+		fi
 	}
 }
 

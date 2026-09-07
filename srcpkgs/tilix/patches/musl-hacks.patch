@@ -1,0 +1,73 @@
+Breaks flatpak integration to fix musl build.
+--- a/source/gx/tilix/terminal/terminal.d
++++ b/source/gx/tilix/terminal/terminal.d
+@@ -2829,30 +2829,36 @@ private:
+         if (isFlatpak()) {
+             Pty pty = vte.ptyNewSync(VtePtyFlags.DEFAULT, null);
+ 
+-            int pty_master = pty.getFd();
++            version (CRuntime_Musl) {
++                import vtec.vte:vte_pty_child_setup;
++                vte_pty_child_setup(pty.getPtyStruct());
++                int[] pty_slaves = null;
++            } else {
++                int pty_master = pty.getFd();
+ 
+-            import core.sys.posix.stdlib: grantpt, unlockpt, ptsname;
+-            import core.sys.posix.fcntl: open, O_RDWR;
++                import core.sys.posix.stdlib: grantpt, unlockpt, ptsname;
++                import core.sys.posix.fcntl: open, O_RDWR;
+ 
+-            if (grantpt(pty_master) != 0) {
+-                warning("Failed granting access to slave pseudoterminal device");
+-                return false;
+-            }
++                if (grantpt(pty_master) != 0) {
++                    warning("Failed granting access to slave pseudoterminal device");
++                    return false;
++                }
+ 
+-            if (unlockpt(pty_master) != 0) {
+-                warning("Failed unlocking slave pseudoterminal device");
+-                return false;
+-            }
++                if (unlockpt(pty_master) != 0) {
++                    warning("Failed unlocking slave pseudoterminal device");
++                    return false;
++                }
+ 
+-            int[] pty_slaves;
+-            pty_slaves ~= open(ptsname(pty_master), O_RDWR | O_CLOEXEC);
+-            if (pty_slaves[0] < 0) {
+-                warning("Failed opening slave pseudoterminal device");
+-                return false;
+-            }
++                int[] pty_slaves;
++                pty_slaves ~= open(ptsname(pty_master), O_RDWR | O_CLOEXEC);
++                if (pty_slaves[0] < 0) {
++                    warning("Failed opening slave pseudoterminal device");
++                    return false;
++                }
+ 
+-            foreach(i; 0 .. 2) {
+-                pty_slaves ~= core.sys.posix.unistd.dup(pty_slaves[0]);
++                foreach(i; 0 .. 2) {
++                    pty_slaves ~= core.sys.posix.unistd.dup(pty_slaves[0]);
++                }
+             }
+ 
+             import VteVersion = vte.Version;
+@@ -2972,6 +2978,13 @@ private:
+ 
+         uint[] handles;
+ 
++        version (CRuntime_Musl) {
++            stdio_fds = [];
++            stdio_fds ~= std.stdio.stdin.fileno;
++            stdio_fds ~= std.stdio.stdout.fileno;
++            stdio_fds ~= std.stdio.stderr.fileno;
++        }
++
+         UnixFDList outFdList;
+         UnixFDList inFdList = new UnixFDList();
+         foreach(i, fd; stdio_fds) {
