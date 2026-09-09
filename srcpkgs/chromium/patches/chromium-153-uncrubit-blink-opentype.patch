@@ -1,0 +1,276 @@
+From f55ec0ffc222c3a6865086c8585f789c19231d75 Mon Sep 17 00:00:00 2001
+From: LN Liberda <lauren@selfisekai.rocks>
+Date: Fri, 28 Aug 2026 04:38:15 +0200
+Subject: [PATCH] Revert "Migrate OpenType format check bindings to Crubit"
+
+https://www.youtube.com/watch?v=ac4E_UsmB1g
+
+This reverts commit 493e6c3911e33cc356856bafbffc6cf95521266b.
+---
+ third_party/blink/renderer/platform/BUILD.gn  | 15 ++++++-
+ .../blink/renderer/platform/fonts/BUILD.gn    | 19 ---------
+ .../fonts/opentype/font_format_check.cc       | 21 +++++-----
+ .../fonts/opentype/font_format_check.h        |  6 +--
+ .../platform/fonts/opentype/format_check.rs   | 41 +++++++++++++------
+ 5 files changed, 55 insertions(+), 47 deletions(-)
+ delete mode 100644 third_party/blink/renderer/platform/fonts/BUILD.gn
+
+diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
+index 9bfa9565f03f1..6eed09d66d173 100644
+--- a/third_party/blink/renderer/platform/BUILD.gn
++++ b/third_party/blink/renderer/platform/BUILD.gn
+@@ -186,6 +186,18 @@ group("make_platform_generated") {
+   ]
+ }
+ 
++rust_static_library("font_format_check") {
++  allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
++  crate_root = "fonts/opentype/format_check.rs"
++  sources = [ crate_root ]
++  cxx_bindings = [ crate_root ]
++  deps = [
++    "//third_party/rust/font_types/v0_12:lib",
++    "//third_party/rust/read_fonts/v0_41:lib",
++    "//third_party/rust/skrifa/v0_44:lib",
++  ]
++}
++
+ rust_static_library("rustfft_ffi") {
+   allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
+   crate_root = "audio/rustfft_ffi.rs"
+@@ -1794,7 +1806,6 @@ component("platform") {
+     ":allow_discouraged_type",
+     ":blink_platform_public_deps",
+     ":platform_export",
+-    "//build/rust/crubit",
+     "//gpu/command_buffer/client:raster_interface",
+     "//media/capture:capture_lib",
+     "//mojo/public/cpp/base",
+@@ -1821,8 +1832,8 @@ component("platform") {
+     "//ui/native_theme/features",
+   ]
+   deps = [
++    ":font_format_check",
+     ":rustfft_ffi",
+-    "fonts:font_format_bindings",
+     "//base:base_static",
+     "//base/allocator:buildflags",
+     "//build:chromecast_buildflags",
+diff --git a/third_party/blink/renderer/platform/fonts/BUILD.gn b/third_party/blink/renderer/platform/fonts/BUILD.gn
+deleted file mode 100644
+index 51b9b03ba7c85..0000000000000
+--- a/third_party/blink/renderer/platform/fonts/BUILD.gn
++++ /dev/null
+@@ -1,19 +0,0 @@
+-# Copyright 2026 The Chromium Authors
+-# Use of this source code is governed by a BSD-style license that can be
+-# found in the LICENSE file.
+-
+-import("//build/rust/rust_static_library.gni")
+-
+-rust_static_library("font_format") {
+-  crate_root = "opentype/format_check.rs"
+-  sources = [ crate_root ]
+-  cpp_api_from_rust = {
+-    target_name = "font_format_bindings"
+-    cpp_namespace = "font_format"
+-  }
+-  deps = [
+-    "//third_party/rust/font_types/v0_12:lib",
+-    "//third_party/rust/read_fonts/v0_41:lib",
+-    "//third_party/rust/skrifa/v0_44:lib",
+-  ]
+-}
+diff --git a/third_party/blink/renderer/platform/fonts/opentype/font_format_check.cc b/third_party/blink/renderer/platform/fonts/opentype/font_format_check.cc
+index f58e9433d39f4..b9d2639822bc0 100644
+--- a/third_party/blink/renderer/platform/fonts/opentype/font_format_check.cc
++++ b/third_party/blink/renderer/platform/fonts/opentype/font_format_check.cc
+@@ -7,6 +7,7 @@
+ #include "base/containers/span.h"
+ #include "base/containers/span_rust.h"
+ #include "base/numerics/byte_conversions.h"
++#include "third_party/blink/renderer/platform/fonts/opentype/format_check.rs.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "third_party/skia/include/core/SkTypeface.h"
+@@ -14,37 +15,35 @@
+ namespace blink {
+ 
+ FontFormatCheck::FontFormatCheck(sk_sp<SkData> sk_data)
+-    : format_info_(font_format::get_font_format_info(
++    : format_info_(font_format_check::get_font_format_info(
+           base::SpanToRustSlice(sk_data->byteSpan()))) {}
+ 
+-FontFormatCheck::~FontFormatCheck() = default;
+-
+ bool FontFormatCheck::IsVariableFont() const {
+-  return font_format::is_variable(format_info_);
++  return font_format_check::is_variable(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsCbdtCblcColorFont() const {
+-  return font_format::is_cbdt_cblc(format_info_);
++  return font_format_check::is_cbdt_cblc(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsEbdtEblcMonochromeFont() const {
+-  return font_format::is_ebdt_eblc(format_info_);
++  return font_format_check::is_ebdt_eblc(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsColrCpalColorFontV0() const {
+-  return font_format::is_colrv0(format_info_);
++  return font_format_check::is_colrv0(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsColrCpalColorFontV1() const {
+-  return font_format::is_colrv1(format_info_);
++  return font_format_check::is_colrv1(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsSbixColorFont() const {
+-  return font_format::is_sbix(format_info_);
++  return font_format_check::is_sbix(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsCff2OutlineFont() const {
+-  return font_format::is_cff2(format_info_);
++  return font_format_check::is_cff2(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsVariableColrV0Font() const {
+@@ -58,7 +57,7 @@ bool FontFormatCheck::IsColorFont() const {
+ 
+ bool FontFormatCheck::IsAvar2Font() const {
+   return RuntimeEnabledFeatures::FontFormatAvar2Enabled() &&
+-         font_format::is_avar2(format_info_);
++         font_format_check::is_avar2(*format_info_);
+ }
+ 
+ FontFormatCheck::VariableFontSubType FontFormatCheck::ProbeVariableFont(
+diff --git a/third_party/blink/renderer/platform/fonts/opentype/font_format_check.h b/third_party/blink/renderer/platform/fonts/opentype/font_format_check.h
+index af50dbdf74d00..19d2639233b07 100644
+--- a/third_party/blink/renderer/platform/fonts/opentype/font_format_check.h
++++ b/third_party/blink/renderer/platform/fonts/opentype/font_format_check.h
+@@ -5,7 +5,7 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_OPENTYPE_FONT_FORMAT_CHECK_H_
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_OPENTYPE_FONT_FORMAT_CHECK_H_
+ 
+-#include "third_party/blink/renderer/platform/fonts/font_format.h"
++#include "third_party/blink/renderer/platform/fonts/opentype/format_check.rs.h"
+ #include "third_party/blink/renderer/platform/platform_export.h"
+ #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+ #include "third_party/skia/include/core/SkData.h"
+@@ -19,7 +19,7 @@ class PLATFORM_EXPORT FontFormatCheck {
+ 
+  public:
+   explicit FontFormatCheck(sk_sp<SkData>);
+-  virtual ~FontFormatCheck();
++  virtual ~FontFormatCheck() = default;
+   virtual bool IsVariableFont() const;
+   virtual bool IsCbdtCblcColorFont() const;
+   virtual bool IsEbdtEblcMonochromeFont() const;
+@@ -46,7 +46,7 @@ class PLATFORM_EXPORT FontFormatCheck {
+   enum class COLRVersion { kCOLRV0, kCOLRV1, kNoCOLR };
+ 
+  private:
+-  font_format::FontFormatInfo format_info_;
++  rust::Box<font_format_check::FontFormatInfo> format_info_;
+ };
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/platform/fonts/opentype/format_check.rs b/third_party/blink/renderer/platform/fonts/opentype/format_check.rs
+index b99f0ec8655e6..eda8e6b2b8188 100644
+--- a/third_party/blink/renderer/platform/fonts/opentype/format_check.rs
++++ b/third_party/blink/renderer/platform/fonts/opentype/format_check.rs
+@@ -23,7 +23,7 @@ pub struct FontFormatInfo {
+     format_flags: Option<FontFormatFlags>,
+ }
+ 
+-pub fn get_font_format_info(font_bytes: &[u8]) -> FontFormatInfo {
++pub fn get_font_format_info(font_bytes: &[u8]) -> Box<FontFormatInfo> {
+     let file_ref = make_font_ref_internal(font_bytes, 0);
+ 
+     match file_ref {
+@@ -32,11 +32,11 @@ pub fn get_font_format_info(font_bytes: &[u8]) -> FontFormatInfo {
+                 font.table_directory().table_records().iter().map(|e| e.tag()).collect();
+             let color_version = get_colr_version(&font);
+             let avar_version = get_avar_version(&font);
+-            FontFormatInfo {
++            Box::new(FontFormatInfo {
+                 format_flags: Some(FontFormatFlags { table_tags, color_version, avar_version }),
+-            }
++            })
+         }
+-        _ => FontFormatInfo::default(),
++        _ => Box::new(FontFormatInfo::default()),
+     }
+ }
+ 
+@@ -44,10 +44,10 @@ fn get_colr_version(font_ref: &FontRef) -> Option<u16> {
+     Some(font_ref.colr().ok()?.version())
+ }
+ 
+-pub fn is_colrv1(format_info: &FontFormatInfo) -> bool {
++fn is_colrv1(format_info: &FontFormatInfo) -> bool {
+     matches!(&format_info.format_flags, Some(FontFormatFlags { color_version: Some(1), .. }),)
+ }
+-pub fn is_colrv0(format_info: &FontFormatInfo) -> bool {
++fn is_colrv0(format_info: &FontFormatInfo) -> bool {
+     matches!(&format_info.format_flags, Some(FontFormatFlags { color_version: Some(0), .. }),)
+ }
+ 
+@@ -56,7 +56,7 @@ fn get_avar_version(font_ref: &FontRef) -> Option<(u16, u16)> {
+     Some((version.major, version.minor))
+ }
+ 
+-pub fn is_avar2(format_info: &FontFormatInfo) -> bool {
++fn is_avar2(format_info: &FontFormatInfo) -> bool {
+     matches!(&format_info.format_flags, Some(FontFormatFlags { avar_version: Some((2, _)), .. }),)
+ }
+ 
+@@ -69,22 +69,39 @@ fn has_tags(format_info: &FontFormatInfo, query: &[Tag]) -> bool {
+     }
+ }
+ 
+-pub fn is_variable(format_info: &FontFormatInfo) -> bool {
++fn is_variable(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"fvar")])
+ }
+ 
+-pub fn is_sbix(format_info: &FontFormatInfo) -> bool {
++fn is_sbix(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"sbix")])
+ }
+ 
+-pub fn is_cbdt_cblc(format_info: &FontFormatInfo) -> bool {
++fn is_cbdt_cblc(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"CBDT"), Tag::new(b"CBLC")])
+ }
+ 
+-pub fn is_ebdt_eblc(format_info: &FontFormatInfo) -> bool {
++fn is_ebdt_eblc(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"EBDT"), Tag::new(b"EBLC")])
+ }
+ 
+-pub fn is_cff2(format_info: &FontFormatInfo) -> bool {
++fn is_cff2(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"CFF2")])
+ }
++
++#[cxx::bridge(namespace = "font_format_check")]
++pub mod ffi {
++    extern "Rust" {
++        type FontFormatInfo;
++
++        fn get_font_format_info(font_bytes: &[u8]) -> Box<FontFormatInfo>;
++        fn is_colrv1(format_info: &FontFormatInfo) -> bool;
++        fn is_colrv0(format_info: &FontFormatInfo) -> bool;
++        fn is_cbdt_cblc(format_info: &FontFormatInfo) -> bool;
++        fn is_ebdt_eblc(format_info: &FontFormatInfo) -> bool;
++        fn is_variable(format_info: &FontFormatInfo) -> bool;
++        fn is_sbix(format_info: &FontFormatInfo) -> bool;
++        fn is_cff2(format_info: &FontFormatInfo) -> bool;
++        fn is_avar2(format_info: &FontFormatInfo) -> bool;
++    }
++}
