@@ -1,37 +1,62 @@
 # Template file for 'influxdb'
 pkgname=influxdb
-version=1.8.3
-revision=4
-build_style=go
-go_import_path=github.com/influxdata/influxdb
-go_package="${go_import_path}/cmd/influx
- ${go_import_path}/cmd/influxd
- ${go_import_path}/cmd/influx_tsm
- ${go_import_path}/cmd/influx_inspect
- ${go_import_path}/cmd/influx_stress"
-go_ldflags="-X main.version=${version}"
-hostmakedepends="asciidoc xmlto"
+version=3.11.2
+revision=1
+# influxdb v3 dropped support for 32bit, build pulls wasm bins from influxdata/datafusion-udf-wasm
+build_style=cargo
+make_install_args="--path influxdb3"
+hostmakedepends="lld pkg-config protobuf protobuf-devel python3 sqlite-devel"
+makedepends="bzip2-devel libzstd-devel python3-devel sqlite-devel"
 short_desc="Scalable datastore for metrics, events, and real-time analytics"
 maintainer="Orphaned <orphan@voidlinux.org>"
-license="MIT"
+license="Apache-2.0 AND MIT"
 homepage="https://influxdata.com/time-series-platform/influxdb/"
-changelog="https://raw.githubusercontent.com/influxdata/influxdb/master/CHANGELOG.md"
-distfiles="https://${go_import_path}/archive/v${version}.tar.gz"
-checksum=d8b89e324ed7343c1397124ac3cc68c405406faf74e7369e733611cada54656d
+changelog="https://raw.githubusercontent.com/influxdata/influxdb/main/CHANGELOG.md"
+distfiles="https://github.com/influxdata/influxdb/archive/v${version}.tar.gz"
+checksum=748962066817e6e02c73ff38023090cd0ce809789019832ea87f1f54f6e50633
+
+# release tag commit, update with version bump
+export GIT_HASH=9f763b7fe93da443e911bd9fd12820e8f1b8ee90
 
 system_accounts="_influxdb"
-_influxdb_homedir="/var/lib/influxdb"
-make_dirs="${_influxdb_homedir} 0755 _influxdb _influxdb"
-conf_files="/etc/${pkgname}/${pkgname}.conf"
+make_dirs="/var/lib/influxdb 0755 _influxdb _influxdb"
 
-post_build() {
-	make -C man build
+if [ "$XBPS_TARGET_WORDSIZE" = 32 ]; then
+	broken="influxdata droppped support for 32 bit"
+fi
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	broken="iox_query_udf pulls prebuilt wasm helper that isnt published for musl targets"
+fi
+
+# https://github.com/rust-lang/cc-rs/issues/1469
+_build_env() {
+	export CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}"
+	export HOST_CFLAGS="-fstack-clash-protection ${CFLAGS_host}"
+	export CFLAGS_${RUST_BUILD//-/_}="-fstack-clash-protection ${CFLAGS_host}"
+	unset CFLAGS
+}
+
+
+# lto causes memory exhaustion
+pre_configure() {
+	vsed -i Cargo.toml -e 's/lto = "fat"/lto = "off"/'
+}
+
+pre_build() {
+	_build_env
+}
+
+pre_check() {
+	_build_env
+}
+
+pre_install() {
+	_build_env
 }
 
 post_install() {
-	vlicense LICENSE
+	vlicense LICENSE-MIT
+	vlicense LICENSE-APACHE
 	vsv ${pkgname}
-	vinstall etc/config.sample.toml 644 etc/${pkgname} ${pkgname}.conf
-
-	make -C man DESTDIR="${DESTDIR}/usr" install
 }
