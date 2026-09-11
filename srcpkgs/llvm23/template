@@ -1,0 +1,1040 @@
+# Template file for 'llvm23'
+pkgname=llvm23
+version=23.1.1
+revision=1
+build_wrksrc=llvm
+build_style=cmake
+_major="${version%%.*}"
+_llvm_prefix=usr/lib/llvm/${_major}
+_clang_prefix=usr/lib/clang/${_major}
+_ext_suffix=".cpython-${py3_ver/./}-linux-${XBPS_TARGET_LIBC/glibc/gnu}.so"
+configure_args="
+ -DCMAKE_BUILD_TYPE=Release -Wno-dev
+ -DCMAKE_INSTALL_PREFIX=/${_llvm_prefix}
+ -DENABLE_LINKER_BUILD_ID=ON
+ -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON
+ -DLIBOMP_ENABLE_SHARED=ON
+ -DLIBOMP_INSTALL_ALIASES=OFF
+ -DOPENMP_INSTALL_LIBDIR=lib
+ -DOFFLOAD_INSTALL_LIBDIR=lib
+ -DLLVM_BUILD_DOCS=ON
+ -DLLVM_INCLUDE_DOCS=ON
+ -DLLVM_ENABLE_SPHINX=ON
+ -DLLVM_ENABLE_Z3_SOLVER=ON
+ -DSPHINX_WARNINGS_AS_ERRORS=OFF
+ -DLLVM_INSTALL_UTILS=ON
+ -DLLVM_BUILD_LLVM_DYLIB=ON
+ -DLLVM_LINK_LLVM_DYLIB=ON
+ -DCLANG_LINK_CLANG_DYLIB=ON
+ -DCLANG_CONFIG_FILE_SYSTEM_DIR=/etc/clang${_major}
+ -DCLANG_RESOURCE_DIR=../../../clang/${_major}
+ -DLLVM_ENABLE_RTTI=ON
+ -DLLVM_ENABLE_FFI=ON
+ -DLLVM_BINUTILS_INCDIR=${XBPS_CROSS_BASE}/usr/include
+ -DLLDB_PYTHON_RELATIVE_PATH=lib/python${py3_ver}/site-packages
+ -DLLDB_PYTHON_EXE_RELATIVE_PATH=bin/python${py3_ver}
+ -DLLDB_PYTHON_EXT_SUFFIX=$_ext_suffix
+ -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=OFF
+ -DZLIB_ROOT=${XBPS_CROSS_BASE}/usr
+ -DLLVM_USE_LINKER=lld
+ $(vopt_if lto -DLLVM_ENABLE_LTO=Thin)
+"
+# -DLLVM_SPIRV=/usr/bin/llvm-spirv
+hostmakedepends="perl python3 zlib-devel libffi-devel swig python3-Sphinx
+ python3-sphinx-automodapi python3-sphinx-markdown-tables python3-yaml pkg-config
+ python3-mdit-py-plugins python3-MyST-Parser python3-markdown-it
+ patchelf $(vopt_if graphviz graphviz)"
+makedepends="python3-devel zlib-devel elfutils-devel libffi-devel libedit-devel
+ libxml2-devel binutils-devel z3-devel lua54-devel"
+short_desc="LLVM Compiler Infrastructure Project - Version ${_major}"
+maintainer="Duncaen <duncaen@voidlinux.org>"
+license="Apache-2.0 AND NCSA AND custom:Apache-2.0-with-llvm-exception"
+homepage="https://www.llvm.org"
+distfiles="https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-${version/rc/-rc}.tar.gz"
+checksum=851b3d701a4fbdd9f69536d4acda578469e810ca7056687d6556443f5fd39557
+conflicts="llvm18>=0 llvm17>=0 llvm15>=0"
+lib32disabled=yes
+python_version=3
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" llvm${_major}-cross-tools SPIRV-LLVM-Translator${_major} clang${_major} lld${_major}"
+else
+	hostmakedepends+=" llvm${_major}-bootstrap"
+	# OCaml cross build is broken
+	hostmakedepends+=" ocaml ocaml-findlib"
+fi
+
+build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt
+ openmp offload lto graphviz full_debug"
+build_options_default="clang clang_tools_extra lld libclc polly lldb
+ mlir"
+
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*|aarch64*|riscv64*)
+		build_options_default+=" bolt"
+		if [ -z "$CROSS_BUILD" ]; then
+			build_options_default+=" offload flang"
+		fi
+	;;
+	armv*)
+		nopie=yes
+		configure_args+="
+		 -DLLVM_ENABLE_PIE=OFF
+		 -DLLDB_INCLUDE_TESTS=OFF"
+	;;
+esac
+
+case "$XBPS_TARGET_MACHINE" in
+	armv6*)
+		# XXX:
+		# Don't enable openmp on armv6*
+		#/builddir/llvm19-19.1.0/openmp/runtime/src/kmp_platform.h:263:2:
+		#error Unknown or unsupported architecture
+
+		# needs thumbv2 enabled
+		configure_args+=" -DCOMPILER_RT_ARM_OPTIMIZED_FP=OFF"
+		;;
+	*)
+		build_options_default+=" openmp"
+		;;
+esac
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	configure_args+=" -DCOMPILER_RT_BUILD_GWP_ASAN=OFF"
+fi
+
+subpackages="
+ libllvm${_major}
+ llvm${_major}-doc
+ llvm${_major}-devel
+ compiler-rt${_major}
+ $(vopt_if libclc "libclc${_major}")
+ $(vopt_if clang "clang${_major} clang${_major}-headers clang${_major}-devel
+ libclang${_major} libclang-cpp${_major} clang-analyzer${_major}")
+ $(vopt_if clang_tools_extra "clang-tools-extra${_major}")
+ $(vopt_if bolt "llvm-bolt${_major}")
+ $(vopt_if lldb "lldb${_major} lldb${_major}-devel liblldb${_major}")
+ $(vopt_if lld "lld${_major} lld${_major}-devel")
+ $(vopt_if mlir "mlir${_major} mlir${_major}-devel")
+ $(vopt_if flang "flang${_major} flang${_major}-devel")
+ $(vopt_if openmp "libomp${_major} libomp${_major}-devel")"
+
+
+_join() {
+	_OLDIFS=$IFS; IFS=';'
+	echo "$*"
+	IFS=$_OLDIFS
+}
+
+_enabled_projects=(
+	$(vopt_if clang 'clang')
+	$(vopt_if clang_tools_extra 'clang-tools-extra')
+	$(vopt_if bolt 'bolt')
+	$(vopt_if polly 'polly')
+	$(vopt_if lldb 'lldb')
+	$(vopt_if lld 'lld')
+	$(vopt_if mlir 'mlir')
+	$(vopt_if flang 'flang')
+)
+
+_enabled_runtimes=(
+	compiler-rt
+	$(vopt_if openmp 'openmp')
+	$(vopt_if offload 'offload')
+	$(vopt_if libc 'libc')
+)
+
+configure_args+="
+ -DLLVM_ENABLE_RUNTIMES=$(_join "${_enabled_runtimes[@]}")
+ -DLLVM_ENABLE_PROJECTS=$(_join "${_enabled_projects[@]}")"
+
+# extra runtime targets for libclc and openmp
+# clspv--;clspv64-- next version?
+configure_args+="
+ -DLLVM_RUNTIME_TARGETS=default;amdgcn-amd-amdhsa-llvm;amdgcn-amd-amdhsa;nvptx64-nvidia-cuda;spirv32-unknown-unknown;spirv64-unknown-unknown;spirv32-unknown-vulkan;spirv64-unknown-vulkan
+ -DRUNTIMES_amdgcn-amd-amdhsa_LLVM_ENABLE_RUNTIMES=$(vopt_if offload openmp)
+ -DRUNTIMES_amdgcn-amd-amdhsa-llvm_LLVM_ENABLE_RUNTIMES=$(vopt_if libclc libclc)
+ -DRUNTIMES_nvptx64-nvidia-cuda_LLVM_ENABLE_RUNTIMES=$(_join $(vopt_if offload openmp) $(vopt_if libclc libclc))
+ -DRUNTIMES_spirv32-unknown-vulkan_LLVM_ENABLE_RUNTIMES=$(vopt_if libclc libclc)
+ -DRUNTIMES_spirv64-unknown-vulkan_LLVM_ENABLE_RUNTIMES=$(vopt_if libclc libclc)
+ -DRUNTIMES_spirv32-unknown-unknown_LLVM_ENABLE_RUNTIMES=$(vopt_if libclc libclc)
+ -DRUNTIMES_spirv64-unknown-unknown_LLVM_ENABLE_RUNTIMES=$(vopt_if libclc libclc)
+ -DRUNTIMES_spirv64-unknown-unknown_LIBCLC_USE_SPIRV_BACKEND=ON
+ -DRUNTIMES_spirv32-unknown-unknown_LIBCLC_USE_SPIRV_BACKEND=ON
+ -DRUNTIMES_amdgcn-amd-amdhsa_CMAKE_C_FLAGS=
+ -DRUNTIMES_amdgcn-amd-amdhsa-llvm_CMAKE_C_FLAGS=
+ -DRUNTIMES_nvptx64-nvidia-cuda_CMAKE_C_FLAGS=
+ -DRUNTIMES_spirv32-unknown-vulkan_CMAKE_C_FLAGS=
+ -DRUNTIMES_spirv64-unknown-vulkan_CMAKE_C_FLAGS=
+ -DRUNTIMES_spirv32-unknown-unknown_CMAKE_C_FLAGS=
+ -DRUNTIMES_spirv64-unknown-unknown_CMAKE_C_FLAGS=
+ -DRUNTIMES_amdgcn-amd-amdhsa_CMAKE_CXX_FLAGS=
+ -DRUNTIMES_amdgcn-amd-amdhsa-llvm_CMAKE_CXX_FLAGS=
+ -DRUNTIMES_nvptx64-nvidia-cuda_CMAKE_CXX_FLAGS=
+ -DRUNTIMES_spirv32-unknown-vulkan_CMAKE_CXX_FLAGS=
+ -DRUNTIMES_spirv64-unknown-vulkan_CMAKE_CXX_FLAGS=
+ -DRUNTIMES_spirv32-unknown-unknown_CMAKE_CXX_FLAGS=
+ -DRUNTIMES_spirv64-unknown-unknown_CMAKE_CXX_FLAGS=
+ -DRUNTIMES_amdgcn-amd-amdhsa_CMAKE_ASM_FLAGS=
+ -DRUNTIMES_amdgcn-amd-amdhsa-llvm_CMAKE_ASM_FLAGS=
+ -DRUNTIMES_nvptx64-nvidia-cuda_CMAKE_ASM_FLAGS=
+ -DRUNTIMES_spirv32-unknown-vulkan_CMAKE_ASM_FLAGS=
+ -DRUNTIMES_spirv64-unknown-vulkan_CMAKE_ASM_FLAGS=
+ -DRUNTIMES_spirv32-unknown-unknown_CMAKE_ASM_FLAGS=
+ -DRUNTIMES_spirv64-unknown-unknown_CMAKE_ASM_FLAGS=
+"
+
+
+if [ "$CROSS_BUILD" ]; then
+	configure_args+="
+	 -DLLVM_TOOLS_BINARY_DIR=/${_llvm_prefix}/bin
+	 -DLLVM_NATIVE_TOOL_DIR=/${_llvm_prefix}/bin
+	 -DLLVM_TABLEGEN=/${_llvm_prefix}/bin/llvm-tblgen
+	 -DLLVM_HEADERS_TABLEGEN=/${_llvm_prefix}/bin/llvm-min-tblgen
+	 -DCLANG_TABLEGEN=/${_llvm_prefix}/bin/clang-tblgen
+	 -DMLIR_TABLEGEN=/${_llvm_prefix}/bin/mlir-tblgen
+	 -DMLIR_PDLL_TABLEGEN=/${_llvm_prefix}/bin/mlir-pdll
+	 -DMLIR_LINALG_ODS_YAML_GEN=/${_llvm_prefix}/bin/mlir-linalg-ods-yaml-gen
+	 -DCLANG_TIDY_CONFUSABLE_CHARS_GEN=/${_llvm_prefix}/bin/clang-tidy-confusable-chars-gen
+	 -DLLVM_CONFIG_PATH=/${_llvm_prefix}/bin/llvm-config"
+
+	if [ "$build_option_flang" ]; then
+		configure_args+="
+		 -DCMAKE_Fortran_COMPILER=/${_llvm_prefix}/bin/flang"
+	fi
+else
+	subpackages+=" llvm${_major}-cross-tools"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+arm*-musl|i686-musl)
+	# sanitizer code is broken since it duplicates some libc bits
+	configure_args+="
+	 -DCOMPILER_RT_BUILD_SANITIZERS=OFF
+	 -DCOMPILER_RT_BUILD_XRAY=OFF
+	 -DCOMPILER_RT_BUILD_MEMPROF=OFF"
+	;;
+esac
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*) _arch="X86";;
+	x86_64*) _arch="X86";;
+	armv5*) _arch="Armv5te";;
+	armv6*) _arch="Armv6";;
+	armv7*) _arch="Armv7";;
+	aarch64*) _arch="AArch64";;
+	mips*) _arch="Mips";;
+	ppc*) _arch="PowerPC";;
+	riscv64*) _arch="RISCV64";;
+esac
+
+_triplet=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}
+
+configure_args+="
+ -DLLVM_TARGET_ARCH=${_arch}
+ -DLLVM_HOST_TRIPLE=${_triplet}
+ -DLLVM_DEFAULT_TARGET_TRIPLE=${_triplet}"
+
+_vlink_libs() {
+	local _files="$1"
+	local _f
+	for _f in $DESTDIR/$_files; do
+		local _base=$(basename "${_f}")
+		ln -s "llvm/${_major}/lib/${_base}" "${DESTDIR}/usr/lib"
+		vmove "${_llvm_prefix}/lib/${_base}"
+		vmove "usr/lib/${_base}"
+	done
+}
+
+_setup_cross_cflags() {
+	CC="clang"
+	CXX="clang++"
+
+	# since we use clang as target compiler and none of the
+	# -march flags in our cross compilers are supported by clang,
+	#  remove them.
+	CFLAGS=${CFLAGS/-march=* /}
+	CXXFLAGS=${CXXFLAGS/-march=* /}
+
+	CFLAGS+=" -Wno-gnu-include-next -Wno-unused-command-line-argument"
+	CXXFLAGS+=" -Wno-gnu-include-next -Wno-unused-command-line-argument"
+
+	local gcc_version=$(gcc -dumpversion)
+	CFLAGS+=" --target=${XBPS_CROSS_TRIPLET} --sysroot=${XBPS_CROSS_BASE}"
+	CFLAGS+=" --gcc-toolchain=/usr"
+	CXXFLAGS+=" --target=${XBPS_CROSS_TRIPLET} --sysroot=${XBPS_CROSS_BASE}"
+	CXXFLAGS+=" --gcc-toolchain=/usr"
+}
+
+_setup_build_env() {
+	CC="clang"
+	CXX="clang++"
+
+	if [ "$CROSS_BUILD" ]; then
+		_setup_cross_cflags
+	fi
+
+	# remove FFLAGS set by xbps-src which are not supported by flang
+	FFLAGS=${FFLAGS/-fstack-clash-protection/}
+	FFLAGS=${FFLAGS/-pipe/}
+
+	if [ ! "$build_option_full_debug" ]; then
+		# Vastly reduce size of debugging symbols:
+		CFLAGS=${CFLAGS/ -g/ -gline-tables-only}
+		CXXFLAGS=${CXXFLAGS/ -g/ -gline-tables-only}
+	fi
+
+	PATH="/usr/libexec/chroot-git:$PATH"
+}
+
+pre_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		cat <<-EOF >toolchain-native.cmake
+		set(CMAKE_C_COMPILER clang)
+		set(CMAKE_C_FLAGS "${XBPS_CFLAGS}" CACHE STRING "CFLAGS")
+		set(CMAKE_C_LINK_FLAGS "${XBPS_LDFLAGS}" CACHE STRING "LDFLAGS")
+		set(CMAKE_CXX_COMPILER clang++)
+		set(CMAKE_CXX_FLAGS "${XBPS_CXXFLAGS}" CACHE STRING "CXXFLAGS")
+		set(CMAKE_CXX_LINK_FLAGS "${XBPS_LDFLAGS}" CACHE STRING "LDFLAGS")
+		set(CMAKE_ASM_COMPILER clang)
+		set(CMAKE_ASM_FLAGS "${XBPS_CFLAGS}" CACHE STRING "ASM FLAGS")
+		set(CMAKE_EXE_LINKER_FLAGS "${XBPS_LDFLAGS}" CACHE STRING "LDFLAGS")
+		set(ZLIB_ROOT "/usr")
+		EOF
+		configure_args+=" -DCROSS_TOOLCHAIN_FLAGS_NATIVE='-DCMAKE_TOOLCHAIN_FILE=${wrksrc}/${build_wrksrc}/toolchain-native.cmake'"
+	fi
+	_setup_build_env
+}
+
+pre_build() {
+	_setup_build_env
+	export CCACHE_SLOPPINESS=pch_defines,time_macros CCACHE_NAMESPACE="${pkgname}-${version}_${revision}"
+}
+
+pre_install() {
+	_setup_build_env
+}
+
+post_install() {
+	# Required for multilib.
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		for _header in llvm-config; do
+			mv "${DESTDIR}/${_llvm_prefix}/include/llvm/Config/${_header}"{,-64}.h
+			vinstall ${FILESDIR}/llvm-Config-${_header}.h 644 \
+				${_llvm_prefix}/include/llvm/Config ${_header}.h
+		done
+	fi
+
+	# Remove llvm-config-host in cross builds.
+	# XXX: needed?
+	# if [ "$CROSS_BUILD" ]; then
+	# 	rm -vf "${DESTDIR}/${_llvm_prefix}/bin/llvm-config-host"
+	# fi
+
+	# add version suffixes to all binaries
+	vmkdir usr/bin
+	for f in "${DESTDIR}/${_llvm_prefix}/bin/"*; do
+		case "${f}" in
+		*-"${_major}") continue ;;
+		esac
+		local _bin=${f##*/}
+		ln -rsv "$f" "${DESTDIR}/usr/bin/${_bin}-${_major}"
+		if [ ! -r "${DESTDIR}/${_llvm_prefix}/bin/${_bin}-${_major}" ]; then
+			ln -sv "${_bin}" "${DESTDIR}/${_llvm_prefix}/bin/${_bin}-${_major}"
+		fi
+	done
+
+	# move man pages into real man dir with version suffix
+	vmkdir usr/share/man/man1
+	for f in "${DESTDIR}/${_llvm_prefix}/"share/man/man1/*.1; do
+		local _name="${f##*/}"; _name="${_name%.1}"
+		mv "$f" "${DESTDIR}/usr/share/man/man1/${_name}-${_major}.1"
+	done
+
+	# useful link that doens't exist
+	ln -s "clang-${_major}.1" "${DESTDIR}/usr/share/man/man1/clang++-${_major}.1"
+}
+
+_llvm_alts=(
+	bin/FileCheck share/man/man1/FileCheck.1
+	bin/UnicodeNameMappingGenerator
+	bin/bugpoint share/man/man1/bugpoint.1
+	bin/clang-installapi
+	bin/clang-nvlink-wrapper
+	bin/count
+	bin/dsymutil share/man/man1/dsymutil.1
+	bin/intercept-build
+	bin/llc
+	bin/lli
+	bin/lli-child-target
+	bin/llvm-PerfectShuffle
+	bin/llvm-addr2line
+	bin/llvm-ar
+	bin/llvm-as
+	bin/llvm-bcanalyzer
+	bin/llvm-bitcode-strip
+	bin/llvm-c-test
+	bin/llvm-cat
+	bin/llvm-cfi-verify
+	bin/llvm-cgdata
+	bin/llvm-config
+	bin/llvm-cov
+	bin/llvm-cvtres
+	bin/llvm-cxxdump
+	bin/llvm-cxxfilt
+	bin/llvm-cxxmap
+	bin/llvm-debuginfo-analyzer
+	bin/llvm-debuginfod
+	bin/llvm-debuginfod-find
+	bin/llvm-diff
+	bin/llvm-dis
+	bin/llvm-dlltool
+	bin/llvm-dwarfdump
+	bin/llvm-dwarfutil
+	bin/llvm-dwp
+	bin/llvm-exegesis
+	bin/llvm-extract
+	bin/llvm-gsymutil
+	bin/llvm-ifs
+	bin/llvm-install-name-tool
+	bin/llvm-jitlink
+	bin/llvm-jitlink-executor
+	bin/llvm-lib
+	bin/llvm-libtool-darwin
+	bin/llvm-link
+	bin/llvm-lipo
+	bin/llvm-lto
+	bin/llvm-lto2
+	bin/llvm-mc
+	bin/llvm-mca
+	bin/llvm-min-tblgen
+	bin/llvm-ml
+	bin/llvm-modextract
+	bin/llvm-mt
+	bin/llvm-nm
+	bin/llvm-objcopy
+	bin/llvm-objdump
+	bin/llvm-opt-report share/man/man1/llvm-opt-report.1
+	bin/llvm-otool
+	bin/llvm-pdbutil
+	bin/llvm-profdata   share/man/man1/llvm-profdata.1
+	bin/llvm-profgen    share/man/man1/llvm-profgen.1
+	bin/llvm-ranlib     share/man/man1/llvm-ranlib.1
+	bin/llvm-rc
+	bin/llvm-readelf    share/man/man1/llvm-readelf.1
+	bin/llvm-readobj    share/man/man1/llvm-readobj.1
+	bin/llvm-readtapi
+	bin/llvm-reduce     share/man/man1/llvm-reduce.1
+	bin/llvm-remarkutil share/man/man1/llvm-remarkutil.1
+	bin/llvm-rtdyld
+	bin/llvm-sim
+	bin/llvm-size        share/man/man1/llvm-size.1
+	bin/llvm-split
+	bin/llvm-stress      share/man/man1/llvm-stress.1
+	bin/llvm-strings     share/man/man1/llvm-strings.1
+	bin/llvm-strip       share/man/man1/llvm-strip.1
+	bin/llvm-symbolizer  share/man/man1/llvm-symbolizer.1
+	bin/llvm-tblgen      share/man/man1/llvm-tblgen.1
+	bin/llvm-tli-checker share/man/man1/llvm-tli-checker.1
+	bin/llvm-undname
+	bin/llvm-windres
+	bin/llvm-xray
+	bin/not
+	bin/obj2yaml
+	bin/opt share/man/man1/opt.1
+	bin/prepare_builtins
+	bin/reduce-chunk-list
+	bin/sancov
+	bin/sanstats
+	bin/split-file
+	bin/tblgen-to-irdl
+	bin/verify-uselistorder
+	bin/yaml-bench
+	bin/yaml2obj
+	share/man/man1/lit.1
+	share/man/man1/llc.1
+	share/man/man1/lldb-tblgen.1
+	share/man/man1/lli.1
+	share/man/man1/llvm-addr2line.1
+	share/man/man1/llvm-ar.1
+	share/man/man1/llvm-as.1
+	share/man/man1/llvm-bcanalyzer.1
+	share/man/man1/llvm-config.1
+	share/man/man1/llvm-cov.1
+	share/man/man1/llvm-cxxfilt.1
+	share/man/man1/llvm-cxxmap.1
+	share/man/man1/llvm-debuginfo-analyzer.1
+	share/man/man1/llvm-diff.1
+	share/man/man1/llvm-dis.1
+	share/man/man1/llvm-dwarfdump.1
+	share/man/man1/llvm-dwarfutil.1
+	share/man/man1/llvm-exegesis.1
+	share/man/man1/llvm-extract.1
+	share/man/man1/llvm-ifs.1
+	share/man/man1/llvm-install-name-tool.1
+	share/man/man1/llvm-lib.1
+	share/man/man1/llvm-libtool-darwin.1
+	share/man/man1/llvm-link.1
+	share/man/man1/llvm-lipo.1
+	share/man/man1/llvm-locstats.1
+	share/man/man1/llvm-mc.1
+	share/man/man1/llvm-mca.1
+	share/man/man1/llvm-nm.1
+	share/man/man1/llvm-objcopy.1
+	share/man/man1/llvm-objdump.1
+	share/man/man1/llvm-otool.1
+	share/man/man1/llvm-pdbutil.1
+	share/man/man1/tblgen.1
+)
+
+alternatives=$(:)
+for _alt in "${_llvm_alts[@]}"; do
+	alternatives+=" llvm:/usr/${_alt}:/${_llvm_prefix}/${_alt}"
+done
+
+_generic_alternatives() {
+	# XXX: pkgname is set after $pkganme_package is called...
+	# local _group=${pkgname%${_major}}
+	local _group="$1"
+	for _bin in "${_bins[@]}"; do
+		alternatives+=" ${_group}:/usr/bin/${_bin}:/${_llvm_prefix}/bin/${_bin}"
+		if [ -f "${PKGDESTDIR}/usr/share/man/man1/${_bin}-${_major}.1" ]; then
+			alternatives+=" ${_group}:${_bin}.1:/usr/share/man/man1/${_bin}-${_major}.1"
+		fi
+	done
+	for _file in "${_files[@]}"; do
+		alternatives+=" ${_group}:/usr/${_file}:/${_llvm_prefix}/${_file}"
+	done
+}
+
+_generic_move() {
+	for _bin in "${_bins[@]}"; do
+		vmove "${_llvm_prefix}/bin/${_bin}"
+		vmove "${_llvm_prefix}/bin/${_bin}-${_major}"
+		vmove "usr/bin/${_bin}-${_major}"
+		if [ -f "${PKGDESTDIR}/usr/share/man/man1/${_bin}-${_major}.1" ]; then
+			vmove "usr/share/man/man1/${_bin}-${_major}.1"
+		fi
+	done
+	for _file in "${_files[@]}"; do
+		vmove "${_llvm_prefix}/${_file}"
+	done
+}
+
+clang23_package() {
+	lib32disabled=yes
+	depends="libstdc++-devel libgcc-devel binutils
+	 compiler-rt${_major}>=${version}_${revision}"
+	case "${XBPS_TARGET_MACHINE}" in
+	armv[67]l-musl) depends+=" musl1.1-devel" ;;
+	*) depends+=" ${XBPS_TARGET_LIBC}-devel" ;;
+	esac
+	conflicts="clang18>=0 clang17>=0 clang15>=0"
+	short_desc+=" - C language family frontend"
+	homepage="https://clang.llvm.org/"
+	_bins=(
+		amdgpu-arch
+		c-index-test
+		clang
+		clang++
+		clang-check
+		clang-cl
+		clang-cpp
+		clang-extdef-mapping
+		clang-format
+		clang-linker-wrapper
+		clang-offload-bundler
+		clang-offload-packager
+		clang-refactor
+		clang-repl
+		clang-scan-deps
+		clang-sycl-linker
+		clang-tblgen
+		diagtool
+		git-clang-format
+		hmaptool
+		nvptx-arch
+		offload-arch
+	)
+	# XXX: are LLVMgold.so and LLVMPolly.so alternatives necessary?
+	_files=(
+		lib/LLVMgold.so
+		$(vopt_if polly lib/LLVMPolly.so)
+	)
+	alternatives="
+	 clang:polly.1:usr/share/man/man1/polly-${_major}.1"
+	_generic_alternatives "clang"
+	pkg_install() {
+		_generic_move
+		vlicense "${wrksrc}/clang/LICENSE.TXT"
+		if [ "$build_option_polly" ]; then
+			vmove "usr/share/man/man1/polly-${_major}.1"
+		fi
+	}
+}
+
+clang23-headers_package() {
+	lib32disabled=yes
+	short_desc+=" - C language family frontend - Headers"
+	homepage="https://clang.llvm.org/"
+	pkg_install() {
+		vmove "${_clang_prefix}/include"
+	}
+}
+
+clang23-devel_package() {
+	lib32disabled=yes
+	depends="libstdc++-devel libgcc-devel binutils
+	 clang${_major}>=${version}_${revision}
+	 clang-analyzer${_major}>=${version}_${revision}
+	 llvm${_major}>=${version}_${revision}
+	 $(vopt_if clang_tools_extra "clang-tools-extra${_major}>=${version}_${revision}")"
+	case "${XBPS_TARGET_MACHINE}" in
+	armv[67]l-musl) depends+=" musl1.1-devel" ;;
+	*) depends+=" ${XBPS_TARGET_LIBC}-devel" ;;
+	esac
+	conflicts="clang18-devel clang17-devel clang15-devel"
+	short_desc+=" - C language family frontend - development Files"
+	homepage="https://clang.llvm.org/"
+	pkg_install() {
+		vmove "${_llvm_prefix}/include/clang"
+		vmove "${_llvm_prefix}/include/clang-c"
+		vmove "${_llvm_prefix}/lib/cmake/clang"
+		vmove "${_llvm_prefix}/lib/libclang*.a"
+		vmove "${_llvm_prefix}/lib/libclang*.so"
+		vmove "${_llvm_prefix}/share/clang"
+		if [ "$build_option_clang_tools_extra" ]; then
+			vmove "${_llvm_prefix}/include/clang-tidy"
+			vmove "${_llvm_prefix}/lib/libfindAllSymbols.a"
+		fi
+		if [ "$build_option_polly" ]; then
+			vmove "${_llvm_prefix}/include/polly"
+			vmove "${_llvm_prefix}/lib/cmake/polly"
+			vmove "${_llvm_prefix}/lib/libPolly*.a"
+		fi
+	}
+}
+
+libclang23_package() {
+	depends="clang${_major}-headers>=${version}_${revision}"
+	short_desc+=" - C frontend library"
+	pkg_install() {
+		_vlink_libs "${_llvm_prefix}/lib/libclang.so.*"
+	}
+}
+
+libclang-cpp23_package() {
+	depends="clang${_major}-headers>=${version}_${revision}"
+	short_desc+=" - C frontend library (C++ interface)"
+	pkg_install() {
+		_vlink_libs "${_llvm_prefix}/lib/libclang-cpp.so.*"
+	}
+}
+
+clang-analyzer23_package() {
+	depends="clang${_major}>=${version}_${revision} python3 perl"
+	conflicts="clang-analyzer18>=0 clang-analyzer17>=0 clang-analyzer15>=0"
+	short_desc+=" - A source code analysis framework"
+	homepage="https://clang-analyzer.llvm.org/"
+	pycompile_dirs="${_llvm_prefix}/share/scan-view"
+	_bins=(
+		analyze-build
+		scan-build
+		scan-build-py
+		scan-view
+	)
+	_files=()
+	alternatives=$(:)
+	_generic_alternatives "clang-analyzer"
+	pkg_install() {
+		_generic_move
+		vmove "${_llvm_prefix}/lib/libear"
+		vmove "${_llvm_prefix}/lib/libscanbuild"
+		vmove "${_llvm_prefix}/libexec/analyze-c++"
+		vmove "${_llvm_prefix}/libexec/analyze-cc"
+		vmove "${_llvm_prefix}/libexec/c++-analyzer"
+		vmove "${_llvm_prefix}/libexec/ccc-analyzer"
+		vmove "${_llvm_prefix}/libexec/intercept-c++"
+		vmove "${_llvm_prefix}/libexec/intercept-cc"
+		vmove "${_llvm_prefix}/share/scan-build"
+		vmove "${_llvm_prefix}/share/scan-view"
+	}
+}
+
+clang-tools-extra23_package() {
+	lib32disabled=yes
+	depends="clang${_major}>=${version}_${revision} python3"
+	conflicts="clang-tools-extra18>=0 clang-tools-extra17>=0 clang-tools-extra15>=0"
+	short_desc+=" - Extra Clang tools"
+	homepage="https://clang.llvm.org/extra/"
+	_bins=(
+		clang-apply-replacements
+		clang-change-namespace
+		clang-doc
+		clang-include-cleaner
+		clang-include-fixer
+		clang-move
+		clang-query
+		clang-reorder-fields
+		clang-tidy
+		clangd
+		find-all-symbols
+		modularize
+		pp-trace
+		run-clang-tidy
+	)
+	_files=()
+	alternatives="
+	 clang-tools-extra:extraclangtools.1:usr/share/man/man1/extraclangtools-${_major}.1"
+	_generic_alternatives "clang-tools-extra"
+	pkg_install() {
+		_generic_move
+		vlicense ${wrksrc}/clang-tools-extra/LICENSE.TXT
+		vmove "usr/share/man/man1/extraclangtools-${_major}.1"
+	}
+}
+
+# "bolt" package name is already used
+llvm-bolt23_package() {
+	lib32disabled=yes
+	depends="clang${_major}>=${version}_${revision}"
+	conflicts="llvm-bolt18>=0 llvm-bolt17>=0"
+	short_desc+=" - post-link optimizer"
+	homepage="https://github.com/llvm/llvm-project/tree/main/bolt"
+	_bins=(
+		llvm-bolt
+		llvm-bolt-binary-analysis
+		llvm-bolt-heatmap
+		llvm-boltdiff
+		merge-fdata
+		perf2bolt
+	)
+	_files=()
+	alternatives=$(:)
+	_generic_alternatives "llvm-bolt"
+	pkg_install() {
+		_generic_move
+		vlicense ${wrksrc}/bolt/LICENSE.TXT
+		if [ -z "$CROSS_BUILD" ]; then
+			vmove "${_llvm_prefix}/lib/libbolt_rt_instr.a"
+			vmove "${_llvm_prefix}/lib/libbolt_rt_hugify.a"
+		fi
+	}
+}
+
+lldb23_package() {
+	lib32disabled=yes
+	depends="python3-six"
+	conflicts="lldb18>=0 lldb17>=0 lldb15>=0"
+	short_desc+=" - LLDB debugger"
+	homepage="https://lldb.llvm.org/"
+	_bins=(
+		lldb
+		lldb-argdumper
+		lldb-dap
+		lldb-instr
+		lldb-mcp
+		lldb-server
+	)
+	_files=(
+		"lib/python${py3_ver}/site-packages/lldb"
+	)
+	if [ -z "$CROSS_BUILD" ]; then
+		_files+=(lib/lua/5.4/lldb.so)
+	fi
+	alternatives=$(:)
+	_generic_alternatives "lldb"
+	pkg_install() {
+		_generic_move
+		vlicense "${wrksrc}/lldb/LICENSE.TXT"
+	}
+}
+
+lldb23-devel_package() {
+	lib32disabled=yes
+	depends="lldb${_major}>=${version}_${revision}"
+	conflicts="lldb18-devel>=0 lldb17-devel>=0 lldb15-devel>=0"
+	short_desc+=" - LLDB debugger - development files"
+	homepage="https://lldb.llvm.org/"
+	pkg_install() {
+		vmove "${_llvm_prefix}/include/lldb"
+		vmove "${_llvm_prefix}/lib/liblldb*.so"
+	}
+}
+
+liblldb23_package() {
+	lib32disabled=yes
+	short_desc+=" - LLDB debugger - runtime library"
+	homepage="https://lldb.llvm.org/"
+	pkg_install() {
+		_vlink_libs "${_llvm_prefix}/lib/liblldb*.so.*"
+	}
+}
+
+lld23_package() {
+	lib32disabled=yes
+	conflicts="lld18>=0 lld17>=0 lld15>=0"
+	short_desc+=" - linker"
+	homepage="https://lld.llvm.org"
+	_bins=(
+		lld
+		lld-link
+		ld.lld
+		ld64.lld
+		wasm-ld
+	)
+	_files=()
+	alternatives=$(:)
+	_generic_alternatives "lld"
+	pkg_install() {
+		_generic_move
+		vlicense ${wrksrc}/lld/LICENSE.TXT
+	}
+}
+
+lld23-devel_package() {
+	lib32disabled=yes
+	depends="lld${_major}>=${version}_${revision} llvm${_major}>=${version}_${revision}"
+	conflicts="lld18-devel>=0 lld17-devel>=0 lld15-devel>=0"
+	short_desc+=" - linker - development files"
+	homepage="https://lld.llvm.org"
+	pkg_install() {
+		vmove "${_llvm_prefix}/include/lld"
+		vmove "${_llvm_prefix}/lib/cmake/lld"
+		vmove "${_llvm_prefix}/lib/liblld*.a"
+	}
+}
+
+mlir23_package() {
+	lib32disabled=yes
+	short_desc+=" - multi-level IR compiler framework"
+	homepage="https://mlir.llvm.org/"
+	_bins=(
+		mlir-cat
+		mlir-linalg-ods-yaml-gen
+		mlir-lsp-server
+		mlir-minimal-opt
+		mlir-minimal-opt-canonicalize
+		mlir-opt
+		mlir-pdll
+		mlir-pdll-lsp-server
+		mlir-query
+		mlir-reduce
+		mlir-rewrite
+		mlir-runner
+		mlir-tblgen
+		mlir-transform-opt
+		mlir-translate
+		tblgen-lsp-server
+	)
+	_files=()
+	alternatives=$(:)
+	_generic_alternatives "mlir"
+	pkg_install() {
+		_generic_move
+		_vlink_libs "${_llvm_prefix}/lib/libMLIR*.so.*"
+		_vlink_libs "${_llvm_prefix}/lib/libmlir*.so.*"
+	}
+}
+
+mlir23-devel_package() {
+	lib32disabled=yes
+	depends="mlir${_major}>=${version}_${revision} llvm${_major}>=${version}_${revision}"
+	conflicts="mlir18-devel>=0 mlir17-devel>=0"
+	short_desc+=" - multi-level IR compiler framework - development files"
+	homepage="https://mlir.llvm.org/"
+	pkg_install() {
+		vmove "${_llvm_prefix}/include/mlir"
+		vmove "${_llvm_prefix}/include/mlir-c"
+		vmove "${_llvm_prefix}/lib/cmake/mlir"
+		vmove "${_llvm_prefix}/lib/libMLIR*"
+		vmove "${_llvm_prefix}/lib/libmlir*"
+		vmove "${_llvm_prefix}/lib/objects-Release/obj.MLIR*"
+	}
+}
+
+flang23_package() {
+	lib32disabled=yes
+	depends="mlir${_major}>=${version}_${revision}"
+	conflicts="flang18>=0 flang17>=0"
+	short_desc+=" - Fortran language frontend"
+	homepage="https://flang.llvm.org/"
+	_bins=(
+		bbc
+		f18-parse-demo
+		fir-lsp-server
+		fir-opt
+		flang
+		flang-new
+		tco
+	)
+	_files=()
+	alternatives=$(:)
+	_generic_alternatives "flang"
+	pkg_install() {
+		_generic_move
+		vmove "${_clang_prefix}/finclude/flang/${_triplet}/*.mod"
+		vmove "${_llvm_prefix}/include/flang-rt"
+		vmove "${_llvm_prefix}/lib/libFortran*.a"
+		vmove "${_llvm_prefix}/lib/libflang*.a"
+	}
+}
+
+flang23-devel_package() {
+	lib32disabled=yes
+	depends="flang${_major}>=${version}_${revision} llvm${_major}>=${version}_${revision}"
+	conflicts="flang18-devel>=0 flang17-devel>=0"
+	short_desc+=" - Fortran language frontend - development files"
+	homepage="https://flang.llvm.org/"
+	pkg_install() {
+		vmove "${_llvm_prefix}/include/flang"
+		vmove "${_llvm_prefix}/lib/cmake/flang"
+		vmove "${_llvm_prefix}/lib/libFIR*.a"
+		vmove "${_llvm_prefix}/lib/libHLFIR*.a"
+		vmove "${_llvm_prefix}/lib/libCUF*.a"
+	}
+}
+
+libomp23_package() {
+	short_desc+=" - Clang OpenMP support library"
+	conflicts="libomp18>=0 libomp17>=0"
+	homepage="https://openmp.llvm.org/"
+	_bins=(
+		$(vopt_if offload 'llvm-offload-device-info llvm-omp-kernel-replay')
+	)
+	_files=(
+		lib/libomp.so
+		lib/libompd.so
+		$(vopt_if offload lib/libomptarget.so)
+	)
+	alternatives=$(:)
+	_generic_alternatives "libomp"
+	pkg_install() {
+		_generic_move
+		if [ "$build_option_offload" ]; then
+			_vlink_libs "${_llvm_prefix}/lib/libomp*.so*"
+			vmove "${_llvm_prefix}/lib/libLLVMOffload.so.*"
+		fi
+	}
+}
+
+libomp23-devel_package() {
+	short_desc+=" - Clang OpenMP support library - development files"
+	depends="libomp${_major}>=${version}_${revision}"
+	conflicts="libomp18-devel>=0 libomp17-devel>=0"
+	nostrip_files="
+	 /${_llvm_prefix}/lib/amdgcn-amd-amdhsa/libompdevice.a
+	 /${_llvm_prefix}/lib/nvptx64-nvidia-cuda/libompdevice.a"
+	pkg_install() {
+		vmove "${_llvm_prefix}/lib/libarcher.so"
+		vmove "${_llvm_prefix}/lib/libarcher_static.a"
+		vmove "${_llvm_prefix}/lib/cmake/openmp"
+		if [ "$build_option_offload" ]; then
+			vmove "${_llvm_prefix}/include/offload"
+			vmove "${_llvm_prefix}/lib/amdgcn-amd-amdhsa/libompdevice.a"
+			vmove "${_llvm_prefix}/lib/amdgcn-amd-amdhsa/libomptarget-amdgpu.bc"
+			vmove "${_llvm_prefix}/lib/libLLVMOffload.so"
+			vmove "${_llvm_prefix}/lib/nvptx64-nvidia-cuda/libompdevice.a"
+			vmove "${_llvm_prefix}/lib/nvptx64-nvidia-cuda/libomptarget-nvptx.bc"
+			vmove "${_llvm_prefix}/share/gdb/python/ompd"
+		fi
+	}
+}
+
+compiler-rt23_package() {
+	short_desc+=" - runtime libraries"
+	depends="clang${_major}-headers>=${version}_${revision}"
+	noshlibprovides=yes
+	noverifyrdeps=yes
+	homepage="https://compiler-rt.llvm.org/"
+	pkg_install() {
+		vmove "${_clang_prefix}/lib/linux"
+		if [ "$build_option_flang" ]; then
+			vmove "${_clang_prefix}/lib/${_triplet}/libflang_rt.runtime.a"
+		fi
+		case "$XBPS_TARGET_MACHINE" in
+		x86_64*|aarch64*|riscv64*)
+			# the following files are only available for architectures that
+			# support sanitizers.
+			vmove "${_clang_prefix}/bin"
+			vmove "${_clang_prefix}/share"
+			;;
+		*)
+			[ ! -d "${_clang_prefix}/bin" ]
+			[ ! -d "${_clang_prefix}/share" ]
+		esac
+	}
+}
+
+libllvm23_package() {
+	short_desc+=" - library"
+	pkg_install() {
+		_vlink_libs "${_llvm_prefix}/lib/libLLVM-*.so"
+		_vlink_libs "${_llvm_prefix}/lib/libLLVM.so.*"
+		vmove "${_llvm_prefix}/lib/libLTO.so.*"
+		vmove "${_llvm_prefix}/lib/libRemarks.so.*"
+	}
+}
+
+llvm23-devel_package() {
+	conflicts="llvm18-devel>=0 llvm17-devel>=0 llvm15-devel>=0"
+	short_desc+=" - development files"
+	depends="llvm${_major}>=${version}_${revision}
+	 $(vopt_if openmp "libomp${_major}-devel>=${version}_${revision}")
+	 $(vopt_if mlir "mlir${_major}-devel>=${version}_${revision}")
+	 $(vopt_if clang "clang${_major}-devel>=${version}_${revision}")
+	"
+	pkg_install() {
+		vmove "${_llvm_prefix}/include/llvm"
+		vmove "${_llvm_prefix}/include/llvm-c"
+		vmove "${_llvm_prefix}/lib/cmake/llvm"
+		vmove "${_llvm_prefix}/lib/libLLVM*.a"
+		vmove "${_llvm_prefix}/lib/libLLVM.so"
+		vmove "${_llvm_prefix}/lib/libLTO.so"
+		vmove "${_llvm_prefix}/lib/libRemarks.so"
+	}
+}
+
+llvm23-doc_package() {
+	short_desc+=" - documentation"
+	pkg_install() {
+		vmove "${_llvm_prefix}/share/doc"
+		vmove "${_llvm_prefix}/share/clang-doc"
+	}
+}
+
+# These binaries are ONLY used when building llvm, they aren't normally installed
+llvm23-cross-tools_package() {
+	conflicts="llvm18-cross-tools>=0 llvm17-cross-tools>=0"
+	short_desc+=" - build tools for cross compiling LLVM"
+	depends="llvm${_major}-devel>=${version}_${revision}
+	 $(vopt_if lldb "lldb${_major}-devel>=${version}_${revision}")
+	 $(vopt_if lld "lld${_major}-devel>=${version}_${revision}")
+	 $(vopt_if flang "flang${_major}-devel>=${version}_${revision}")
+	"
+	pkg_install() {
+		# Binaries ONLY used during the process of building llvm, and aren't usually installed
+		vmkdir "${_llvm_prefix}/bin"
+		vcopy build/bin/clang-tidy-confusable-chars-gen "${_llvm_prefix}/bin"
+		if [ "$build_option_offload" ]; then
+			vcopy build/bin/offload-tblgen "${_llvm_prefix}/bin"
+		fi
+		if [ "$build_option_mlir" ]; then
+			vmove "${_llvm_prefix}/bin/mlir-src-sharder"
+			vmove "${_llvm_prefix}/bin/mlir-src-sharder-${_major}"
+			vmove "usr/bin/mlir-src-sharder-${_major}"
+		fi
+	}
+}
+
+libclc23_package() {
+	short_desc+=" - Open implementation of the OpenCL C programming language"
+	replaces="libclc-git>=0"
+	pkg_install() {
+		for _target in amdgcn-amd-amdhsa-llvm nvptx64-nvidia-cuda \
+			spirv32-unknown-unknown spirv64-unknown-unknown \
+			spirv32-unknown-vulkan spirv64-unknown-vulkan; do
+			vmove "${_clang_prefix}/lib/${_target}/libclc.*"
+		done
+	}
+}
