@@ -77,6 +77,7 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	cups-config = '${XBPS_CROSS_BASE}/usr/bin/cups-config'
 	qmake6 = 'qmake6'
 	qmake5 = 'qmake5'
+	cmake = 'cmake'
 
 	[properties]
 	needs_exe_wrapper = true
