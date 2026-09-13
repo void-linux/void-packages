@@ -1,6 +1,6 @@
 # Template file for 'prometheus'
 pkgname=prometheus
-version=3.10.0
+version=3.14.0
 revision=1
 build_style=go
 go_import_path="github.com/prometheus/prometheus"
@@ -12,7 +12,7 @@ go_ldflags="-X github.com/prometheus/common/version.Version=${version}
  -X github.com/prometheus/common/version.BuildUser=VoidLinux"
 go_build_tags="netgo,builtinassets"
 make_check_args="-short"
-hostmakedepends="yarn"
+hostmakedepends="pnpm"
 conf_files="/etc/prometheus/prometheus.yml"
 short_desc="Monitoring system and time series database"
 maintainer="Toyam Cox <Vaelatern@voidlinux.org>"
@@ -20,22 +20,32 @@ license="Apache-2.0, MIT"
 homepage="https://prometheus.io/"
 changelog="https://raw.githubusercontent.com/prometheus/prometheus/master/CHANGELOG.md"
 distfiles="https://github.com/prometheus/prometheus/archive/v${version}.tar.gz"
-checksum=a3d01efaf82edfd074f9fc48399969bcf22f22b8fb4353dfbbcc79cb2a03e579
+checksum=9294e72722fe8f90e54994ce36f331ea6176cb0edc4149cbf1d023bc89536505
 
 system_accounts="_prometheus"
 
 make_dirs="/var/lib/prometheus 700 _prometheus _prometheus"
 
+# tsdb tests mmap 128MiB head chunk files per open DB. Running concurrently exhausts the 32bit address space.
+if [ "$XBPS_TARGET_WORDSIZE" = "32" ]; then
+	make_check_args+=" -parallel 1"
+fi
+
 pre_build() {
 	# Need to patch node fs to avoid using too many file descriptors
-	(cd web/ui && yarn add --dev -W graceful-fs@4.2.11)
+	(cd web/ui && pnpm add --save-dev -w graceful-fs@4.2.11)
 	echo "require('graceful-fs').gracefulify(require('fs'));" \
 		> "${wrksrc}/web/ui/use-graceful-fs.js"
 	export NODE_OPTIONS="--require ${wrksrc}/web/ui/use-graceful-fs.js"
 
-	# rollup doesn't support native i686, use wasm instead
+	# rollup doesn't support native i686, use wasm instead everywhere
+	# (mantine-ui's vite build and lezer-promql both depend on rollup)
 	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		(cd web/ui && npm install --override rollup@npm:@rollup/wasm-node@latest)
+		(cd web/ui && cat >> pnpm-workspace.yaml <<-EOF
+			overrides:
+			  rollup: npm:@rollup/wasm-node@latest
+			EOF
+		pnpm install)
 	fi
 
 	CGO_ENABLED=0 GOARCH= make assets assets-compress
