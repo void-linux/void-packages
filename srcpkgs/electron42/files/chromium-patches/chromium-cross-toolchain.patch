@@ -1,0 +1,124 @@
+Adapt electron39 cross-toolchain support to Chromium 148.
+Host snapshot tools run on the build machine while targeting aarch64 V8.
+
+--- a/build/toolchain/linux/unbundle/BUILD.gn
++++ b/build/toolchain/linux/unbundle/BUILD.gn
+@@ -35,7 +35,26 @@
+   extra_ldflags = getenv("BUILD_LDFLAGS")
+ 
+   toolchain_args = {
+-    current_cpu = current_cpu
+-    current_os = current_os
++    current_cpu = host_cpu
++    current_os = host_os
+   }
+ }
++
++gcc_toolchain("v8_snapshot_cross") {
++  cc = getenv("BUILD_CC")
++  cxx = getenv("BUILD_CXX")
++  ar = getenv("BUILD_AR")
++  nm = getenv("BUILD_NM")
++  ld = cxx
++
++  extra_cflags = getenv("BUILD_CFLAGS")
++  extra_cppflags = getenv("BUILD_CPPFLAGS")
++  extra_cxxflags = getenv("BUILD_CXXFLAGS")
++  extra_ldflags = getenv("BUILD_LDFLAGS")
++
++  toolchain_args = {
++    current_cpu = host_cpu
++    current_os = host_os
++    v8_current_cpu = target_cpu
++  }
++}
+--- a/build/config/clang/clang.gni
++++ b/build/config/clang/clang.gni
+@@ -76,6 +76,7 @@
+   clang_use_unsafe_buffers_plugin = false
+ 
+   clang_base_path = default_clang_base_path
++  clang_cross_path = default_clang_base_path
+ 
+   # Specifies whether or not bitcode should be embedded during compilation.
+   # This is used for creating a MLGO corpus from Chromium in the non-ThinLTO case.
+--- a/build/config/clang/BUILD.gn
++++ b/build/config/clang/BUILD.gn
+@@ -232,7 +232,11 @@
+         assert(false)  # Unhandled target platform
+       }
+ 
+-      _clang_lib_dir = "$clang_base_path/lib/clang/$clang_version/lib"
++      if (current_cpu == target_cpu && target_cpu != host_cpu) {
++        _clang_lib_dir = "$clang_cross_path/lib/clang/$clang_version/lib"
++      } else {
++        _clang_lib_dir = "$clang_base_path/lib/clang/$clang_version/lib"
++      }
+       _lib_file = "${_prefix}clang_rt.${_libname}${_suffix}.${_ext}"
+       libs = [ "$_clang_lib_dir/$_dir/$_lib_file" ]
+     }
+--- a/build/config/rust.gni
++++ b/build/config/rust.gni
+@@ -58,6 +58,7 @@
+   # `tools/rust/unstable_rust_feature_usage.md`) although other projects (e.g. V8)
+   # may be compatible with the stable version of Rust toolchain.
+   rust_sysroot_absolute = ""
++  rust_cross_sysroot_absolute = ""
+ 
+   # Directory under which to find `bin/bindgen` (a `bin` directory containing
+   # the bindgen exectuable).
+--- a/build/rust/std/find_std_rlibs.py
++++ b/build/rust/std/find_std_rlibs.py
+@@ -26,6 +26,7 @@
+                       help="Path to Rust binaries",
+                       required=True),
+   parser.add_argument("--target", help="Rust target triple", required=False),
++  parser.add_argument("--sysroot", help="Rust target sysroot", required=False)
+   parser.add_argument("--output",
+                       help="Path to rlibs without suffixes",
+                       required=True)
+@@ -50,6 +51,8 @@
+   rustc_args = [rustc, "--print", "target-libdir"]
+   if args.target:
+     rustc_args.extend(["--target", args.target])
++  if args.sysroot:
++    rustc_args.extend(["--sysroot", args.sysroot])
+   rustlib_dir = subprocess.check_output(rustc_args).rstrip().decode()
+   # crbug.com/467351944 - rustc --print target-libdir loses Windows subst paths
+   # due to calling GetFinalPathNameByHandle() during canonicalization. This
+--- a/build/rust/std/BUILD.gn
++++ b/build/rust/std/BUILD.gn
+@@ -308,6 +308,10 @@
+         rust_abi_target,
+       ]
+ 
++      if (current_cpu == target_cpu && rust_cross_sysroot_absolute != "") {
++        args += [ "--sysroot", rust_cross_sysroot_absolute ]
++      }
++
+       outputs = []
+       foreach(lib, all_stdlibs_to_copy) {
+         outputs += [ "$target_out_dir/lib$lib.rlib" ]
+@@ -333,8 +337,12 @@
+     }
+ 
+     config("prebuilt_stdlib_sysroot") {
+-      # Match the output directory of :prebuilt_rustc_copy_to_sysroot
+-      sysroot = rebase_path(prebuilt_rustc_sysroot, root_build_dir)
++      # Use the complete installed sysroot: recent Rust distributions keep
++      # full metadata in separate .rmeta files, which find_stdlib does not copy.
++      sysroot = rebase_path(rust_sysroot, root_build_dir)
++      if (current_cpu == target_cpu && rust_cross_sysroot_absolute != "") {
++        sysroot = rust_cross_sysroot_absolute
++      }
+       rustflags = [ "--sysroot=$sysroot" ]
+       visibility = [ ":*" ]
+     }
+@@ -365,6 +373,7 @@
+     group("std") {
+       all_dependent_configs = [
+         ":prebuilt_stdlib_libs",
++        ":prebuilt_stdlib_sysroot",
+         ":stdlib_public_dependent_libs",
+       ]
+       deps = [ ":prebuilt_rustc_copy_to_sysroot" ]
