@@ -414,6 +414,12 @@ _void_cross_build_gcc() {
 		extra_args+=" --enable-gnu-unique-object"
 	fi
 
+	case "$XBPS_TARGET_MACHINE" in
+	armv[67]*-musl)
+		extra_args+=" GDCFLAGS=-fversion=CRuntime_Musl_Pre_Time64"
+		;;
+	esac
+
 	# note on --disable-libquadmath:
 	# on some platforms the library is actually necessary for the
 	# fortran frontend to build, platforms where this is a problem
@@ -554,6 +560,13 @@ do_build() {
 
 	export PATH="${wrksrc}/build_root/usr/bin:$PATH"
 	export LD_LIBRARY_PATH="${wrksrc}/build_root/usr/lib:$PATH"
+
+	case "$XBPS_MACHINE" in
+	armv[67]*-musl)
+		GDCFLAGS_FOR_BUILD="-fversion=CRuntime_Musl_Pre_Time64"
+		export GDCFLAGS_FOR_BUILD
+		;;
+	esac
 
 	_void_cross_build_bootstrap_gcc ${tgt} ${gcc_ver}
 	_void_cross_build_kernel_headers ${tgt} ${linux_ver}
