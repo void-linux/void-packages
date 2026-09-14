@@ -2,12 +2,32 @@ Source: Alpine Linux
 Upstream: Unknown
 Reason: Patch libgnarl to not use function missing from musl.
 
+From 5adfe740c027fb8dc9931053f55f7eae222e6bb4 Mon Sep 17 00:00:00 2001
+From: Ariadne Conill <ariadne@ariadne.space>
+Date: Fri, 25 Jul 2025 02:09:02 -0700
+Subject: [PATCH] ada: libgnarl: remove use of glibc-specific
+ pthread_rwlockattr_setkind_np
+
+musl's thread library does not implement it
+
+Signed-off-by: Ariadne Conill <ariadne@ariadne.space>
+---
+ gcc/ada/libgnarl/s-osinte__linux.ads | 10 ----------
+ gcc/ada/libgnarl/s-taprop__linux.adb |  7 -------
+ 2 files changed, 17 deletions(-)
+
+diff --git a/gcc/ada/libgnarl/s-osinte__linux.ads b/gcc/ada/libgnarl/s-osinte__linux.ads
+index 7aeb15da523..5551b701e5a 100644
 --- a/gcc/ada/libgnarl/s-osinte__linux.ads
 +++ b/gcc/ada/libgnarl/s-osinte__linux.ads
-@@ -403,12 +403,6 @@ package System.OS_Interface is
-    PTHREAD_RWLOCK_PREFER_WRITER_NP              : constant := 1;
-    PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP : constant := 2;
+@@ -402,16 +402,6 @@ package System.OS_Interface is
+      (attr : access pthread_rwlockattr_t) return int;
+    pragma Import (C, pthread_rwlockattr_destroy, "pthread_rwlockattr_destroy");
  
+-   PTHREAD_RWLOCK_PREFER_READER_NP              : constant := 0;
+-   PTHREAD_RWLOCK_PREFER_WRITER_NP              : constant := 1;
+-   PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP : constant := 2;
+-
 -   function pthread_rwlockattr_setkind_np
 -     (attr : access pthread_rwlockattr_t;
 -      pref : int) return int;
@@ -17,98 +37,16 @@ Reason: Patch libgnarl to not use function missing from musl.
     function pthread_rwlock_init
       (mutex : access pthread_rwlock_t;
        attr  : access pthread_rwlockattr_t) return int;
-@@ -470,11 +464,6 @@ package System.OS_Interface is
-       protocol : int) return int;
-    pragma Import (C, pthread_mutexattr_setprotocol);
- 
--   function pthread_mutexattr_setprioceiling
--     (attr        : access pthread_mutexattr_t;
--      prioceiling : int) return int;
--   pragma Import (C, pthread_mutexattr_setprioceiling);
--
-    type struct_sched_param is record
-       sched_priority : int;  --  scheduling priority
-    end record;
+diff --git a/gcc/ada/libgnarl/s-taprop__linux.adb b/gcc/ada/libgnarl/s-taprop__linux.adb
+index 8f4c835baa7..6df36c7d8f4 100644
 --- a/gcc/ada/libgnarl/s-taprop__linux.adb
 +++ b/gcc/ada/libgnarl/s-taprop__linux.adb
-@@ -198,9 +198,6 @@ package body System.Task_Primitives.Oper
-    pragma Import
-      (C, GNAT_pthread_condattr_setup, "__gnat_pthread_condattr_setup");
+@@ -409,16 +409,9 @@ package body System.Task_Primitives.Operations is
+             Result      : C.int;
  
--   function GNAT_has_cap_sys_nice return C.int;
--   pragma Import
--     (C, GNAT_has_cap_sys_nice, "__gnat_has_cap_sys_nice");
-    --  We do not have pragma Linker_Options ("-lcap"); here, because this
-    --  library is not present on many Linux systems. 'libcap' is the Linux
-    --  "capabilities" library, called by __gnat_has_cap_sys_nice.
-@@ -210,38 +207,6 @@ package body System.Task_Primitives.Oper
-    --  Convert Ada priority to Linux priority. Priorities are 1 .. 99 on
-    --  GNU/Linux, so we map 0 .. 98 to 1 .. 99.
- 
--   function Get_Ceiling_Support return Boolean;
--   --  Get the value of the Ceiling_Support constant (see below).
--   --  Note well: If this function or related code is modified, it should be
--   --  tested by hand, because automated testing doesn't exercise it.
+          begin
+-            --  Set the rwlock to prefer writer to avoid writers starvation
 -
--   -------------------------
--   -- Get_Ceiling_Support --
--   -------------------------
--
--   function Get_Ceiling_Support return Boolean is
--      Ceiling_Support : Boolean := False;
--   begin
--      if Locking_Policy /= 'C' then
--         return False;
--      end if;
--
--      declare
--         function geteuid return Integer;
--         pragma Import (C, geteuid, "geteuid");
--         Superuser : constant Boolean := geteuid = 0;
--         Has_Cap : constant C.int := GNAT_has_cap_sys_nice;
--         pragma Assert (Has_Cap in 0 | 1);
--      begin
--         Ceiling_Support := Superuser or else Has_Cap = 1;
--      end;
--
--      return Ceiling_Support;
--   end Get_Ceiling_Support;
--
--   pragma Warnings (Off, "non-preelaborable call not allowed*");
--   Ceiling_Support : constant Boolean := Get_Ceiling_Support;
--   pragma Warnings (On, "non-preelaborable call not allowed*");
-    --  True if the locking policy is Ceiling_Locking, and the current process
-    --  has permission to use this policy. The process has permission if it is
-    --  running as 'root', or if the capability was set by the setcap command,
-@@ -344,7 +309,9 @@ package body System.Task_Primitives.Oper
-    -- Init_Mutex --
-    ----------------
- 
-+   pragma Warnings (Off, "formal parameter * is not referenced");
-    function Init_Mutex (L : RTS_Lock_Ptr; Prio : Any_Priority) return C.int is
-+   pragma Warnings (On, "formal parameter * is not referenced");
-       Mutex_Attr : aliased pthread_mutexattr_t;
-       Result, Result_2 : C.int;
- 
-@@ -356,16 +323,7 @@ package body System.Task_Primitives.Oper
-          return Result;
-       end if;
- 
--      if Ceiling_Support then
--         Result := pthread_mutexattr_setprotocol
--           (Mutex_Attr'Access, PTHREAD_PRIO_PROTECT);
--         pragma Assert (Result = 0);
--
--         Result := pthread_mutexattr_setprioceiling
--           (Mutex_Attr'Access, Prio_To_Linux_Prio (Prio));
--         pragma Assert (Result = 0);
--
--      elsif Locking_Policy = 'I' then
-+      if Locking_Policy = 'I' then
-          Result := pthread_mutexattr_setprotocol
-            (Mutex_Attr'Access, PTHREAD_PRIO_INHERIT);
-          pragma Assert (Result = 0);
-@@ -405,11 +363,6 @@ package body System.Task_Primitives.Oper
              Result := pthread_rwlockattr_init (RWlock_Attr'Access);
              pragma Assert (Result = 0);
  
@@ -120,3 +58,5 @@ Reason: Patch libgnarl to not use function missing from musl.
              Result := pthread_rwlock_init (L.RW'Access, RWlock_Attr'Access);
  
              pragma Assert (Result in 0 | ENOMEM);
+-- 
+2.50.1
