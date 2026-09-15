@@ -1,0 +1,401 @@
+# https://gitlab.archlinux.org/archlinux/packaging/packages/digikam/-/blob/main/opencv-5.patch?ref_type=heads
+diff --git a/core/app/utils/digikam_opencv.h.cmake.in b/core/app/utils/digikam_opencv.h.cmake.in
+index 0d3246ae07..a3d00db297 100644
+--- a/core/app/utils/digikam_opencv.h.cmake.in
++++ b/core/app/utils/digikam_opencv.h.cmake.in
+@@ -55,8 +55,6 @@
+ #include <opencv2/core.hpp>
+ #include <opencv2/core/utility.hpp>
+ #include <opencv2/core/persistence.hpp>
+-#include <opencv2/core/core_c.h>
+-#include <opencv2/core/types_c.h>
+ #include <opencv2/core/ocl.hpp>
+
+ // Image codecs module headers
+@@ -70,7 +68,7 @@
+ // Image processing module headers
+
+ #include <opencv2/imgproc.hpp>
+-#include <opencv2/imgproc/types_c.h>
++#include <opencv2/geometry/2d.hpp>
+
+ // Shape detection/recognition module headers
+
+diff --git a/core/libs/dimg/filters/nr/nrestimate.cpp b/core/libs/dimg/filters/nr/nrestimate.cpp
+index 763662fb13..8c26fda714 100644
+--- a/core/libs/dimg/filters/nr/nrestimate.cpp
++++ b/core/libs/dimg/filters/nr/nrestimate.cpp
+@@ -115,7 +115,7 @@ void NREstimate::startAnalyse()
+     readImage();
+     postProgress(5);
+
+-    //--convert fimg to CvMat*-------------------------------------------------------------------------------
++    //--convert fimg to Cv::Mat*-------------------------------------------------------------------------------
+
+     // convert the image into YCrCb color model
+
+@@ -123,15 +123,15 @@ void NREstimate::startAnalyse()
+
+     // One dimensional CvMat which stores the image
+
+-    CvMat* points    = cvCreateMat(m_orgImage.numPixels(), 3, CV_32FC1);
++    cv::Mat points    = cv::Mat(m_orgImage.numPixels(), 3, CV_32FC1);
+
+     // matrix to store the index of the clusters
+
+-    CvMat* clusters  = cvCreateMat(m_orgImage.numPixels(), 1, CV_32SC1);
++    cv::Mat clusters  = cv::Mat(m_orgImage.numPixels(), 1, CV_32SC1);
+
+     // pointer variable to handle the CvMat* points (the image in CvMat format)
+
+-    float* pointsPtr = reinterpret_cast<float*>(points->data.ptr);
++    float* pointsPtr = reinterpret_cast<float*>(points.data);
+
+     for (uint x = 0 ; runningFlag() && (x < m_orgImage.numPixels()) ; ++x)
+     {
+@@ -141,19 +141,15 @@ void NREstimate::startAnalyse()
+         }
+     }
+
+-    // Array to store the centers of the clusters
+-
+-    CvArr* centers = nullptr;
+-
+     qCDebug(DIGIKAM_DIMG_LOG) << "Everything ready for the cvKmeans2 or as it seems to";
+     postProgress(10);
+
+     //-- KMEANS ---------------------------------------------------------------------------------------------
+
+-    cvKMeans2(points, d->clusterCount, clusters,
+-              cvTermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 10, 1.0), 3, nullptr, 0, centers, nullptr);
++    cv::kmeans(points, d->clusterCount, clusters,
++              cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 10, 1.0), 3, cv::KMEANS_PP_CENTERS);
+
+-    qCDebug(DIGIKAM_DIMG_LOG) << "cvKmeans2 successfully run";
++    qCDebug(DIGIKAM_DIMG_LOG) << "cv::kmeans successfully run";
+     postProgress(15);
+
+     //-- Divide into cluster->columns, sample->rows, in matrix standard deviation ---------------------------
+@@ -174,7 +170,7 @@ void NREstimate::startAnalyse()
+
+     for (uint i = 0 ; runningFlag() && (i < m_orgImage.numPixels()) ; ++i)
+     {
+-        columnIndex = clusters->data.i[i];
++        columnIndex = clusters.at<int>(i);
+         rowPosition[columnIndex]++;
+     }
+
+@@ -210,7 +206,7 @@ void NREstimate::startAnalyse()
+
+     //-- Divide and conquer ---------------------------------------------------------------------------------
+
+-    CvMat* sd = cvCreateMat(max, (d->clusterCount * points->cols), CV_32FC1);
++    cv::Mat sd = cv::Mat(max, (d->clusterCount * points.cols), CV_32FC1);
+
+     postProgress(30);
+
+@@ -230,26 +226,26 @@ void NREstimate::startAnalyse()
+
+     for (uint i = 0 ; runningFlag() && (i < m_orgImage.numPixels()) ; ++i)
+     {
+-        columnIndex = clusters->data.i[i];
++        columnIndex = clusters.at<int>(i);
+         rowIndex    = rPosition[columnIndex];
+
+         // moving to the right row
+
+-        ptr         = reinterpret_cast<float*>(sd->data.ptr + rowIndex*(sd->step));
++        ptr         = reinterpret_cast<float*>(sd.data + rowIndex*(sd.step));
+
+         // moving to the right column
+
+         for (int j = 0 ; runningFlag() && (j < columnIndex) ; ++j)
+         {
+-            for (int z = 0 ; runningFlag() && (z < (points->cols)) ; ++z)
++            for (int z = 0 ; runningFlag() && (z < (points.cols)) ; ++z)
+             {
+                 ptr++;
+             }
+         }
+
+-        for (int z = 0 ; runningFlag() && (z < (points->cols)) ; ++z)
++        for (int z = 0 ; runningFlag() && (z < (points.cols)) ; ++z)
+         {
+-            *ptr++ = cvGet2D(points, i, z).val[0];
++            *ptr++ = points.at<float>(i, z);
+         }
+
+         rPosition[columnIndex] = rPosition[columnIndex] + 1;
+@@ -260,33 +256,32 @@ void NREstimate::startAnalyse()
+
+     //-- This part of the code would involve the sd matrix and make the mean and the std of the data -------------------
+
+-    CvScalar std;
+-    CvScalar mean;
++    cv::Scalar std;
++    cv::Scalar mean;
+     int      totalcount = 0; // Number of non-empty clusters
+-    CvMat* meanStore    = cvCreateMat(d->clusterCount, points->cols, CV_32FC1);
+-    CvMat* stdStore     = cvCreateMat(d->clusterCount, points->cols, CV_32FC1);
+-    float* meanStorePtr = reinterpret_cast<float*>(meanStore->data.ptr);
+-    float* stdStorePtr  = reinterpret_cast<float*>(stdStore->data.ptr);
++    cv::Mat meanStore    = cv::Mat(d->clusterCount, points.cols, CV_32FC1);
++    cv::Mat stdStore     = cv::Mat(d->clusterCount, points.cols, CV_32FC1);
++    float* meanStorePtr = reinterpret_cast<float*>(meanStore.data);
++    float* stdStorePtr  = reinterpret_cast<float*>(stdStore.data);
+
+-    for (int i = 0 ; runningFlag() && (i < sd->cols) ; ++i)
++    for (int i = 0 ; runningFlag() && (i < sd.cols) ; ++i)
+     {
+         // cppcheck-suppress knownConditionTrueFalse
+-        if (runningFlag() && (rowPosition[(i/points->cols)] >= 1))
++        if (runningFlag() && (rowPosition[(i/points.cols)] >= 1))
+         {
+-            CvMat* workingArr = cvCreateMat(rowPosition[(i / points->cols)], 1, CV_32FC1);
+-            ptr               = reinterpret_cast<float*>(workingArr->data.ptr);
++            cv::Mat workingArr = cv::Mat(rowPosition[(i / points.cols)], 1, CV_32FC1);
++            ptr               = reinterpret_cast<float*>(workingArr.data);
+
+             // cppcheck-suppress knownConditionTrueFalse
+-            for (int j = 0 ; runningFlag() && (j < rowPosition[(i / (points->cols))]) ; ++j)
++            for (int j = 0 ; runningFlag() && (j < rowPosition[(i / (points.cols))]) ; ++j)
+             {
+-                *ptr++ = cvGet2D(sd, j, i).val[0];
++                *ptr++ = sd.at<float>(j, i);
+             }
+
+-            cvAvgSdv(workingArr, &mean, &std);
++            cv::meanStdDev(workingArr, mean, std);
+             *meanStorePtr++ = (float)mean.val[0];
+             *stdStorePtr++  = (float)std.val[0];
+             totalcount++;
+-            cvReleaseMat(&workingArr);
+         }
+     }
+
+@@ -295,8 +290,8 @@ void NREstimate::startAnalyse()
+
+     // -----------------------------------------------------------------------------------------------------------------
+
+-    meanStorePtr = reinterpret_cast<float*>(meanStore->data.ptr);
+-    stdStorePtr  = reinterpret_cast<float*>(stdStore->data.ptr);
++    meanStorePtr = reinterpret_cast<float*>(meanStore.data);
++    stdStorePtr  = reinterpret_cast<float*>(stdStore.data);
+
+     if (runningFlag() && !d->path.isEmpty())
+     {
+@@ -367,10 +362,10 @@ void NREstimate::startAnalyse()
+     float   weightedStd  = 0.0f;
+     float   datasd[3]    = {0.0f, 0.0f, 0.0f};
+
+-    for (int j = 0 ; runningFlag() && (j < points->cols) ; ++j)
++    for (int j = 0 ; runningFlag() && (j < points.cols) ; ++j)
+     {
+-        meanStorePtr = reinterpret_cast<float*>(meanStore->data.ptr);
+-        stdStorePtr  = reinterpret_cast<float*>(stdStore->data.ptr);
++        meanStorePtr = reinterpret_cast<float*>(meanStore.data);
++        stdStorePtr  = reinterpret_cast<float*>(stdStore.data);
+
+         for (int moveToChannel = 0 ; moveToChannel <= j ; ++moveToChannel)
+         {
+@@ -384,8 +379,8 @@ void NREstimate::startAnalyse()
+             {
+                 weightedMean += (*meanStorePtr) * rowPosition[i];
+                 weightedStd  += (*stdStorePtr)  * rowPosition[i];
+-                meanStorePtr += points->cols;
+-                stdStorePtr  += points->cols;
++                meanStorePtr += points.cols;
++                stdStorePtr  += points.cols;
+             }
+         }
+
+@@ -431,7 +426,7 @@ void NREstimate::startAnalyse()
+
+         if (m_orgImage.sixteenBit())
+         {
+-            for (int i = 0 ; i < points->cols ; ++i)
++            for (int i = 0 ; i < points.cols ; ++i)
+             {
+                 if (i < 3)
+                 {
+@@ -514,12 +509,6 @@ void NREstimate::startAnalyse()
+
+     //-- releasing matrices and closing files ----------------------------------------------------------------------
+
+-    cvReleaseMat(&sd);
+-    cvReleaseMat(&stdStore);
+-    cvReleaseMat(&meanStore);
+-    cvReleaseMat(&points);
+-    cvReleaseMat(&clusters);
+-
+     for (uint i = 0 ; i < 3 ; ++i)
+     {
+         delete [] d->fimg[i];
+diff --git a/core/libs/dnnmodelmanager/dnnmodelbase.cpp b/core/libs/dnnmodelmanager/dnnmodelbase.cpp
+index d9080c3a68..785e7e79d8 100644
+--- a/core/libs/dnnmodelmanager/dnnmodelbase.cpp
++++ b/core/libs/dnnmodelmanager/dnnmodelbase.cpp
+@@ -113,7 +113,9 @@ const QPair<int, int> DNNModelBase::getBackendAndTarget() const
+     const std::map<std::string, int> str2backend
+     {
+         { "default",     cv::dnn::DNN_BACKEND_DEFAULT          },
++#if OPENCV_TEST_VERSION(5,0,0)
+         { "halide",      cv::dnn::DNN_BACKEND_HALIDE           },
++#endif
+         { "ie",          cv::dnn::DNN_BACKEND_INFERENCE_ENGINE },
+         { "opencv",      cv::dnn::DNN_BACKEND_OPENCV           },
+         { "cuda",        cv::dnn::DNN_BACKEND_CUDA             }
+diff --git a/core/libs/facesengine/recognition/faceclassifier.cpp b/core/libs/facesengine/recognition/faceclassifier.cpp
+index 83ef00b032..4f04a4c9bc 100644
+--- a/core/libs/facesengine/recognition/faceclassifier.cpp
++++ b/core/libs/facesengine/recognition/faceclassifier.cpp
+@@ -215,7 +215,7 @@ cv::Ptr<cv::ml::SVM> FaceClassifier::createSVM(int iterations) const
+     cvClassifier->setKernel(d->svm_kernel);
+     cvClassifier->setGamma(d->svm_gamma);
+     cvClassifier->setC(d->svm_C);
+-    cvClassifier->setTermCriteria(cvTermCriteria(
++    cvClassifier->setTermCriteria(cv::TermCriteria(
+                                                  cv::TermCriteria::Type::MAX_ITER + cv::TermCriteria::Type::EPS,
+                                                  iterations,
+                                                  d->svm_epsilon
+diff --git a/core/libs/qtopencvimg/qtopencvimg.cpp b/core/libs/qtopencvimg/qtopencvimg.cpp
+index 8ebeb011d3..68d392ab1c 100644
+--- a/core/libs/qtopencvimg/qtopencvimg.cpp
++++ b/core/libs/qtopencvimg/qtopencvimg.cpp
+@@ -97,7 +97,7 @@ cv::Mat QtOpenCVImg::adjustChannelsOrder(const cv::Mat& srcMat, MatColorOrder sr
+         {
+             // BGRA <==> RBGA
+
+-            cv::cvtColor(srcMat, desMat, CV_BGRA2RGBA);
++            cv::cvtColor(srcMat, desMat, cv::ColorConversionCodes::COLOR_BGRA2RGBA);
+         }
+     }
+     catch (cv::Exception& e)
+@@ -279,11 +279,11 @@ cv::Mat QtOpenCVImg::image2Mat(const DImg& img, int requiredMatType, MatColorOrd
+                 {
+                     if      (MCO_RGB == requiredOrder)
+                     {
+-                        cv::cvtColor(mat0, mat0, CV_RGBA2GRAY);
++                        cv::cvtColor(mat0, mat0, cv::ColorConversionCodes::COLOR_RGBA2GRAY);
+                     }
+                     else if (MCO_BGR == requiredOrder)
+                     {
+-                        cv::cvtColor(mat0, mat0, CV_BGRA2GRAY);
++                        cv::cvtColor(mat0, mat0, cv::ColorConversionCodes::COLOR_BGRA2GRAY);
+                     }
+
+                     break;
+@@ -292,11 +292,11 @@ cv::Mat QtOpenCVImg::image2Mat(const DImg& img, int requiredMatType, MatColorOrd
+                 {
+                     if      (MCO_RGB == requiredOrder)
+                     {
+-                        cv::cvtColor(mat0, mat0, CV_RGBA2RGB);
++                        cv::cvtColor(mat0, mat0, cv::ColorConversionCodes::COLOR_RGBA2RGB);
+                     }
+                     else if (MCO_BGR == requiredOrder)
+                     {
+-                        cv::cvtColor(mat0, mat0, CV_BGRA2BGR);
++                        cv::cvtColor(mat0, mat0, cv::ColorConversionCodes::COLOR_BGRA2BGR);
+                     }
+
+                     break;
+@@ -364,21 +364,21 @@ cv::Mat QtOpenCVImg::image2Mat(const QImage& img, int requiredMatType, MatColorO
+             {
+                 if      (mat0.channels() == 3)
+                 {
+-                    cv::cvtColor(mat0, mat_adjustCn, CV_RGB2GRAY);
++                    cv::cvtColor(mat0, mat_adjustCn, cv::ColorConversionCodes::COLOR_RGB2GRAY);
+                 }
+                 else if (mat0.channels() == 4)
+                 {
+                     if      (srcOrder == MCO_BGRA)
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, CV_BGRA2GRAY);
++                        cv::cvtColor(mat0, mat_adjustCn, cv::ColorConversionCodes::COLOR_BGRA2GRAY);
+                     }
+                     else if (srcOrder == MCO_RGBA)
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, CV_RGBA2GRAY);
++                        cv::cvtColor(mat0, mat_adjustCn, cv::ColorConversionCodes::COLOR_RGBA2GRAY);
+                     }
+                     else    // MCO_ARGB
+                     {
+-                        cv::cvtColor(argb2bgra(mat0), mat_adjustCn, CV_BGRA2GRAY);
++                        cv::cvtColor(argb2bgra(mat0), mat_adjustCn, cv::ColorConversionCodes::COLOR_BGRA2GRAY);
+                     }
+                 }
+
+@@ -389,13 +389,13 @@ cv::Mat QtOpenCVImg::image2Mat(const QImage& img, int requiredMatType, MatColorO
+             {
+                 if      (mat0.channels() == 1)
+                 {
+-                    cv::cvtColor(mat0, mat_adjustCn, ((requriedOrder == MCO_BGR) ? CV_GRAY2BGR : CV_GRAY2RGB));
++                    cv::cvtColor(mat0, mat_adjustCn, ((requriedOrder == MCO_BGR) ? cv::ColorConversionCodes::COLOR_GRAY2BGR : cv::ColorConversionCodes::COLOR_GRAY2RGB));
+                 }
+                 else if (mat0.channels() == 3)
+                 {
+                     if (requriedOrder != srcOrder)
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, CV_RGB2BGR);
++                        cv::cvtColor(mat0, mat_adjustCn, cv::ColorConversionCodes::COLOR_RGB2BGR);
+                     }
+                 }
+
+@@ -410,11 +410,11 @@ cv::Mat QtOpenCVImg::image2Mat(const QImage& img, int requiredMatType, MatColorO
+                     }
+                     else if (srcOrder == MCO_BGRA)
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, ((requriedOrder == MCO_BGR) ? CV_BGRA2BGR : CV_BGRA2RGB));
++                        cv::cvtColor(mat0, mat_adjustCn, ((requriedOrder == MCO_BGR) ? cv::ColorConversionCodes::COLOR_BGRA2BGR : cv::ColorConversionCodes::COLOR_BGRA2RGB));
+                     }
+                     else    // RGBA
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, ((requriedOrder == MCO_BGR) ? CV_RGBA2BGR : CV_RGBA2RGB));
++                        cv::cvtColor(mat0, mat_adjustCn, ((requriedOrder == MCO_BGR) ? cv::ColorConversionCodes::COLOR_RGBA2BGR : cv::ColorConversionCodes::COLOR_RGBA2RGB));
+                     }
+                 }
+
+@@ -435,11 +435,11 @@ cv::Mat QtOpenCVImg::image2Mat(const QImage& img, int requiredMatType, MatColorO
+                     }
+                     else if (requriedOrder == MCO_RGBA)
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, CV_GRAY2RGBA);
++                        cv::cvtColor(mat0, mat_adjustCn, cv::ColorConversionCodes::COLOR_GRAY2RGBA);
+                     }
+                     else    // MCO_BGRA
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, CV_GRAY2BGRA);
++                        cv::cvtColor(mat0, mat_adjustCn, cv::ColorConversionCodes::COLOR_GRAY2BGRA);
+                     }
+                 }
+                 else if (mat0.channels() == 3)
+@@ -454,11 +454,11 @@ cv::Mat QtOpenCVImg::image2Mat(const QImage& img, int requiredMatType, MatColorO
+                     }
+                     else if (requriedOrder == MCO_RGBA)
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, CV_RGB2RGBA);
++                        cv::cvtColor(mat0, mat_adjustCn, cv::ColorConversionCodes::COLOR_RGB2RGBA);
+                     }
+                     else    // MCO_BGRA
+                     {
+-                        cv::cvtColor(mat0, mat_adjustCn, CV_RGB2BGRA);
++                        cv::cvtColor(mat0, mat_adjustCn, cv::ColorConversionCodes::COLOR_RGB2BGRA);
+                     }
+                 }
+                 else if (mat0.channels() == 4)
+@@ -560,14 +560,14 @@ QImage QtOpenCVImg::mat2Image(const cv::Mat& mat, MatColorOrder order, QImage::F
+
+             if (order == MCO_BGR)
+             {
+-                cv::cvtColor(mat, mat_adjustCn, CV_BGR2RGB);
++                cv::cvtColor(mat, mat_adjustCn, cv::ColorConversionCodes::COLOR_BGR2RGB);
+             }
+
+ #else
+
+             format = QImage::Format_RGB32;
+             cv::Mat mat_tmp;
+-            cv::cvtColor(mat, mat_tmp, ((order == MCO_BGR) ? CV_BGR2BGRA : CV_RGB2BGRA));
++            cv::cvtColor(mat, mat_tmp, ((order == MCO_BGR) ? cv::ColorConversionCodes::COLOR_BGR2BGRA : cv::ColorConversionCodes::COLOR_RGB2BGRA));
+
+ #   if Q_BYTE_ORDER == Q_LITTLE_ENDIAN
