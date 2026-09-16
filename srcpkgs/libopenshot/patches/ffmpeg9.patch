@@ -1,0 +1,138 @@
+# https://github.com/OpenMandrivaAssociation/libopenshot/blob/43d60d4c0d4c3ef8316d398e9ce605b9db84bbf8/libopenshot-0.7.0-ffmpeg9.patch
+--- a/src/FFmpegWriter.cpp	2026-04-03 01:34:37.000000000 +0200
++++ b/src/FFmpegWriter.cpp	2026-08-13 19:59:55.020084338 +0200
+@@ -1142,19 +1142,30 @@
+ #endif
+
+ 	// Set valid sample rate (or throw error)
+-	if (codec->supported_samplerates) {
+-		int i;
+-		for (i = 0; codec->supported_samplerates[i] != 0; i++)
+-			if (info.sample_rate == codec->supported_samplerates[i]) {
+-				// Set the valid sample rate
+-				c->sample_rate = info.sample_rate;
+-				break;
+-			}
+-		if (codec->supported_samplerates[i] == 0)
+-			throw InvalidSampleRate("An invalid sample rate was detected for this codec.", path);
+-	} else
+-		// Set sample rate
+-		c->sample_rate = info.sample_rate;
++	// AVCodec.supported_samplerates removed in FFmpeg 9+
++  {
++    const int *supported_samplerates = NULL;
++ #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 13, 100)
++    if (avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_SAMPLE_RATE, 0,
++             (const void **)&supported_samplerates, NULL) < 0)
++      supported_samplerates = NULL;
++ #else
++    supported_samplerates = codec->supported_samplerates;
++ #endif
++    if (supported_samplerates) {
++      int i;
++      for (i = 0; supported_samplerates[i] != 0; i++)
++        if (info.sample_rate == supported_samplerates[i]) {
++          // Set the valid sample rate
++          c->sample_rate = info.sample_rate;
++          break;
++        }
++      if (supported_samplerates[i] == 0)
++        throw InvalidSampleRate("An invalid sample rate was detected for this codec.", path);
++    } else
++      // Set sample rate
++      c->sample_rate = info.sample_rate;
++  }
+
+ 	c->time_base = AVRational{1, c->sample_rate};
+ 	st->time_base = c->time_base;
+@@ -1162,21 +1173,32 @@
+ 	uint64_t channel_layout = info.channel_layout;
+ #if HAVE_CH_LAYOUT
+ 	// Set a valid number of channels (or throw error)
++  // AVCodec.ch_layouts removed in FFmpeg 9+
+ 	AVChannelLayout ch_layout;
+ 	av_channel_layout_from_mask(&ch_layout, info.channel_layout);
+-	if (codec->ch_layouts) {
+-		int i;
+-		for (i = 0; av_channel_layout_check(&codec->ch_layouts[i]); i++)
+-			if (av_channel_layout_compare(&ch_layout, &codec->ch_layouts[i])) {
+-				// Set valid channel layout
+-				av_channel_layout_copy(&c->ch_layout, &ch_layout);
+-				break;
+-			}
+-		if (!av_channel_layout_check(&codec->ch_layouts[i]))
+-			throw InvalidChannels("An invalid channel layout was detected (i.e. MONO / STEREO).", path);
+-	} else
+-		// Set valid channel layout
+-		av_channel_layout_copy(&c->ch_layout, &ch_layout);
++	{
++   const AVChannelLayout *ch_layouts = NULL;
++#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 13, 100)
++   if (avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_CHANNEL_LAYOUT, 0,
++           (const void **)&ch_layouts, NULL) < 0)
++     ch_layouts = NULL;
++#else
++    ch_layouts = codec->ch_layouts;
++#endif
++   if (ch_layouts) {
++     int i;
++     for (i = 0; av_channel_layout_check(&ch_layouts[i]); i++)
++       if (av_channel_layout_compare(&ch_layout, &ch_layouts[i])) {
++         // Set valid channel layout
++         av_channel_layout_copy(&c->ch_layout, &ch_layout);
++         break;
++       }
++     if (!av_channel_layout_check(&ch_layouts[i]))
++       throw InvalidChannels("An invalid channel layout was detected (i.e. MONO / STEREO).", path);
++   } else
++     // Set valid channel layout
++     av_channel_layout_copy(&c->ch_layout, &ch_layout);
++  }
+ #else
+ 	// Set a valid number of channels (or throw error)
+ 	if (codec->channel_layouts) {
+@@ -1195,11 +1217,22 @@
+ #endif
+
+ 	// Choose a valid sample_fmt
+-	if (codec->sample_fmts) {
+-		for (int i = 0; codec->sample_fmts[i] != AV_SAMPLE_FMT_NONE; i++) {
+-			// Set sample format to 1st valid format (and then exit loop)
+-			c->sample_fmt = codec->sample_fmts[i];
+-			break;
++	// AVCodec.sample_fmts removed in FFmpeg 9+
++  {
++    const enum AVSampleFormat *sample_fmts = NULL;
++#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 13, 100)
++    if (avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
++             (const void **)&sample_fmts, NULL) < 0)
++      sample_fmts = NULL;
++#else
++    sample_fmts = codec->sample_fmts;
++#endif
++   if (sample_fmts) {
++     for (int i = 0; sample_fmts[i] != AV_SAMPLE_FMT_NONE; i++) {
++       // Set sample format to 1st valid format (and then exit loop)
++       c->sample_fmt = sample_fmts[i];
++       break;
++     }
+ 		}
+ 	}
+ 	if (c->sample_fmt == AV_SAMPLE_FMT_NONE) {
+@@ -1401,7 +1434,15 @@
+ #endif
+
+ 	// Find all supported pixel formats for this codec
+-	const PixelFormat *supported_pixel_formats = codec->pix_fmts;
++	// AVCodec.pix_fmts removed in FFmpeg 9+
++  const PixelFormat *supported_pixel_formats = NULL;
++#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 13, 100)
++  if (avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0,
++           (const void **)&supported_pixel_formats, NULL) < 0)
++    supported_pixel_formats = NULL;
++#else
++  supported_pixel_formats = codec->pix_fmts;
++#endif
+ 	while (supported_pixel_formats != NULL && *supported_pixel_formats != PIX_FMT_NONE) {
+ 		// Assign the 1st valid pixel format (if one is missing)
+ 		if (c->pix_fmt == PIX_FMT_NONE)
