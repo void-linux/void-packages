@@ -1,0 +1,67 @@
+From 9c37971cf57f9b6bab44a247ebc7f610cf8186bd Mon Sep 17 00:00:00 2001
+From: Paul Adenot <paul@paul.cx>
+Date: Mon, 14 Sep 2026 17:39:21 +0200
+Subject: [PATCH] Fix the build with musl, where pthread_t is a pointer
+
+musl defines pthread_t as *mut c_void instead of an integer, so the
+to_ne_bytes/from_ne_bytes serialization didn't compile. Go through usize,
+which is as wide as pthread_t on every Linux target, keeping the
+serialized layout unchanged.
+
+Also check the musl targets in CI.
+
+Fixes #49
+---
+ .github/workflows/rust.yml | 36 ++++++++++++++++++++++++++++++++++++
+ src/rt_linux.rs            |  6 ++++--
+ src/rt_linux_native.rs     |  6 ++++--
+ 3 files changed, 44 insertions(+), 4 deletions(-)
+
+diff --git a/src/rt_linux.rs b/src/rt_linux.rs
+index 982803c..82f9bff 100644
+--- a/third_party/rust/audio_thread_priority/src/rt_linux.rs
++++ b/third_party/rust/audio_thread_priority/src/rt_linux.rs
+@@ -62,7 +62,9 @@ impl RtPriorityThreadInfoInternal {
+     /// struct, so no uninitialized padding bytes are ever read. Any trailing padding stays zero.
+     pub fn serialize(&self) -> [u8; std::mem::size_of::<Self>()] {
+         let thread_id = self.thread_id.to_ne_bytes();
+-        let pthread_id = self.pthread_id.to_ne_bytes();
++        // `pthread_t` is an integer with glibc but a pointer with musl: go through `usize`, which
++        // is as wide as both.
++        let pthread_id = (self.pthread_id as usize).to_ne_bytes();
+         let pid = self.pid.to_ne_bytes();
+         let policy = self.policy.to_ne_bytes();
+         let priority = self.priority.to_ne_bytes();
+@@ -91,7 +93,7 @@ impl RtPriorityThreadInfoInternal {
+         let mut src = bytes.iter().copied();
+         RtPriorityThreadInfoInternal {
+             thread_id: kernel_pid_t::from_ne_bytes(take(&mut src)),
+-            pthread_id: libc::pthread_t::from_ne_bytes(take(&mut src)),
++            pthread_id: usize::from_ne_bytes(take(&mut src)) as libc::pthread_t,
+             pid: libc::pid_t::from_ne_bytes(take(&mut src)),
+             policy: libc::c_int::from_ne_bytes(take(&mut src)),
+             priority: libc::c_int::from_ne_bytes(take(&mut src)),
+diff --git a/src/rt_linux_native.rs b/src/rt_linux_native.rs
+index def33b0..f166eb0 100644
+--- a/third_party/rust/audio_thread_priority/src/rt_linux_native.rs
++++ b/third_party/rust/audio_thread_priority/src/rt_linux_native.rs
+@@ -78,7 +78,9 @@ impl RtPriorityThreadInfoInternal {
+     /// struct, so no uninitialized padding bytes are ever read. Any trailing padding stays zero.
+     pub fn serialize(&self) -> [u8; std::mem::size_of::<Self>()] {
+         let thread_id = self.thread_id.to_ne_bytes();
+-        let pthread_id = self.pthread_id.to_ne_bytes();
++        // `pthread_t` is an integer with glibc but a pointer with musl: go through `usize`, which
++        // is as wide as both.
++        let pthread_id = (self.pthread_id as usize).to_ne_bytes();
+         let pid = self.pid.to_ne_bytes();
+         let policy = self.policy.to_ne_bytes();
+         let priority = self.priority.to_ne_bytes();
+@@ -107,7 +109,7 @@ impl RtPriorityThreadInfoInternal {
+         let mut src = bytes.iter().copied();
+         RtPriorityThreadInfoInternal {
+             thread_id: kernel_pid_t::from_ne_bytes(take(&mut src)),
+-            pthread_id: libc::pthread_t::from_ne_bytes(take(&mut src)),
++            pthread_id: usize::from_ne_bytes(take(&mut src)) as libc::pthread_t,
+             pid: libc::pid_t::from_ne_bytes(take(&mut src)),
+             policy: libc::c_int::from_ne_bytes(take(&mut src)),
+             priority: libc::c_int::from_ne_bytes(take(&mut src)),
