@@ -1,0 +1,133 @@
+# Template file for 'libcxx'
+pkgname=libcxx
+version=23.1.1
+revision=1
+_llvmver=${version%%.*}
+build_style=cmake
+configure_args="
+ -DCMAKE_INSTALL_PREFIX=/usr
+ -DCMAKE_BUILD_TYPE=RelWithDebInfo
+ -DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi;libunwind
+ -DLIBCXXABI_ENABLE_STATIC_UNWINDER=ON
+ -DLIBCXXABI_USE_COMPILER_RT=ON
+ -DLIBCXXABI_USE_LLVM_UNWINDER=ON
+ -DLIBCXX_CXX_ABI=libcxxabi
+ -DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=ON
+ -DLIBCXX_USE_COMPILER_RT=ON
+ -DLLVM_ENABLE_SPHINX=ON
+ -DSPHINX_WARNINGS_AS_ERRORS=ON"
+hostmakedepends="clang${_llvmver} python3-Sphinx"
+short_desc="LLVM libc++ - C++ Standard Library"
+maintainer="Duncaen <duncaen@voidlinux.org>"
+license="Apache-2.0"
+homepage="https://libcxx.llvm.org/"
+changelog="https://libcxx.llvm.org/ReleaseNotes.html"
+distfiles="https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-${version/rc/-rc}.tar.gz"
+checksum=851b3d701a4fbdd9f69536d4acda578469e810ca7056687d6556443f5fd39557
+
+# custom order so that libcxx-devel can just move remaining header files
+subpackages="libcxxabi libcxxabi-devel llvm-libunwind llvm-libunwind-devel libcxx-devel"
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*) _arch="X86";;
+	x86_64*) _arch="X86";;
+	armv5*) _arch="Armv5te";;
+	armv6*) _arch="Armv6";;
+	armv7*) _arch="Armv7";;
+	aarch64*) _arch="AArch64";;
+	mips*) _arch="Mips";;
+	ppc*) _arch="PowerPC";;
+	riscv64*) _arch="RISCV64";;
+esac
+
+configure_args+="
+ -DLLVM_TARGET_ARCH=${_arch}
+ -DCMAKE_C_COMPILER=clang
+ -DCMAKE_CXX_COMPILER=clang++"
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	configure_args+=" -DLIBCXX_HAS_MUSL_LIBC=ON"
+fi
+
+do_configure() {
+	local _triplet=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}
+	configure_args+="
+	 -DLLVM_HOST_TRIPLE=${_triplet}
+	 -DLLVM_DEFAULT_TARGET_TRIPLE=${_triplet}
+	 -DCMAKE_ASM_COMPILER_TARGET=${_triplet}
+	 -DCMAKE_C_COMPILER_TARGET=${_triplet}
+	 -DCMAKE_CXX_COMPILER_TARGET=${_triplet}"
+
+	CFLAGS="-DNDEBUG ${CFLAGS/ -pipe / }" \
+	CXXFLAGS="-DNDEBUG ${CXXFLAGS/ -pipe / }" \
+		cmake ${XBPS_VERBOSE--Wno-dev} \
+		-B build -S runtimes -G Ninja \
+		${configure_args}
+}
+
+post_patch() {
+	# need libssp_nonshared on some musl platforms (because of nodefaultlibs)
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*) ;;
+		ppc*-musl|i686-musl|mips*-musl)
+			vsed -i 's,^# Setup flags.$,add_library_flags(ssp_nonshared),' \
+				${wrksrc}/libunwind/src/CMakeLists.txt
+			vsed -i 's,^# Setup flags.$,add_library_flags(ssp_nonshared),' \
+				${wrksrc}/libcxxabi/src/CMakeLists.txt
+			vsed -i 's,#ssp,,' ${wrksrc}/libcxx/CMakeLists.txt
+			;;
+	esac
+}
+
+libcxx-devel_package() {
+	short_desc+=" - C++ standard library - development files"
+	depends="libcxx>=${version}_${revision}"
+	pkg_install() {
+		vmove "usr/include/c++"
+		vmove "usr/lib/libc++.a"
+		vmove "usr/lib/libc++.modules.json"
+		vmove "usr/lib/libc++.so"
+		vmove "usr/lib/libc++experimental.a"
+		vmove "usr/share/libc++"
+	}
+}
+
+libcxxabi_package() {
+	short_desc+=" - low level support for LLVM libc++"
+	pkg_install() {
+		vmove "usr/lib/libc++abi.so.*"
+	}
+}
+
+libcxxabi-devel_package() {
+	short_desc+="low level support for LLVM libc++ - development files"
+	depends="libcxxabi>=${version}_${revision}"
+	pkg_install() {
+		vmove "usr/include/c++/v1/__cxxabi_config.h"
+		vmove "usr/include/c++/v1/cxxabi.h"
+		vmove "usr/lib/libc++abi.a"
+		vmove "usr/lib/libc++abi.so"
+	}
+}
+
+llvm-libunwind_package() {
+	short_desc="LLVM Unwinder"
+	pkg_install() {
+		vmove "usr/lib/libunwind.so.*"
+	}
+}
+
+llvm-libunwind-devel_package() {
+	short_desc="LLVM Unwinder - development files"
+	depends="llvm-libunwind>=${version}_${revision}"
+	conflicts="libunwind-devel>=0"
+	pkg_install() {
+		vmove "usr/include/__libunwind_config.h"
+		vmove "usr/include/libunwind.h"
+		vmove "usr/include/libunwind.modulemap"
+		vmove "usr/include/mach-o/compact_unwind_encoding.h"
+		vmove "usr/include/unwind*.h"
+		vmove "usr/lib/libunwind.a"
+		vmove "usr/lib/libunwind.so"
+	}
+}
