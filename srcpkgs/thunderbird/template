@@ -3,7 +3,7 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/thunderbird-i18n".
 #
 pkgname=thunderbird
-version=140.8.1
+version=153.3.1
 revision=1
 build_helper="rust"
 hostmakedepends="autoconf unzip zip pkg-config perl python3.11 yasm rust cargo
@@ -21,7 +21,7 @@ maintainer="classabbyamp <void@placeviolette.net>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.thunderbird.net/"
 distfiles="${MOZILLA_SITE}/thunderbird/releases/${version}esr/source/thunderbird-${version}esr.source.tar.xz"
-checksum=5dda3da4d14e49a946b27d22f7375a17702cdd5213ae3d8821db0d469742abda
+checksum=f4684de0caebf54352f8247ea3106b3c577509a26556759f6417bdc42f7567aa
 
 alternatives="librnp:/usr/lib/thunderbird/librnp.so:/usr/lib/thunderbird/thunderbird-librnp.so"
 shlib_provides="librnp.so" # alternative
@@ -70,12 +70,6 @@ post_patch() {
 	_clear_vendor_checksums num-traits
 	_clear_vendor_checksums glslopt
 	_clear_vendor_checksums mp4parse
-
-	# missing files in checksum file in 140.8.1esr
-	for _x in glslopt cubeb-sys minimal-lexical sfv wasi; do
-		vsed -e 's/".gitmodules":"[0-9a-f]*",//' -i "comm/third_party/rust/${_x}/.cargo-checksum.json"
-	done
-	vsed -e 's/"libcubeb\/.gitmodules":"[0-9a-f]*",//' -i "comm/third_party/rust/cubeb-sys/.cargo-checksum.json"
 }
 
 do_build() {
@@ -83,6 +77,14 @@ do_build() {
 	cp "${FILESDIR}/mozconfig" "${wrksrc}/.mozconfig"
 
 	echo "MOZ_APP_REMOTINGNAME=Thunderbird" >>.mozconfig
+
+	export AS="${CC}"
+	export CFLAGS="-O2"
+	export CXXFLAGS="-O2"
+	# https://github.com/void-linux/void-packages/blob/550276912d186437ca55d419af50eab1208845ec/srcpkgs/firefox/template#L85-L89
+	unset HOST_CFLAGS
+	unset HOST_CXXFLAGS
+	# export LDFLAGS+="-Wl,--threads=${XBPS_MAKEJOBS}"
 
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
@@ -125,16 +127,15 @@ do_build() {
 			sed -n '/#include <...> search starts here:/,/End of search list./p' | \
 			sed '1,1d;$d' | sed  's/^ /-I/' | paste -s )
 
-		# fix compiler detection for botan:
-		# https://github.com/randombit/botan/blob/63d51cb1ab08849d8ece329811b61f8c9abebbcf/configure.py#L2888
-		export CXX="${XBPS_CROSS_TRIPLET}-g++"
-
 		export BINDGEN_CFLAGS="--target=$XBPS_CROSS_TRIPLET \
-			--sysroot=${XBPS_CROSS_BASE} ${BINDGEN_INCLUDE_FLAGS}"
+			--sysroot=${XBPS_CROSS_BASE} ${BINDGEN_INCLUDE_FLAGS} \
+			-nostdinc -isystem ${XBPS_CROSS_BASE}/usr/include" # fix target math.h not being found
+
 		export HOST_CC=cc
+		export HOST_CXX=c++
 		export TARGET_CC="${CC}"
-		export HOST_CFLAGS="${XBPS_CFLAGS}"
-		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
+		export TARGET_CXX="${CXX}"
+
 		export ac_cv_sqlite_secure_delete=yes \
 			ac_cv_sqlite_threadsafe=yes \
 			ac_cv_sqlite_enable_fts3=yes \
@@ -155,13 +156,6 @@ do_build() {
 
 	mkdir -p third_party/rust/libloading/.deps
 
-	case "$XBPS_TARGET_MACHINE" in
-	armv7*)
-		export CFLAGS+=" -mfpu=neon -Wno-psabi"
-		export CXXFLAGS+=" -mfpu=neon -Wno-psabi"
-		;;
-	esac
-
 	# work around large debug symbols on 32-bit hosts
 	if [ "$XBPS_WORDSIZE" = "32" ]; then
 		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
@@ -169,12 +163,12 @@ do_build() {
 		export LDFLAGS+=" -Wl,--no-keep-memory"
 	fi
 
-	# FIXME: incompatible with rust 1.48 in this release
-	#case "$XBPS_TARGET_MACHINE" in
-	#aarch64*|i686*|x86_64*)
-	#	echo "ac_add_options --enable-rust-simd" >>.mozconfig ;;
-	#esac
-	echo "ac_add_options --disable-rust-simd" >>.mozconfig
+	case "$XBPS_TARGET_MACHINE" in
+	aarch64*|i686*|x86_64*)
+		echo "ac_add_options --enable-rust-simd" >>.mozconfig ;;
+	*)
+		echo "ac_add_options --disable-rust-simd" >>.mozconfig ;;
+	esac
 
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/thunderbird"
 
@@ -186,8 +180,6 @@ do_build() {
 	export MOZ_NOSPAM=1
 	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
 	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
-
-	export AS=$CC
 
 	cat <<! >>.mozconfig
 ac_add_options --with-google-location-service-api-keyfile="${wrksrc}/google-api-key"

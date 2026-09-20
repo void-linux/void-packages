@@ -1,0 +1,57 @@
+From cd644c39545aac3dca63261f99a9bfc35956cb25 Mon Sep 17 00:00:00 2001
+From: Pascal <admin@serveurperso.com>
+Date: Wed, 19 Aug 2026 22:03:13 +0200
+Subject: [PATCH] ggml-cpu: gate __fp16 on __ARM_FP16_FORMAT_IEEE (#26860)
+
+* ggml-cpu: gate __fp16 on __ARM_FP16_FORMAT_IEEE
+
+__ARM_NEON only signals NEON availability. The __fp16 type also needs
+the IEEE half format, implied on AArch64 but selected with
+-mfp16-format=ieee on 32 bit Arm, where the compiler otherwise rejects
+the type.
+
+The guard keeps every toolchain that provides the type on the same code
+and sends that one configuration to the generic lookup path.
+
+* ggml-cpu: gate the NEON+FMA block on __ARM_FP16_FORMAT_IEEE
+
+Both halves of the F16 section dereference __fp16, so armv7 with
+neon-vfpv4 hits the same unknown type error. Without the IEEE
+format the configuration now falls back to the scalar path.
+
+Address review from @JonathanC-ARM
+---
+ ggml/src/ggml-cpu/simd-mappings.h | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/ggml/src/ggml-cpu/simd-mappings.h b/ggml/src/ggml-cpu/simd-mappings.h
+index fca5119e1a13..10ce4bfc593b 100644
+--- a/third_party/llama.cpp/ggml/src/ggml-cpu/simd-mappings.h
++++ b/third_party/llama.cpp/ggml/src/ggml-cpu/simd-mappings.h
+@@ -29,13 +29,15 @@ extern "C" {
+ // FP16 to FP32 conversion
+ 
+ // 16-bit float
+-// on Arm, we use __fp16
++// on Arm, we use __fp16, which requires the IEEE fp16 format: implied on
++// AArch64, selected by -mfp16-format=ieee on 32 bit Arm, where the compiler
++// may otherwise reject the type
+ // on x86, we use uint16_t
+ //
+ // for old CUDA compilers (<= 11), we use uint16_t: ref https://github.com/ggml-org/llama.cpp/pull/10616
+ // for     MUSA compilers        , we use uint16_t: ref https://github.com/ggml-org/llama.cpp/pull/11843
+ //
+-#if defined(__ARM_NEON) && !(defined(__CUDACC__) && __CUDACC_VER_MAJOR__ <= 11) && !defined(__MUSACC__)
++#if defined(__ARM_NEON) && defined(__ARM_FP16_FORMAT_IEEE) && !(defined(__CUDACC__) && __CUDACC_VER_MAJOR__ <= 11) && !defined(__MUSACC__)
+     #define GGML_CPU_COMPUTE_FP16_TO_FP32(x) neon_compute_fp16_to_fp32(x)
+     #define GGML_CPU_COMPUTE_FP32_TO_FP16(x) neon_compute_fp32_to_fp16(x)
+ 
+@@ -326,7 +328,7 @@ inline static float ggml_lookup_fp16_to_fp32(ggml_fp16_t f) {
+     #define GGML_F16_VEC_REDUCE         GGML_F32Cx4_REDUCE
+ #endif
+ 
+-#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_FMA)
++#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_FMA) && defined(__ARM_FP16_FORMAT_IEEE)
+ 
+ #define GGML_SIMD
+ 
