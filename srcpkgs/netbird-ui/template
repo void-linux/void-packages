@@ -1,0 +1,48 @@
+# Template file for 'netbird-ui'
+pkgname=netbird-ui
+version=0.79.0
+revision=1
+build_style=go
+go_import_path="github.com/netbirdio/netbird"
+go_package="${go_import_path}/client/ui"
+go_build_tags="production gtk3"
+go_ldflags="-X ${go_import_path}/version.version=${version}"
+hostmakedepends="pkg-config pnpm nodejs"
+makedepends="gtk+3-devel libwebkit2gtk41-devel"
+depends="netbird xdg-utils"
+short_desc="WireGuard-based mesh network client - desktop UI"
+maintainer="Jonas Cosandey <velrest@gmail.com>"
+license="BSD-3-Clause"
+homepage="https://netbird.io"
+changelog="https://github.com/netbirdio/netbird/releases"
+distfiles="https://github.com/netbirdio/netbird/archive/refs/tags/v${version}.tar.gz"
+checksum=a74f9c260ef48cdf8332ffd5379114550f8ed3fe5cf8457449af80b1b9f17dc6
+nocross="cgo webview and a host node toolchain"
+
+pre_build() {
+	local _wails3ver
+
+	# The wails3 CLI pulls in packages that are not in netbird's go.sum, so it
+	# cannot be built from within this module. Install it standalone, at the
+	# version go.mod pins, the way upstream CI does, into a private GOBIN so it
+	# stays out of the package.
+	_wails3ver=$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)
+	GOBIN="${wrksrc}/_tools" go install -tags gtk3 \
+		github.com/wailsapp/wails/v3/cmd/wails3@${_wails3ver}
+
+	cd ${wrksrc}/client/ui
+	# Bindings are not shipped in the tarball and vite refuses to build without
+	# them; -tags gtk3 keeps the generator off the gtk4 pkg-config entries.
+	"${wrksrc}/_tools/wails3" generate bindings -clean=true -ts -f "-tags gtk3"
+	cd frontend
+	pnpm install --frozen-lockfile
+	pnpm build
+}
+
+post_install() {
+	mv "${DESTDIR}/usr/bin/ui" "${DESTDIR}/usr/bin/netbird-ui"
+	vinstall client/ui/build/linux/netbird.desktop 644 usr/share/applications netbird-ui.desktop
+	vinstall client/ui/build/appicon.png 644 usr/share/icons/hicolor/128x128/apps netbird.png
+	vinstall client/ui/build/linux/polkit/io.netbird.settings.policy 644 usr/share/polkit-1/actions
+	vlicense LICENSE
+}
