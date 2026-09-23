@@ -1404,6 +1404,7 @@ Additional variables for the **system accounts** can be specified to change its 
 	- `<account>_descr` the description for the new user. If unset defaults to `<account> unprivileged user`.
 	- `<account>_groups` additional groups to be added to for the new user.
 	- `<account>_pgroup` to set the primary group, by default primary group is set to `<account>`.
+	- `<account>_uname` to specify the account user name, by default the user name is set to `<account>`.
 
 The **system user** is created by using a dynamically allocated **uid/gid** in your system
 and it's created as a `system account`, unless the **uid** is set. A new group will be created for the
