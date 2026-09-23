@@ -1,0 +1,151 @@
+From 3e66842a829a54c79244a83c6d1694e3abe511ad Mon Sep 17 00:00:00 2001
+From: Alex Rutar <alex@rutar.org>
+Date: Sun, 10 May 2026 19:14:15 +0200
+Subject: [PATCH] Allow compiling without bundled SQLite
+
+---
+ Cargo.toml            |  4 +++-
+ README.md             | 18 ++++++++++++++++++
+ scripts/test.sh       | 14 ++++++++++----
+ src/db.rs             | 14 ++++++++++++++
+ src/error/database.rs |  2 ++
+ tests/README.md       |  1 +
+ 6 files changed, 48 insertions(+), 5 deletions(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index 09289e00..efab3ef5 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -13,6 +13,8 @@ rust-version = "1.94"
+ edition = "2024"
+ 
+ [features]
++default = ["bundled-sqlite"]
++bundled-sqlite = ["rusqlite/bundled"]
+ in_memory_database = []
+ read_response_cache = ["dep:bincode"]
+ write_response_cache = ["dep:bincode", "in_memory_database"]
+@@ -40,7 +42,7 @@ ramify = "0.9.0"
+ regex = "1.11"
+ regex-syntax = "0.8"
+ rsxiv = { version = "0.4.3", features = ["serde"] }
+-rusqlite = { version = "0.39", features = ["bundled", "chrono", "functions"] }
++rusqlite = { version = "0.39", features = ["chrono", "functions"] }
+ serde = { version = "1.0", features = ["derive"] }
+ serde_bibtex = "0.7.1"
+ serde_json = "1.0"
+diff --git a/README.md b/README.md
+index d0809835..05d99fcb 100644
+--- a/README.md
++++ b/README.md
+@@ -343,6 +343,24 @@ Autobib supports basic global configuration through a [TOML](https://toml.io/) f
+ This path can be modified with the `AUTOBIB_CONFIG_PATH` environment variable.
+ You can generate a default configuration file with `autobib default-config`, or view the configuration options [here](src/config/default_config.toml).
+ 
++### Bundling SQLite
++
++By default, Autobib compiles with a bundled copy of SQLite.
++To link against the SQLite library available on your system instead, disable default features:
++
++```sh
++cargo install --locked autobib --no-default-features
++```
++This makes the binary about 1.5MB smaller, at the cost of potential compatibility issues.
++Note that the system SQLite library must be version 3.35.0 or newer.
++If this is not the case, Autobib will fail with a runtime error.
++
++Note that Autobib is not tested carefully against all possible versions and configurations of SQLite, so using the system SQLite copy may result in difficult-to-diagnose errors.
++You can run the test script with your system SQLite library using
++```sh
++AUTOBIB_USE_SYSTEM_SQLITE=1 ./scripts/test.sh
++```
++
+ ## License
+ 
+ The source code of Autobib is distributed under the terms of the [GNU Affero General Public License, version 3](https://www.gnu.org/licenses/agpl-3.0.en.html) (or any later version).
+diff --git a/scripts/test.sh b/scripts/test.sh
+index 28436e8c..bfea6224 100755
+--- a/scripts/test.sh
++++ b/scripts/test.sh
+@@ -19,21 +19,27 @@ CACHE_DIR="${CACHE_ROOT}/test-cache-${HASH}"
+ 
+ export AUTOBIB_RESPONSE_CACHE_PATH="${CACHE_DIR}/responses.dat"
+ 
++if [[ "${AUTOBIB_USE_SYSTEM_SQLITE:-0}" == "1" ]]; then
++    SQLITE_ARGS=(--no-default-features)
++else
++    SQLITE_ARGS=()
++fi
++
+ if [[ ! -f "${AUTOBIB_RESPONSE_CACHE_PATH}" ]]; then
+     echo "Cache file not found. Generating cache file: ${AUTOBIB_RESPONSE_CACHE_PATH}"
+     
+     mkdir -p "${CACHE_DIR}"
+ 
+     # Generate the cache file
+-    cargo run --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null "${REMOTES_FILE}"
++    cargo run --locked "${SQLITE_ARGS[@]}" --features write_response_cache -- -vv source --retrieve-only --ignore-null "${REMOTES_FILE}"
+ else
+     echo "Cache file found: ${AUTOBIB_RESPONSE_CACHE_PATH}"
+ fi
+ 
+-cargo test --locked --no-fail-fast --features read_response_cache -- "$@"
++cargo test --locked --no-fail-fast "${SQLITE_ARGS[@]}" --features read_response_cache -- "$@"
+ 
+-cargo doc --no-deps --locked
+-cargo clippy --locked
++cargo doc --no-deps --locked "${SQLITE_ARGS[@]}"
++cargo clippy --locked "${SQLITE_ARGS[@]}"
+ cargo fmt --check
+ sort -C "${REMOTES_FILE}"
+ REPETITIONS="$(uniq -d < "${REMOTES_FILE}" | wc -w)"
+diff --git a/src/db.rs b/src/db.rs
+index fa6ee2bb..f8ad3244 100644
+--- a/src/db.rs
++++ b/src/db.rs
+@@ -151,6 +151,20 @@ impl RecordDatabase {
+         #[cfg(feature = "in_memory_database")]
+         let mut conn = Connection::open_in_memory_with_flags(flags)?;
+ 
++        #[cfg(not(feature = "bundled-sqlite"))]
++        {
++            if !read_only {
++                // 3.35, since this is when the RETURNING class is introduced
++                if rusqlite::version_number() < 3_035_000 {
++                    return Err(DatabaseError::UnsupportedSQLiteVersion(rusqlite::version()));
++                }
++
++                // we only need this when using system sqlite since the bundled version is compiled
++                // so that foreign keys are always enabled at startup
++                conn.pragma_update(None, "foreign_keys", "ON")?;
++            }
++        }
++
+         Self::initialize(&mut conn, read_only)?;
+ 
+         Ok(Self { conn })
+diff --git a/src/error/database.rs b/src/error/database.rs
+index 5dd62721..f7d04cee 100644
+--- a/src/error/database.rs
++++ b/src/error/database.rs
+@@ -4,6 +4,8 @@ use thiserror::Error;
+ pub enum DatabaseError {
+     #[error("SQLite error: {0}")]
+     SQLiteError(#[from] rusqlite::Error),
++    #[error("System SQLite version {0} is too old. Minimum supported SQLite version is 3.35.0")]
++    UnsupportedSQLiteVersion(&'static str),
+     #[error("Error while migrating from old database (version v'{0}'): '{1}'")]
+     Migration(i32, String),
+     #[error(
+diff --git a/tests/README.md b/tests/README.md
+index de7ca55b..fcd1585b 100644
+--- a/tests/README.md
++++ b/tests/README.md
+@@ -19,6 +19,7 @@ In order to automate the above steps, and also run other checks, you can use [`s
+ ```sh
+ ./scripts/test.sh
+ ```
++Set `AUTOBIB_USE_SYSTEM_SQLITE=1` to run the tests using the SQLite library available on your system instead of a bundled copy of SQLite.
+ This script has the following dependencies:
+ 
+ - [`shellcheck`](https://www.shellcheck.net/)
