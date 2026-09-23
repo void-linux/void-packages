@@ -1,0 +1,792 @@
+Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3966
+--- a/components/web_package/BUILD.gn
++++ b/components/web_package/BUILD.gn
+@@ -40,7 +40,6 @@ static_library("web_package") {
+     "//base",
+     "//components/base32",
+     "//components/cbor",
+-    "//components/web_package/signed_web_bundles/rust:signed_web_bundles_rust_bindings",
+     "//mojo/public/cpp/bindings",
+     "//net",
+     "//services/network/public/mojom",
+@@ -70,7 +69,6 @@ source_set("mojom_mapped_types") {
+ 
+   deps = [
+     "//base",
+-    "//components/web_package/signed_web_bundles/rust:signed_web_bundles_rust_bindings",
+     "//crypto",
+     "//mojo/public/cpp/bindings",
+   ]
+@@ -98,7 +96,6 @@ source_set("unit_tests") {
+     ":web_package",
+     "//base/test:test_support",
+     "//components/cbor",
+-    "//components/web_package/signed_web_bundles/rust:signed_web_bundles_rust_unittests",
+     "//components/web_package/test_support",
+     "//mojo/public/cpp/bindings",
+     "//mojo/public/cpp/test_support:test_utils",
+--- a/components/web_package/signed_web_bundles/ecdsa_p256_sha256_signature.cc
++++ b/components/web_package/signed_web_bundles/ecdsa_p256_sha256_signature.cc
+@@ -9,7 +9,8 @@
+ #include "base/strings/stringprintf.h"
+ #include "base/types/expected.h"
+ #include "components/web_package/signed_web_bundles/ecdsa_p256_public_key.h"
+-#include "components/web_package/signed_web_bundles/rust/signed_web_bundles_rust.h"
++#include "crypto/keypair.h"
++#include "crypto/sign.h"
+ 
+ namespace web_package {
+ 
+@@ -50,8 +51,9 @@ EcdsaP256SHA256Signature::EcdsaP256SHA25
+ [[nodiscard]] bool EcdsaP256SHA256Signature::Verify(
+     base::span<const uint8_t> message,
+     const EcdsaP256PublicKey& public_key) const {
+-  return signed_web_bundles::rust::verify_ecdsa_p256_signature(
+-      public_key.bytes(), bytes(), message);
++  auto key = crypto::keypair::PublicKey::FromEcP256Point(public_key.bytes());
++  return crypto::sign::Verify(crypto::sign::ECDSA_SHA256, *key, message,
++                              bytes());
+ }
+ 
+ }  // namespace web_package
+--- a/components/web_package/signed_web_bundles/ed25519_signature.cc
++++ b/components/web_package/signed_web_bundles/ed25519_signature.cc
+@@ -7,7 +7,6 @@
+ #include <algorithm>
+ 
+ #include "base/strings/stringprintf.h"
+-#include "components/web_package/signed_web_bundles/rust/signed_web_bundles_rust.h"
+ #include "third_party/boringssl/src/include/openssl/curve25519.h"
+ 
+ namespace web_package {
+@@ -43,8 +42,11 @@ Ed25519Signature::Ed25519Signature(std::
+ [[nodiscard]] bool Ed25519Signature::Verify(
+     base::span<const uint8_t> message,
+     const Ed25519PublicKey& public_key) const {
+-  return signed_web_bundles::rust::verify_ed25519_signature(public_key.bytes(),
+-                                                            bytes(), message);
++  const std::array<uint8_t, ED25519_PUBLIC_KEY_LEN>& public_key_bytes =
++      public_key.bytes();
++  const std::array<uint8_t, ED25519_SIGNATURE_LEN>& signature_bytes = bytes();
++  return ED25519_verify(message.data(), message.size(), signature_bytes.data(),
++                        public_key_bytes.data());
+ }
+ 
+ }  // namespace web_package
+--- a/components/web_package/signed_web_bundles/integrity_block_parser.cc
++++ b/components/web_package/signed_web_bundles/integrity_block_parser.cc
+@@ -4,17 +4,19 @@
+ 
+ #include "components/web_package/signed_web_bundles/integrity_block_parser.h"
+ 
++#include <algorithm>
+ #include <string>
+-#include <string_view>
+ #include <vector>
+ 
+-#include "base/check.h"
+-#include "base/containers/span.h"
++#include "base/containers/map_util.h"
+ #include "base/functional/bind.h"
+ #include "base/strings/stringprintf.h"
++#include "base/strings/to_string.h"
+ #include "base/types/expected.h"
+ #include "base/types/expected_macros.h"
+ #include "components/cbor/reader.h"
++#include "components/cbor/writer.h"
++#include "components/web_package/mojom/web_bundle_parser.mojom-forward.h"
+ #include "components/web_package/mojom/web_bundle_parser.mojom.h"
+ #include "components/web_package/signed_web_bundles/constants.h"
+ #include "components/web_package/signed_web_bundles/ecdsa_p256_public_key.h"
+@@ -22,56 +24,11 @@
+ #include "components/web_package/signed_web_bundles/ed25519_public_key.h"
+ #include "components/web_package/signed_web_bundles/ed25519_signature.h"
+ #include "components/web_package/signed_web_bundles/integrity_block_attributes.h"
+-#include "components/web_package/signed_web_bundles/rust/signed_web_bundles_rust.h"
+ #include "components/web_package/signed_web_bundles/signed_web_bundle_id.h"
+ #include "components/web_package/signed_web_bundles/types.h"
+ 
+ namespace web_package {
+ 
+-namespace {
+-
+-using SignatureType = signed_web_bundles::rust::SignatureType::Tag;
+-using signed_web_bundles::rust::parse_integrity_block;
+-
+-base::expected<mojom::BundleIntegrityBlockSignatureStackEntryPtr, std::string>
+-CreateSignatureStackEntry(
+-    const signed_web_bundles::rust::SignatureStackEntry& entry) {
+-  auto parsed_sig = mojom::BundleIntegrityBlockSignatureStackEntry::New();
+-
+-  switch (entry.signature_type.tag) {
+-    case SignatureType::Ed25519: {
+-      ASSIGN_OR_RETURN(auto public_key,
+-                       Ed25519PublicKey::Create(entry.public_key.to_span()));
+-      ASSIGN_OR_RETURN(auto signature,
+-                       Ed25519Signature::Create(entry.signature.to_span()));
+-      parsed_sig->signature_info = mojom::SignatureInfo::NewEd25519(
+-          mojom::SignatureInfoEd25519::New(public_key, signature));
+-      break;
+-    }
+-    case SignatureType::EcdsaP256SHA256: {
+-      ASSIGN_OR_RETURN(auto public_key,
+-                       EcdsaP256PublicKey::Create(entry.public_key.to_span()));
+-      ASSIGN_OR_RETURN(auto signature, EcdsaP256SHA256Signature::Create(
+-                                           entry.signature.to_span()));
+-      parsed_sig->signature_info = mojom::SignatureInfo::NewEcdsaP256Sha256(
+-          mojom::SignatureInfoEcdsaP256SHA256::New(public_key, signature));
+-      break;
+-    }
+-    case SignatureType::Unknown: {
+-      parsed_sig->signature_info =
+-          mojom::SignatureInfo::NewUnknown(mojom::SignatureInfoUnknown::New());
+-      break;
+-    }
+-  }
+-
+-  parsed_sig->attributes_cbor =
+-      BinaryData(entry.attributes_cbor.begin(), entry.attributes_cbor.end());
+-
+-  return parsed_sig;
+-}
+-
+-}  // namespace
+-
+ IntegrityBlockParser::IntegrityBlockParser(
+     mojom::BundleDataSource& data_source,
+     WebBundleParser::ParseIntegrityBlockCallback callback)
+@@ -103,37 +60,103 @@ void IntegrityBlockParser::OnIntegrityBl
+     RunErrorCallback("Error reading the integrity block.");
+     return;
+   }
++  // This structure is built during parsing and returned by the final callback
++  mojom::BundleIntegrityBlockPtr integrity_block =
++      mojom::BundleIntegrityBlock::New();
++
++  size_t consumed_bytes = 0;
++  cbor::Reader::DecoderError error;
++  cbor::Reader::Config config;
++  config.num_bytes_consumed = &consumed_bytes;
++  config.error_code_out = &error;
++
++  // When config `bytes_consumed` are assigned the CBOR parser reads only to the
++  // end of a structure. It parses only Integrity Block even if Web Bundle part
++  // starts just after.
++  std::optional<cbor::Value> value = cbor::Reader::Read(*data, config);
++  if (!value) {
++    RunErrorCallback("Error parsing integrity block as CBOR: " +
++                     std::string(cbor::Reader::ErrorCodeToString(error)));
++    return;
++  }
++  integrity_block->size = consumed_bytes;
++
++  if (!value->is_array()) {
++    RunErrorCallback("Integrity block is not a CBOR array.");
++    return;
++  }
+ 
+-  const auto parse_res = parse_integrity_block(*data);
+-  if (!parse_res.has_value()) {
+-    const auto& error = parse_res.error();
+-    RunErrorCallback(std::string(error.message.as_str()),
+-                     error.is_version_error
+-                         ? mojom::BundleParseErrorType::kVersionError
+-                         : mojom::BundleParseErrorType::kFormatError);
++  const cbor::Value::ArrayValue& top_array = value->GetArray();
++  if (top_array.size() != kIntegrityBlockV2TopLevelArrayLength) {
++    RunErrorCallback(base::StringPrintf(
++        "Invalid integrity block array length: expected %u, got %zu.",
++        kIntegrityBlockV2TopLevelArrayLength, top_array.size()));
+     return;
+   }
+ 
+-  const auto& parsed_ib = *parse_res;
+-  auto integrity_block = mojom::BundleIntegrityBlock::New();
+-  integrity_block->size = parsed_ib.size;
+-
+-  const std::string_view web_bundle_id_str =
+-      parsed_ib.web_bundle_id.to_string_view();
+-  RETURN_IF_ERROR(
+-      SignedWebBundleId::Create(web_bundle_id_str),
+-      [&](std::string error) { RunErrorCallback(std::move(error)); });
+-
+-  integrity_block->attributes =
+-      IntegrityBlockAttributes(std::string(web_bundle_id_str),
+-                               BinaryData(parsed_ib.attributes_cbor.begin(),
+-                                          parsed_ib.attributes_cbor.end()));
++  // 1. Magic bytes
++  if (!top_array[0].is_bytestring() ||
++      !std::ranges::equal(top_array[0].GetBytestring(),
++                          kIntegrityBlockMagicBytes)) {
++    RunErrorCallback("Unexpected magic bytes.");
++    return;
++  }
++
++  // 2. Version
++  if (!top_array[1].is_bytestring() ||
++      !std::ranges::equal(top_array[1].GetBytestring(),
++                          kIntegrityBlockV2VersionBytes)) {
++    RunErrorCallback("Unexpected version bytes.",
++                     mojom::BundleParseErrorType::kVersionError);
++    return;
++  }
+ 
+-  for (const auto& entry : parsed_ib.signature_stack) {
++  // 3. Attributes
++  if (!top_array[2].is_map()) {
++    RunErrorCallback("Integrity block attributes must be a map.");
++    return;
++  }
++  const cbor::Value::MapValue& attributes_map = top_array[2].GetMap();
++  const cbor::Value* web_bundle_id =
++      base::FindOrNull(attributes_map, cbor::Value(kWebBundleIdAttributeName));
++  if (!web_bundle_id || !web_bundle_id->is_string()) {
++    RunErrorCallback(
++        "`webBundleId` integrity block attribute is missing or malformed.");
++    return;
++  }
++
++  // Check if web_bundle_id is correct
++  RETURN_IF_ERROR(SignedWebBundleId::Create(web_bundle_id->GetString()),
++                  [&](const std::string& error) { RunErrorCallback(error); });
++
++  BinaryData attributes_cbor = *cbor::Writer::Write(top_array[2]);
++  integrity_block->attributes = IntegrityBlockAttributes(
++      web_bundle_id->GetString(), std::move(attributes_cbor));
++
++  // 4. Signature Stack
++  if (!top_array[3].is_array()) {
++    RunErrorCallback("Signature stack must be an array.");
++    return;
++  }
++  const cbor::Value::ArrayValue& signatures = top_array[3].GetArray();
++  if (signatures.empty()) {
++    RunErrorCallback(
++        "The signature stack must contain at least one signature.");
++    return;
++  }
++
++  for (const auto& signature_info_raw : signatures) {
+     ASSIGN_OR_RETURN(
+-        auto parsed_sig, CreateSignatureStackEntry(entry),
+-        [&](std::string error) { RunErrorCallback(std::move(error)); });
+-    integrity_block->signature_stack.push_back(std::move(parsed_sig));
++        auto parsed_signature_info, ParseSignatureInfo(signature_info_raw),
++        [&](const std::string& error) { this->RunErrorCallback(error); });
++
++    if (integrity_block->signature_stack.empty() &&
++        parsed_signature_info->signature_info->is_unknown()) {
++      RunErrorCallback("Unknown cipher type of the first signature.");
++      return;
++    }
++    integrity_block->signature_stack.push_back(
++        std::move(parsed_signature_info));
+   }
+ 
+   std::move(complete_callback_)
+@@ -141,13 +164,74 @@ void IntegrityBlockParser::OnIntegrityBl
+                           std::move(integrity_block), nullptr));
+ }
+ 
++base::expected<mojom::BundleIntegrityBlockSignatureStackEntryPtr, std::string>
++IntegrityBlockParser::ParseSignatureInfo(
++    const cbor::Value& signature_info_raw) {
++  if (!signature_info_raw.is_array() ||
++      signature_info_raw.GetArray().size() != 2) {
++    return base::unexpected(
++        "Each signature stack entry must contain exactly two elements.");
++  }
++
++  const cbor::Value::ArrayValue& signature_info_array =
++      signature_info_raw.GetArray();
++  if (!signature_info_array[0].is_map() ||
++      !signature_info_array[1].is_bytestring()) {
++    return base::unexpected("Malformed signature stack entry.");
++  }
++
++  mojom::BundleIntegrityBlockSignatureStackEntryPtr parsed_signature_info =
++      mojom::BundleIntegrityBlockSignatureStackEntry::New();
++  parsed_signature_info->attributes_cbor =
++      *cbor::Writer::Write(signature_info_array[0]);
++
++  const cbor::Value::MapValue& signature_attributes =
++      signature_info_array[0].GetMap();
++  const BinaryData& signature_bytes = signature_info_array[1].GetBytestring();
++
++  const cbor::Value* ed25519_key = base::FindOrNull(
++      signature_attributes, cbor::Value(kEd25519PublicKeyAttributeName));
++  const cbor::Value* ecdsa_key = base::FindOrNull(
++      signature_attributes, cbor::Value(kEcdsaP256PublicKeyAttributeName));
++
++  if (ed25519_key && ecdsa_key) {
++    return base::unexpected("Multiple key types for one signature.");
++  } else if (ed25519_key && !ed25519_key->is_bytestring()) {
++    return base::unexpected("Invalid ED25519 key.");
++  } else if (ecdsa_key && !ecdsa_key->is_bytestring()) {
++    return base::unexpected("Invalid ECDSA key.");
++
++  } else if (ed25519_key && ed25519_key->is_bytestring()) {
++    ASSIGN_OR_RETURN(auto public_key,
++                     Ed25519PublicKey::Create(ed25519_key->GetBytestring()));
++    ASSIGN_OR_RETURN(auto signature, Ed25519Signature::Create(signature_bytes));
++    parsed_signature_info->signature_info = mojom::SignatureInfo::NewEd25519(
++        mojom::SignatureInfoEd25519::New(public_key, signature));
++
++  } else if (ecdsa_key && ecdsa_key->is_bytestring()) {
++    ASSIGN_OR_RETURN(auto public_key,
++                     EcdsaP256PublicKey::Create(ecdsa_key->GetBytestring()));
++    ASSIGN_OR_RETURN(auto signature,
++                     EcdsaP256SHA256Signature::Create(signature_bytes));
++    parsed_signature_info->signature_info =
++        mojom::SignatureInfo::NewEcdsaP256Sha256(
++            mojom::SignatureInfoEcdsaP256SHA256::New(public_key, signature));
++
++  } else {
++    parsed_signature_info->signature_info =
++        mojom::SignatureInfo::NewUnknown(mojom::SignatureInfoUnknown::New());
++  }
++
++  return parsed_signature_info;
++}
++
+ void IntegrityBlockParser::RunErrorCallback(
+-    std::string message,
++    const std::string& message,
+     mojom::BundleParseErrorType error_type) {
+   std::move(complete_callback_)
+-      .Run(base::BindOnce(std::move(result_callback_), nullptr,
+-                          mojom::BundleIntegrityBlockParseError::New(
+-                              error_type, std::move(message))));
++      .Run(base::BindOnce(
++          std::move(result_callback_), nullptr,
++          mojom::BundleIntegrityBlockParseError::New(error_type, message)));
+ }
+ 
+ }  // namespace web_package
+--- a/components/web_package/signed_web_bundles/integrity_block_parser.h
++++ b/components/web_package/signed_web_bundles/integrity_block_parser.h
+@@ -5,13 +5,8 @@
+ #ifndef COMPONENTS_WEB_PACKAGE_SIGNED_WEB_BUNDLES_INTEGRITY_BLOCK_PARSER_H_
+ #define COMPONENTS_WEB_PACKAGE_SIGNED_WEB_BUNDLES_INTEGRITY_BLOCK_PARSER_H_
+ 
+-#include <optional>
+-#include <string>
+-
+-#include "base/compiler_specific.h"
+-#include "base/memory/raw_ref.h"
+-#include "base/memory/weak_ptr.h"
+ #include "components/web_package/mojom/web_bundle_parser.mojom-forward.h"
++#include "components/web_package/signed_web_bundles/integrity_block_attributes.h"
+ #include "components/web_package/signed_web_bundles/types.h"
+ #include "components/web_package/web_bundle_parser.h"
+ 
+@@ -20,7 +15,7 @@ namespace web_package {
+ class IntegrityBlockParser : public WebBundleParser::WebBundleSectionParser {
+  public:
+   explicit IntegrityBlockParser(
+-      mojom::BundleDataSource& data_source LIFETIME_BOUND,
++      mojom::BundleDataSource& data_source,
+       WebBundleParser::ParseIntegrityBlockCallback callback);
+ 
+   IntegrityBlockParser(const IntegrityBlockParser&) = delete;
+@@ -35,7 +30,10 @@ class IntegrityBlockParser : public WebB
+  private:
+   void OnIntegrityBlockRead(const std::optional<BinaryData>& data);
+ 
+-  void RunErrorCallback(std::string message,
++  base::expected<mojom::BundleIntegrityBlockSignatureStackEntryPtr, std::string>
++  ParseSignatureInfo(const cbor::Value& attributes_map);
++
++  void RunErrorCallback(const std::string& message,
+                         mojom::BundleParseErrorType error_type =
+                             mojom::BundleParseErrorType::kFormatError);
+ 
+--- a/components/web_package/signed_web_bundles/rust/BUILD.gn
++++ b/components/web_package/signed_web_bundles/rust/BUILD.gn
+@@ -10,7 +10,6 @@ rust_static_library("signed_web_bundles_
+   sources = [
+     "constants.rs",
+     "integrity_block.rs",
+-    "signature_verifier.rs",
+     "types.rs",
+     crate_root,
+   ]
+--- a/components/web_package/signed_web_bundles/signed_web_bundle_signature_verifier.cc
++++ b/components/web_package/signed_web_bundles/signed_web_bundle_signature_verifier.cc
+@@ -20,14 +20,17 @@
+ #include "base/task/thread_pool.h"
+ #include "base/types/expected.h"
+ #include "base/types/expected_macros.h"
++#include "components/cbor/values.h"
++#include "components/cbor/writer.h"
++#include "components/web_package/signed_web_bundles/constants.h"
+ #include "components/web_package/signed_web_bundles/identity_validator.h"
+ #include "components/web_package/signed_web_bundles/integrity_block_parser.h"
+-#include "components/web_package/signed_web_bundles/rust/signed_web_bundles_rust.h"
+ #include "components/web_package/signed_web_bundles/signed_web_bundle_id.h"
+ #include "components/web_package/signed_web_bundles/signed_web_bundle_integrity_block.h"
+ #include "components/web_package/signed_web_bundles/signed_web_bundle_signature_stack.h"
+ #include "components/web_package/signed_web_bundles/signed_web_bundle_signature_stack_entry.h"
+ #include "components/web_package/signed_web_bundles/signed_web_bundle_utils.h"
++#include "crypto/hash.h"
+ #include "third_party/abseil-cpp/absl/functional/overload.h"
+ #include "third_party/boringssl/src/include/openssl/sha.h"
+ 
+@@ -37,10 +40,32 @@ namespace {
+ 
+ std::vector<uint8_t> CreateIntegrityBlockCbor(
+     const SignedWebBundleIntegrityBlock& integrity_block) {
+-  auto ib_cbor_rust =
+-      signed_web_bundles::rust::create_empty_integrity_block_cbor(
+-          integrity_block.attributes_cbor());
+-  return std::vector<uint8_t>(ib_cbor_rust.begin(), ib_cbor_rust.end());
++  // This function looks like it should use a cbor::Value::ArrayValue to build
++  // the outer array, but it can't: one of the elements is a pre-encoded CBOR
++  // value which we can't safely decode because it's untrusted input. This is
++  // obviously undesirable, because there's no guarantee at all that the
++  // pre-encoded value is actually valid CBOR.
++  //
++  // TODO(https://crbug.com/454485901): once there's a memory-safe CBOR parser,
++  // re-parse the pre-encoded value, then re-encode it here instead of
++  // constructing a CBOR array by hand so that we're guaranteed that the result
++  // of this function is valid.
++  std::vector<uint8_t> ib_cbor;
++
++  // 0x84 is the encoding byte for an array of length 4.
++  ib_cbor.push_back(0x84);
++  base::Extend(ib_cbor,
++               *cbor::Writer::Write(cbor::Value(kIntegrityBlockMagicBytes)));
++  base::Extend(ib_cbor, *cbor::Writer::Write(
++                            cbor::Value(kIntegrityBlockV2VersionBytes)));
++  // We cannot parse `attributes().cbor()` back to a cbor::Value as they
++  // technically represent untrusted input.
++  base::Extend(ib_cbor, integrity_block.attributes_cbor());
++  // Encode an empty signature array.
++  base::Extend(ib_cbor,
++               *cbor::Writer::Write(cbor::Value(cbor::Value::ArrayValue())));
++
++  return ib_cbor;
+ }
+ 
+ base::expected<void, SignedWebBundleSignatureVerifier::Error>
+@@ -104,7 +129,7 @@ SignedWebBundleSignatureVerifier::Calcul
+     return base::unexpected(base::File::ErrorToString(file.GetLastFileError()));
+   }
+ 
+-  signed_web_bundles::rust::Sha512Hasher hasher;
++  crypto::hash::Hasher hash(crypto::hash::kSha512);
+ 
+   // Calculate the hash of the Signed Web Bundle excluding its integrity block.
+   // The file might be too big to read it into memory all at once, which is why
+@@ -121,14 +146,15 @@ SignedWebBundleSignatureVerifier::Calcul
+           base::File::ErrorToString(file.GetLastFileError()));
+     }
+     data.resize(*bytes_read);
+-    hasher.update(data);
++    hash.Update(data);
+ 
+     if (!base::CheckAdd(offset, *bytes_read).AssignIfValid(&offset)) {
+       return base::unexpected("The Signed Web Bundle is too large.");
+     }
+   }
+ 
+-  SHA512Digest digest = std::move(hasher).finish();
++  SHA512Digest digest;
++  hash.Finish(digest);
+   return digest;
+ }
+ 
+--- a/components/web_package/signed_web_bundles/signed_web_bundle_utils.cc
++++ b/components/web_package/signed_web_bundles/signed_web_bundle_utils.cc
+@@ -5,18 +5,37 @@
+ #include "components/web_package/signed_web_bundles/signed_web_bundle_utils.h"
+ 
+ #include <cstdint>
+-#include <vector>
+ 
+-#include "components/web_package/signed_web_bundles/rust/signed_web_bundles_rust.h"
++#include "base/containers/extend.h"
++#include "base/containers/span.h"
++#include "base/containers/span_writer.h"
+ 
+ namespace web_package {
+ 
++namespace {
++
++void AddItemToPayload(std::vector<uint8_t>& payload,
++                      base::span<const uint8_t> item) {
++  // Each item that is part of the payload is prefixed with its length encoded
++  // as a 64 bit unsigned integer.
++  std::array<uint8_t, sizeof(uint64_t)> length;
++  auto writer = base::SpanWriter(base::span(length));
++  CHECK(writer.WriteU64BigEndian(item.size()));
++
++  base::Extend(payload, base::span(length));
++  base::Extend(payload, item);
++}
++
++}  // namespace
++
+ std::vector<uint8_t> CreateSignaturePayload(
+     const SignedWebBundleSignatureData& data) {
+-  auto payload_rust = signed_web_bundles::rust::create_signature_payload(
+-      data.unsigned_web_bundle_hash, data.integrity_block_cbor,
+-      data.attributes_cbor);
+-  return std::vector<uint8_t>(payload_rust.begin(), payload_rust.end());
++  std::vector<uint8_t> payload;
++  AddItemToPayload(payload, data.unsigned_web_bundle_hash);
++  AddItemToPayload(payload, data.integrity_block_cbor);
++  AddItemToPayload(payload, data.attributes_cbor);
++
++  return payload;
+ }
+ 
+ }  // namespace web_package
+--- a/third_party/blink/renderer/platform/BUILD.gn
++++ b/third_party/blink/renderer/platform/BUILD.gn
+@@ -186,6 +186,18 @@ group("make_platform_generated") {
+   ]
+ }
+ 
++rust_static_library("font_format_check") {
++  allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
++  crate_root = "fonts/opentype/format_check.rs"
++  sources = [ crate_root ]
++  cxx_bindings = [ crate_root ]
++  deps = [
++    "//third_party/rust/font_types/v0_12:lib",
++    "//third_party/rust/read_fonts/v0_43:lib",
++    "//third_party/rust/skrifa/v0_46:lib",
++  ]
++}
++
+ rust_static_library("rustfft_ffi") {
+   allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
+   crate_root = "audio/rustfft_ffi.rs"
+@@ -1792,7 +1804,6 @@ component("platform") {
+     ":allow_discouraged_type",
+     ":blink_platform_public_deps",
+     ":platform_export",
+-    "//build/rust/crubit",
+     "//gpu/command_buffer/client:raster_interface",
+     "//media/capture:capture_lib",
+     "//mojo/public/cpp/base",
+@@ -1819,8 +1830,8 @@ component("platform") {
+     "//ui/native_theme/features",
+   ]
+   deps = [
++    ":font_format_check",
+     ":rustfft_ffi",
+-    "fonts:font_format_bindings",
+     "//base:base_static",
+     "//base/allocator:buildflags",
+     "//build:chromecast_buildflags",
+--- a/third_party/blink/renderer/platform/fonts/BUILD.gn
++++ /dev/null
+@@ -1,19 +0,0 @@
+-# Copyright 2026 The Chromium Authors
+-# Use of this source code is governed by a BSD-style license that can be
+-# found in the LICENSE file.
+-
+-import("//build/rust/rust_static_library.gni")
+-
+-rust_static_library("font_format") {
+-  crate_root = "opentype/format_check.rs"
+-  sources = [ crate_root ]
+-  cpp_api_from_rust = {
+-    target_name = "font_format_bindings"
+-    cpp_namespace = "font_format"
+-  }
+-  deps = [
+-    "//third_party/rust/font_types/v0_12:lib",
+-    "//third_party/rust/read_fonts/v0_43:lib",
+-    "//third_party/rust/skrifa/v0_46:lib",
+-  ]
+-}
+--- a/third_party/blink/renderer/platform/fonts/opentype/font_format_check.cc
++++ b/third_party/blink/renderer/platform/fonts/opentype/font_format_check.cc
+@@ -7,6 +7,7 @@
+ #include "base/containers/span.h"
+ #include "base/containers/span_rust.h"
+ #include "base/numerics/byte_conversions.h"
++#include "third_party/blink/renderer/platform/fonts/opentype/format_check.rs.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "third_party/skia/include/core/SkTypeface.h"
+@@ -14,37 +15,35 @@
+ namespace blink {
+ 
+ FontFormatCheck::FontFormatCheck(sk_sp<SkData> sk_data)
+-    : format_info_(font_format::get_font_format_info(
++    : format_info_(font_format_check::get_font_format_info(
+           base::SpanToRustSlice(sk_data->byteSpan()))) {}
+ 
+-FontFormatCheck::~FontFormatCheck() = default;
+-
+ bool FontFormatCheck::IsVariableFont() const {
+-  return font_format::is_variable(format_info_);
++  return font_format_check::is_variable(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsCbdtCblcColorFont() const {
+-  return font_format::is_cbdt_cblc(format_info_);
++  return font_format_check::is_cbdt_cblc(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsEbdtEblcMonochromeFont() const {
+-  return font_format::is_ebdt_eblc(format_info_);
++  return font_format_check::is_ebdt_eblc(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsColrCpalColorFontV0() const {
+-  return font_format::is_colrv0(format_info_);
++  return font_format_check::is_colrv0(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsColrCpalColorFontV1() const {
+-  return font_format::is_colrv1(format_info_);
++  return font_format_check::is_colrv1(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsSbixColorFont() const {
+-  return font_format::is_sbix(format_info_);
++  return font_format_check::is_sbix(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsCff2OutlineFont() const {
+-  return font_format::is_cff2(format_info_);
++  return font_format_check::is_cff2(*format_info_);
+ }
+ 
+ bool FontFormatCheck::IsVariableColrV0Font() const {
+@@ -58,7 +57,7 @@ bool FontFormatCheck::IsColorFont() cons
+ 
+ bool FontFormatCheck::IsAvar2Font() const {
+   return RuntimeEnabledFeatures::FontFormatAvar2Enabled() &&
+-         font_format::is_avar2(format_info_);
++         font_format_check::is_avar2(*format_info_);
+ }
+ 
+ FontFormatCheck::VariableFontSubType FontFormatCheck::ProbeVariableFont(
+--- a/third_party/blink/renderer/platform/fonts/opentype/font_format_check.h
++++ b/third_party/blink/renderer/platform/fonts/opentype/font_format_check.h
+@@ -5,7 +5,7 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_OPENTYPE_FONT_FORMAT_CHECK_H_
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_OPENTYPE_FONT_FORMAT_CHECK_H_
+ 
+-#include "third_party/blink/renderer/platform/fonts/font_format.h"
++#include "third_party/blink/renderer/platform/fonts/opentype/format_check.rs.h"
+ #include "third_party/blink/renderer/platform/platform_export.h"
+ #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+ #include "third_party/skia/include/core/SkData.h"
+@@ -19,7 +19,7 @@ class PLATFORM_EXPORT FontFormatCheck {
+ 
+  public:
+   explicit FontFormatCheck(sk_sp<SkData>);
+-  virtual ~FontFormatCheck();
++  virtual ~FontFormatCheck() = default;
+   virtual bool IsVariableFont() const;
+   virtual bool IsCbdtCblcColorFont() const;
+   virtual bool IsEbdtEblcMonochromeFont() const;
+@@ -46,7 +46,7 @@ class PLATFORM_EXPORT FontFormatCheck {
+   enum class COLRVersion { kCOLRV0, kCOLRV1, kNoCOLR };
+ 
+  private:
+-  font_format::FontFormatInfo format_info_;
++  rust::Box<font_format_check::FontFormatInfo> format_info_;
+ };
+ 
+ }  // namespace blink
+--- a/third_party/blink/renderer/platform/fonts/opentype/format_check.rs
++++ b/third_party/blink/renderer/platform/fonts/opentype/format_check.rs
+@@ -23,7 +23,7 @@ pub struct FontFormatInfo {
+     format_flags: Option<FontFormatFlags>,
+ }
+ 
+-pub fn get_font_format_info(font_bytes: &[u8]) -> FontFormatInfo {
++pub fn get_font_format_info(font_bytes: &[u8]) -> Box<FontFormatInfo> {
+     let file_ref = make_font_ref_internal(font_bytes, 0);
+ 
+     match file_ref {
+@@ -32,11 +32,11 @@ pub fn get_font_format_info(font_bytes:
+                 font.table_directory().table_records().iter().map(|e| e.tag()).collect();
+             let color_version = get_colr_version(&font);
+             let avar_version = get_avar_version(&font);
+-            FontFormatInfo {
++            Box::new(FontFormatInfo {
+                 format_flags: Some(FontFormatFlags { table_tags, color_version, avar_version }),
+-            }
++            })
+         }
+-        _ => FontFormatInfo::default(),
++        _ => Box::new(FontFormatInfo::default()),
+     }
+ }
+ 
+@@ -44,10 +44,10 @@ fn get_colr_version(font_ref: &FontRef)
+     Some(font_ref.colr().ok()?.version())
+ }
+ 
+-pub fn is_colrv1(format_info: &FontFormatInfo) -> bool {
++fn is_colrv1(format_info: &FontFormatInfo) -> bool {
+     matches!(&format_info.format_flags, Some(FontFormatFlags { color_version: Some(1), .. }),)
+ }
+-pub fn is_colrv0(format_info: &FontFormatInfo) -> bool {
++fn is_colrv0(format_info: &FontFormatInfo) -> bool {
+     matches!(&format_info.format_flags, Some(FontFormatFlags { color_version: Some(0), .. }),)
+ }
+ 
+@@ -56,7 +56,7 @@ fn get_avar_version(font_ref: &FontRef)
+     Some((version.major, version.minor))
+ }
+ 
+-pub fn is_avar2(format_info: &FontFormatInfo) -> bool {
++fn is_avar2(format_info: &FontFormatInfo) -> bool {
+     matches!(&format_info.format_flags, Some(FontFormatFlags { avar_version: Some((2, _)), .. }),)
+ }
+ 
+@@ -69,22 +69,39 @@ fn has_tags(format_info: &FontFormatInfo
+     }
+ }
+ 
+-pub fn is_variable(format_info: &FontFormatInfo) -> bool {
++fn is_variable(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"fvar")])
+ }
+ 
+-pub fn is_sbix(format_info: &FontFormatInfo) -> bool {
++fn is_sbix(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"sbix")])
+ }
+ 
+-pub fn is_cbdt_cblc(format_info: &FontFormatInfo) -> bool {
++fn is_cbdt_cblc(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"CBDT"), Tag::new(b"CBLC")])
+ }
+ 
+-pub fn is_ebdt_eblc(format_info: &FontFormatInfo) -> bool {
++fn is_ebdt_eblc(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"EBDT"), Tag::new(b"EBLC")])
+ }
+ 
+-pub fn is_cff2(format_info: &FontFormatInfo) -> bool {
++fn is_cff2(format_info: &FontFormatInfo) -> bool {
+     has_tags(format_info, &[Tag::new(b"CFF2")])
+ }
++
++#[cxx::bridge(namespace = "font_format_check")]
++pub mod ffi {
++    extern "Rust" {
++        type FontFormatInfo;
++
++        fn get_font_format_info(font_bytes: &[u8]) -> Box<FontFormatInfo>;
++        fn is_colrv1(format_info: &FontFormatInfo) -> bool;
++        fn is_colrv0(format_info: &FontFormatInfo) -> bool;
++        fn is_cbdt_cblc(format_info: &FontFormatInfo) -> bool;
++        fn is_ebdt_eblc(format_info: &FontFormatInfo) -> bool;
++        fn is_variable(format_info: &FontFormatInfo) -> bool;
++        fn is_sbix(format_info: &FontFormatInfo) -> bool;
++        fn is_cff2(format_info: &FontFormatInfo) -> bool;
++        fn is_avar2(format_info: &FontFormatInfo) -> bool;
++    }
++}

@@ -1,0 +1,296 @@
+Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3966
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1022,7 +1022,6 @@ source_set("core") {
+     "//chrome/browser/preloading/search_preload:feature",
+     "//chrome/browser/privacy_sandbox:headers",
+     "//chrome/browser/private_ai",
+-    "//chrome/browser/private_verification_tokens",
+     "//chrome/browser/profiles:misc",
+     "//chrome/browser/profiles:profile_io_data",
+     "//chrome/browser/profiles:profiles_extra_parts",
+@@ -2215,7 +2214,6 @@ source_set("browser") {
+     "//chrome/browser/preloading/search_preload",
+     "//chrome/browser/privacy",
+     "//chrome/browser/privacy_sandbox:impl",
+-    "//chrome/browser/private_verification_tokens",
+     "//chrome/browser/profiles:misc",
+     "//chrome/browser/profiles:profile_util_impl",
+     "//chrome/browser/profiles:profiles_extra_parts_impl",
+--- a/chrome/browser/browsing_data/BUILD.gn
++++ b/chrome/browser/browsing_data/BUILD.gn
+@@ -125,7 +125,6 @@ source_set("impl") {
+     "//chrome/browser/preloading/prefetch/no_state_prefetch",
+     "//chrome/browser/preloading/prefetch/search_prefetch",
+     "//chrome/browser/privacy_sandbox:headers",
+-    "//chrome/browser/private_verification_tokens",
+     "//chrome/browser/profiles/keep_alive",
+     "//chrome/browser/reading_list",
+     "//chrome/browser/safe_browsing",
+@@ -267,7 +266,6 @@ source_set("unit_tests") {
+     "//chrome/browser/payments/browser_binding:browser_bound_key_deleter",
+     "//chrome/browser/payments/browser_binding:test_support",
+     "//chrome/browser/permissions",
+-    "//chrome/browser/private_verification_tokens",
+     "//chrome/browser/reading_list",
+     "//chrome/browser/safe_browsing:verdict_cache_manager_factory",
+     "//chrome/browser/segmentation_platform",
+@@ -295,7 +293,6 @@ source_set("unit_tests") {
+     "//components/privacy_sandbox:privacy_sandbox_settings_headers",
+     "//components/privacy_sandbox/privacy_sandbox_attestations",
+     "//components/privacy_sandbox/privacy_sandbox_attestations:test_support",
+-    "//components/private_verification_tokens/common:private_verification_tokens_database",
+     "//components/reading_list/core:test_support",
+     "//components/safe_browsing/core/browser:verdict_cache_manager",
+     "//components/site_engagement/content",
+--- a/chrome/browser/browsing_data/chrome_browsing_data_model_delegate.cc
++++ b/chrome/browser/browsing_data/chrome_browsing_data_model_delegate.cc
+@@ -127,15 +127,6 @@ void ChromeBrowsingDataModelDelegate::Ge
+ 
+   GetAllMediaDeviceSaltDataKeys(concurrent.CreateCallback(), {});
+ 
+-  if (base::FeatureList::IsEnabled(
+-          net::features::kEnablePrivateVerificationTokens)) {
+-    if (auto* pvt_service =
+-            PrivateVerificationTokensServiceFactory::GetForProfile(profile_)) {
+-      pvt_service->GetTokenIssuers(
+-          base::BindOnce(&PrivateVerificationTokenBrowsingDataToDelegateEntries)
+-              .Then(concurrent.CreateCallback()));
+-    }
+-  }
+ 
+   // TODO(crbug.com/40205603): Implement data retrieval for remaining data
+   // types.
+@@ -180,20 +171,6 @@ void ChromeBrowsingDataModelDelegate::Re
+   }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+-  if (base::FeatureList::IsEnabled(
+-          net::features::kEnablePrivateVerificationTokens) &&
+-      storage_types.Has(static_cast<BrowsingDataModel::StorageType>(
+-          StorageType::kPrivateVerificationTokens))) {
+-    if (const url::Origin* origin = std::get_if<url::Origin>(&data_key)) {
+-      if (auto* pvt_service =
+-              PrivateVerificationTokensServiceFactory::GetForProfile(
+-                  profile_)) {
+-        pvt_service->DeleteTokens(base::Time(), base::Time::Max(),
+-                                  concurrent.CreateClosure(),
+-                                  std::vector<url::Origin>{*origin});
+-      }
+-    }
+-  }
+ 
+   std::move(concurrent).Done(std::move(callback));
+ }
+--- a/chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc
++++ b/chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc
+@@ -720,29 +720,6 @@ void ChromeBrowsingDataRemoverDelegate::
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+   }
+ 
+-  //////////////////////////////////////////////////////////////////////////////
+-  // DATA_TYPE_PRIVATE_VERIFICATION_TOKENS
+-  if (remove_mask & constants::DATA_TYPE_PRIVATE_VERIFICATION_TOKENS) {
+-    if (base::FeatureList::IsEnabled(
+-            net::features::kEnablePrivateVerificationTokens)) {
+-      if (auto* pvt_service =
+-              PrivateVerificationTokensServiceFactory::GetForProfile(
+-                  profile_)) {
+-        auto done_closure = CreateTaskCompletionClosure(
+-            TracingDataType::kPrivateVerificationTokens);
+-
+-        if (filter_builder->MatchesAllOriginsAndDomains()) {
+-          pvt_service->DeleteTokens(delete_begin_, delete_end_,
+-                                    std::move(done_closure),
+-                                    /*issuers=*/std::nullopt);
+-        } else {
+-          pvt_service->DeleteTokensByFilter(
+-              delete_begin_, delete_end_,
+-              filter_builder->BuildStorageKeyFilter(), std::move(done_closure));
+-        }
+-      }
+-    }
+-  }
+ 
+   //////////////////////////////////////////////////////////////////////////////
+   // DATA_TYPE_CONTENT_SETTINGS
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -6009,21 +6009,6 @@ ChromeContentBrowserClient::CreateURLLoa
+     result.push_back(std::move(signin_throttle));
+   }
+ 
+-  if (base::FeatureList::IsEnabled(
+-          net::features::kEnablePrivateVerificationTokens) &&
+-      request.is_outermost_main_frame) {
+-    if (auto* pvt_service =
+-            PrivateVerificationTokensServiceFactory::GetForProfile(profile)) {
+-      auto url_loader_factory = profile->GetDefaultStoragePartition()
+-                                    ->GetURLLoaderFactoryForBrowserProcess();
+-      if (auto pvt_throttle =
+-              PrivateVerificationTokensURLLoaderThrottle::Create(
+-                  pvt_service, profile->IsOffTheRecord(),
+-                  std::move(url_loader_factory))) {
+-        result.push_back(std::move(pvt_throttle));
+-      }
+-    }
+-  }
+ 
+   if (auto contextual_tasks_throttle =
+           contextual_tasks::ContextualTasksURLLoaderThrottle::MaybeCreate(
+--- a/chrome/browser/component_updater/BUILD.gn
++++ b/chrome/browser/component_updater/BUILD.gn
+@@ -147,7 +147,6 @@ source_set("impl") {
+     "//chrome/browser/net",
+     "//chrome/browser/page_load_metrics",
+     "//chrome/browser/permissions",
+-    "//chrome/browser/private_verification_tokens",
+     "//chrome/browser/profiles:profile",
+     "//chrome/browser/update_client",
+     "//chrome/common",
+@@ -163,7 +162,6 @@ source_set("impl") {
+     "//components/permissions",
+     "//components/privacy_sandbox:features",
+     "//components/privacy_sandbox/privacy_sandbox_attestations",
+-    "//components/private_verification_tokens/common:private_verification_tokens_issuer_config",
+     "//components/safe_browsing/core/common:features",
+     "//components/search",
+     "//components/security_interstitials/content:security_interstitial_page",
+--- a/chrome/browser/component_updater/private_verification_tokens_installer.cc
++++ b/chrome/browser/component_updater/private_verification_tokens_installer.cc
+@@ -25,32 +25,6 @@ namespace component_updater {
+ 
+ void RegisterPrivateVerificationTokensComponentIfEnabled(
+     ComponentUpdateService* cus) {
+-  if (!base::FeatureList::IsEnabled(
+-          net::features::kEnablePrivateVerificationTokens)) {
+-    return;
+-  }
+-
+-  auto installer = base::MakeRefCounted<ComponentInstaller>(
+-      std::make_unique<PrivateVerificationTokensInstallerPolicy>(
+-          base::BindRepeating(
+-              [](scoped_refptr<private_verification_tokens::
+-                                   PrivateVerificationTokensIssuerConfig>
+-                     issuer_config) {
+-                PrivateVerificationTokensServiceFactory::SetGlobalIssuerConfig(
+-                    issuer_config);
+-                if (g_browser_process && g_browser_process->profile_manager()) {
+-                  for (Profile* profile : g_browser_process->profile_manager()
+-                                              ->GetLoadedProfiles()) {
+-                    if (PrivateVerificationTokensService* service =
+-                            PrivateVerificationTokensServiceFactory::
+-                                GetForProfileIfExists(profile)) {
+-                      service->SetIssuerConfig(issuer_config);
+-                    }
+-                  }
+-                }
+-              })));
+-
+-  installer->Register(cus, base::OnceClosure());
+ }
+ 
+ }  // namespace component_updater
+--- a/chrome/browser/private_verification_tokens/BUILD.gn
++++ b/chrome/browser/private_verification_tokens/BUILD.gn
+@@ -26,11 +26,6 @@ static_library("private_verification_tok
+     "//chrome/browser/profiles:profile",
+     "//components/content_settings/core/browser",
+     "//components/keyed_service/core",
+-    "//components/private_verification_tokens/common:privacy_pass_athm_batch_request",
+-    "//components/private_verification_tokens/common:private_verification_tokens_fetcher",
+-    "//components/private_verification_tokens/common:private_verification_tokens_issuer_config",
+-    "//components/private_verification_tokens/common:private_verification_tokens_parameters",
+-    "//components/private_verification_tokens/common:private_verification_tokens_store",
+     "//content/public/browser",
+     "//net",
+     "//services/network/public/cpp",
+@@ -49,9 +44,6 @@ source_set("browser_tests") {
+     "//chrome/browser/content_settings:content_settings_factory",
+     "//chrome/test:test_support",
+     "//components/content_settings/core/common",
+-    "//components/private_verification_tokens/common:athm_test_issuer",
+-    "//components/private_verification_tokens/common:private_verification_tokens_database",
+-    "//components/private_verification_tokens/common:private_verification_tokens_issuer_config",
+     "//net:test_support",
+     "//services/network:test_support",
+     "//url",
+@@ -72,11 +64,6 @@ source_set("unit_tests") {
+     "//chrome/test:test_support",
+     "//components/content_settings/core/browser",
+     "//components/content_settings/core/common",
+-    "//components/private_verification_tokens/common:athm_test_issuer",
+-    "//components/private_verification_tokens/common:private_verification_tokens_database",
+-    "//components/private_verification_tokens/common:private_verification_tokens_issuer_config",
+-    "//components/private_verification_tokens/common:private_verification_tokens_parameters",
+-    "//components/private_verification_tokens/common:test_support",
+     "//content/test:test_support",
+     "//net",
+     "//services/network:test_support",
+--- a/chrome/browser/profiles/BUILD.gn
++++ b/chrome/browser/profiles/BUILD.gn
+@@ -809,7 +809,6 @@ source_set("profiles_extra_parts_impl")
+     "//chrome/browser/privacy_sandbox:headers",
+     "//chrome/browser/private_ai",
+     "//chrome/browser/private_insights",
+-    "//chrome/browser/private_verification_tokens",
+     "//chrome/browser/push_messaging",
+     "//chrome/browser/reading_list",
+     "//chrome/browser/reduce_accept_language",
+--- a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
++++ b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
+@@ -1371,7 +1371,6 @@ void ChromeBrowserMainExtraPartsProfiles
+   PrivacyMetricsServiceFactory::GetInstance();
+   PrivacySandboxServiceFactory::GetInstance();
+   PrivacySandboxSettingsFactory::GetInstance();
+-  PrivateVerificationTokensServiceFactory::GetInstance();
+   private_ai::PrivateAiServiceFactory::GetInstance();
+   ProfileNetworkContextServiceFactory::GetInstance();
+   ProfilePasswordStoreFactory::GetInstance();
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -2137,7 +2137,6 @@ if (!is_android) {
+       "//chrome/browser/privacy_sandbox:headers",
+       "//chrome/browser/privacy_sandbox:test_support",
+       "//chrome/browser/private_ai",
+-      "//chrome/browser/private_verification_tokens:browser_tests",
+       "//chrome/browser/profile_resetter",
+       "//chrome/browser/profile_resetter:browser_tests",
+       "//chrome/browser/profiles",
+@@ -5401,7 +5400,6 @@ test("unit_tests") {
+     "//chrome/browser/preloading/prerender:unit_tests",
+     "//chrome/browser/privacy_sandbox:unit_tests",
+     "//chrome/browser/private_ai:unit_tests",
+-    "//chrome/browser/private_verification_tokens:unit_tests",
+     "//chrome/browser/profiles",
+     "//chrome/browser/profiles:misc",
+     "//chrome/browser/profiles:profile_downloader",
+--- a/components/BUILD.gn
++++ b/components/BUILD.gn
+@@ -314,7 +314,6 @@ test("components_unittests") {
+     "//components/power_metrics:unit_tests",
+     "//components/prefs:unit_tests",
+     "//components/privacy_sandbox:unit_tests",
+-    "//components/private_verification_tokens:unit_tests",
+     "//components/profile_metrics:unit_tests",
+     "//components/proto_extras:unit_tests",
+     "//components/proxy_config:unit_tests",
+--- a/components/component_updater/installer_policies/BUILD.gn
++++ b/components/component_updater/installer_policies/BUILD.gn
+@@ -38,7 +38,6 @@ static_library("installer_policies_no_co
+     "//components/lookalikes/core:proto",
+     "//components/lookalikes/core:safety_tips",
+     "//components/prefs",
+-    "//components/private_verification_tokens/common:private_verification_tokens_issuer_config",
+     "//components/update_client",
+     "//mojo/public/cpp/base:protobuf_support",
+     "//services/network/public/cpp",
+@@ -106,8 +105,6 @@ source_set("unit_tests") {
+     "//components/history_embeddings/core",
+     "//components/optimization_guide/core",
+     "//components/optimization_guide/proto:optimization_guide_proto",
+-    "//components/private_verification_tokens/common:private_verification_tokens_issuer_config",
+-    "//components/private_verification_tokens/common:test_support",
+     "//mojo/public/cpp/base:protobuf_support",
+     "//services/network/public/cpp",
+     "//testing/gmock",
