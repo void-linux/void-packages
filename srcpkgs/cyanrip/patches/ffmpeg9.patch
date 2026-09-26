@@ -1,0 +1,237 @@
+From 7dbbe1122248e91510351900af84a6f7c0464271 Mon Sep 17 00:00:00 2001
+From: Lynne <dev@lynne.ee>
+Date: Sun, 12 Jul 2026 19:18:46 +0900
+Subject: [PATCH] Support the FFmpeg 7.1+ codec and buffersink APIs
+
+FFmpeg master (lavc 63) removed AVCodec.ch_layouts/sample_fmts/
+supported_samplerates and the buffersink int-list options that were
+deprecated in 7.1. Query codec capabilities through
+avcodec_get_supported_config() and configure the buffersink via
+av_opt_set_array() on lavc >= 61.13.100/lavfi >= 10.6.100, keeping
+the old paths for older FFmpeg.
+
+The buffersink is now allocated, configured and then initialized
+explicitly, as setting non-runtime options on an initialized object
+is rejected since FFmpeg 8.0. This is what broke -E and HDCD/
+deemphasis ripping in general against FFmpeg 8:
+"Error setting filter sample format: Invalid argument!"
+
+Closes #137
+Closes #142
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014GYNg8856YE285XHQSF1ZV
+---
+ src/cyanrip_encode.c | 115 ++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 92 insertions(+), 23 deletions(-)
+
+diff --git a/src/cyanrip_encode.c b/src/cyanrip_encode.c
+index 23e9af06..910e8083 100644
+--- a/src/cyanrip_encode.c
++++ b/src/cyanrip_encode.c
+@@ -132,6 +132,31 @@ const char *cyanrip_fmt_folder(enum cyanrip_output_formats format)
+     return format < CYANRIP_FORMATS_NB ? crip_fmt_info[format].folder_suffix : NULL;
+ }
+ 
++/* The AVCodec.ch_layouts/sample_fmts/supported_samplerates fields were
++ * replaced by avcodec_get_supported_config() in lavc 61.13.100 (FFmpeg 7.1)
++ * and later removed. All lists remain terminated, so NULL still means
++ * "supports anything". */
++#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 13, 100)
++static const void *codec_supported_config(const AVCodec *codec,
++                                          enum AVCodecConfig config)
++{
++    const void *list = NULL;
++    if (avcodec_get_supported_config(NULL, codec, config, 0, &list, NULL) < 0)
++        return NULL;
++    return list;
++}
++#define CODEC_CH_LAYOUTS(codec) \
++    ((const AVChannelLayout *)codec_supported_config(codec, AV_CODEC_CONFIG_CHANNEL_LAYOUT))
++#define CODEC_SAMPLE_FMTS(codec) \
++    ((const enum AVSampleFormat *)codec_supported_config(codec, AV_CODEC_CONFIG_SAMPLE_FORMAT))
++#define CODEC_SAMPLERATES(codec) \
++    ((const int *)codec_supported_config(codec, AV_CODEC_CONFIG_SAMPLE_RATE))
++#else
++#define CODEC_CH_LAYOUTS(codec)  ((codec)->ch_layouts)
++#define CODEC_SAMPLE_FMTS(codec) ((codec)->sample_fmts)
++#define CODEC_SAMPLERATES(codec) ((codec)->supported_samplerates)
++#endif
++
+ static AVChannelLayout pick_codec_channel_layout(const AVCodec *codec)
+ {
+     int i = 0;
+@@ -139,17 +164,18 @@ static AVChannelLayout pick_codec_channel_layout(const AVCodec *codec)
+     AVChannelLayout ilayout = AV_CHANNEL_LAYOUT_STEREO;
+     int in_channels = ilayout.nb_channels;
+     AVChannelLayout best_layout = { 0 };
++    const AVChannelLayout *ch_layouts = CODEC_CH_LAYOUTS(codec);
+ 
+     /* Supports anything */
+-    if (!codec->ch_layouts)
++    if (!ch_layouts)
+         return ilayout;
+ 
+     /* Try to match */
+     while (1) {
+-        if (!codec->ch_layouts[i].nb_channels)
++        if (!ch_layouts[i].nb_channels)
+             break;
+-        if (!av_channel_layout_compare(&codec->ch_layouts[i], &ilayout))
+-            return codec->ch_layouts[i];
++        if (!av_channel_layout_compare(&ch_layouts[i], &ilayout))
++            return ch_layouts[i];
+         i++;
+     }
+ 
+@@ -157,15 +183,15 @@ static AVChannelLayout pick_codec_channel_layout(const AVCodec *codec)
+ 
+     /* Try to match channel counts */
+     while (1) {
+-        if (!codec->ch_layouts[i].nb_channels)
++        if (!ch_layouts[i].nb_channels)
+             break;
+-        int num = codec->ch_layouts[i].nb_channels;
++        int num = ch_layouts[i].nb_channels;
+         if (num > max_channels) {
+             max_channels = num;
+-            best_layout = codec->ch_layouts[i];
++            best_layout = ch_layouts[i];
+         }
+         if (num >= in_channels)
+-            return codec->ch_layouts[i];
++            return ch_layouts[i];
+         i++;
+     }
+ 
+@@ -184,19 +210,21 @@ static enum AVSampleFormat pick_codec_sample_fmt(const AVCodec *codec, int hdcd)
+                                         AV_SAMPLE_FMT_S16P;
+     enum AVSampleFormat max_bps_fmt = AV_SAMPLE_FMT_NONE;
+ 
++    const enum AVSampleFormat *sample_fmts = CODEC_SAMPLE_FMTS(codec);
++
+     ibps = ibps >> 3;
+ 
+     /* Accepts anything */
+-    if (!codec->sample_fmts)
++    if (!sample_fmts)
+         return ifmt;
+ 
+     /* Try to match the input sample format first */
+     while (1) {
+-        if (codec->sample_fmts[i] == AV_SAMPLE_FMT_NONE)
++        if (sample_fmts[i] == AV_SAMPLE_FMT_NONE)
+             break;
+-        if (codec->sample_fmts[i] == ifmt ||
+-            codec->sample_fmts[i] == ifmt_p)
+-            return codec->sample_fmts[i];
++        if (sample_fmts[i] == ifmt ||
++            sample_fmts[i] == ifmt_p)
++            return sample_fmts[i];
+         i++;
+     }
+ 
+@@ -204,15 +232,15 @@ static enum AVSampleFormat pick_codec_sample_fmt(const AVCodec *codec, int hdcd)
+ 
+     /* Try to match bits per sample */
+     while (1) {
+-        if (codec->sample_fmts[i] == -1)
++        if (sample_fmts[i] == -1)
+             break;
+-        int bps = av_get_bytes_per_sample(codec->sample_fmts[i]);
++        int bps = av_get_bytes_per_sample(sample_fmts[i]);
+         if (bps > max_bps) {
+             max_bps = bps;
+-            max_bps_fmt = codec->sample_fmts[i];
++            max_bps_fmt = sample_fmts[i];
+         }
+         if (bps == ibps)
+-            return codec->sample_fmts[i];
++            return sample_fmts[i];
+         i++;
+     }
+ 
+@@ -224,15 +252,16 @@ static int pick_codec_sample_rate(const AVCodec *codec)
+ {
+     int i = 0, ret;
+     int irate = 44100;
++    const int *samplerates = CODEC_SAMPLERATES(codec);
+ 
+-    if (!codec->supported_samplerates)
++    if (!samplerates)
+         return irate;
+ 
+     /* Go to the array terminator (0) */
+-    while (codec->supported_samplerates[++i] > 0);
++    while (samplerates[++i] > 0);
+     /* Alloc, copy and sort array upwards */
+     int *tmp = av_malloc(i*sizeof(int));
+-    memcpy(tmp, codec->supported_samplerates, i*sizeof(int));
++    memcpy(tmp, samplerates, i*sizeof(int));
+     qsort(tmp, i, sizeof(int), cmp_numbers);
+ 
+     /* Pick lowest one above the input rate, otherwise just use the highest one */
+@@ -327,13 +356,46 @@ static int init_filtering(cyanrip_ctx *ctx, cyanrip_filt_ctx *s,
+ 
+     if (!peak) {
+         const AVFilter *abuffersink = avfilter_get_by_name("abuffersink");
+-        ret = avfilter_graph_create_filter(&s->buffersink_ctx, abuffersink, "out",
+-                                           NULL, NULL, s->graph);
+-        if (ret < 0) {
++        /* Options must be set between allocation and init, non-runtime
++         * option changes on initialized objects are rejected */
++        s->buffersink_ctx = avfilter_graph_alloc_filter(s->graph, abuffersink, "out");
++        if (!s->buffersink_ctx) {
++            ret = AVERROR(ENOMEM);
+             cyanrip_log(ctx, 0, "Error creating filter sink: %s!\n", av_err2str(ret));
+             goto fail;
+         }
+ 
++#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(10, 6, 100)
++        /* Buffersink switched to array-type options in lavfi 10.6.100
++         * (FFmpeg 7.1); the int-list options were later removed */
++        if (hdcd || deemphasis) {
++            const enum AVSampleFormat out_sample_fmt = hdcd ? AV_SAMPLE_FMT_S32 :
++                                                              AV_SAMPLE_FMT_DBLP;
++            ret = av_opt_set_array(s->buffersink_ctx, "sample_formats",
++                                   AV_OPT_SEARCH_CHILDREN, 0, 1,
++                                   AV_OPT_TYPE_SAMPLE_FMT, &out_sample_fmt);
++            if (ret < 0) {
++                cyanrip_log(ctx, 0, "Error setting filter sample format: %s!\n", av_err2str(ret));
++                goto fail;
++            }
++        }
++
++        ret = av_opt_set(s->buffersink_ctx, "channel_layouts", "stereo",
++                         AV_OPT_SEARCH_CHILDREN);
++        if (ret < 0) {
++            cyanrip_log(ctx, 0, "Error setting filter channel layout: %s!\n", av_err2str(ret));
++            goto fail;
++        }
++
++        const int out_sample_rate = 44100;
++        ret = av_opt_set_array(s->buffersink_ctx, "samplerates",
++                               AV_OPT_SEARCH_CHILDREN, 0, 1,
++                               AV_OPT_TYPE_INT, &out_sample_rate);
++        if (ret < 0) {
++            cyanrip_log(ctx, 0, "Error setting filter sample rate: %s!\n", av_err2str(ret));
++            goto fail;
++        }
++#else
+         static const enum AVSampleFormat out_sample_fmts_hdcd[] = { AV_SAMPLE_FMT_S32, -1 };
+         static const enum AVSampleFormat out_sample_fmts_deemph[] = { AV_SAMPLE_FMT_DBLP, -1 };
+ 
+@@ -360,6 +422,13 @@ static int init_filtering(cyanrip_ctx *ctx, cyanrip_filt_ctx *s,
+             cyanrip_log(ctx, 0, "Error setting filter sample rate: %s!\n", av_err2str(ret));
+             goto fail;
+         }
++#endif
++
++        ret = avfilter_init_str(s->buffersink_ctx, NULL);
++        if (ret < 0) {
++            cyanrip_log(ctx, 0, "Error initializing filter sink: %s!\n", av_err2str(ret));
++            goto fail;
++        }
+     }
+ 
+     outputs = avfilter_inout_alloc();
