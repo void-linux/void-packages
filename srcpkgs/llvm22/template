@@ -68,9 +68,9 @@ else
 fi
 
 build_options="clang clang_tools_extra lld mlir libclc polly lldb flang bolt
- openmp libc libcxx libunwind offload lto graphviz full_debug"
+ openmp libc offload lto graphviz full_debug"
 build_options_default="clang clang_tools_extra lld libclc polly lldb
- libcxx libunwind mlir"
+ mlir"
 
 case "$XBPS_TARGET_MACHINE" in
 	x86_64*|aarch64*|riscv64*)
@@ -132,9 +132,7 @@ subpackages="
  $(vopt_if libclc "libclc${_major}")
  $(vopt_if mlir "mlir${_major} mlir${_major}-devel")
  $(vopt_if flang "flang${_major} flang${_major}-devel")
- $(vopt_if openmp "libomp${_major} libomp${_major}-devel")
- $(vopt_if libunwind "llvm-libunwind llvm-libunwind-devel")
- $(vopt_if libcxx "libcxx libcxxabi libcxxabi-devel libcxx-devel")"
+ $(vopt_if openmp "libomp${_major} libomp${_major}-devel")"
 
 _enabled_projects="$(vopt_if clang 'clang;')\
 $(vopt_if clang_tools_extra 'clang-tools-extra;')\
@@ -216,20 +214,6 @@ _vlink_libs() {
 	done
 }
 
-post_patch() {
-	# need libssp_nonshared on some musl platforms (because of nodefaultlibs)
-	case "$XBPS_TARGET_MACHINE" in
-		ppc64*) ;;
-		ppc*-musl|i686-musl|mips*-musl)
-			vsed -i 's,^# Setup flags.$,add_library_flags(ssp_nonshared),' \
-				${wrksrc}/libunwind/src/CMakeLists.txt
-			vsed -i 's,^# Setup flags.$,add_library_flags(ssp_nonshared),' \
-				${wrksrc}/libcxxabi/src/CMakeLists.txt
-			vsed -i 's,#ssp,,' ${wrksrc}/libcxx/CMakeLists.txt
-			;;
-	esac
-}
-
 _setup_cross_cflags() {
 	CC="clang"
 	CXX="clang++"
@@ -294,32 +278,6 @@ pre_build() {
 	_setup_build_env
 }
 
-post_build() {
-	mkdir -p "${wrksrc}/${build_wrksrc}/builddir_runtimes"
-	cmake -G Ninja -S "${wrksrc}/runtimes" -B "${wrksrc}/${build_wrksrc}/builddir_runtimes" \
-		-DCMAKE_INSTALL_PREFIX=/usr \
-		-DCMAKE_ASM_COMPILER_TARGET="${_triplet}" \
-		-DCMAKE_C_COMPILER="$CC" \
-		-DCMAKE_C_COMPILER_TARGET="${_triplet}" \
-		-DCMAKE_CXX_COMPILER="$CXX" \
-		-DCMAKE_CXX_COMPILER_TARGET="${_triplet}" \
-		-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
-		-DLIBCXXABI_ENABLE_STATIC_UNWINDER=YES \
-		-DLIBCXXABI_USE_COMPILER_RT=YES \
-		-DLIBCXXABI_USE_LLVM_UNWINDER=YES \
-		-DLIBCXX_CXX_ABI=libcxxabi \
-		-DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=YES \
-		-DLIBCXX_USE_COMPILER_RT=YES \
-		-DLLVM_ENABLE_SPHINX=ON \
-		-DLLVM_TARGET_ARCH="${_arch}" \
-		-DLLVM_HOST_TRIPLE="${_triplet}" \
-		-DLLVM_DEFAULT_TARGET_TRIPLE="${_triplet}" \
-		-DLIBCXX_HAS_MUSL_LIBC="${_is_musl}" \
-		-DSPHINX_WARNINGS_AS_ERRORS=OFF
-	ninja ${makejobs} -C "${wrksrc}/${build_wrksrc}/builddir_runtimes"
-	ninja ${makejobs} -C "${wrksrc}/${build_wrksrc}/builddir_runtimes" docs-libcxx-html docs-libunwind-html
-}
-
 pre_install() {
 	_setup_build_env
 }
@@ -338,26 +296,6 @@ post_install() {
 	# XXX: needed?
 	if [ "$CROSS_BUILD" ]; then
 		rm -vf ${DESTDIR}/${_llvm_bindir}/llvm-config-host
-	fi
-
-	if [ "$build_option_libcxx" ]; then
-
-		cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr \
-			-P ${wrksrc}/${build_wrksrc}/builddir_runtimes/libcxx/docs/cmake_install.cmake
-
-		LIBCXX_DOCS=${_llvm_datadir}/doc/LLVM/libcxx
-		vmkdir ${LIBCXX_DOCS}
-		vcopy ${wrksrc}/${build_wrksrc}/builddir_runtimes/libcxx/docs/html ${LIBCXX_DOCS}
-	fi
-
-	if [ "$build_option_libunwind" ]; then
-
-		cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr \
-			-P ${wrksrc}/${build_wrksrc}/builddir_runtimes/libunwind/docs/cmake_install.cmake
-
-		LIBUNWIND_DOCS=${_llvm_datadir}/doc/LLVM/libunwind
-		vmkdir ${LIBUNWIND_DOCS}
-		vcopy ${wrksrc}/${build_wrksrc}/builddir_runtimes/libunwind/docs/html ${LIBUNWIND_DOCS}
 	fi
 
 	cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr \
@@ -990,66 +928,6 @@ libomp22-devel_package() {
 			vmove "${_llvm_libdir}/nvptx64-nvidia-cuda/libomptarget-nvptx.bc"
 			vmove "${_llvm_datadir}/gdb/python/ompd"
 		fi
-	}
-}
-
-llvm-libunwind_package() {
-	short_desc+=" - libunwind"
-	pkg_install() {
-		vmove "usr/lib/libunwind.so.*"
-	}
-}
-
-llvm-libunwind-devel_package() {
-	short_desc+=" - libunwind - development files"
-	depends="llvm-libunwind>=${version}_${revision}"
-	conflicts="libunwind-devel>=0"
-	pkg_install() {
-		vmove "usr/include/__libunwind_config.h"
-		vmove "usr/include/libunwind.h"
-		vmove "usr/include/libunwind.modulemap"
-		vmove "usr/include/mach-o/compact_unwind_encoding.h"
-		vmove "usr/include/unwind*.h"
-		vmove "usr/lib/libunwind.a"
-		vmove "usr/lib/libunwind.so"
-	}
-}
-
-libcxxabi_package() {
-	short_desc+=" - low level support for libc++"
-	pkg_install() {
-		vmove "usr/lib/libc++abi.so.*"
-	}
-}
-
-libcxxabi-devel_package() {
-	short_desc+=" - low level support for libc++ - development files"
-	depends="libcxxabi>=${version}_${revision}"
-	pkg_install() {
-		vmove "usr/include/c++/v1/__cxxabi_config.h"
-		vmove "usr/include/c++/v1/cxxabi.h"
-		vmove "usr/lib/libc++abi.a"
-		vmove "usr/lib/libc++abi.so"
-	}
-}
-
-libcxx_package() {
-	short_desc+=" - C++ standard library"
-	pkg_install() {
-		vmove "usr/lib/libc++.so.*"
-	}
-}
-
-libcxx-devel_package() {
-	short_desc+=" - C++ standard library - development files"
-	depends="libcxx>=${version}_${revision}"
-	pkg_install() {
-		vmove "usr/include/c++"
-		vmove "usr/lib/libc++.a"
-		vmove "usr/lib/libc++.modules.json"
-		vmove "usr/lib/libc++.so"
-		vmove "usr/lib/libc++experimental.a"
-		vmove "usr/share/libc++"
 	}
 }
 
