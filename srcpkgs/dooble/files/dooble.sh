@@ -1,0 +1,2 @@
+export QTWEBENGINE_DICTIONARIES_PATH=/usr/share/qt6/qtwebengine_dictionaries
+export DOOBLE_TRANSLATIONS_PATH=/usr/share/dooble/translations

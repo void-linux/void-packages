@@ -1,0 +1,81 @@
+From 3e978f71c717a22ab75f8e709e536809361cfb95 Mon Sep 17 00:00:00 2001
+From: oreo639 <oreo6391@gmail.com>
+Date: Mon, 24 Mar 2025 02:06:03 -0700
+Subject: [PATCH] task.c: backport input stream ownership check to non-pipe
+ codepath
+
+80516f601ce5f1cee44848615dffe4252f2d205f only fixed the pipe codepath, but the
+issue also exists for the non HAS_PIPE codepath as well.
+---
+ src/task.c | 44 +++++++++++++++++++++++++++++---------------
+ 1 file changed, 29 insertions(+), 15 deletions(-)
+
+diff --git a/src/task.c b/src/task.c
+index c619512..9227fda 100644
+--- a/src/task.c
++++ b/src/task.c
+@@ -218,6 +218,31 @@ recode_transform_byte_to_variable (RECODE_SUBTASK subtask)
+   SUBTASK_RETURN (subtask);
+ }
+ 
++/*-------------------------------------------------------------------.
++| Close the subtask input file pointer if it is owned by librecode.  |
++`-------------------------------------------------------------------*/
++
++static bool
++close_subtask_input (RECODE_SUBTASK subtask)
++{
++  if (subtask->input.file)
++    {
++      if (subtask->input.file && subtask->input.name &&
++          subtask->input.name[0])
++        {
++          if (fclose (subtask->input.file) != 0)
++            {
++              recode_perror (NULL, "fclose (%s)", subtask->input.name);
++              recode_if_nogo (RECODE_SYSTEM_ERROR, subtask);
++              return false;
++            }
++        }
++
++      subtask->input.file = NULL;
++    }
++  return true;
++}
++
+ /*------------------------------------------------------------------------.
+ | Execute the conversion sequence for a recoding TASK.  If no conversions |
+ | are needed, merely copy the input onto the output.                      |
+@@ -358,9 +383,8 @@ recode_perform_task (RECODE_TASK task)
+ 
+               /* Close the input file when we opened it. */
+ 
+-              if (subtask->input.file && subtask->input.name &&
+-                  subtask->input.name[0])
+-                fclose (subtask->input.file);
++              if (!close_subtask_input (subtask))
++                goto exit;
+             }
+ #endif
+ 	}
+@@ -400,18 +424,8 @@ recode_perform_task (RECODE_TASK task)
+ #else
+ 	  /* Post-step clean up for memory sequence.  */
+ 
+-	  if (subtask->input.file)
+-	    {
+-	      FILE *fp = subtask->input.file;
+-
+-	      subtask->input.file = NULL;
+-	      if (fclose (fp) != 0)
+-		{
+-		  recode_perror (NULL, "fclose (%s)", subtask->input.name);
+-		  recode_if_nogo (RECODE_SYSTEM_ERROR, subtask);
+-		  goto exit;
+-		}
+-	    }
++          if (!close_subtask_input (subtask))
++            goto exit;
+ 
+ 	  /* Prepare for next step.  */
+ 

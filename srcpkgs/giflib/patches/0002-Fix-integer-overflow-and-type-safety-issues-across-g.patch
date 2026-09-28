@@ -1,0 +1,233 @@
+From 9985cfa12c58bd0fd95fd782bd7018499b1e6d7f Mon Sep 17 00:00:00 2001
+From: Anthony Hurtado <amhurtado@protonmail.com>
+Date: Mon, 1 Jun 2026 15:41:11 -0500
+Subject: [PATCH 2/3] Fix integer overflow and type safety issues across giflib
+
+Multiple integer overflow vulnerabilities exist in giflib's pixel count
+and dimension arithmetic.  On 32-bit platforms where long and int are
+32 bits, these overflow to negative values or wrap around, causing
+heap buffer overflows, incorrect loop bounds, and undefined behavior.
+
+dgif_lib.c:
+- PixelCount: cast to (unsigned long) instead of signed (long) to
+  prevent signed overflow UB on 32-bit platforms.
+- LZW CodeSize: reject BitsPerPixel < 2 (CodeSize 0 and 1 create
+  degenerate LZW states where ClearCode/EOFCode are unreachable).
+
+egif_lib.c:
+- PixelCount: same (unsigned long) fix as dgif_lib.c.
+- EGifSpew: cast j to (size_t) in pointer arithmetic j * SavedWidth
+  to prevent int*int overflow in raster offset computation.
+
+gifalloc.c:
+- GifApplyTranslation: use size_t for RasterSize and loop counter
+  instead of int to prevent Height*Width overflow.
+- GifMakeSavedImage: cast Height to (size_t) in reallocarray nmemb
+  and memcpy size to prevent int*int overflow before reaching
+  reallocarray's internal overflow check.
+
+quantize.c:
+- Compute PixelCount as (size_t)Width * Height with division-based
+  overflow guard.  Use size_t loop counter for pixel iteration.
+- Replace signed (long) cast of pixel count with (unsigned long).
+
+All 51 regression tests pass.  Compiles with zero warnings under
+-Wall -O2.
+
+Signed-off-by: Anthony Hurtado <amhurtado@pm.me>
+---
+ dgif_lib.c |  5 +++--
+ egif_lib.c |  7 ++++---
+ gifalloc.c | 16 ++++++++--------
+ quantize.c | 39 +++++++++++++++++++++++----------------
+ 4 files changed, 38 insertions(+), 29 deletions(-)
+
+diff --git a/dgif_lib.c b/dgif_lib.c
+index cec94c1..a022bb6 100644
+--- a/dgif_lib.c
++++ b/dgif_lib.c
+@@ -416,7 +416,8 @@ int DGifGetImageHeader(GifFileType *GifFile) {
+ 	}
+ 
+ 	Private->PixelCount =
+-	    (long)GifFile->Image.Width * (long)GifFile->Image.Height;
++	    (unsigned long)GifFile->Image.Width *
++	    (unsigned long)GifFile->Image.Height;
+ 
+ 	/* Reset decompress algorithm parameters. */
+ 	return DGifSetupDecompress(GifFile);
+@@ -824,7 +825,7 @@ static int DGifSetupDecompress(GifFileType *GifFile) {
+ 	BitsPerPixel = CodeSize;
+ 
+ 	/* this can only happen on a severely malformed GIF */
+-	if (BitsPerPixel > 8) {
++	if (BitsPerPixel < 2 || BitsPerPixel > 8) {
+ 		GifFile->Error =
+ 		    D_GIF_ERR_READ_FAILED; /* somewhat bogus error code */
+ 		return GIF_ERROR;          /* Failed to read Code size. */
+diff --git a/egif_lib.c b/egif_lib.c
+index d74e8df..6f7c9b6 100644
+--- a/egif_lib.c
++++ b/egif_lib.c
+@@ -448,7 +448,8 @@ int EGifPutImageDesc(GifFileType *GifFile, const int Left, const int Top,
+ 
+ 	/* Mark this file as has screen descriptor: */
+ 	Private->FileState |= FILE_STATE_IMAGE;
+-	Private->PixelCount = (long)Width * (long)Height;
++	Private->PixelCount =
++	    (unsigned long)Width * (unsigned long)Height;
+ 
+ 	/* Reset compress algorithm parameters. */
+ 	(void)EGifSetupCompress(GifFile);
+@@ -1154,7 +1155,7 @@ int EGifSpew(GifFileType *GifFileOut, int *ErrorCode) {
+ 				     j += InterlacedJumps[k]) {
+ 					if (EGifPutLine(
+ 					        GifFileOut,
+-					        sp->RasterBits + j * SavedWidth,
++					        sp->RasterBits + (size_t)j * SavedWidth,
+ 					        SavedWidth) == GIF_ERROR) {
+ 						status = GIF_ERROR;
+ 						err = GifFileOut->Error;
+@@ -1165,7 +1166,7 @@ int EGifSpew(GifFileType *GifFileOut, int *ErrorCode) {
+ 		} else {
+ 			for (j = 0; j < SavedHeight; j++) {
+ 				if (EGifPutLine(GifFileOut,
+-				                sp->RasterBits + j * SavedWidth,
++				                sp->RasterBits + (size_t)j * SavedWidth,
+ 				                SavedWidth) == GIF_ERROR) {
+ 					status = GIF_ERROR;
+ 					err = GifFileOut->Error;
+diff --git a/gifalloc.c b/gifalloc.c
+index 3d897ab..886907d 100644
+--- a/gifalloc.c
++++ b/gifalloc.c
+@@ -210,9 +210,9 @@ ColorMapObject *GifUnionColorMap(const ColorMapObject *ColorIn1,
+  Apply a given color translation to the raster bits of an image
+ *******************************************************************************/
+ void GifApplyTranslation(SavedImage *Image, const GifPixelType Translation[]) {
+-	register int i;
+-	register int RasterSize =
+-	    Image->ImageDesc.Height * Image->ImageDesc.Width;
++	size_t i;
++	size_t RasterSize =
++	    (size_t)Image->ImageDesc.Height * Image->ImageDesc.Width;
+ 
+ 	for (i = 0; i < RasterSize; i++) {
+ 		Image->RasterBits[i] = Translation[Image->RasterBits[i]];
+@@ -371,17 +371,17 @@ SavedImage *GifMakeSavedImage(GifFileType *GifFile,
+ 			/* next, the raster */
+ 			sp->RasterBits = (unsigned char *)reallocarray(
+ 			    NULL,
+-			    (CopyFrom->ImageDesc.Height *
+-			     CopyFrom->ImageDesc.Width),
++			    (size_t)CopyFrom->ImageDesc.Height *
++			        CopyFrom->ImageDesc.Width,
+ 			    sizeof(GifPixelType));
+ 			if (sp->RasterBits == NULL) {
+ 				FreeLastSavedImage(GifFile);
+ 				return (SavedImage *)(NULL);
+ 			}
+ 			memcpy(sp->RasterBits, CopyFrom->RasterBits,
+-			       sizeof(GifPixelType) *
+-			           CopyFrom->ImageDesc.Height *
+-			           CopyFrom->ImageDesc.Width);
++			       (size_t)CopyFrom->ImageDesc.Height *
++			           CopyFrom->ImageDesc.Width *
++			           sizeof(GifPixelType));
+ 
+ 			/* finally, the extension blocks */
+ 			if (CopyFrom->ExtensionBlocks != NULL) {
+diff --git a/quantize.c b/quantize.c
+index 160a29b..4ea44ce 100644
+--- a/quantize.c
++++ b/quantize.c
+@@ -71,6 +71,7 @@ int GifQuantizeBuffer(unsigned int Width, unsigned int Height,
+ 	long Red, Green, Blue;
+ 	NewColorMapType NewColorSubdiv[256];
+ 	QuantizedColorType *ColorArrayEntries, *QuantizedColor;
++	size_t k, PixelCount;
+ 
+ 	ColorArrayEntries = (QuantizedColorType *)malloc(
+ 	    sizeof(QuantizedColorType) * COLOR_ARRAY_SIZE);
+@@ -78,6 +79,12 @@ int GifQuantizeBuffer(unsigned int Width, unsigned int Height,
+ 		return GIF_ERROR;
+ 	}
+ 
++	PixelCount = (size_t)Width * Height;
++	if (Width != 0 && PixelCount / Width != Height) {
++		free((char *)ColorArrayEntries);
++		return GIF_ERROR;
++	}
++
+ 	for (i = 0; i < COLOR_ARRAY_SIZE; i++) {
+ 		ColorArrayEntries[i].RGB[0] = i >> (2 * BITS_PER_PRIM_COLOR);
+ 		ColorArrayEntries[i].RGB[1] =
+@@ -87,12 +94,12 @@ int GifQuantizeBuffer(unsigned int Width, unsigned int Height,
+ 	}
+ 
+ 	/* Sample the colors and their distribution: */
+-	for (i = 0; i < (int)(Width * Height); i++) {
+-		Index = ((RedInput[i] >> (8 - BITS_PER_PRIM_COLOR))
++	for (k = 0; k < PixelCount; k++) {
++		Index = ((RedInput[k] >> (8 - BITS_PER_PRIM_COLOR))
+ 		         << (2 * BITS_PER_PRIM_COLOR)) +
+-		        ((GreenInput[i] >> (8 - BITS_PER_PRIM_COLOR))
++		        ((GreenInput[k] >> (8 - BITS_PER_PRIM_COLOR))
+ 		         << BITS_PER_PRIM_COLOR) +
+-		        (BlueInput[i] >> (8 - BITS_PER_PRIM_COLOR));
++		        (BlueInput[k] >> (8 - BITS_PER_PRIM_COLOR));
+ 		ColorArrayEntries[Index].Count++;
+ 	}
+ 
+@@ -127,7 +134,7 @@ int GifQuantizeBuffer(unsigned int Width, unsigned int Height,
+ 
+ 	NewColorSubdiv[0].NumEntries =
+ 	    NumOfEntries; /* Different sampled colors */
+-	NewColorSubdiv[0].Count = ((long)Width) * Height; /* Pixels */
++	NewColorSubdiv[0].Count = (unsigned long)PixelCount; /* Pixels */
+ 	NewColorMapSize = 1;
+ 	if (SubdivColorMap(NewColorSubdiv, *ColorMapSize, &NewColorMapSize) !=
+ 	    GIF_OK) {
+@@ -167,28 +174,28 @@ int GifQuantizeBuffer(unsigned int Width, unsigned int Height,
+ 	/* Finally scan the input buffer again and put the mapped index in the
+ 	 * output buffer.  */
+ 	MaxRGBError[0] = MaxRGBError[1] = MaxRGBError[2] = 0;
+-	for (i = 0; i < (int)(Width * Height); i++) {
+-		Index = ((RedInput[i] >> (8 - BITS_PER_PRIM_COLOR))
++	for (k = 0; k < PixelCount; k++) {
++		Index = ((RedInput[k] >> (8 - BITS_PER_PRIM_COLOR))
+ 		         << (2 * BITS_PER_PRIM_COLOR)) +
+-		        ((GreenInput[i] >> (8 - BITS_PER_PRIM_COLOR))
++		        ((GreenInput[k] >> (8 - BITS_PER_PRIM_COLOR))
+ 		         << BITS_PER_PRIM_COLOR) +
+-		        (BlueInput[i] >> (8 - BITS_PER_PRIM_COLOR));
++		        (BlueInput[k] >> (8 - BITS_PER_PRIM_COLOR));
+ 		Index = ColorArrayEntries[Index].NewColorIndex;
+-		OutputBuffer[i] = Index;
++		OutputBuffer[k] = Index;
+ 		if (MaxRGBError[0] <
+-		    ABS(OutputColorMap[Index].Red - RedInput[i])) {
++		    ABS(OutputColorMap[Index].Red - RedInput[k])) {
+ 			MaxRGBError[0] =
+-			    ABS(OutputColorMap[Index].Red - RedInput[i]);
++			    ABS(OutputColorMap[Index].Red - RedInput[k]);
+ 		}
+ 		if (MaxRGBError[1] <
+-		    ABS(OutputColorMap[Index].Green - GreenInput[i])) {
++		    ABS(OutputColorMap[Index].Green - GreenInput[k])) {
+ 			MaxRGBError[1] =
+-			    ABS(OutputColorMap[Index].Green - GreenInput[i]);
++			    ABS(OutputColorMap[Index].Green - GreenInput[k]);
+ 		}
+ 		if (MaxRGBError[2] <
+-		    ABS(OutputColorMap[Index].Blue - BlueInput[i])) {
++		    ABS(OutputColorMap[Index].Blue - BlueInput[k])) {
+ 			MaxRGBError[2] =
+-			    ABS(OutputColorMap[Index].Blue - BlueInput[i]);
++			    ABS(OutputColorMap[Index].Blue - BlueInput[k]);
+ 		}
+ 	}
+ 
+-- 
+2.55.0
+

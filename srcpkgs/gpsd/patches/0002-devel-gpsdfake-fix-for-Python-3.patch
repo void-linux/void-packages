@@ -1,0 +1,96 @@
+From 8a01cdbf710c91d3db1d7c2c30f5c048e2331a09 Mon Sep 17 00:00:00 2001
+From: James Browning <jamesb.fe80@gmail.com>
+Date: Thu, 5 Jun 2025 15:42:28 -0700
+Subject: [PATCH] devel/gpsdfake: fix for Python 3
+
+Handle errors better in gpsdfake
+
+Print empty line on ctrl + c
+Print message on socket errors
+---
+ devtools/gpsdfake | 52 +++++++++++++++++++++++++++++------------------
+ 1 file changed, 32 insertions(+), 20 deletions(-)
+
+diff --git a/devtools/gpsdfake b/devtools/gpsdfake
+index 6a2e7ff51..a4744ba1c 100644
+--- a/devtools/gpsdfake
++++ b/devtools/gpsdfake
+@@ -3,26 +3,36 @@
+ """
+ gpsdfake - a fake gpsd server that spews specified data at gpsd clients.
+ """
++from __future__ import print_function
++import socket
++try:
++    import socketserver
++except:
++    import SocketServer as socketserver  # until the true death of Python 2
++import sys
++import time
+ 
+-import sys, SocketServer
+-
+-class FakeHandler(SocketServer.BaseRequestHandler):
++class FakeHandler(socketserver.BaseRequestHandler):
+     "Instantiated once per connection to the server."
+     def handle(self):
+-        global lines
+-        # self.request is the TCP socket connected to the client
+-        # Read the client's ?WATCH request.
+-        self.data = self.request.recv(1024).strip()
+-        # We'd like to send a fake banner to the client on startup,
+-        # but there's no (documented) method for that.  We settle
+-        # for shipping on first request.
+-        self.request.send('{"class":"VERSION",'
+-                          '"version":"gpsdfake","rev":"gpsdfake",'
+-                          '"proto_major":3,"proto_minor":1}\r\n')
+-        # Perpetually resend the data we have specified 
+-        while True:
+-            for line in lines:
+-                self.request.send(line)
++        try:
++            global lines
++            # self.request is the TCP socket connected to the client
++            # Read the client's ?WATCH request.
++            self.data = self.request.recv(1024).strip()
++            # We'd like to send a fake banner to the client on startup,
++            # but there's no (documented) method for that.  We settle
++            # for shipping on first request.
++            self.request.send(b'{"class":"VERSION",'
++                              b'"version":"gpsdfake-3","rev":"3",'
++                              b'"proto_major":3,"proto_minor":1}\r\n')
++            # Perpetually resend the data we have specified
++            while True:
++                for line in lines:
++                    self.request.send(line)
++                    time.sleep(0.5)
++        except Exception:
++            pass
+ 
+ if __name__ == "__main__":
+     (HOST, PORT) = "localhost", 2947
+@@ -32,16 +42,18 @@ if __name__ == "__main__":
+             sys.stderr.write("gpsdfake: requires a file argument.\n")
+             sys.exit(1)
+ 
+-        lines = open(sys.argv[1]).readlines()
++        lines = open(sys.argv[1], 'rb').readlines()
+ 
+         # Create the server, binding to localhost on port 2947
+-        server = SocketServer.TCPServer((HOST, PORT), FakeHandler)
++        server = socketserver.TCPServer((HOST, PORT), FakeHandler)
+ 
+         # Activate the server; this will keep running until you
+         # interrupt the program with Ctrl-C
+         server.serve_forever()
+     except KeyboardInterrupt:
+-        pass
++        print()
++    except socket.error as e:
++        print(e.args[1])
+     sys.exit(0)
+ 
+ # The following sets edit modes for GNU EMACS
+-- 
+2.49.0
+

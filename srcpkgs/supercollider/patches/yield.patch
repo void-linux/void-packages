@@ -1,0 +1,96 @@
+--- a/include/plugin_interface/SC_SndBuf.h
++++ b/include/plugin_interface/SC_SndBuf.h
+@@ -28,16 +28,7 @@
+ 
+ #    include <atomic>
+ #    include <cassert>
+-
+-/* for rw_spinlock::pause() */
+-#    if defined(_MSC_VER)
+-#        ifndef NOMINMAX
+-#            define NOMINMAX
+-#        endif
+-#        include <Windows.h>
+-#    elif defined(__SSE2__)
+-#        include <immintrin.h>
+-#    endif
++#    include <thread>
+ 
+ 
+ class rw_spinlock {
+@@ -45,19 +36,7 @@ class rw_spinlock {
+     static const uint32_t locked_state = 0x80000000;
+     static const uint32_t reader_mask = 0x7fffffff;
+ 
+-/* this is a simplified version of nova::detail::pause() */
+-#    if defined(_MSC_VER) /* Visual Studio Intel/ARM64 */
+-    static inline void pause() { YieldProcessor(); }
+-#    elif defined(__SSE2__) /* all modern Intel processors */
+-    static inline void pause() { _mm_pause(); }
+-#    elif defined(__aarch64__) /* 64-bit ARM */
+-    static inline void pause() { __asm__ __volatile__("isb"); }
+-#    elif defined(__arm__) /* 32-bit ARM */
+-    static inline void pause() { __asm__ __volatile__("yield"); }
+-#    else
+-#        warning "unknown architecture: fall back to busy-waiting"
+-    static inline void pause() {}
+-#    endif
++    static inline void pause() { std::this_thread::yield(); }
+ 
+ public:
+     struct unique_lock {
+--- a/external_libraries/nova-tt/nova-tt/pause.hpp
++++ b/external_libraries/nova-tt/nova-tt/pause.hpp
+@@ -21,50 +21,14 @@
+ #ifndef NOVA_TT_PAUSE_HPP
+ #define NOVA_TT_PAUSE_HPP
+ 
+-#if defined(_MSC_VER)
+-#include <Windows.h>
+-#elif defined(__x86_64__) || defined(__SSE2__)
+-/* amd64 resp. SSE2 */
+-#define NOVA_TT_USE_MM_PAUSE
+-#include <immintrin.h>
+-#elif defined(__i386__) && defined(__GNUC__)
+-#define NOVA_TT_USE_REP_NOP
+-#elif defined(__aarch64__) && defined(__GNUC__)
+-/* ARM64 */
+-#define NOVA_TT_USE_ARM_ISB
+-#elif defined(__arm__) && defined(__GNUC__) && \
+-    (defined(__ARM_ARCH_6K__) || \
+-    defined(__ARM_ARCH_6Z__) || \
+-    defined(__ARM_ARCH_6ZK__) || \
+-    defined(__ARM_ARCH_6T2__) || \
+-    defined(__ARM_ARCH_7__) || \
+-    defined(__ARM_ARCH_7A__) || \
+-    defined(__ARM_ARCH_7R__) || \
+-    defined(__ARM_ARCH_7M__) || \
+-    defined(__ARM_ARCH_7S__) || \
+-    defined(__ARM_ARCH_8A__))
+-/* mnemonic 'yield' is supported from ARMv6k onwards */
+-#define NOVA_TT_USE_ARM_YIELD
+-#else /* fall back to busy-waiting */
+-#warning "Cannot pause CPU, falling back to busy-waiting."
+-#endif
++#include <thread>
+ 
+ namespace nova   {
+ namespace detail {
+ 
+ static inline void pause()
+ {
+-#if defined(_MSC_VER)
+-	YieldProcessor(); /* expands to pause/yield instruction */
+-#elif defined(NOVA_TT_USE_MM_PAUSE)
+-	_mm_pause();
+-#elif defined(NOVA_TT_USE_REP_NOP)
+-	__asm__ __volatile__( "rep; nop" : : : "memory" );
+-#elif defined(NOVA_TT_USE_ARM_ISB)
+-	__asm__ __volatile__("isb");
+-#elif defined(NOVA_TT_USE_ARM_YIELD)
+-	__asm__ __volatile__("yield");
+-#endif
++	std::this_thread::yield();
+ }
+ 
+ }}

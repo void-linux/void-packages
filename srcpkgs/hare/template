@@ -1,0 +1,86 @@
+# Template file for 'hare'
+pkgname=hare
+version=0.26.0.1
+revision=1
+archs="x86_64* aarch64* risvc64*"
+build_style=gnu-makefile
+hostmakedepends="harec scdoc"
+depends="harec>=0.26.0 qbe gcc binutils tzdata"
+short_desc="Hare programming language - standard library and build driver"
+maintainer="kurth4cker <kurth4cker@gmail.com>"
+license="GPL-3.0-only AND MPL-2.0"
+homepage="https://harelang.org"
+distfiles="https://git.sr.ht/~sircmpwn/hare/archive/${version}.tar.gz"
+checksum=f76704920a2f457be4d2d6290dc10dcfb7319c1d1990f2305491644383466905
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" hare"
+fi
+
+post_patch() {
+	if [ "$CROSS_BUILD" ]; then
+		# when cross compiling just use the host hare binary,
+		# instead of building the bootstrap hare.
+		vsed -i Makefile \
+			-e 's/: \$(BINOUT)\/hare$/:/g' \
+			-e 's/\$(BINOUT)\/hare build/hare build/g'
+	fi
+	# do not rebuild at make install
+	vsed -i Makefile -e 's/^install-cmd:.*/install-cmd:/'
+}
+
+do_configure() {
+	cp configs/linux.mk config.mk
+
+	local _arch
+	case "$XBPS_TARGET_MACHINE" in
+	aarch64*) _arch=aarch64 ;;
+	riscv64*) _arch=riscv64 ;;
+	x86_64*) _arch=x86_64 ;;
+	esac
+
+	vsed -i config.mk \
+		-e '/^ARCH =/d' \
+		-e '/^HAREFLAGS =/d' \
+		-e '/^\(AARCH64\|RISCV64\|X86_64\)_\(AS\|CC\|LD\)=/d'
+
+	# setup variables that are build into hare for cross compilation,
+	# for the target architecture it will just be as, gcc and ldd.
+	local _aarch64_prefix _riscv64_prefix _x86_64_prefix
+	if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
+		_aarch64_prefix="aarch64-linux-gnu-"
+		_riscv64_prefix="riscv64-linux-gnu-"
+		_x86_64_prefix="x86_64-linux-gnu-"
+	else
+		_aarch64_prefix="aarch64-linux-musl-"
+		_riscv64_prefix="riscv64-linux-musl-"
+		_x86_64_prefix="x86_64-linux-musl-"
+	fi
+
+	# for the native arch don't add the prefix
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*) _aarch64_prefix="" ;;
+		riscv64*) _riscv64_prefix="" ;;
+		x86_64*) _x86_64_prefix="" ;;
+	esac
+
+	cat <<-EOF >>config.mk
+	ARCH=${_arch}
+	HAREFLAGS=-a ${_arch}
+	AARCH64_AS=${_aarch64_prefix}as
+	AARCH64_CC=${_aarch64_prefix}gcc
+	AARCH64_LD=${_aarch64_prefix}ld
+	RISCV64_AS=${_riscv64_prefix}as
+	RISCV64_CC=${_riscv64_prefix}gcc
+	RISCV64_LD=${_riscv64_prefix}ld
+	X86_64_AS=${_x86_64_prefix}as
+	X86_64_CC=${_x86_64_prefix}gcc
+	X86_64_LD=${_x86_64_prefix}ld
+	EOF
+}
+
+pre_check() {
+	if [ "$XBPS_CHECK_PKGS" = full ]; then
+		export HARETEST_INCLUDE='slow'
+	fi
+}

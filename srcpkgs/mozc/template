@@ -1,0 +1,196 @@
+# Template file for 'mozc'
+pkgname=mozc
+reverts="2.32.5851.102_1"
+# src/data/version/mozc_version_template.bzl
+# revision is always 102, template always says 100 ;)
+version=2.31.5851.102
+revision=2
+_commit=6a2e6e292efe4c2048e0c86b0818a4897c4aa5b7
+_abseil=20250512.0
+_protobuf_commit=74211c0dfc2777318ab53c2cd2c317a2ef9012de
+_jpn_dict=e5b3425575734c323e1d947009dd74709437b684
+build_wrksrc=mozc/src
+hostmakedepends="gettext ninja pkg-config bazel
+ python3-six which qt6-base"
+makedepends="ibus-devel libzinnia-devel qt6-base-devel libfcitx5-devel"
+depends="tegaki-zinnia-japanese>=0.3 mozc-base-${version}_${revision}"
+short_desc="Japanese IME (Open Source version of Google Japanese Input)"
+maintainer="Đoàn Trần Công Danh <congdanhqx@gmail.com>"
+license="BSD-3-Clause"
+homepage="https://github.com/google/mozc"
+distfiles="
+ https://github.com/fcitx/mozc/archive/$_commit.tar.gz
+ https://github.com/abseil/abseil-cpp/archive/refs/tags/$_abseil.tar.gz
+ https://github.com/protocolbuffers/protobuf/archive/$_protobuf_commit.tar.gz
+ https://github.com/hiroyuki-komatsu/japanese-usage-dictionary/archive/$_jpn_dict.tar.gz
+"
+checksum="4dd30982239184b2dc4f4d92a2ae0009e72120830570bb39298d9fad876e6685
+ 7262daa7c1711406248c10f41026d685e88223bc92817d16fb93c19adb57f669
+ d0e3a75876a81e1536028bb9cf9181382b198da4cc6fa6aef86879ef629ac807
+ 0b6efee0eebac2c1a8eeea333278aa40fcef7846bba9a379962c6e567e7e3dc1"
+
+CXXFLAGS="-D_GNU_SOURCE"
+lib32disabled=yes
+
+if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
+	broken="Does not build"
+fi
+if [ "$XBPS_TARGET_LIBC" = musl ]; then
+	makedepends+=" musl-fts-devel"
+	LDFLAGS=-lfts
+fi
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	broken="I don't want to do it"
+fi
+# Well, it's bazel
+nocross="The include path '/usr/aarch64-linux-gnu/usr/include' references a path outside of the execution root."
+
+post_extract() {
+	mv mozc-* mozc
+
+	# symlink "submodules" into place
+	for _src_dest in \
+		abseil-cpp \
+		japanese-usage-dictionary:japanese_usage_dictionary \
+		protobuf
+	do
+		_src=${_src_dest%:*}
+		_dst=${_src_dest#*:}
+		mv $_src-* $_dst
+		rmdir mozc/src/third_party/$_dst
+		ln -sr $_dst mozc/src/third_party
+	done
+}
+
+do_build() {
+	local config=oss_linux
+	local _file _lang
+	local flag
+	local _bazel_opts="-s --verbose_failures"
+	for flag in $CFLAGS; do
+		_bazel_opts+=" --conlyopt=$flag"
+		# For -fstack-protector ...
+		_bazel_opts+=" --linkopt=$flag"
+	done
+	for flag in $CXXFLAGS; do
+		_bazel_opts+=" --cxxopt=$flag"
+		_bazel_opts+=" --linkopt=$flag"
+	done
+	for flag in $LDFLAGS; do
+		_bazel_opts+=" --linkopt=$flag"
+	done
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		config=oss_musl
+	fi
+	bazel build -c opt --config "$config" --define server=1 \
+		--worker_quit_after_build \
+		${_bazel_opts} \
+		server:mozc_server \
+		gui/tool:mozc_tool \
+		unix/emacs:mozc_emacs_helper \
+		unix/ibus:ibus_mozc \
+		renderer/qt:mozc_renderer \
+		unix/fcitx5:fcitx5-mozc.so
+	chmod -R u+rwX /tmp
+
+	cd unix/fcitx5
+	msgfmt --xml -d po \
+		--template org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml.in \
+		-o org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
+
+	cd po
+	for _file in *.po
+	do
+		_lang=${_file%.po}
+		msgfmt "$_file" -o $_lang.mo
+	done
+}
+
+do_install() {
+	local f
+	# Base package
+	vinstall bazel-bin/server/mozc_server 755 usr/lib/mozc
+	vlicense data/installer/credits_en.html license.html
+	head -n 29 unix/fcitx5/fcitx_key_translator.cc >fcitx.LICENSE
+	vlicense fcitx.LICENSE
+	# emacs
+	vbin bazel-bin/unix/emacs/mozc_emacs_helper
+	vinstall unix/emacs/mozc.el 644 usr/share/emacs/site-lisp
+	# Qt5 tools
+	vinstall bazel-bin/gui/tool/mozc_tool 755 usr/lib/mozc
+	# ibus
+	vinstall bazel-bin/unix/ibus/ibus_mozc 755 usr/libexec ibus-engine-mozc
+	vinstall bazel-bin/unix/ibus/mozc.xml 644 usr/share/ibus/component
+	vinstall data/images/product_icon_32bpp-128.png 644 \
+		usr/share/ibus-mozc product_icon.png
+	for f in data/images/unix/48x48/*.png; do
+		vinstall "$f" 644 usr/share/ibus-mozc
+	done
+	vinstall bazel-bin/renderer/qt/mozc_renderer 755 usr/lib/mozc
+	# fcitx5
+	vinstall bazel-bin/unix/fcitx5/fcitx5-mozc.so 644 usr/lib/fcitx5
+	vinstall unix/fcitx5/mozc-addon.conf 644 \
+		usr/share/fcitx5/addon mozc.conf
+	vinstall unix/fcitx5/mozc.conf 644 usr/share/fcitx5/inputmethod
+	vinstall data/images/product_icon_32bpp-128.png 644 \
+		usr/share/icons/hicolor/128x128/apps fcitx-mozc.png
+	vinstall data/images/unix/ime_product_icon_opensource-32.png 644 \
+		usr/share/icons/hicolor/32x32/apps fcitx-mozc.png
+	for f in dictionary properties tool; do
+		vinstall ../scripts/icons/ui-$f.png 644 \
+			usr/share/icons/hicolor/48x48/apps fcitx-mozc-$f.png
+	done
+	for f in alpha_full alpha_half direct \
+		hiragana katakana_full katakana_half; do
+		vinstall data/images/unix/48x48/$f.png 644 \
+			usr/share/icons/hicolor/48x48/apps fcitx-mozc-${f/_/-}.png
+	done
+}
+
+mozc-base_package() {
+	short_desc+=" - base installation"
+	lib32disabled=yes
+	replaces="emacs-mozc>=0"
+	provides="emacs-mozc-${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin
+		vmove usr/lib/mozc/mozc_server
+		vmove usr/share/emacs
+		vmove usr/share/licenses
+	}
+}
+
+ibus-mozc_package() {
+	short_desc="Mozc engine for IBus - Client of the Mozc input method"
+	depends="mozc-base-${version}_${revision} ibus>=1.5.14"
+	lib32disabled=yes
+	pkg_install() {
+		vmove usr/libexec
+		vmove usr/lib/mozc/mozc_renderer
+		vmove "usr/share/ibus*"
+	}
+}
+
+fcitx5-mozc_package() {
+	short_desc="Mozc engine for fcitx v5"
+	depends="mozc-base-${version}_${revision} fcitx5"
+	provides="fcitx-mozc-5_1"
+	replaces="fcitx-mozc>=0"
+	homepage="https://fcitx-im.org/"
+	lib32disabled=yes
+	pkg_install() {
+		local _file _lang
+		vmove usr/lib/fcitx5
+		vmove usr/share/fcitx5
+		vmove usr/share/icons
+		vinstall unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml \
+			644 usr/share/metainfo/
+		for _file in unix/fcitx5/po/*.mo
+		do
+			_lang=${_file##*/}
+			_lang=${_lang%.mo}
+			vinstall "$_file" 644 \
+				usr/share/locale/$_lang/LC_MESSAGES fcitx5-mozc.mo
+		done
+	}
+}

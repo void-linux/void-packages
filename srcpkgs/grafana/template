@@ -1,0 +1,69 @@
+# Template file for 'grafana'
+pkgname=grafana
+version=12.1.1
+revision=1
+build_style=go
+# longer tests timeout, TestIntegrationListFiles fails when running in CI
+make_check_args="-short -skip TestIntegrationListFiles"
+go_import_path=github.com/grafana/grafana
+go_package="${go_import_path}/pkg/cmd/grafana-cli ${go_import_path}/pkg/cmd/grafana-server ${go_import_path}/pkg/cmd/grafana"
+hostmakedepends="tar make"
+short_desc="Open platform for beautiful analytics and monitoring"
+maintainer="Michael Aldridge <maldridge@voidlinux.org>"
+license="Apache-2.0"
+homepage="https://grafana.com"
+distfiles="https://dl.grafana.com/oss/release/grafana-${version}.linux-amd64.tar.gz
+ https://github.com/grafana/grafana/archive/v${version}.tar.gz"
+checksum="825a1da86245046a1822fe5cb8901859d3f3f483b8e2b4cff166d0c03991d214
+ ff9bb988385c47b5b9429c9dd928d7084def8b950815d96badc9ded495361519"
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*) broken="runtime: out of memory: cannot allocate 4194304-byte block (4202266624 in use)";;
+esac
+
+system_accounts="_grafana"
+_grafana_homedir="/var/lib/grafana"
+make_dirs="/var/log/grafana 0755 _grafana _grafana
+ /var/lib/grafana 0750 _grafana _grafana"
+
+conf_files="/etc/grafana/grafana.ini"
+
+go_ldflags="-X main.version=${version}"
+
+post_extract() {
+	# remove prebuilt binaries
+	rm bin/*
+}
+
+pre_build() {
+	CGO_ENABLED=0 GOARCH= make gen-go
+}
+
+do_install() {
+	# only install grafana binaries - GOPATH/bin contains eg. wire used at
+	# buildtime, which we don't want in the package
+	for f in ${GOPATH}/bin/grafana* ${GOPATH}/bin/*/grafana*; do
+		if [ -f "$f" ] && [ -x "$f" ]; then
+			vbin "$f"
+		fi
+	done
+}
+
+post_install() {
+	vmkdir usr/share/grafana
+	vcopy public usr/share/grafana/
+	vcopy conf usr/share/grafana/
+
+	# This next step is an aweful hack, we need to create the base
+	# config file to allow this to startup out of the box, but we
+	# don't want to version the config file.
+	vmkdir etc/grafana
+	vinstall conf/defaults.ini 0644 etc/grafana grafana.ini
+	vsed -i "s:data = data:data = /var/lib/grafana/data:" ${DESTDIR}/etc/grafana/grafana.ini
+	vsed -i "s:data/log:/var/log/grafana:" ${DESTDIR}/etc/grafana/grafana.ini
+	vsed -i "s:data/plugins:/var/lib/grafana/plugins:" ${DESTDIR}/etc/grafana/grafana.ini
+	vsed -i "s:grafana.db:/var/lib/grafana/grafana.db:" ${DESTDIR}/etc/grafana/grafana.ini
+
+	# And finally, the service directory
+	vsv grafana
+}

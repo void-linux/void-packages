@@ -1,0 +1,1 @@
+libatomic_ops

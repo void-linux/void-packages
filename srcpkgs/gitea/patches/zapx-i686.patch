@@ -1,0 +1,63 @@
+commit edd64cbbe6cc4f22e3023bdef706a1053197bf0c
+Author: Alex White <github-c@geekfarm.org>
+Date:   Thu Jul 23 12:07:36 2026 -0700
+
+    Fixed 64-bit alignment panic in the interim struct on 32-bit platforms (#437)
+    
+    It's the same story as #147, #148, and #290, but for the v17 `interim`
+    struct: `bytesWritten` is accessed atomically but sits at a 4-byte
+    offset on 32-bit platforms, so the first segment write panics with
+    `unaligned 64-bit atomic operation`.
+    
+    We hit this on ARMv6 when upgrading bleve v2.5.7 → v2.6.0, the first
+    bleve release that writes zapx/v17 segments. We've pinned bleve at
+    v2.5.7 until a fixed v17 release is available.
+    
+    Verified on ARMv6 hardware (CI runner on a 32-bit ARM SBC). Before this
+    change, `TestBuild` panics:
+    
+    ```
+    --- FAIL: TestBuild (0.00s)
+    panic: unaligned 64-bit atomic operation [recovered, repanicked]
+    ...
+    internal/runtime/atomic.panicUnaligned()
+        /usr/local/go/src/internal/runtime/atomic/unaligned.go:8
+    internal/runtime/atomic.Xadd64(0x2cbc844, 0x17)
+        /usr/local/go/src/internal/runtime/atomic/atomic_arm.s:319
+    github.com/blevesearch/zapx/v17.(*interim).incrementBytesWritten(...)
+        new.go:334
+    github.com/blevesearch/zapx/v17.(*interim).writeStoredFields(0x2cbc7e0)
+        new.go:408
+    ```
+    
+    With this change, the full test suite passes on the same runner (and on
+    amd64 with `-race`).
+    
+    While auditing the remaining atomic 64-bit call sites I found the same
+    layout in `vectorIndexOpaque.bytesWritten` and `cacheEntry.refs`
+    (vectors build) — happy to send a follow-up PR for those if useful.
+
+diff --git a/vendor/github.com/blevesearch/zapx/v17/new.go b/vendor/github.com/blevesearch/zapx/v17/new.go
+index 4d23793..1a38a69 100644
+--- a/vendor/github.com/blevesearch/zapx/v17/new.go
++++ b/vendor/github.com/blevesearch/zapx/v17/new.go
+@@ -100,6 +100,9 @@ var interimPool = sync.Pool{New: func() interface{} { return &interim{} }}
+ // interim holds temporary working data used while converting from
+ // analysis results to a zap-encoded segment
+ type interim struct {
++	// atomic access to this variable, moved to top to correct alignment issues on ARM, 386 and 32-bit MIPS.
++	bytesWritten uint64
++
+ 	results []index.Document
+ 
+ 	// edge list for nested documents: child -> parent
+@@ -130,9 +133,6 @@ type interim struct {
+ 	lastNumDocs int
+ 	lastOutSize int
+ 
+-	// atomic access to this variable
+-	bytesWritten uint64
+-
+ 	opaque map[int]resetable
+ }
+ 

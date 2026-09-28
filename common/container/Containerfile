@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+FROM --platform=${BUILDPLATFORM} alpine:3.22 AS bootstrap
+ARG TARGETPLATFORM
+ARG MIRROR=https://repo-ci.voidlinux.org
+ARG LIBC
+RUN apk add ca-certificates curl && \
+  curl "${MIRROR}/static/xbps-static-static-0.59_5.$(uname -m)-musl.tar.xz" | tar vJx
+COPY common/repo-keys/* /target/var/db/xbps/keys/
+COPY common/container/setup.sh /bootstrap/setup.sh
+RUN --mount=type=cache,sharing=locked,target=/target/var/cache/xbps,id=repocache-${LIBC} \
+  . /bootstrap/setup.sh; \
+  XBPS_TARGET_ARCH=${ARCH} xbps-install -S \
+    -R "${REPO}" -R "${REPO}/bootstrap" \
+    -r /target
+
+FROM --platform=${BUILDPLATFORM} bootstrap AS install
+ARG TARGETPLATFORM
+ARG MIRROR
+ARG LIBC
+COPY --from=bootstrap /target /target
+COPY common/container/noextract.conf /target/etc/xbps.d/noextract.conf
+RUN --mount=type=cache,sharing=locked,target=/target/var/cache/xbps,id=repocache-${LIBC} \
+  . /bootstrap/setup.sh; \
+  XBPS_TARGET_ARCH=${ARCH} xbps-install -y \
+    -R "${REPO}" -R "${REPO}/bootstrap" \
+    -r /target \
+    base-chroot void-repo-bootstrap
+
+FROM scratch AS image
+COPY --link --from=install /target /
+RUN \
+  install -dm1777 tmp; \
+  xbps-reconfigure -fa; \
+  rm -rf /var/cache/xbps/*
+CMD ["/bin/sh"]

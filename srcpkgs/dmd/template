@@ -1,0 +1,93 @@
+# Template file for 'dmd'
+pkgname=dmd
+version=2.113.0
+revision=1
+archs="x86_64* i686*"
+create_wrksrc=yes
+# build_helper=ldc
+hostmakedepends="ldc which"
+makedepends="git zlib-devel"
+depends="libphobos>=${version} gcc"
+short_desc="Digital Mars D compiler"
+maintainer="streaks <assemblyislaw@gmail.com>"
+license="BSL-1.0"
+homepage="http://www.digitalmars.com/d/2.0/"
+distfiles="
+ https://github.com/dlang/dmd/archive/refs/tags/v${version}.tar.gz>dmd-${version}.tar.gz
+ https://github.com/dlang/phobos/archive/v${version}.tar.gz>phobos-${version}.tar.gz
+ https://github.com/dlang/dmd/releases/download/v${version}/dmd.${version}.linux.tar.xz"
+checksum="2d1d39388c2afa72859d22aec1f005a969163b9463a5e0e6743ac187aedb4c8d
+ df0c7cf6b162debade3921b424546be94ae9e1e6c3940283587016454853353a
+ b342ab8bd40cc0c46407692b31d7cd69661ff01da686234f426949e881727294"
+conf_files="/etc/dmd.conf"
+provides="d-compiler-${version}_${revision}"
+conflicts="dmd-bootstrap dmd2.081 dmd2.091"
+nopie=yes
+# from no to very little distinction between host CC and target CC in
+# makefiles or build.d
+nocross="broken build system"
+disable_parallel_build=yes
+LDFLAGS="-lpthread"
+
+post_extract() {
+	mv dmd-${version} dmd
+	mv phobos-${version} phobos
+}
+
+do_build() {
+	local dmd
+
+	rm -rf xdmd xlibphobos
+	# Build dmd buy ldc
+	cp -R dmd xdmd
+	make -C xdmd ${makejobs} HOST_DMD=ldmd2 ENABLE_RELEASE=1 PIC=1
+
+	dmd=${wrksrc}/xdmd/generated/linux/release/${XBPS_TARGET_WORDSIZE}/dmd
+	# Build libphobos and dmd with dmd
+	make -C phobos ${makejobs} ENABLE_RELEASE=1 PIC=1 DMD=$dmd
+	make -C dmd ${makejobs} HOST_DMD=$dmd ENABLE_RELEASE=1 PIC=1
+	make -C dmd/compiler/docs ${makejobs} ENABLE_RELEASE=1 PIC=1 DMD=$dmd
+}
+
+do_install() {
+	cd dmd
+	vbin generated/linux/release/$XBPS_TARGET_WORDSIZE/dmd
+	vinstall ${FILESDIR}/dmd.conf 644 etc
+
+	vman generated/docs/man/man1/dmd.1
+	vman generated/docs/man/man5/dmd.conf.5
+}
+
+dmd-doc_package() {
+	short_desc="Documentation and sample code for D programming language"
+	replaces="dmd-docs>=0"
+	license="BSL-1.0"
+
+	pkg_install() {
+		cd dmd2
+
+		vmkdir usr/share/doc/d
+		# vcopy samples usr/share/doc/d
+		chmod -R +rwX html
+		vcopy html usr/share/doc/d
+		vlicense license.txt
+	}
+}
+
+libphobos_package() {
+	short_desc+=" - standard library"
+	license="BSL-1.0"
+	conflicts="dmd-bootstrap dmd2.081 dmd2.091"
+	pkg_install() {
+		vinstall ${wrksrc}/dmd/generated/linux/release/$XBPS_TARGET_WORDSIZE/libdruntime.a 644 usr/lib libdruntime.a
+		vinstall ${wrksrc}/phobos/generated/linux/release/$XBPS_TARGET_WORDSIZE/libphobos2.a 644 usr/lib libphobos2.a
+
+		vmkdir usr/include/d
+		cp -r ${wrksrc}/phobos/{*.d,etc,std} ${PKGDESTDIR}/usr/include/d
+
+		vmkdir usr/include/d/druntime
+		cp -r ${wrksrc}/dmd/druntime/import ${PKGDESTDIR}/usr/include/d/druntime
+
+		vlicense ${wrksrc}/dmd/LICENSE.txt
+	}
+}
