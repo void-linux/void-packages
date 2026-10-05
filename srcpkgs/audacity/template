@@ -1,48 +1,57 @@
 # Template file for 'audacity'
 pkgname=audacity
-version=3.7.8
-revision=2
+version=4.0.0
+revision=1
 build_style=cmake
-build_helper="cmake-wxWidgets-gtk3 qemu"
-configure_args="-Daudacity_use_ffmpeg=loaded -Daudacity_lib_preference=system
- -Daudacity_obey_system_dependencies=ON -Daudacity_conan_enabled=OFF
- -Daudacity_use_portsmf=local -Daudacity_use_sbsms=local
- -Daudacity_has_vst3=OFF -Daudacity_has_crashreports=OFF
- -Daudacity_has_networking=OFF -Daudacity_has_sentry_reporting=OFF
- -Daudacity_has_updates_check=OFF -DAUDACITY_BUILD_LEVEL=2"
-hostmakedepends="pkg-config gettext python3"
-makedepends="wxWidgets-gtk3-devel gtk+3-devel expat-devel lame-devel
- libsoxr-devel portaudio-devel sqlite-devel ffmpeg6-devel
- libid3tag-devel libmad-devel vamp-plugin-sdk-devel libogg-devel
- libvorbis-devel libflac-devel lilv-devel lv2 serd-devel sord-devel
- sratom-devel suil-devel portmidi-devel soundtouch-devel twolame-devel
- zlib-devel jack-devel wavpack-devel libsndfile-devel
- opusfile-devel rapidjson"
-depends="desktop-file-utils hicolor-icon-theme"
+configure_args="-DEXTDEPS_OVERRIDE_ALL=SYSTEM -DMUSE_ENABLE_UNIT_TESTS=OFF
+ -DMUSE_MODULE_UPDATE=OFF -DAU4_BUILD_MODE=release -DQT_HOST_PATH=/usr"
+hostmakedepends="pkg-config gettext git qt6-declarative-host-tools qt6-tools qt6-shadertools"
+makedepends="pugixml-devel utfcpp wxWidgets-gtk3-devel gtk+3-devel expat-devel lame-devel
+ libsoxr-devel portaudio-devel sqlite-devel libid3tag-devel vamp-plugin-sdk-devel libogg-devel
+ libvorbis-devel libflac-devel portmidi-devel soundtouch-devel twolame-devel zlib-devel
+ wavpack-devel libsndfile-devel opusfile-devel opus-devel mpg123-devel rapidjson libpng-devel
+ freetype-devel harfbuzz-devel fdk-aac-devel libopusenc-devel qt6-base-devel
+ qt6-base-private-devel qt6-declarative-devel qt6-declarative-private-devel qt6-svg-devel
+ qt6-qt5compat-devel qt6-networkauth-devel qt6-shadertools-devel qt6-scxml-devel qt6-tools-devel"
+depends="desktop-file-utils hicolor-icon-theme qt6-svg qt6-qt5compat qt6-networkauth"
 short_desc="Graphical cross-platform audio editor"
-maintainer="Orphaned <orphan@voidlinux.org>"
+maintainer="Aryo Nazaradeh <aryo.nazaradeh@gmail.com>"
 license="GPL-2.0-or-later, GPL-3.0-or-later, CC-BY-3.0"
 homepage="https://www.audacityteam.org"
 changelog="https://github.com/audacity/audacity/raw/master/CHANGELOG.txt"
-distfiles="https://github.com/audacity/audacity/releases/download/Audacity-${version}/audacity-sources-${version}.tar.gz"
-checksum=75f2b1d9c7d45faaaf193844d5fee796694deac7bf4932ca520563ab4fb74c27
-
-case "$XBPS_TARGET_MACHINE" in
-	i686*) CFLAGS="-msse2";;
-esac
+distfiles="https://github.com/audacity/audacity/releases/download/Audacity-${version}/audacity-sources-${version}.tar.xz"
+checksum=b29076f99fa5d2f522d001db472a896db81f9effefd15948c940571753858058
 
 CXXFLAGS="-D_FILE_OFFSET_BITS=64"
 
+case "$XBPS_TARGET_MACHINE" in
+	i686*) CFLAGS="-msse2";;
+	armv6l*|armv7l*) CFLAGS="-DPFFFT_SIMD_DISABLE";;
+esac
+
+if [ -n "$CROSS_BUILD" ]; then
+	# lrelease is a target-arch binary and can't run on the host.
+	configure_args+=" -DAU_RUN_LRELEASE=OFF"
+fi
+
 pre_configure() {
+	# A pre-populated cache is requred or configure fails trying to fetch tarballs.
+	export EXTDEPS_CACHE="${wrksrc}/offline-deps"
+	# muse_deps hardcodes find_program(NAMES wx-config), but Void ships it as wx-config-gtk3.
+	local _wxconfig_target
 	if [ "$CROSS_BUILD" ]; then
-		cat > "${XBPS_WRAPPERDIR}/image-compiler" <<-EOF
-		#!/bin/sh
-		/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static ${wrksrc}/${build_wrksrc}/Release/bin/image-compiler "\$@"
-		EOF
-		chmod 0755 "${XBPS_WRAPPERDIR}/image-compiler"
+		_wxconfig_target="${XBPS_WRAPPERDIR}/wx-config-gtk3"
+	else
+		_wxconfig_target="/usr/bin/wx-config-gtk3"
 	fi
+	mkdir -p "${wrksrc}/.wxconfig-shim"
+	ln -sf "${_wxconfig_target}" "${wrksrc}/.wxconfig-shim/wx-config"
+	export PATH="${wrksrc}/.wxconfig-shim:${PATH}"
 }
 
 post_install() {
-	rm ${DESTDIR}/usr/share/doc/audacity/LICENSE.txt
+	# "Portable" is added to the desktop name even if it is compiled from source.
+	# Get rid of that in this packaged version's desktop file.
+	sed -i 's/^Name=\(.*\) Portable$/Name=\1/' "${DESTDIR}/usr/share/applications/org.audacityteam.Audacity.desktop"
+	vlicense LICENSE.txt
 }
