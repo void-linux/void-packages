@@ -1,0 +1,54 @@
+From 2415144e0669b64e0e4d2b096180e0983aa71479 Mon Sep 17 00:00:00 2001
+From: Ly-sec <itslysec@gmail.com>
+Date: Mon, 28 Sep 2026 16:50:56 +0200
+Subject: [PATCH] fix(icons): detect theme changes with coarse timestamps
+
+---
+ src/system/icon_resolver.cpp | 12 ++++++++++++
+ tests/icon_resolver_test.cpp |  3 +++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/src/system/icon_resolver.cpp b/src/system/icon_resolver.cpp
+index bfc8aa57cb..c6360f42e4 100644
+--- a/src/system/icon_resolver.cpp
++++ b/src/system/icon_resolver.cpp
+@@ -177,6 +177,18 @@ namespace {
+       const auto modified = fs::last_write_time(path, ec);
+       signature += ec ? "missing" : std::format("{}", modified);
+       signature += '\n';
++
++      std::vector<std::string> entries;
++      for (fs::directory_iterator it(path, ec), end; !ec && it != end; it.increment(ec)) {
++        entries.push_back(it->path().filename().string());
++      }
++      std::ranges::sort(entries);
++      for (const auto& entry : entries) {
++        signature += std::to_string(entry.size());
++        signature += ':';
++        signature += entry;
++      }
++      signature += '\n';
+     };
+     for (const auto& root : plan.baseDirs) {
+       appendPath("root:", root);
+diff --git a/tests/icon_resolver_test.cpp b/tests/icon_resolver_test.cpp
+index 4fd61e3d94..ff908ee82c 100644
+--- a/tests/icon_resolver_test.cpp
++++ b/tests/icon_resolver_test.cpp
+@@ -82,6 +82,7 @@ int main() {
+   }
+ 
+   IconResolver resolver(true);
++  const auto initialIconDirModified = fs::last_write_time(iconDir);
+ 
+   std::fflush(stderr);
+   (void)::dup2(savedStderr, STDERR_FILENO);
+@@ -129,6 +130,8 @@ int main() {
+   const fs::path polledIcon = iconDir / "polled-icon.svg";
+   ok = expect(resolver.resolve("polled-icon", 32).empty(), "second initial icon miss should be cached") && ok;
+   std::ofstream(polledIcon) << "<svg/>";
++  // Some filesystems do not expose a distinct directory mtime for rapid changes.
++  fs::last_write_time(iconDir, initialIconDirModified);
+   ok = expect(IconResolver::checkThemeChanged(), "theme poll should detect icon directory changes") && ok;
+   ok = expect(
+            resolver.resolve("polled-icon", 32) == polledIcon.string(),
