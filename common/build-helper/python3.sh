@@ -8,7 +8,7 @@ if [ -n "$CROSS_BUILD" ]; then
 	export CXX="${XBPS_CROSS_TRIPLET}-g++ -pthread $CXXFLAGS $LDFLAGS"
 	export LDSHARED="${CC} -shared $LDFLAGS"
 	export PYTHON_CONFIG="${XBPS_CROSS_BASE}/usr/bin/python3-config"
-	export PYTHONPATH="${XBPS_CROSS_BASE}/${py3_lib}"
+	export PYTHONPATH="${XBPS_CROSS_BASE}/${py3_lib}:${PYTHONPATH}"
 	for f in ${XBPS_CROSS_BASE}/${py3_lib}/_sysconfigdata_*; do
 		[ -f "$f" ] || continue
 		f=${f##*/}

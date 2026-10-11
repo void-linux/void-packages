@@ -1,0 +1,75 @@
+From 7665856a783caa9b69ab6201229b6905efc7af6c Mon Sep 17 00:00:00 2001
+From: hassiodaley <63858083+hassiodaley@users.noreply.github.com>
+Date: Sun, 2 Aug 2026 14:00:39 -0500
+Subject: [PATCH] Fix silent handler failures caused by premature GC in
+ weak_connect() (#300)
+
+weak_connect() holds only a weakref to the bound method's 'self'. Since
+GTK's C widget tree can keep a widget alive independent of its Python
+wrapper, the wrapper can be garbage collected while the widget is still
+visible on screen. When that happens, the signal handler silently
+resolves to None and no-ops -- no error, no log, no crash.
+
+This affected:
+- HourlyDetails Wind/Precipitation tab buttons (clicking did nothing)
+- Forecast Tomorrow/Weekly tab buttons (Weekly showed stale Tomorrow data)
+- HourlyDetails scroll controller (wheel/trackpad scroll could silently stop working)
+
+Fix: use direct connect() for these handlers instead of weak_connect().
+These are UI widgets whose handlers only need to live as long as the
+widget itself is on screen, so the weak-reference protection isn't
+needed here and was actively causing bugs.
+
+Reproduced and verified fixed on Kubuntu 26.04 / KDE Plasma, built from
+source at v2.0.2.
+
+Co-authored-by: Dan Daley <Daley.Dan7@gmail.com>
+---
+ src/UI_Forecast.py      | 4 ++--
+ src/UI_HourlyDetails.py | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/UI_Forecast.py b/src/UI_Forecast.py
+index ba12525..d2243bb 100644
+--- a/src/UI_Forecast.py
++++ b/src/UI_Forecast.py
+@@ -140,7 +140,7 @@ def _create_button_bar(self) -> Gtk.Box:
+         tomorrow_btn.set_size_request(self.ITEM_WIDTH_REQUEST, self.ITEM_HEIGHT_REQUEST)
+         tomorrow_btn.set_css_classes(["btn-sm"])
+         tomorrow_btn.set_active(True)
+-        weak_connect(tomorrow_btn, "clicked", self._on_tomorrow_clicked)
++        tomorrow_btn.connect("clicked", self._on_tomorrow_clicked)
+         button_bar.append(tomorrow_btn)
+ 
+         # Weekly button (grouped with tomorrow)
+@@ -148,7 +148,7 @@ def _create_button_bar(self) -> Gtk.Box:
+         weekly_btn.set_size_request(self.ITEM_WIDTH_REQUEST, self.ITEM_HEIGHT_REQUEST)
+         weekly_btn.set_css_classes(["btn-sm"])
+         weekly_btn.set_group(tomorrow_btn)
+-        weak_connect(weekly_btn, "clicked", self._on_weekly_clicked)
++        weekly_btn.connect("clicked", self._on_weekly_clicked)
+         button_bar.append(weekly_btn)
+ 
+         return button_bar
+diff --git a/src/UI_HourlyDetails.py b/src/UI_HourlyDetails.py
+index 6ccd794..fecb1c0 100644
+--- a/src/UI_HourlyDetails.py
++++ b/src/UI_HourlyDetails.py
+@@ -64,7 +64,7 @@ def paint_ui(self):
+                 button.set_group(first_btn)
+             style_buttons_box.append(button)
+             button._page_name = page_name  # store for use in handler
+-            weak_connect(button, "clicked", self._on_btn_clicked)
++            button.connect("clicked", self._on_btn_clicked)
+ 
+         # Initialize with first tab
+         if first_btn:
+@@ -178,7 +178,7 @@ def _build_hourly_list(self, page_name, hourly_data):
+ 
+         controller = Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.BOTH_AXES)
+         scrolled_window.add_controller(controller)
+-        weak_connect(controller, "scroll", self.on_scroll)
++        controller.connect("scroll", self.on_scroll)
+ 
+         graphic_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+         scrolled_window.set_child(graphic_container)
