@@ -1,0 +1,77 @@
+Keep Electron's environment storage alive for concurrent musl getenv readers.
+Musl has no glibc version API; always use the replacement implementation.
+Match musl's environment function declarations without noexcept.
+
+--- a/electron/shell/app/environ_linux.cc
++++ b/electron/shell/app/environ_linux.cc
+@@ -39,7 +39,6 @@
+ 
+ #include <dlfcn.h>
+ #include <errno.h>
+-#include <gnu/libc-version.h>
+ #include <pthread.h>
+ #include <search.h>
+ #include <stdio.h>
+@@ -66,25 +65,7 @@
+ };
+ 
+ const GlibcFunctions* GetGlibcFunctionsIfSafe() {
+-  static const GlibcFunctions* const functions = []() -> GlibcFunctions* {
+-    int major = 0;
+-    int minor = 0;
+-    if (sscanf(gnu_get_libc_version(), "%d.%d", &major, &minor) != 2 ||
+-        major < 2 || (major == 2 && minor < 41)) {
+-      return nullptr;
+-    }
+-    static GlibcFunctions glibc = {
+-        reinterpret_cast<decltype(&::setenv)>(dlsym(RTLD_NEXT, "setenv")),
+-        reinterpret_cast<decltype(&::unsetenv)>(dlsym(RTLD_NEXT, "unsetenv")),
+-        reinterpret_cast<decltype(&::putenv)>(dlsym(RTLD_NEXT, "putenv")),
+-        reinterpret_cast<decltype(&::clearenv)>(dlsym(RTLD_NEXT, "clearenv")),
+-    };
+-    if (!glibc.setenv || !glibc.unsetenv || !glibc.putenv || !glibc.clearenv) {
+-      return nullptr;
+-    }
+-    return &glibc;
+-  }();
+-  return functions;
++  return nullptr;
+ }
+ 
+ pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+@@ -243,7 +224,7 @@
+ 
+ __attribute__((visibility("default"))) int setenv(const char* name,
+                                                   const char* value,
+-                                                  int replace) noexcept {
++                                                  int replace) {
+   if (const GlibcFunctions* glibc = GetGlibcFunctionsIfSafe()) {
+     return glibc->setenv(name, value, replace);
+   }
+@@ -274,7 +255,7 @@
+   return 0;
+ }
+ 
+-__attribute__((visibility("default"))) int unsetenv(const char* name) noexcept {
++__attribute__((visibility("default"))) int unsetenv(const char* name) {
+   if (const GlibcFunctions* glibc = GetGlibcFunctionsIfSafe()) {
+     return glibc->unsetenv(name);
+   }
+@@ -287,7 +268,7 @@
+   return 0;
+ }
+ 
+-__attribute__((visibility("default"))) int putenv(char* string) noexcept {
++__attribute__((visibility("default"))) int putenv(char* string) {
+   if (const GlibcFunctions* glibc = GetGlibcFunctionsIfSafe()) {
+     return glibc->putenv(string);
+   }
+@@ -310,7 +291,7 @@
+   return 0;
+ }
+ 
+-__attribute__((visibility("default"))) int clearenv() noexcept {
++__attribute__((visibility("default"))) int clearenv() {
+   if (const GlibcFunctions* glibc = GetGlibcFunctionsIfSafe()) {
+     return glibc->clearenv();
+   }
