@@ -1,12 +1,12 @@
 # Template file for 'gifski'
 pkgname=gifski
 version=1.34.0
-revision=2
+revision=3
 build_helper="qemu"
 build_style=cargo
 configure_args="$(vopt_if ffmpeg --features=video)"
 hostmakedepends="pkg-config $(vopt_if ffmpeg clang21-devel)"
-makedepends="$(vopt_if ffmpeg ffmpeg6-devel)"
+makedepends="$(vopt_if ffmpeg ffmpeg-devel)"
 short_desc="Highest-quality GIF encoder based on pngquant"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="AGPL-3.0-only"
@@ -20,21 +20,48 @@ build_options_default="ffmpeg"
 
 # we are patching ffmpeg-sys-next to make cross compilation work,
 _clear_vendor_checksums() {
-	sed -i 's/\("files":{\)[^}]*/\1/' vendor/$1/.cargo-checksum.json
+	sed -i 's/\("files":{\)[^}]*/\1/' "vendor/$1/.cargo-checksum.json"
 }
+
 post_extract() {
+	# manuall patch here since we do all of this vendoring so we can apply patches
+	# but we need to also patch before vendoring...
+	patch -Np1 <<-EOF
+	--- a/Cargo.toml
+	+++ b/Cargo.toml
+	@@ -45,7 +45,7 @@
+
+	 [dependencies.ffmpeg]
+	 package = "ffmpeg-next"
+	-version = "6"
+	+version = "9"
+	 optional = true
+	 default-features = false
+	 features = ["codec", "format", "filter", "software-resampling", "software-scaling"]
+	@@ -100,4 +100,4 @@
+
+	 [patch.crates-io]
+	 # ffmpeg-sys-next does not support cross-compilation, which I use to produce binaries https://github.com/zmwangx/rust-ffmpeg-sys/pull/30
+	-ffmpeg-sys-next = { rev = "fd5784d645df2ebe022a204ac36582074da1edf7", git = "https://github.com/kornelski/rust-ffmpeg-sys-1"}
+	+ffmpeg-sys-next = { rev = "80b7dd8327c3539159f37d8ca5423c75d6cd2e57", git = "https://github.com/zmwangx/rust-ffmpeg-sys"}
+	EOF
+
+	# vendor dependencies so we can patch ffmpeg-sys-next
 	mkdir -p .cargo
-	cargo vendor --locked --versioned-dirs >.cargo/config.toml
-	_clear_vendor_checksums ffmpeg-sys-next-6.1.0
+	cargo vendor --versioned-dirs >.cargo/config.toml
+	_clear_vendor_checksums ffmpeg-sys-next-9.0.0
 }
 
 _setup_env() {
-	export CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}" \
-		HOST_CFLAGS="-fstack-clash-protection ${CFLAGS_host}" \
-		CFLAGS_${RUST_BUILD//-/_}="${HOST_CFLAGS}" \
-	# unset CFLAGS to work around cc-rs adding CFLAGS to host and target CFLAGS_*.
+	# workaround the cc-rs mixing CFLAGS for host and target.
 	# https://github.com/rust-lang/cc-rs/issues/1469
-	unset CFLAGS
+	export CFLAGS_${RUST_BUILD//-/_}="${CFLAGS_host}" \
+		CXXFLAGS_${RUST_BUILD//-/_}="${CXXFLAGS_host}" \
+		LDFLAGS_${RUST_BUILD//-/_}="${LDFLAGS_host}" \
+		CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}" \
+		CXXFLAGS_${RUST_TARGET//-/_}="${CXXFLAGS}" \
+		LDFLAGS_${RUST_TARGET//-/_}="${LDFLAGS}" \
+		CFLAGS="" CXXFLAGS="" LDFLAGS=""
 }
 
 pre_build() {
