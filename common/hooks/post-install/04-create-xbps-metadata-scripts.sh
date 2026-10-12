@@ -268,38 +268,6 @@ _EOF
 		_add_trigger mimedb
 	fi
 	#
-	# Handle python bytecode archives with pycompile trigger.
-	#
-	local pycompile_version
-	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
-		pycompile_version="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]\+$')"
-		if [ -z "${pycompile_module}" ]; then
-			pycompile_module="$(find ${PKGDESTDIR}/usr/lib/python*/site-packages* -mindepth 1 -maxdepth 1 '!' -name '*.egg-info' '!' -name '*.dist-info' '!' -name '*.so' '!' -name '*.pth' -printf '%f ')"
-		fi
-	fi
-
-	if [ -n "$python_version" ] && [ "$python_version" != ignore ]; then
-		pycompile_version=${python_version}
-	fi
-
-	if [ "$pycompile_version" = 3 ]; then
-		pycompile_version=${py3_ver}
-	elif [ "$pycompile_version" = 2 ]; then
-		pycompile_version=${py2_ver}
-	fi
-
-	if [ -n "${pycompile_dirs}" -o -n "${pycompile_module}" ]; then
-		[ -n "$pycompile_version" ] || msg_error "$pkgver: byte-compilation is required, but python_version is not set\n"
-		echo "export pycompile_version=\"${pycompile_version}\"" >>$tmpf
-		if [ -n "${pycompile_dirs}" ]; then
-			echo "export pycompile_dirs=\"${pycompile_dirs}\"" >>$tmpf
-		fi
-		if [ -n "${pycompile_module}" ]; then
-			echo "export pycompile_module=\"${pycompile_module}\"" >>$tmpf
-		fi
-		_add_trigger pycompile
-	fi
-	#
 	# Handle appdata metadata with AppStream
 	#
 	for f in ${PKGDESTDIR}/usr/share/appdata/*.xml ${PKGDESTDIR}/usr/share/app-info/*.xml ${PKGDESTDIR}/var/lib/app-info/*.xml ${PKGDESTDIR}/var/cache/app-info/*.xml; do
