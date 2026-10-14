@@ -1,0 +1,3494 @@
+diff --git a/extlibs/audio/Audio/SoundStream.cpp b/extlibs/audio/Audio/SoundStream.cpp
+index e7fb414..88c838d 100644
+--- a/extlibs/audio/Audio/SoundStream.cpp
++++ b/extlibs/audio/Audio/SoundStream.cpp
+@@ -30,7 +30,7 @@
+ #include <Audio/ALCheck.hpp>
+ #include <SFML/System/Sleep.hpp>
+ #include <SFML/System/Err.hpp>
+-#include <SFML/System/Lock.hpp>
++#include <functional>
+
+ #ifdef _MSC_VER
+     #pragma warning(disable : 4355) // 'this' used in base member initializer list
+@@ -41,7 +41,6 @@ namespace sf
+ {
+ ////////////////////////////////////////////////////////////
+ SoundStream::SoundStream() :
+-m_thread          (&SoundStream::streamData, this),
+ m_isStreaming     (false),
+ m_channelCount    (0),
+ m_sampleRate      (0),
+@@ -62,7 +61,8 @@ SoundStream::~SoundStream()
+     m_isStreaming = false;
+
+     // Wait for the thread to terminate
+-    m_thread.wait();
++	 if (m_thread.joinable())
++		 m_thread.join();
+ }
+
+
+@@ -108,7 +108,7 @@ void SoundStream::play()
+     // Start updating the stream in a separate thread to avoid blocking the application
+     m_samplesProcessed = 0;
+     m_isStreaming = true;
+-    m_thread.launch();
++    m_thread = std::thread(std::bind(&SoundStream::streamData, this));
+ }
+
+
+@@ -124,7 +124,8 @@ void SoundStream::stop()
+ {
+     // Wait for the thread to terminate
+     m_isStreaming = false;
+-    m_thread.wait();
++	 if (m_thread.joinable())
++		 m_thread.join();
+ }
+
+ void SoundStream::signal_stop()
+@@ -169,9 +170,9 @@ void SoundStream::setPlayingOffset(Time timeOffset)
+     onSeek(timeOffset);
+
+     // Restart streaming
+-    m_samplesProcessed = static_cast<Uint64>(timeOffset.asSeconds() * m_sampleRate * m_channelCount);
++    m_samplesProcessed = static_cast<std::uint64_t>(timeOffset.asSeconds() * m_sampleRate * m_channelCount);
+     m_isStreaming = true;
+-    m_thread.launch();
++    m_thread = std::thread(std::bind(&SoundStream::streamData, this));
+ }
+
+
+@@ -333,7 +334,7 @@ bool SoundStream::fillAndPushBuffer(unsigned int bufferNum)
+         unsigned int buffer = m_buffers[bufferNum];
+
+         // Fill the buffer
+-        ALsizei size = static_cast<ALsizei>(data.sampleCount) * sizeof(Int16);
++        ALsizei size = static_cast<ALsizei>(data.sampleCount) * sizeof(std::int16_t);
+         alCheck(alBufferData(buffer, m_format, data.samples, size, m_sampleRate));
+
+         // Push it into the sound queue
+diff --git a/extlibs/audio/include/Audio/SoundStream.hpp b/extlibs/audio/include/Audio/SoundStream.hpp
+index 779cd8f..5d31d60 100644
+--- a/extlibs/audio/include/Audio/SoundStream.hpp
++++ b/extlibs/audio/include/Audio/SoundStream.hpp
+@@ -29,9 +29,9 @@
+ // Headers
+ ////////////////////////////////////////////////////////////
+ #include <Audio/SoundSource.hpp>
+-#include <SFML/System/Thread.hpp>
+ #include <SFML/System/Time.hpp>
+ #include <cstdlib>
++#include <thread>
+
+
+ namespace sf
+@@ -50,7 +50,7 @@ public :
+     ////////////////////////////////////////////////////////////
+     struct Chunk
+     {
+-        const Int16* samples;     ///< Pointer to the audio samples
++        const std::int16_t* samples;     ///< Pointer to the audio samples
+         std::size_t  sampleCount; ///< Number of samples pointed by Samples
+     };
+
+@@ -281,15 +281,15 @@ private :
+     ////////////////////////////////////////////////////////////
+     // Member data
+     ////////////////////////////////////////////////////////////
+-    Thread        m_thread;                  ///< Thread running the background tasks
+-    bool          m_isStreaming;             ///< Streaming state (true = playing, false = stopped)
+-    unsigned int  m_buffers[BufferCount];    ///< Sound buffers used to store temporary audio data
+-    unsigned int  m_channelCount;            ///< Number of channels (1 = mono, 2 = stereo, ...)
+-    unsigned int  m_sampleRate;              ///< Frequency (samples / second)
+-    Uint32        m_format;                  ///< Format of the internal sound buffers
+-    bool          m_loop;                    ///< Loop flag (true to loop, false to play once)
+-    Uint64        m_samplesProcessed;        ///< Number of buffers processed since beginning of the stream
+-    bool          m_endBuffers[BufferCount]; ///< Each buffer is marked as "end buffer" or not, for proper duration calculation
++	 std::thread   m_thread;                  ///< Thread running the background tasks
++    bool           m_isStreaming;             ///< Streaming state (true = playing, false = stopped)
++    unsigned int   m_buffers[BufferCount];    ///< Sound buffers used to store temporary audio data
++    unsigned int   m_channelCount;            ///< Number of channels (1 = mono, 2 = stereo, ...)
++    unsigned int   m_sampleRate;              ///< Frequency (samples / second)
++	 std::uint32_t  m_format;                  ///< Format of the internal sound buffers
++    bool           m_loop;                    ///< Loop flag (true to loop, false to play once)
++	 std::uint64_t  m_samplesProcessed;        ///< Number of buffers processed since beginning of the stream
++    bool           m_endBuffers[BufferCount]; ///< Each buffer is marked as "end buffer" or not, for proper duration calculation
+ };
+
+ } // namespace sf
+diff --git a/src/fe_blend.cpp b/src/fe_blend.cpp
+index 22cd5b0..dc741e3 100644
+--- a/src/fe_blend.cpp
++++ b/src/fe_blend.cpp
+@@ -60,19 +60,21 @@ sf::BlendMode FeBlend::get_blend_mode( int blend_mode )
+
+ #if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 4, 0 ))
+ 		case FeBlend::Subtract:
+-			return sf::BlendMode(sf::BlendMode::SrcAlpha, sf::BlendMode::One, sf::BlendMode::ReverseSubtract,
+-								 sf::BlendMode::One, sf::BlendMode::One, sf::BlendMode::ReverseSubtract);
++			return sf::BlendMode(sf::BlendMode::Factor::SrcAlpha, sf::BlendMode::Factor::One,
++					sf::BlendMode::Equation::ReverseSubtract,
++								 sf::BlendMode::Factor::One, sf::BlendMode::Factor::One,
++								 sf::BlendMode::Equation::ReverseSubtract);
+ #endif
+
+ #if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 2, 0 ))
+ 		case FeBlend::Screen:
+-			return sf::BlendMode(sf::BlendMode::One, sf::BlendMode::OneMinusSrcColor);
++			return sf::BlendMode(sf::BlendMode::Factor::One, sf::BlendMode::Factor::OneMinusSrcColor);
+ 		case FeBlend::Multiply:
+-			return sf::BlendMode(sf::BlendMode::DstColor, sf::BlendMode::OneMinusSrcAlpha);
++			return sf::BlendMode(sf::BlendMode::Factor::DstColor, sf::BlendMode::Factor::OneMinusSrcAlpha);
+ 		case FeBlend::Overlay:
+-			return sf::BlendMode(sf::BlendMode::DstColor, sf::BlendMode::SrcColor);
++			return sf::BlendMode(sf::BlendMode::Factor::DstColor, sf::BlendMode::Factor::SrcColor);
+ 		case FeBlend::Premultiplied:
+-			return sf::BlendMode(sf::BlendMode::One, sf::BlendMode::OneMinusSrcAlpha);
++			return sf::BlendMode(sf::BlendMode::Factor::One, sf::BlendMode::Factor::OneMinusSrcAlpha);
+ #endif
+
+ 		case FeBlend::None:
+@@ -101,21 +103,21 @@ sf::Shader* FeBlend::get_default_shader( int blend_mode )
+ 			if ( !default_shader_multiplied )
+ 			{
+ 				default_shader_multiplied = new sf::Shader();
+-				default_shader_multiplied->loadFromMemory( DEFAULT_SHADER_GLSL_MULTIPLIED, sf::Shader::Fragment );
++				default_shader_multiplied->loadFromMemory( DEFAULT_SHADER_GLSL_MULTIPLIED, sf::Shader::Type::Fragment );
+ 			}
+ 			return default_shader_multiplied;
+ 		case FeBlend::Overlay:
+ 			if ( !default_shader_overlay )
+ 			{
+ 				default_shader_overlay = new sf::Shader();
+-				default_shader_overlay->loadFromMemory( DEFAULT_SHADER_GLSL_OVERLAY, sf::Shader::Fragment );
++				default_shader_overlay->loadFromMemory( DEFAULT_SHADER_GLSL_OVERLAY, sf::Shader::Type::Fragment );
+ 			}
+ 			return default_shader_overlay;
+ 		case FeBlend::Premultiplied:
+ 			if ( !default_shader_premultiplied )
+ 			{
+ 				default_shader_premultiplied = new sf::Shader();
+-				default_shader_premultiplied->loadFromMemory( DEFAULT_SHADER_GLSL_PREMULTIPLIED, sf::Shader::Fragment );
++				default_shader_premultiplied->loadFromMemory( DEFAULT_SHADER_GLSL_PREMULTIPLIED, sf::Shader::Type::Fragment );
+ 			}
+ 			return default_shader_premultiplied;
+ 		default:
+diff --git a/src/fe_file.cpp b/src/fe_file.cpp
+index 941853d..e0048d7 100644
+--- a/src/fe_file.cpp
++++ b/src/fe_file.cpp
+@@ -35,7 +35,7 @@ FeFileInputStream::~FeFileInputStream()
+ 		fclose( m_file );
+ }
+
+-sf::Int64 FeFileInputStream::read( void *data, sf::Int64 size )
++std::optional<std::size_t> FeFileInputStream::read( void *data, std::size_t size )
+ {
+ 	if ( m_file )
+ 		return fread( data, 1, (size_t)size, m_file );
+@@ -43,20 +43,22 @@ sf::Int64 FeFileInputStream::read( void *data, sf::Int64 size )
+ 	return -1;
+ }
+
+-sf::Int64 FeFileInputStream::seek( sf::Int64 pos )
++std::optional<std::size_t> FeFileInputStream::seek( std::size_t pos )
+ {
+ 	if ( m_file )
+ 	{
+ 		if ( fseek( m_file, (size_t)pos, SEEK_SET ) )
+ 			return -1;
+
+-		return tell();
++		auto data = tell();
++		if ( data.has_value() )
++			return data.value();
+ 	}
+
+ 	return -1;
+ }
+
+-sf::Int64 FeFileInputStream::tell()
++std::optional<std::size_t> FeFileInputStream::tell()
+ {
+ 	if ( m_file )
+ 		return ftell( m_file );
+@@ -64,15 +66,17 @@ sf::Int64 FeFileInputStream::tell()
+ 	return -1;
+ }
+
+-sf::Int64 FeFileInputStream::getSize()
++std::optional<std::size_t> FeFileInputStream::getSize()
+ {
+ 	if ( m_file )
+ 	{
+-		sf::Int64 pos = tell();
++		std::optional<std::size_t> pos = tell();
+ 		fseek( m_file, 0, SEEK_END );
+-		sf::Int64 size = tell();
+-		seek( pos );
+-		return size;
++		std::optional<std::size_t> size = tell();
++		if ( pos.has_value() )
++			seek( pos.value() );
++		if ( size.has_value() )
++			return size;
+ 	}
+
+ 	return -1;
+diff --git a/src/fe_file.hpp b/src/fe_file.hpp
+index 6abbb0c..ccf5d92 100644
+--- a/src/fe_file.hpp
++++ b/src/fe_file.hpp
+@@ -26,6 +26,7 @@
+ #include <string>
+ #include <SFML/System/InputStream.hpp>
+ #include <cstdio>
++#include <cstdint>
+
+ class FeFileInputStream : public sf::InputStream
+ {
+@@ -33,10 +34,10 @@ public:
+ 	FeFileInputStream( const std::string &fn );
+ 	~FeFileInputStream();
+
+-	sf::Int64 read( void *data, sf::Int64 size );
+-	sf::Int64 seek( sf::Int64 pos );
+-	sf::Int64 tell();
+-	sf::Int64 getSize();
++	std::optional<std::size_t> read( void *data, std::size_t size ) override;
++	std::optional<std::size_t> seek( std::size_t pos ) override;
++	std::optional<std::size_t> tell() override;
++	std::optional<std::size_t> getSize() override;
+
+ private:
+ 	FILE *m_file;
+diff --git a/src/fe_image.cpp b/src/fe_image.cpp
+index 1fa7501..5386d55 100644
+--- a/src/fe_image.cpp
++++ b/src/fe_image.cpp
+@@ -301,7 +301,7 @@ bool FeTextureContainer::fix_masked_image()
+
+ 	if (( tmp_s.x > 0 ) && ( tmp_s.y > 0 ))
+ 	{
+-		sf::Color p = tmp_img.getPixel( 0, 0 );
++		sf::Color p = tmp_img.getPixel({ 0, 0 });
+ 		tmp_img.createMaskFromColor( p );
+
+ 		if ( m_texture.loadFromImage( tmp_img ) )
+@@ -523,7 +523,7 @@ bool FeTextureContainer::try_to_load(
+
+ 	// resize our texture accordingly
+ 	if ( m_texture.getSize() != sf::Vector2u( m_entry->get_width(), m_entry->get_height() ) )
+-		m_texture.create( m_entry->get_width(), m_entry->get_height() );
++		m_texture.resize(sf::Vector2u(m_entry->get_width(), m_entry->get_height()));
+
+ 	if ( data )
+ 	{
+@@ -1080,9 +1080,9 @@ void FeTextureContainer::release_audio( bool state )
+ }
+
+ FeSurfaceTextureContainer::FeSurfaceTextureContainer( int width, int height )
+-	: m_clear( true )
++	: m_clear( true ),
++	m_texture({ (unsigned)width, (unsigned)height })
+ {
+-	m_texture.create( width, height );
+ }
+
+ FeSurfaceTextureContainer::~FeSurfaceTextureContainer()
+@@ -1240,7 +1240,7 @@ void FeImage::texture_changed( FeBaseTextureContainer *new_tex )
+
+ 	//  reset texture rect now to the one reported by the new texture object
+ 	m_sprite.setTextureRect(
+-		sf::IntRect( 0, 0, m_tex->get_texture().getSize().x, m_tex->get_texture().getSize().y ) );
++		sf::IntRect({ 0, 0 }, { (int)m_tex->get_texture().getSize().x, (int)m_tex->get_texture().getSize().y }) );
+
+ 	scale();
+ }
+@@ -1306,7 +1306,7 @@ void FeImage::scale()
+ 	sf::IntRect texture_rect = m_sprite.getTextureRect();
+ 	float ratio = m_tex->get_sample_aspect_ratio();
+
+-	if (( texture_rect.width == 0 ) || ( texture_rect.height == 0 ))
++	if (( texture_rect.size.x == 0 ) || ( texture_rect.size.y == 0 ))
+ 		return;
+
+ 	bool scale=false;
+@@ -1315,7 +1315,7 @@ void FeImage::scale()
+
+ 	if ( m_size.x > 0.0 )
+ 	{
+-		scale_x = (float) m_size.x / abs( texture_rect.width );
++		scale_x = (float) m_size.x / abs( texture_rect.size.x );
+
+ 		if ( m_preserve_aspect_ratio )
+ 			scale_y = scale_x;
+@@ -1325,7 +1325,7 @@ void FeImage::scale()
+
+ 	if ( m_size.y > 0.0 )
+ 	{
+-		scale_y = (float) m_size.y / abs( texture_rect.height );
++		scale_y = (float) m_size.y / abs( texture_rect.size.y );
+
+ 		if ( m_preserve_aspect_ratio )
+ 		{
+@@ -1342,12 +1342,12 @@ void FeImage::scale()
+ 				t.rotate( m_sprite.getRotation() );
+
+ 				if ( scale_x > scale_y * ratio ) // centre in x direction
+-					final_pos += t.transformPoint(
+-						( m_size.x - abs( texture_rect.width ) * scale_y * ratio ) / 2.0,
+-						0 );
++					final_pos += t.transformPoint(sf::Vector2f(
++						( m_size.x - abs( texture_rect.size.x ) * scale_y * ratio ) / 2.0,
++						0 ));
+ 				else // centre in y direction
+-					final_pos += t.transformPoint( 0,
+-						( m_size.y - abs( texture_rect.height ) * scale_x / ratio ) / 2.0 );
++					final_pos += t.transformPoint(sf::Vector2f( 0,
++						( m_size.y - abs( texture_rect.size.x ) * scale_x / ratio ) / 2.0 ));
+ 			}
+ 		}
+
+@@ -1366,15 +1366,15 @@ void FeImage::scale()
+ 		m_sprite.setScale( sf::Vector2f( scale_x, scale_y ) );
+
+ 	m_sprite.setPosition( final_pos );
+-	m_sprite.setOrigin( m_origin.x / scale_x, m_origin.y / scale_y );
++	m_sprite.setOrigin({ m_origin.x / scale_x, m_origin.y / scale_y });
+ }
+
+-const sf::Vector2f &FeImage::getPosition() const
++sf::Vector2f FeImage::getPosition() const
+ {
+ 	return m_pos;
+ }
+
+-const sf::Vector2f &FeImage::getSize() const
++sf::Vector2f FeImage::getSize() const
+ {
+ 	return m_size;
+ }
+@@ -1399,12 +1399,12 @@ void FeImage::setPosition( const sf::Vector2f &p )
+ 	}
+ }
+
+-float FeImage::getRotation() const
++sf::Angle FeImage::getRotation() const
+ {
+ 	return m_sprite.getRotation();
+ }
+
+-void FeImage::setRotation( float r )
++void FeImage::setRotation( sf::Angle r )
+ {
+ 	if ( r != m_sprite.getRotation() )
+ 	{
+@@ -1414,7 +1414,7 @@ void FeImage::setRotation( float r )
+ 	}
+ }
+
+-const sf::Color &FeImage::getColor() const
++sf::Color FeImage::getColor() const
+ {
+ 	return m_sprite.getColor();
+ }
+@@ -1630,22 +1630,22 @@ int FeImage::get_texture_height() const
+
+ int FeImage::get_subimg_x() const
+ {
+-	return getTextureRect().left;
++	return getTextureRect().position.x;
+ }
+
+ int FeImage::get_subimg_y() const
+ {
+-	return getTextureRect().top;
++	return getTextureRect().position.y;
+ }
+
+ int FeImage::get_subimg_width() const
+ {
+-	return getTextureRect().width;
++	return getTextureRect().size.x;
+ }
+
+ int FeImage::get_subimg_height() const
+ {
+-	return getTextureRect().height;
++	return getTextureRect().size.y;
+ }
+
+ float FeImage::get_sample_aspect_ratio() const
+@@ -1661,28 +1661,28 @@ bool FeImage::get_preserve_aspect_ratio() const
+ void FeImage::set_subimg_x( int x )
+ {
+ 	sf::IntRect r = getTextureRect();
+-	r.left=x;
++	r.position.x=x;
+ 	setTextureRect( r );
+ }
+
+ void FeImage::set_subimg_y( int y )
+ {
+ 	sf::IntRect r = getTextureRect();
+-	r.top=y;
++	r.position.y=y;
+ 	setTextureRect( r );
+ }
+
+ void FeImage::set_subimg_width( int w )
+ {
+ 	sf::IntRect r = getTextureRect();
+-	r.width=w;
++	r.size.x=w;
+ 	setTextureRect( r );
+ }
+
+ void FeImage::set_subimg_height( int h )
+ {
+ 	sf::IntRect r = getTextureRect();
+-	r.height=h;
++	r.size.y=h;
+ 	setTextureRect( r );
+ }
+
+diff --git a/src/fe_image.hpp b/src/fe_image.hpp
+index efa0fd9..81ba468 100644
+--- a/src/fe_image.hpp
++++ b/src/fe_image.hpp
+@@ -279,15 +279,15 @@ public:
+
+ 	const sf::Texture *get_texture();
+
+-	const sf::Vector2f &getSize() const;
++	sf::Vector2f getSize() const;
+ 	void setSize( const sf::Vector2f &s );
+ 	void setSize( int w, int h ) { setSize( sf::Vector2f( w, h ) ); };
+-	const sf::Vector2f &getPosition() const;
++	sf::Vector2f getPosition() const;
+ 	void setPosition( const sf::Vector2f & );
+ 	void setPosition( int x, int y ) { setPosition( sf::Vector2f( x, y ));};
+-	float getRotation() const;
+-	void setRotation( float );
+-	const sf::Color &getColor() const;
++	sf::Angle getRotation() const;
++	void setRotation( sf::Angle angle );
++	sf::Color getColor() const;
+ 	void setColor( const sf::Color & );
+ 	int getIndexOffset() const;
+ 	void setIndexOffset(int);
+diff --git a/src/fe_input.cpp b/src/fe_input.cpp
+index 6218930..374f9a8 100644
+--- a/src/fe_input.cpp
++++ b/src/fe_input.cpp
+@@ -27,9 +27,11 @@
+ #include <iomanip>
+ #include <cstring>
+ #include <cmath>
++#include <optional>
+ #include <set>
+ #include <SFML/Window/VideoMode.hpp>
+ #include <SFML/System/Vector2.hpp>
++#include <memory>
+
+ #if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 2, 0 )) // touch support sfml >= 2.2
+ #include <SFML/Window/Touch.hpp>
+@@ -40,7 +42,7 @@ namespace
+ #if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 2, 0 )) // touch support sfml >= 2.2
+ 	// globals to track when last touch event "began"
+ 	//
+-	sf::Event g_last_touch;
++	std::optional<sf::Event> g_last_touch;
+ 	bool g_touch_moved=false;
+ #endif
+
+@@ -304,36 +306,37 @@ FeInputSingle::FeInputSingle( Type t, int c )
+ {
+ }
+
+-FeInputSingle::FeInputSingle( const sf::Event &e, const sf::IntRect &mc_rect, const int joy_thresh )
++FeInputSingle::FeInputSingle( const std::optional<sf::Event> &e, const sf::IntRect &mc_rect, const int joy_thresh )
+ 	: m_type( Unsupported ),
+ 	m_code( 0 )
+ {
+-	switch ( e.type )
++	if (e)
+ 	{
+-		case sf::Event::KeyPressed:
+-			if ( e.key.code != sf::Keyboard::Unknown )
++		if (const auto *keyPressed = e->getIf<sf::Event::KeyPressed>())
++		{
++			if ( keyPressed->code != sf::Keyboard::Key::Unknown )
+ 			{
+ 				m_type = Keyboard;
+-				m_code = e.key.code;
++				m_code = static_cast<int>(keyPressed->code);
+ 			}
+-			break;
+-
+-		case sf::Event::JoystickButtonPressed:
+-			m_type = (Type)(Joystick0 + joymap2feid( e.joystickButton.joystickId ));
+-			m_code = JoyButton0 + e.joystickButton.button;
+-			break;
+-
+-		case sf::Event::JoystickMoved:
+-			if ( std::abs( e.joystickMove.position ) > joy_thresh )
++		}
++		else if (const auto *joyPressed = e->getIf<sf::Event::JoystickButtonPressed>())
++		{
++			m_type = (Type)(Joystick0 + joymap2feid( joyPressed->joystickId ));
++			m_code = JoyButton0 + joyPressed->button;
++		}
++		else if (const auto *joyMoved = e->getIf<sf::Event::JoystickMoved>())
++		{
++			if ( std::abs( joyMoved->position ) > joy_thresh )
+ 			{
+-				switch ( e.joystickMove.axis )
++				switch ( joyMoved->axis )
+ 				{
+-					case sf::Joystick::X:
+-						m_code = ( e.joystickMove.position > 0 ) ? JoyRight : JoyLeft;
++					case sf::Joystick::Axis::X:
++						m_code = ( joyMoved->position > 0 ) ? JoyRight : JoyLeft;
+ 						break;
+
+-					case sf::Joystick::Y:
+-						m_code = ( e.joystickMove.position > 0 ) ? JoyDown : JoyUp;
++					case sf::Joystick::Axis::Y:
++						m_code = ( joyMoved->position > 0 ) ? JoyDown : JoyUp;
+ 						break;
+
+ #ifdef SFML_SYSTEM_LINUX
+@@ -341,38 +344,38 @@ FeInputSingle::FeInputSingle( const sf::Event &e, const sf::IntRect &mc_rect, co
+ 					// On Linux, SFML's Z and R axes are mapped to Throttle and Rudder controls
+ 					// They seem to rest at -100 and go up to 100
+ 					//
+-					case sf::Joystick::Z:
+-					case sf::Joystick::R:
+-						if ( e.joystickMove.position < 0 )
++					case sf::Joystick::Axis::Z:
++					case sf::Joystick::Axis::R:
++						if ( joyMoved->position < 0 )
+ 							return;
+
+-						m_code = ( e.joystickMove.axis == sf::Joystick::Z )
++						m_code = ( joyMoved->axis == sf::Joystick::Axis::Z )
+ 							? JoyZPos : JoyRPos;
+ 						break;
+ #else
+-					case sf::Joystick::Z:
++					case sf::Joystick::Axis::Z:
+ 						m_code = ( e.joystickMove.position > 0 ) ? JoyZPos : JoyZNeg;
+ 						break;
+
+-					case sf::Joystick::R:
++					case sf::Joystick::Axis::R:
+ 						m_code = ( e.joystickMove.position > 0 ) ? JoyRPos : JoyRNeg;
+ 						break;
+ #endif
+
+-					case sf::Joystick::U:
+-						m_code = ( e.joystickMove.position > 0 ) ? JoyUPos : JoyUNeg;
++					case sf::Joystick::Axis::U:
++						m_code = ( joyMoved->position > 0 ) ? JoyUPos : JoyUNeg;
+ 						break;
+
+-					case sf::Joystick::V:
+-						m_code = ( e.joystickMove.position > 0 ) ? JoyVPos : JoyVNeg;
++					case sf::Joystick::Axis::V:
++						m_code = ( joyMoved->position > 0 ) ? JoyVPos : JoyVNeg;
+ 						break;
+
+-					case sf::Joystick::PovX:
+-						m_code = ( e.joystickMove.position > 0 ) ? JoyPOVXPos : JoyPOVXNeg;
++					case sf::Joystick::Axis::PovX:
++						m_code = ( joyMoved->position > 0 ) ? JoyPOVXPos : JoyPOVXNeg;
+ 						break;
+
+-					case sf::Joystick::PovY:
+-						m_code = ( e.joystickMove.position > 0 ) ? JoyPOVYPos : JoyPOVYNeg;
++					case sf::Joystick::Axis::PovY:
++						m_code = ( joyMoved->position > 0 ) ? JoyPOVYPos : JoyPOVYNeg;
+ 						break;
+
+ 					default:
+@@ -380,106 +383,114 @@ FeInputSingle::FeInputSingle( const sf::Event &e, const sf::IntRect &mc_rect, co
+ 						return;
+ 				}
+
+-				m_type = (Type)(Joystick0 + joymap2feid( e.joystickMove.joystickId ) );
++				m_type = (Type)(Joystick0 + joymap2feid( joyMoved->joystickId ) );
+ 			}
+-			break;
+-
+-		case sf::Event::MouseMoved:
+-			if ( e.mouseMove.x < mc_rect.left )
++		}
++		else if (const auto *mouseMove = e->getIf<sf::Event::MouseMoved>())
++		{
++			if ( mouseMove->position.x < mc_rect.position.x )
+ 			{
+ 				m_type = Mouse;
+ 				m_code = MouseLeft;
+ 			}
+-			else if ( e.mouseMove.y < mc_rect.top )
++			else if ( mouseMove->position.y < mc_rect.position.y )
+ 			{
+ 				m_type = Mouse;
+ 				m_code = MouseUp;
+ 			}
+-			else if ( e.mouseMove.x >= mc_rect.left + mc_rect.width )
++			else if ( mouseMove->position.x >= mc_rect.position.x + mc_rect.size.x )
+ 			{
+ 				m_type = Mouse;
+ 				m_code = MouseRight;
+ 			}
+-			else if ( e.mouseMove.y >= mc_rect.top + mc_rect.height )
++			else if ( mouseMove->position.y >= mc_rect.position.y + mc_rect.size.y )
+ 			{
+ 				m_type = Mouse;
+ 				m_code = MouseDown;
+ 			}
+-			break;
++		}
++
++		else if (const auto *mouseWheel = e->getIf<sf::Event::MouseWheelScrolled>())
++		{
++				m_type = Mouse;
++				if ( mouseWheel->delta > 0 )
++					m_code=MouseWheelUp;
++				else
++					m_code=MouseWheelDown;
++		}
++		else if (const auto *mouseButton = e->getIf<sf::Event::MouseButtonPressed>())
++		{
++				switch ( mouseButton->button )
++				{
++					case sf::Mouse::Button::Left: m_code=MouseBLeft; break;
++					case sf::Mouse::Button::Right: m_code=MouseBRight; break;
++					case sf::Mouse::Button::Middle: m_code=MouseBMiddle; break;
++					case sf::Mouse::Button::Extra1: m_code=MouseBX1; break;
++					case sf::Mouse::Button::Extra2: m_code=MouseBX2; break;
++					default:
++						ASSERT( 0 ); // unhandled mouse button encountered
++						return;
++				}
++				m_type = Mouse;
++		}
+
+-		case sf::Event::MouseWheelMoved:
+-			m_type = Mouse;
+-			if ( e.mouseWheel.delta > 0 )
+-				m_code=MouseWheelUp;
++#if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 2, 0 )) // touch support sfml >= 2.2
++		else if (const auto *touch = e->getIf<sf::Event::TouchMoved>())
++		{
++			const int THRESH = 100;
++			sf::Vector2i last_touch_pos;
++
++			if (const auto *touch = g_last_touch->getIf<sf::Event::TouchMoved>())
++				last_touch_pos = touch->position;
++			else if (const auto *touch = g_last_touch->getIf<sf::Event::TouchBegan>())
++				last_touch_pos = touch->position;
++			else if (const auto *touch = g_last_touch->getIf<sf::Event::TouchEnded>())
++				last_touch_pos = touch->position;
+ 			else
+-				m_code=MouseWheelDown;
+-			break;
++				last_touch_pos = { 0, 0 };
+
+-		case sf::Event::MouseButtonPressed:
+-			switch ( e.mouseButton.button )
+-			{
+-				case sf::Mouse::Left: m_code=MouseBLeft; break;
+-				case sf::Mouse::Right: m_code=MouseBRight; break;
+-				case sf::Mouse::Middle: m_code=MouseBMiddle; break;
+-				case sf::Mouse::XButton1: m_code=MouseBX1; break;
+-				case sf::Mouse::XButton2: m_code=MouseBX2; break;
+-				default:
+-					ASSERT( 0 ); // unhandled mouse button encountered
+-					return;
+-			}
+-			m_type = Mouse;
+-			break;
++			int diff_x = touch->position.x - last_touch_pos.x;
++			int diff_y = touch->position.y - last_touch_pos.y;
+
+-#if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 2, 0 )) // touch support sfml >= 2.2
+-		case sf::Event::TouchMoved:
++			if ( abs( diff_y ) > THRESH )
+ 			{
+-				const int THRESH = 100;
+-				int diff_x = e.touch.x - g_last_touch.touch.x;
+-				int diff_y = e.touch.y - g_last_touch.touch.y;
+-
+-				if ( abs( diff_y ) > THRESH )
+-				{
+-					if ( diff_y < 0 )
+-						m_code = SwipeUp;
+-					else
+-						m_code = SwipeDown;
++				if ( diff_y < 0 )
++					m_code = SwipeUp;
++				else
++					m_code = SwipeDown;
+
+-					m_type = Touch;
++				m_type = Touch;
+
+-					g_touch_moved = true;
+-					g_last_touch = e;
+-				}
+-				else if ( abs( diff_x ) > THRESH )
+-				{
+-					if ( diff_x < 0 )
+-						m_code = SwipeRight;
+-					else
+-						m_code = SwipeLeft;
++				g_touch_moved = true;
++				g_last_touch = e;
++			}
++			else if ( abs( diff_x ) > THRESH )
++			{
++				if ( diff_x < 0 )
++					m_code = SwipeRight;
++				else
++					m_code = SwipeLeft;
+
+-					m_type = Touch;
++				m_type = Touch;
+
+-					g_touch_moved = true;
+-					g_last_touch = e;
+-				}
++				g_touch_moved = true;
++				g_last_touch = e;
+ 			}
+-			break;
+-
+-		case sf::Event::TouchBegan:
++		}
++		else if (const auto *touch = e->getIf<sf::Event::TouchBegan>())
++		{
+ 			g_touch_moved = false;
+ 			g_last_touch = e;
+-			break;
+-
+-		case sf::Event::TouchEnded:
++		}
++		else if (const auto *touch = e->getIf<sf::Event::TouchEnded>())
++		{
+ 			if ( !g_touch_moved )
+ 			{
+ 				m_code = Tap;
+ 				m_type = Touch;
+ 			}
+-			break;
++		}
+ #endif
+-
+-		default:
+-			break;
+ 	}
+ }
+
+@@ -628,11 +639,11 @@ bool FeInputSingle::get_current_state( int joy_thresh ) const
+ 	{
+ 		switch ( m_code )
+ 		{
+-		case MouseBLeft: return sf::Mouse::isButtonPressed( sf::Mouse::Left );
+-		case MouseBRight: return sf::Mouse::isButtonPressed( sf::Mouse::Right );
+-		case MouseBMiddle: return sf::Mouse::isButtonPressed( sf::Mouse::Middle );
+-		case MouseBX1: return sf::Mouse::isButtonPressed( sf::Mouse::XButton1 );
+-		case MouseBX2: return sf::Mouse::isButtonPressed( sf::Mouse::XButton2 );
++		case MouseBLeft: return sf::Mouse::isButtonPressed( sf::Mouse::Button::Left );
++		case MouseBRight: return sf::Mouse::isButtonPressed( sf::Mouse::Button::Right );
++		case MouseBMiddle: return sf::Mouse::isButtonPressed( sf::Mouse::Button::Middle );
++		case MouseBX1: return sf::Mouse::isButtonPressed( sf::Mouse::Button::Extra1 );
++		case MouseBX2: return sf::Mouse::isButtonPressed( sf::Mouse::Button::Extra2 );
+ 		default: return false; // mouse moves and wheels are not supported
+ 		}
+ 	}
+@@ -650,22 +661,22 @@ bool FeInputSingle::get_current_state( int joy_thresh ) const
+ 		{
+ 			switch ( m_code )
+ 			{
+-				case JoyLeft: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::X ) > joy_thresh );
+-				case JoyRight: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::X ) > joy_thresh );
+-				case JoyUp: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Y ) > joy_thresh );
+-				case JoyDown: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Y ) > joy_thresh );
+-				case JoyZPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Z ) > joy_thresh );
+-				case JoyZNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Z ) > joy_thresh );
+-				case JoyRPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::R ) > joy_thresh );
+-				case JoyRNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::R ) > joy_thresh );
+-				case JoyUPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::U ) > joy_thresh );
+-				case JoyUNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::U ) > joy_thresh );
+-				case JoyVPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::V ) > joy_thresh );
+-				case JoyVNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::V ) > joy_thresh );
+-				case JoyPOVXPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::PovX ) > joy_thresh );
+-				case JoyPOVXNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::PovX ) > joy_thresh );
+-				case JoyPOVYPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::PovY ) > joy_thresh );
+-				case JoyPOVYNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::PovY ) > joy_thresh );
++				case JoyLeft: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::X ) > joy_thresh );
++				case JoyRight: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::X ) > joy_thresh );
++				case JoyUp: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::Y ) > joy_thresh );
++				case JoyDown: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::Y ) > joy_thresh );
++				case JoyZPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::Z ) > joy_thresh );
++				case JoyZNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::Z ) > joy_thresh );
++				case JoyRPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::R ) > joy_thresh );
++				case JoyRNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::R ) > joy_thresh );
++				case JoyUPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::U ) > joy_thresh );
++				case JoyUNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::U ) > joy_thresh );
++				case JoyVPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::V ) > joy_thresh );
++				case JoyVNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::V ) > joy_thresh );
++				case JoyPOVXPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::PovX ) > joy_thresh );
++				case JoyPOVXNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::PovX ) > joy_thresh );
++				case JoyPOVYPos: return ( sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::PovY ) > joy_thresh );
++				case JoyPOVYNeg: return ( -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::PovY ) > joy_thresh );
+ 				default: return false;
+ 			}
+ 		}
+@@ -693,22 +704,22 @@ int FeInputSingle::get_current_pos() const
+
+ 		switch ( m_code )
+ 		{
+-			case JoyLeft: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::X ); break;
+-			case JoyRight: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::X ); break;
+-			case JoyUp: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Y ); break;
+-			case JoyDown: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Y ); break;
+-			case JoyZPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Z ); break;
+-			case JoyZNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Z ); break;
+-			case JoyRPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::R ); break;
+-			case JoyRNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::R ); break;
+-			case JoyUPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::U ); break;
+-			case JoyUNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::U ); break;
+-			case JoyVPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::V ); break;
+-			case JoyVNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::V ); break;
+-			case JoyPOVXPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::PovX ); break;
+-			case JoyPOVXNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::PovX ); break;
+-			case JoyPOVYPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::PovY ); break;
+-			case JoyPOVYNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::PovY ); break;
++			case JoyLeft: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::X ); break;
++			case JoyRight: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::X ); break;
++			case JoyUp: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::Y ); break;
++			case JoyDown: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::Y ); break;
++			case JoyZPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::Z ); break;
++			case JoyZNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::Z ); break;
++			case JoyRPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::R ); break;
++			case JoyRNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::R ); break;
++			case JoyUPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::U ); break;
++			case JoyUNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::U ); break;
++			case JoyVPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::V ); break;
++			case JoyVNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::V ); break;
++			case JoyPOVXPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::PovX ); break;
++			case JoyPOVXNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::PovX ); break;
++			case JoyPOVYPos: temp = sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::PovY ); break;
++			case JoyPOVYNeg: temp = -sf::Joystick::getAxisPosition( id, sf::Joystick::Axis::PovY ); break;
+ 			default: break;
+ 		}
+
+@@ -1013,29 +1024,29 @@ void FeInputMap::initialize_mappings()
+ 		struct DefaultMappings { FeInputSingle::Type type; int code; Command comm; };
+ 		DefaultMappings dmap[] =
+ 		{
+-			{ FeInputSingle::Keyboard,    sf::Keyboard::Escape,        Back },
+-			{ FeInputSingle::Joystick0,   FeInputSingle::JoyButton0+1, Back },
+-			{ FeInputSingle::Keyboard,    sf::Keyboard::Up,            Up },
+-			{ FeInputSingle::Joystick0,   FeInputSingle::JoyUp,        Up },
+-			{ FeInputSingle::Keyboard,    sf::Keyboard::Down,          Down },
+-			{ FeInputSingle::Joystick0,   FeInputSingle::JoyDown,      Down },
+-			{ FeInputSingle::Keyboard,    sf::Keyboard::Left,          Left },
+-			{ FeInputSingle::Joystick0,   FeInputSingle::JoyLeft,      Left },
+-			{ FeInputSingle::Keyboard,    sf::Keyboard::Right,         Right },
+-			{ FeInputSingle::Joystick0,   FeInputSingle::JoyRight,     Right },
+-			{ FeInputSingle::Keyboard,    sf::Keyboard::Return,        Select },
+-			{ FeInputSingle::Keyboard,    sf::Keyboard::LControl,      Select },
+-			{ FeInputSingle::Joystick0,   FeInputSingle::JoyButton0,   Select },
++			{ FeInputSingle::Keyboard,    static_cast<int>(sf::Keyboard::Key::Escape),    Back },
++			{ FeInputSingle::Joystick0,   FeInputSingle::JoyButton0+1,                    Back },
++			{ FeInputSingle::Keyboard,    static_cast<int>(sf::Keyboard::Key::Up),        Up },
++			{ FeInputSingle::Joystick0,   FeInputSingle::JoyUp,                           Up },
++			{ FeInputSingle::Keyboard,    static_cast<int>(sf::Keyboard::Key::Down),      Down },
++			{ FeInputSingle::Joystick0,   FeInputSingle::JoyDown,                         Down },
++			{ FeInputSingle::Keyboard,    static_cast<int>(sf::Keyboard::Key::Left),      Left },
++			{ FeInputSingle::Joystick0,   FeInputSingle::JoyLeft,                         Left },
++			{ FeInputSingle::Keyboard,    static_cast<int>(sf::Keyboard::Key::Right),     Right },
++			{ FeInputSingle::Joystick0,   FeInputSingle::JoyRight,                        Right },
++			{ FeInputSingle::Keyboard,    static_cast<int>(sf::Keyboard::Key::Enter),     Select },
++			{ FeInputSingle::Keyboard,    static_cast<int>(sf::Keyboard::Key::LControl),  Select },
++			{ FeInputSingle::Joystick0,   FeInputSingle::JoyButton0,                      Select },
+
+ #ifdef SFML_SYSTEM_ANDROID
+-			{ FeInputSingle::Touch,       FeInputSingle::SwipeUp,      Up },
+-			{ FeInputSingle::Touch,       FeInputSingle::SwipeDown,    Down },
+-			{ FeInputSingle::Touch,       FeInputSingle::SwipeLeft,    Left },
+-			{ FeInputSingle::Touch,       FeInputSingle::SwipeRight,   Right },
+-			{ FeInputSingle::Touch,       FeInputSingle::Tap,          Select },
++			{ FeInputSingle::Touch,       FeInputSingle::SwipeUp,       Up },
++			{ FeInputSingle::Touch,       FeInputSingle::SwipeDown,     Down },
++			{ FeInputSingle::Touch,       FeInputSingle::SwipeLeft,     Left },
++			{ FeInputSingle::Touch,       FeInputSingle::SwipeRight,    Right },
++			{ FeInputSingle::Touch,       FeInputSingle::Tap,           Select },
+ #endif
+
+-			{ FeInputSingle::Unsupported, sf::Keyboard::Unknown,     LAST_COMMAND }	// keep as last
++			{ FeInputSingle::Unsupported, static_cast<int>(sf::Keyboard::Key::Unknown),   LAST_COMMAND }	// keep as last
+ 		};
+
+ 		int i=0;
+@@ -1131,74 +1142,83 @@ FeInputMap::Command FeInputMap::get_command_from_tracked_keys( const int joy_thr
+ 	return retval;
+ }
+
+-FeInputMap::Command FeInputMap::map_input( const sf::Event &e, const sf::IntRect &mc_rect, const int joy_thresh )
++FeInputMap::Command FeInputMap::map_input( const std::optional<sf::Event> &e, const sf::IntRect &mc_rect, const int joy_thresh )
+ {
+ 	FeInputSingle index( e, mc_rect, joy_thresh );
+
+-	switch ( e.type )
++	if (const auto *closed = e->getIf<sf::Event::Closed>())
+ 	{
+-	case sf::Event::Closed:
+ 		m_tracked_keys.clear();
+ 		return ExitToDesktop;
+-
+-	case sf::Event::JoystickMoved:
++	}
++	else if (const auto *joyMoved = e->getIf<sf::Event::JoystickMoved>())
++	{
++		//
++		// Test that this is a release of a tracked key (joystick axis)
++		//
++		if (( !index.get_current_state( joy_thresh ) )
++			&& ( m_tracked_keys.find( index ) != m_tracked_keys.end() ))
+ 		{
+-			//
+-			// Test that this is a release of a tracked key (joystick axis)
+-			//
+-			if (( !index.get_current_state( joy_thresh ) )
+-				&& ( m_tracked_keys.find( index ) != m_tracked_keys.end() ))
+-			{
+-				FeInputMap::Command temp = get_command_from_tracked_keys( joy_thresh );
+-				if ( temp != LAST_COMMAND )
+-					return temp;
+-			}
++			FeInputMap::Command temp = get_command_from_tracked_keys( joy_thresh );
++			if ( temp != LAST_COMMAND )
++				return temp;
+ 		}
+-		break;
+-
+-	case sf::Event::KeyReleased:
+-	case sf::Event::JoystickButtonReleased:
+-	case sf::Event::MouseButtonReleased:
++	}
++	else if (e->is<sf::Event::KeyReleased>() ||
++			e->is<sf::Event::JoystickButtonReleased>() ||
++			e->is<sf::Event::MouseButtonReleased>())
++	{
++		//
++		// Test that this is a release of a tracked key (button)
++		//
++		std::optional<sf::Event> te;
++		if (const auto *keyReleased = e->getIf<sf::Event::KeyReleased>())
+ 		{
+-			//
+-			// Test that this is a release of a tracked key (button)
+-			//
+-			sf::Event te = e;
+-			switch ( e.type )
+-			{
+-			case sf::Event::KeyReleased: te.type = sf::Event::KeyPressed; break;
+-			case sf::Event::JoystickButtonReleased: te.type = sf::Event::JoystickButtonPressed; break;
+-			case sf::Event::MouseButtonReleased: te.type = sf::Event::MouseButtonPressed; break;
+-			default: ASSERT( 0 ); break;
+-			}
+-
+-			FeInputSingle tt( te, mc_rect, joy_thresh );
+-			if ( m_tracked_keys.find( tt ) != m_tracked_keys.end() )
+-			{
+-				FeInputMap::Command temp = get_command_from_tracked_keys( joy_thresh );
+-				if ( temp != LAST_COMMAND )
+-					return temp;
+-			}
++			te = std::make_optional<sf::Event>(sf::Event::KeyPressed());
++			auto &keyPressed = *te->getIf<sf::Event::KeyPressed>();
++			keyPressed.alt = keyReleased->alt;
++			keyPressed.code = keyReleased->code;
++			keyPressed.scancode = keyReleased->scancode;
++			keyPressed.control = keyReleased->control;
++			keyPressed.shift = keyReleased->shift;
++			keyPressed.system = keyReleased->system;
++		}
++		else if (const auto *buttonReleased = e->getIf<sf::Event::JoystickButtonReleased>())
++		{
++			te = std::make_optional<sf::Event>(sf::Event::JoystickButtonPressed());
++			auto &buttonPressed = *te->getIf<sf::Event::JoystickButtonPressed>();
++			buttonPressed.button = buttonReleased->button;
++			buttonPressed.joystickId = buttonReleased->joystickId;
++		}
++		else if (const auto *buttonReleased = e->getIf<sf::Event::MouseButtonReleased>())
++		{
++			te = std::make_optional<sf::Event>(sf::Event::MouseButtonPressed());
++			auto &buttonPressed = *te->getIf<sf::Event::MouseButtonPressed>();
++			buttonPressed.button = buttonReleased->button;
++			buttonPressed.position = buttonReleased->position;
+ 		}
+-		break;
+
+-#if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 2, 0 )) // touch support sfml >= 2.2
+-	case sf::Event::TouchEnded:
++		FeInputSingle tt( te, mc_rect, joy_thresh );
++		if ( m_tracked_keys.find( tt ) != m_tracked_keys.end() )
+ 		{
+-			m_tracked_keys.insert( index );
+ 			FeInputMap::Command temp = get_command_from_tracked_keys( joy_thresh );
+ 			if ( temp != LAST_COMMAND )
+ 				return temp;
+-
+-			m_tracked_keys.erase( index );
+-			return LAST_COMMAND;
+ 		}
+-		break;
+-#endif
++	}
+
+-	default:
+-		break;
++#if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 2, 0 )) // touch support sfml >= 2.2
++	else if (e->getIf<sf::Event::TouchEnded>())
++	{
++		m_tracked_keys.insert( index );
++		FeInputMap::Command temp = get_command_from_tracked_keys( joy_thresh );
++		if ( temp != LAST_COMMAND )
++			return temp;
++
++		m_tracked_keys.erase( index );
++		return LAST_COMMAND;
+ 	}
++#endif
+
+ 	if ( index.get_type() == FeInputSingle::Unsupported )
+ 		return LAST_COMMAND;
+diff --git a/src/fe_input.hpp b/src/fe_input.hpp
+index 2f9e2cb..2b28440 100644
+--- a/src/fe_input.hpp
++++ b/src/fe_input.hpp
+@@ -72,7 +72,7 @@ public:
+ 	FeInputSingle( Type t, int code );
+
+ 	// Construct from an SFML event
+-	FeInputSingle( const sf::Event &ev, const sf::IntRect &mc_rect, const int joy_thresh );
++	FeInputSingle( const std::optional<sf::Event> &e, const sf::IntRect &mc_rect, const int joy_thresh );
+
+ 	// Construct from a config string
+ 	FeInputSingle( const std::string &str );
+@@ -184,7 +184,7 @@ public:
+
+ 	FeInputMap();
+
+-	Command map_input( const sf::Event &, const sf::IntRect &mc_rect, const int joy_thresh );
++	Command map_input( const std::optional<sf::Event> &, const sf::IntRect &mc_rect, const int joy_thresh );
+
+ 	Command input_conflict_check( const FeInputMapEntry &e );
+
+diff --git a/src/fe_listbox.cpp b/src/fe_listbox.cpp
+index 46fd614..0aa346e 100644
+--- a/src/fe_listbox.cpp
++++ b/src/fe_listbox.cpp
+@@ -35,7 +35,7 @@ FeListBox::FeListBox( FePresentableParent &p, int x, int y, int w, int h )
+ 	m_rows( 11 ),
+ 	m_userCharSize( 0 ),
+ 	m_filter_offset( 0 ),
+-	m_rotation( 0.0 ),
++	m_rotation( sf::degrees(0) ),
+ 	m_scale_factor( 1.0 ),
+ 	m_scripted( true ),
+ 	m_custom_sel( -1 )
+@@ -63,7 +63,7 @@ FeListBox::FeListBox(
+ 	m_rows( rows ),
+ 	m_userCharSize( charactersize ),
+ 	m_filter_offset( 0 ),
+-	m_rotation( 0.0 ),
++	m_rotation( sf::degrees(0) ),
+ 	m_scale_factor( 1.0 ),
+ 	m_scripted( false ),
+ 	m_custom_sel( -1 )
+@@ -75,7 +75,7 @@ void FeListBox::setFont( const sf::Font &f )
+ 	m_base_text.setFont( f );
+ }
+
+-const sf::Vector2f &FeListBox::getPosition() const
++sf::Vector2f FeListBox::getPosition() const
+ {
+ 	return m_base_text.getPosition();
+ }
+@@ -88,7 +88,7 @@ void FeListBox::setPosition( const sf::Vector2f &p )
+ 		FePresent::script_do_update( this );
+ }
+
+-const sf::Vector2f &FeListBox::getSize() const
++sf::Vector2f FeListBox::getSize() const
+ {
+ 	return m_base_text.getSize();
+ }
+@@ -101,12 +101,12 @@ void FeListBox::setSize( const sf::Vector2f &s )
+ 		FePresent::script_do_update( this );
+ }
+
+-float FeListBox::getRotation() const
++sf::Angle FeListBox::getRotation() const
+ {
+ 	return m_rotation;
+ }
+
+-const sf::Color &FeListBox::getColor() const
++sf::Color FeListBox::getColor() const
+ {
+ 	return m_base_text.getColor();
+ }
+@@ -135,7 +135,7 @@ void FeListBox::init_dimensions()
+ 		m_texts.reserve( m_rows );
+
+ 	sf::Transform rotater;
+-	rotater.rotate( m_rotation, pos.x, pos.y );
++	rotater.rotate( m_rotation, { pos.x, pos.y });
+
+ 	for ( int i=0; i< m_rows; i++ )
+ 	{
+@@ -147,7 +147,7 @@ void FeListBox::init_dimensions()
+ 			t.setStyle( m_selStyle );
+ 		}
+
+-		t.setPosition( rotater.transformPoint( pos.x, pos.y+(i*actual_spacing)) );
++		t.setPosition( rotater.transformPoint({ pos.x, pos.y+(i*actual_spacing) }));
+ 		t.setSize( size.x, actual_spacing );
+ 		t.setRotation( m_rotation );
+
+@@ -320,7 +320,7 @@ void FeListBox::setLanguageText( const int index,
+ 	}
+ }
+
+-void FeListBox::setRotation( float r )
++void FeListBox::setRotation( sf::Angle r )
+ {
+ 	if ( r == m_rotation )
+ 		return;
+diff --git a/src/fe_listbox.hpp b/src/fe_listbox.hpp
+index e571f22..a968dff 100644
+--- a/src/fe_listbox.hpp
++++ b/src/fe_listbox.hpp
+@@ -54,14 +54,14 @@ public:
+ 			int rows );
+
+ 	void setFont( const sf::Font & );
+-	const sf::Vector2f &getPosition() const;
++	sf::Vector2f getPosition() const;
+ 	void setPosition( const sf::Vector2f & );
+ 	void setPosition( int x, int y ) {return setPosition(sf::Vector2f(x,y));};
+-	const sf::Vector2f &getSize() const;
++	sf::Vector2f getSize() const;
+ 	void setSize( const sf::Vector2f & );
+ 	void setSize( int w, int h ) {return setSize(sf::Vector2f(w,h));};
+-	float getRotation() const;
+-	const sf::Color &getColor() const;
++	sf::Angle getRotation() const;
++	sf::Color getColor() const;
+
+ 	int getIndexOffset() const;
+ 	void setIndexOffset( int );
+@@ -78,7 +78,7 @@ public:
+
+ 	FeTextPrimative *setEditMode( bool, sf::Color );
+
+-	void setRotation( float );
++	void setRotation( sf::Angle );
+
+ 	// Set an empty list here to reset control from "custom text" mode
+ 	void setCustomText( const int index, const std::vector<std::string> &list );
+@@ -169,7 +169,7 @@ private:
+ 	int m_rows;
+ 	int m_userCharSize;
+ 	int m_filter_offset;
+-	float m_rotation;
++	sf::Angle m_rotation;
+ 	float m_scale_factor;
+ 	bool m_scripted;
+
+diff --git a/src/fe_net.hpp b/src/fe_net.hpp
+index c089681..3fe6f66 100644
+--- a/src/fe_net.hpp
++++ b/src/fe_net.hpp
+@@ -27,6 +27,7 @@
+ #include <thread>
+ #include <deque>
+ #include <queue>
++#include <string>
+
+ class FeNetWorker;
+
+diff --git a/src/fe_overlay.cpp b/src/fe_overlay.cpp
+index 2509d56..bc48fb1 100644
+--- a/src/fe_overlay.cpp
++++ b/src/fe_overlay.cpp
+@@ -29,6 +29,7 @@
+ #include <SFML/Graphics.hpp>
+ #include <iostream>
+ #include <cmath>
++#include <set>
+
+ #ifndef M_PI
+    #define M_PI 3.14159265358979323846
+@@ -154,7 +155,7 @@ public:
+ 	int max_sel;		// [in] maximum selection
+
+ 	int move_count;
+-	sf::Event move_event;
++	std::optional<sf::Event> move_event;
+ 	sf::Clock move_timer;
+ 	FeInputMap::Command move_command;
+ 	FeInputMap::Command extra_exit;
+@@ -776,7 +777,7 @@ bool FeOverlay::edit_dialog(
+ 	draw_list.push_back( &message );
+ 	draw_list.push_back( &tp );
+
+-	std::basic_string<sf::Uint32> str;
++	std::basic_string<std::uint32_t> str;
+ 	sf::Utf8::toUtf32( text.begin(), text.end(), std::back_inserter( str ) );
+
+ 	FeFlagMinder fm( m_overlay_is_on );
+@@ -823,7 +824,7 @@ void FeOverlay::input_map_dialog(
+ 	sf::Mouse::setPosition( sf::Vector2i( s ), m_wnd.get_win() );
+
+ 	// empty the window event queue
+-	sf::Event ev;
++	std::optional<sf::Event> ev;
+ 	while ( m_wnd.pollEvent(ev) )
+ 	{
+ 		// no op
+@@ -850,56 +851,59 @@ void FeOverlay::input_map_dialog(
+ 	{
+ 		while (m_wnd.pollEvent(ev))
+ 		{
+-			if ( ev.type == sf::Event::Closed )
+-				return;
+-
+-			if ( multi_mode && ((ev.type == sf::Event::KeyReleased )
+-					|| ( ev.type == sf::Event::JoystickButtonReleased )
+-					|| ( ev.type == sf::Event::MouseButtonReleased )))
+-				done = true;
+-			else
++			if (ev)
+ 			{
+-				FeInputSingle single( ev, mc_rect, joy_thresh );
+-				if ( single.get_type() != FeInputSingle::Unsupported )
++				if ( ev->is<sf::Event::Closed>() )
++					return;
++
++				if ( multi_mode && ((ev->is<sf::Event::KeyReleased>() )
++						|| ( ev->is<sf::Event::JoystickButtonReleased>() )
++						|| ( ev->is<sf::Event::MouseButtonReleased>() )))
++					done = true;
++				else
+ 				{
+-					if (( ev.type == sf::Event::KeyPressed )
+-							|| ( ev.type == sf::Event::JoystickButtonPressed )
+-							|| ( ev.type == sf::Event::MouseButtonPressed ))
+-						multi_mode = true;
+-					else if ( ev.type == sf::Event::JoystickMoved )
++					FeInputSingle single( ev, mc_rect, joy_thresh );
++					if ( single.get_type() != FeInputSingle::Unsupported )
+ 					{
+-						multi_mode = true;
+-						joystick_moves.insert( std::pair<int,int>( ev.joystickMove.joystickId, ev.joystickMove.axis ) );
+-					}
++						if (( ev->is<sf::Event::KeyPressed>() )
++								|| ( ev->is<sf::Event::JoystickButtonPressed>() )
++								|| ( ev->is<sf::Event::MouseButtonPressed>() ))
++							multi_mode = true;
++						else if ( const auto *joy = ev->getIf<sf::Event::JoystickMoved>() )
++						{
++							multi_mode = true;
++							joystick_moves.insert( std::pair<int,int>({ joy->joystickId, (int)joy->axis }) );
++						}
+
+-					bool dup=false;
++						bool dup=false;
+
+-					std::set< FeInputSingle >::iterator it;
+-					for ( it = entry.inputs.begin(); it != entry.inputs.end(); ++it )
+-					{
+-						if ( (*it) == single )
++						std::set< FeInputSingle >::iterator it;
++						for ( it = entry.inputs.begin(); it != entry.inputs.end(); ++it )
+ 						{
+-							dup=true;
+-							break;
++							if ( (*it) == single )
++							{
++								dup=true;
++								break;
++							}
+ 						}
+-					}
+
+-					if ( !dup )
+-					{
+-						entry.inputs.insert( single );
+-						timeout.restart();
+-					}
++						if ( !dup )
++						{
++							entry.inputs.insert( single );
++							timeout.restart();
++						}
+
+-					if ( !multi_mode )
+-						done = true;
+-				}
+-				else if ( ev.type == sf::Event::JoystickMoved )
+-				{
+-					// test if a joystick has been released
+-					std::pair<int,int> test( ev.joystickMove.joystickId, ev.joystickMove.axis );
++						if ( !multi_mode )
++							done = true;
++					}
++					else if ( const auto *joy = ev->getIf<sf::Event::JoystickMoved>() )
++					{
++						// test if a joystick has been released
++						std::pair<int,int> test( joy->joystickId, (int)joy->axis );
+
+-					if ( joystick_moves.find( test ) != joystick_moves.end() )
+-						done = true;
++						if ( joystick_moves.find( test ) != joystick_moves.end() )
++							done = true;
++					}
+ 				}
+ 			}
+ 		}
+@@ -1291,7 +1295,7 @@ int FeOverlay::display_config_dialog(
+ 			else
+ 			{
+ 				const std::string &e_str( ctx.curr_opt().get_value() );
+-				std::basic_string<sf::Uint32> str;
++				std::basic_string<std::uint32_t> str;
+ 				sf::Utf8::toUtf32( e_str.begin(), e_str.end(),
+ 						std::back_inserter( str ) );
+
+@@ -1319,7 +1323,7 @@ int FeOverlay::display_config_dialog(
+
+ bool FeOverlay::check_for_cancel()
+ {
+-	sf::Event ev;
++	std::optional<sf::Event> ev;
+ 	while (m_wnd.pollEvent(ev))
+ 	{
+ 		FeInputMap::Command c = m_feSettings.map_input( ev );
+@@ -1347,7 +1351,7 @@ void FeOverlay::init_event_loop( FeEventLoopCtx &ctx )
+ 				|| m_feSettings.get_current_state( FeInputMap::ExitToDesktop )
+ 				|| m_feSettings.get_current_state( FeInputMap::Select ) ))
+ 	{
+-		sf::Event ev;
++		std::optional<sf::Event> ev;
+ 		while (m_wnd.pollEvent(ev))
+ 		{
+ 		}
+@@ -1381,7 +1385,7 @@ bool FeOverlay::event_loop( FeEventLoopCtx &ctx )
+
+ 	while ( m_wnd.isOpen() )
+ 	{
+-		sf::Event ev;
++		std::optional<sf::Event> ev;
+ 		while (m_wnd.pollEvent(ev))
+ 		{
+ 			FeInputMap::Command c = m_feSettings.map_input( ev );
+@@ -1401,8 +1405,8 @@ bool FeOverlay::event_loop( FeEventLoopCtx &ctx )
+ 			case FeInputMap::Select:
+ 				return true;
+ 			case FeInputMap::Up:
+-				if (( ev.type == sf::Event::JoystickMoved )
+-						&& ( ctx.move_event.type == sf::Event::JoystickMoved ))
++				if (( ev->is<sf::Event::JoystickMoved>())
++						&& ( ctx.move_event->is<sf::Event::JoystickMoved>() ))
+ 					return false;
+
+ 				if ( ctx.sel > 0 )
+@@ -1417,8 +1421,8 @@ bool FeOverlay::event_loop( FeEventLoopCtx &ctx )
+ 				return false;
+
+ 			case FeInputMap::Down:
+-				if (( ev.type == sf::Event::JoystickMoved )
+-						&& ( ctx.move_event.type == sf::Event::JoystickMoved ))
++				if (( ev->is<sf::Event::JoystickMoved>() )
++						&& ( ctx.move_event->is<sf::Event::JoystickMoved>() ))
+ 					return false;
+
+ 				if ( ctx.sel < ctx.max_sel )
+@@ -1460,39 +1464,33 @@ bool FeOverlay::event_loop( FeEventLoopCtx &ctx )
+ 		{
+ 			bool cont=false;
+
+-			switch ( ctx.move_event.type )
++			auto &e = ctx.move_event;
++			if (const auto *key = e->getIf<sf::Event::KeyPressed>())
+ 			{
+-			case sf::Event::KeyPressed:
+-				if ( sf::Keyboard::isKeyPressed( ctx.move_event.key.code ) )
++				if ( sf::Keyboard::isKeyPressed( key->code ) )
+ 					cont=true;
+-				break;
+-
+-			case sf::Event::MouseButtonPressed:
+-				if ( sf::Mouse::isButtonPressed( ctx.move_event.mouseButton.button ) )
++			}
++			else if (const auto *button = e->getIf<sf::Event::MouseButtonPressed>())
++			{
++				if ( sf::Mouse::isButtonPressed( button->button ) )
+ 					cont=true;
+-				break;
+-
+-			case sf::Event::JoystickButtonPressed:
++			}
++			else if (const auto *joy = e->getIf<sf::Event::JoystickButtonPressed>())
++			{
+ 				if ( sf::Joystick::isButtonPressed(
+-						ctx.move_event.joystickButton.joystickId,
+-						ctx.move_event.joystickButton.button ) )
++						joy->joystickId,
++						joy->button ) )
+ 					cont=true;
+-				break;
+-
+-			case sf::Event::JoystickMoved:
+-				{
+-					sf::Joystick::update();
+-
+-					float pos = sf::Joystick::getAxisPosition(
+-							ctx.move_event.joystickMove.joystickId,
+-							ctx.move_event.joystickMove.axis );
+-					if ( std::abs( pos ) > m_feSettings.get_joy_thresh() )
+-						cont=true;
+-				}
+-				break;
++			}
++			else if (const auto *joy = e->getIf<sf::Event::JoystickMoved>())
++			{
++				sf::Joystick::update();
+
+-			default:
+-				break;
++				float pos = sf::Joystick::getAxisPosition(
++						joy->joystickId,
++						joy->axis );
++				if ( std::abs( pos ) > m_feSettings.get_joy_thresh() )
++					cont=true;
+ 			}
+
+ 			if ( cont )
+@@ -1519,7 +1517,7 @@ bool FeOverlay::event_loop( FeEventLoopCtx &ctx )
+ 			else
+ 			{
+ 				ctx.move_command = FeInputMap::LAST_COMMAND;
+-				ctx.move_event = sf::Event();
++				ctx.move_event.reset();
+ 			}
+ 		}
+ 	}
+@@ -1652,13 +1650,13 @@ int get_char_idx( unsigned char c )
+ };
+
+ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+-			std::basic_string<sf::Uint32> &str, FeTextPrimative *tp )
++			std::basic_string<std::uint32_t> &str, FeTextPrimative *tp )
+ {
+ 	sf::Clock cursor_timer;
+ 	const sf::Transform &t = m_fePresent.get_transform();
+
+ 	const sf::Font *font = tp->getFont();
+-	sf::Text cursor( "|", *font, tp->getCharacterSize() / tp->getTextScale().x );
++	sf::Text cursor( *font, "|", tp->getCharacterSize() / tp->getTextScale().x );
+ #if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 4, 0 ) )
+ 	cursor.setFillColor( tp->getColor() );
+ #else
+@@ -1669,30 +1667,28 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+
+ 	int cursor_pos=str.size();
+ 	cursor.setPosition( tp->setString( str, cursor_pos ) - sf::Vector2f((
+-		cursor.getLocalBounds().width + cursor.getLocalBounds().left - 2.0 ) * cursor.getScale().x,
+-		cursor.getLocalBounds().top * cursor.getScale().y / 2.0 ));
++		cursor.getLocalBounds().size.x + cursor.getLocalBounds().position.x - 2.0 ) * cursor.getScale().x,
++		cursor.getLocalBounds().position.y * cursor.getScale().y / 2.0 ));
+
+ 	bool redraw=true;
+ 	FeKeyRepeat key_repeat_enabler( m_wnd.get_win() );
+
+-	sf::Event joy_guard;
++	std::optional<sf::Event> joy_guard;
+ 	bool did_delete( false ); // flag if the user just deleted a character using the UI controls
+
+ 	while ( m_wnd.isOpen() )
+ 	{
+-		sf::Event ev;
+-		while (m_wnd.pollEvent(ev))
++		std::optional<sf::Event> e;
++		while (m_wnd.pollEvent(e))
+ 		{
+-			switch ( ev.type )
+-			{
+-			case sf::Event::Closed:
++			if (e->is<sf::Event::Closed>())
+ 				return false;
+-
+-			case sf::Event::TextEntered:
++			else if (const auto *text = e->getIf<sf::Event::TextEntered>())
++			{
+
+ 				did_delete = false;
+
+-				if ( ev.text.unicode == 8 ) // backspace
++				if ( text->unicode == 8 ) // backspace
+ 				{
+ 					if ( cursor_pos > 0 )
+ 					{
+@@ -1700,76 +1696,77 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+ 						cursor_pos--;
+ 					}
+ 					redraw = true;
+-					break;
+ 				}
+-
+-				//
+-				// Don't respond to control characters < 32 (line feeds etc.)
+-				// and don't handle 127 (delete) here, it is dealt with as a keypress
+-				//
+-				if (( ev.text.unicode < 32 ) || ( ev.text.unicode == 127 ))
+-					break;
+-
+-				if ( cursor_pos < (int)str.size() )
+-					str.insert( cursor_pos, 1, ev.text.unicode );
+ 				else
+-					str += ev.text.unicode;
+-
+-				cursor_pos++;
+-				redraw = true;
+-				break;
++				{
++					//
++					// Don't respond to control characters < 32 (line feeds etc.)
++					// and don't handle 127 (delete) here, it is dealt with as a keypress
++					//
++					if (!(( text->unicode < 32 ) || ( text->unicode == 127 )))
++					{
++						if ( cursor_pos < (int)str.size() )
++							str.insert( cursor_pos, 1, text->unicode );
++						else
++							str += text->unicode;
+
+-			case sf::Event::KeyPressed:
++						cursor_pos++;
++						redraw = true;
++					}
++				}
++			}
++			else if (const auto *key = e->getIf<sf::Event::KeyPressed>())
++			{
+
+ 				did_delete = false;
+
+-				switch ( ev.key.code )
++				switch ( key->code )
+ 				{
+-				case sf::Keyboard::Left:
++				case sf::Keyboard::Key::Left:
+ 					if ( cursor_pos > 0 )
+ 						cursor_pos--;
+
+ 					redraw = true;
+ 					break;
+
+-				case sf::Keyboard::Right:
++				case sf::Keyboard::Key::Right:
+ 					if ( cursor_pos < (int)str.size() )
+ 						cursor_pos++;
+
+ 					redraw = true;
+ 					break;
+
+-				case sf::Keyboard::Return:
++				case sf::Keyboard::Key::Enter:
+ 					return true;
+
+-				case sf::Keyboard::Escape:
++				case sf::Keyboard::Key::Escape:
+ 					return false;
+
+-				case sf::Keyboard::End:
++				case sf::Keyboard::Key::End:
+ 					cursor_pos = str.size();
+ 					redraw = true;
+ 					break;
+
+-				case sf::Keyboard::Home:
++				case sf::Keyboard::Key::Home:
+ 					cursor_pos = 0;
+ 					redraw = true;
+ 					break;
+
+-				case sf::Keyboard::Delete:
++				case sf::Keyboard::Key::Delete:
+ 					if ( cursor_pos < (int)str.size() )
+ 						str.erase( cursor_pos, 1 );
+
+ 					redraw = true;
+ 					break;
+
+-				case sf::Keyboard::V:
++				case sf::Keyboard::Key::V:
+ #ifdef SFML_SYSTEM_MACOS
+-					if ( ev.key.system )
++					if ( key->system )
+ #else
+-					if ( ev.key.control )
++					if ( key->control )
+ #endif
+ 					{
+-						std::basic_string<sf::Uint32> temp = clipboard_get_content();
++						std::basic_string<std::uint32_t> temp = clipboard_get_content();
+ 						str.insert( cursor_pos, temp.c_str() );
+ 						cursor_pos += temp.length();
+ 					}
+@@ -1779,20 +1776,20 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+ 				default:
+ 					break;
+ 				}
+-				break;
+-
+-			default:
++			}
++			else
++			{
+ 				//
+ 				// Handle UI actions from non-keyboard input
+ 				//
+ 				{
+-					FeInputMap::Command c = m_feSettings.map_input( ev );
++					FeInputMap::Command c = m_feSettings.map_input( e );
+
+ 					switch ( c )
+ 					{
+ 					case FeInputMap::Left:
+-						if (( ev.type == sf::Event::JoystickMoved )
+-								&& ( joy_guard.type == sf::Event::JoystickMoved ))
++						if (( e->is<sf::Event::JoystickMoved>() )
++								&& ( joy_guard->is<sf::Event::JoystickMoved>() ))
+ 							break;
+
+ 						did_delete = false;
+@@ -1802,13 +1799,13 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+
+ 						redraw = true;
+
+-						if ( ev.type == sf::Event::JoystickMoved )
+-							joy_guard = ev;
++						if ( e->is<sf::Event::JoystickMoved>() )
++							joy_guard = e;
+ 						break;
+
+ 					case FeInputMap::Right:
+-						if (( ev.type == sf::Event::JoystickMoved )
+-								&& ( joy_guard.type == sf::Event::JoystickMoved ))
++						if (( e->is<sf::Event::JoystickMoved>() )
++								&& ( joy_guard->is<sf::Event::JoystickMoved>() ))
+ 							break;
+
+ 						did_delete = false;
+@@ -1818,13 +1815,13 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+
+ 						redraw = true;
+
+-						if ( ev.type == sf::Event::JoystickMoved )
+-							joy_guard = ev;
++						if ( e->is<sf::Event::JoystickMoved>() )
++							joy_guard = e;
+ 						break;
+
+ 					case FeInputMap::Up:
+-						if (( ev.type == sf::Event::JoystickMoved )
+-								&& ( joy_guard.type == sf::Event::JoystickMoved ))
++						if (( e->is<sf::Event::JoystickMoved>() )
++								&& ( joy_guard->is<sf::Event::JoystickMoved>() ))
+ 							break;
+
+ 						if ( cursor_pos < (int)str.size() )
+@@ -1854,13 +1851,13 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+ 							did_delete = false;
+ 						}
+
+-						if ( ev.type == sf::Event::JoystickMoved )
+-							joy_guard = ev;
++						if ( e->is<sf::Event::JoystickMoved>() )
++							joy_guard = e;
+ 						break;
+
+ 					case FeInputMap::Down:
+-						if (( ev.type == sf::Event::JoystickMoved )
+-								&& ( joy_guard.type == sf::Event::JoystickMoved ))
++						if (( e->is<sf::Event::JoystickMoved>() )
++								&& ( joy_guard->is<sf::Event::JoystickMoved>() ))
+ 							break;
+
+ 						if ( did_delete ) // force user to do something else to confirm delete
+@@ -1885,8 +1882,8 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+ 							}
+ 						}
+
+-						if ( ev.type == sf::Event::JoystickMoved )
+-							joy_guard = ev;
++						if ( e->is<sf::Event::JoystickMoved>() )
++							joy_guard = e;
+ 						break;
+
+ 					case FeInputMap::Back:
+@@ -1898,14 +1895,13 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+ 						break;
+ 					}
+ 				}
+-			break;
+ 			}
+
+ 			if ( redraw )
+ 			{
+ 				cursor.setPosition( tp->setString( str, cursor_pos ) - sf::Vector2f((
+-					cursor.getLocalBounds().width + cursor.getLocalBounds().left - 2.0 ) * cursor.getScale().x,
+-					cursor.getLocalBounds().top * cursor.getScale().y / 2.0 ));
++					cursor.getLocalBounds().size.x + cursor.getLocalBounds().position.x - 2.0 ) * cursor.getScale().x,
++					cursor.getLocalBounds().position.y * cursor.getScale().y / 2.0 ));
+ 				cursor_timer.restart();
+ 			}
+ 		}
+@@ -1944,16 +1940,16 @@ bool FeOverlay::edit_loop( std::vector<sf::Drawable *> d,
+ 		//
+ 		// Check if previous joystick move is now done (in which case we clear the guard)
+ 		//
+-		if ( joy_guard.type == sf::Event::JoystickMoved )
++		if ( const auto *joy = joy_guard->getIf<sf::Event::JoystickMoved>() )
+ 		{
+ 			sf::Joystick::update();
+
+ 			float pos = sf::Joystick::getAxisPosition(
+-				joy_guard.joystickMove.joystickId,
+-				joy_guard.joystickMove.axis );
++				joy->joystickId,
++				joy->axis );
+
+ 			if ( std::abs( pos ) < m_feSettings.get_joy_thresh() )
+-				joy_guard = sf::Event();
++				joy_guard.reset();
+ 		}
+
+ 	}
+diff --git a/src/fe_overlay.hpp b/src/fe_overlay.hpp
+index 93ef469..2eac81d 100644
+--- a/src/fe_overlay.hpp
++++ b/src/fe_overlay.hpp
+@@ -26,6 +26,7 @@
+ #include <SFML/Graphics.hpp>
+ #include "fe_present.hpp"
+ #include "fe_window.hpp"
++#include <cstdint>
+
+ class FeSettings;
+ class FeInputMapEntry;
+@@ -64,7 +65,7 @@ private:
+ 	bool event_loop( FeEventLoopCtx & );
+
+ 	bool edit_loop( std::vector<sf::Drawable *> draw_list,
+-			std::basic_string<sf::Uint32> &str, FeTextPrimative *lb );
++			std::basic_string<std::uint32_t> &str, FeTextPrimative *lb );
+
+ public:
+ 	FeOverlay( FeWindow &wnd,
+diff --git a/src/fe_present.cpp b/src/fe_present.cpp
+index 3850191..07ad19d 100644
+--- a/src/fe_present.cpp
++++ b/src/fe_present.cpp
+@@ -121,13 +121,13 @@ void FeFontContainer::set_font( const std::string &p, const std::string &n )
+ 		zs->open( n );
+ 		m_stream = zs;
+
+-		if ( !m_font.loadFromStream( *m_stream ) )
++		if ( !m_font.openFromStream( *m_stream ) )
+ 			FeLog() << "Error loading font: " << p << "[" << n << "]" << std::endl;
+ 	}
+ 	else
+ 	{
+ 		m_stream = new FeFileInputStream( p + n );
+-		if ( !m_font.loadFromStream( *m_stream ) )
++		if ( !m_font.openFromStream( *m_stream ) )
+ 			FeLog() << "Error loading font from file: " << p + n << std::endl;
+ 	}
+ }
+@@ -136,7 +136,7 @@ const sf::Font &FeFontContainer::get_font() const
+ {
+ 	if ( m_needs_reload && m_stream )
+ 	{
+-		m_font.loadFromStream( *m_stream );
++		m_font.openFromStream( *m_stream );
+ 		m_needs_reload=false;
+ 	}
+
+@@ -365,9 +365,9 @@ void FePresent::init_monitors()
+ 					si[i].width,
+ 					si[i].height );
+
+-				mon.transform = sf::Transform().translate(
++				mon.transform = sf::Transform().translate({
+ 					si[i].x_org,
+-					si[i].y_org );
++					si[i].y_org });
+
+ 				FeDebug() << "Multimon: monitor #" << si[i].screen_number
+ 					<< ": " << mon.size.x << "x" << mon.size.y << " @ "
+@@ -1283,7 +1283,7 @@ bool FePresent::saver_activation_check()
+ 	//
+ 	// THis means the layout is forced by AM to reset after about a month of running
+ 	//
+-	if ( m_layoutTimer.getElapsedTime().asMilliseconds() > std::numeric_limits<sf::Int32>::max() - 10000 )
++	if ( m_layoutTimer.getElapsedTime().asMilliseconds() > std::numeric_limits<std::uint32_t>::max() - 10000 )
+ 		load_layout();
+
+ 	return false;
+@@ -1441,13 +1441,13 @@ void FePresent::set_transforms()
+
+ 			if ( actualRotation == FeSettings::RotateRight )
+ 			{
+-				m_transform.translate( m_mon[0].size.x - adjust_x, adjust_y );
+-				m_transform.rotate(90);
++				m_transform.translate({ m_mon[0].size.x - adjust_x, adjust_y });
++				m_transform.rotate(sf::degrees(90));
+ 			}
+ 			else
+ 			{
+-				m_transform.translate( adjust_x, m_mon[0].size.y - adjust_y );
+-				m_transform.rotate(270);
++				m_transform.translate({ adjust_x, m_mon[0].size.y - adjust_y });
++				m_transform.rotate(sf::degrees(270));
+ 			}
+ 		}
+ 		else
+@@ -1459,12 +1459,12 @@ void FePresent::set_transforms()
+ 			float adjust_x = (m_layoutSize.x * m_layoutScale.x - m_mon[0].size.x) / 2;
+ 			float adjust_y = (m_layoutSize.y * m_layoutScale.y - m_mon[0].size.y) / 2;
+ 			if ( actualRotation == FeSettings::RotateNone )
+-				m_transform.translate( -adjust_x, -adjust_y );
++				m_transform.translate({ -adjust_x, -adjust_y });
+ 			else
+ 			{
+-				m_transform.translate(
+-						m_mon[0].size.x + adjust_x, m_mon[0].size.y + adjust_y );
+-				m_transform.rotate(180);
++				m_transform.translate({
++						m_mon[0].size.x + adjust_x, m_mon[0].size.y + adjust_y });
++				m_transform.rotate(sf::degrees(180));
+ 			}
+ 		}
+ 	}
+@@ -1479,27 +1479,27 @@ void FePresent::set_transforms()
+ 			break;
+
+ 		case FeSettings::RotateRight:
+-			m_transform.translate( m_mon[0].size.x, 0 );
+-			m_transform.scale( (float) m_mon[0].size.x / m_mon[0].size.y,
+-				(float) m_mon[0].size.y / m_mon[0].size.x );
+-			m_transform.rotate(90);
++			m_transform.translate({ m_mon[0].size.x, 0 });
++			m_transform.scale({ (float) m_mon[0].size.x / m_mon[0].size.y,
++				(float) m_mon[0].size.y / m_mon[0].size.x });
++			m_transform.rotate(sf::degrees(90));
+ 			break;
+
+ 		case FeSettings::RotateLeft:
+-			m_transform.translate( 0, m_mon[0].size.y );
+-			m_transform.scale( (float) m_mon[0].size.x / m_mon[0].size.y,
+-				(float) m_mon[0].size.y / m_mon[0].size.x );
+-			m_transform.rotate(270);
++			m_transform.translate({ 0, m_mon[0].size.y });
++			m_transform.scale({ (float) m_mon[0].size.x / m_mon[0].size.y,
++				(float) m_mon[0].size.y / m_mon[0].size.x });
++			m_transform.rotate(sf::degrees(270));
+ 			break;
+
+ 		case FeSettings::RotateFlip:
+-			m_transform.translate( m_mon[0].size.x, m_mon[0].size.y );
+-			m_transform.rotate(180);
++			m_transform.translate({ m_mon[0].size.x, m_mon[0].size.y });
++			m_transform.rotate(sf::degrees(180));
+ 			break;
+ 		}
+ 	}
+
+-	m_transform.scale( m_layoutScale.x, m_layoutScale.y );
++	m_transform.scale({ m_layoutScale.x, m_layoutScale.y });
+
+ 	for ( std::vector<FeBasePresentable *>::iterator itr=m_mon[0].elements.begin();
+ 			itr!=m_mon[0].elements.end(); ++itr )
+diff --git a/src/fe_presentable.cpp b/src/fe_presentable.cpp
+index 338bf2e..c118908 100644
+--- a/src/fe_presentable.cpp
++++ b/src/fe_presentable.cpp
+@@ -22,6 +22,7 @@
+
+ #include "fe_presentable.hpp"
+ #include "fe_present.hpp"
++#include <algorithm>
+
+ FeBasePresentable::FeBasePresentable( FePresentableParent &p )
+ 	: m_parent( p ),
+diff --git a/src/fe_presentable.hpp b/src/fe_presentable.hpp
+index 61fa8dc..37ebcbe 100644
+--- a/src/fe_presentable.hpp
++++ b/src/fe_presentable.hpp
+@@ -53,13 +53,13 @@ public:
+ 	virtual void set_scale_factor( float, float );
+
+ 	virtual const sf::Drawable &drawable() const=0;
+-	virtual const sf::Vector2f &getPosition() const=0;
++	virtual sf::Vector2f getPosition() const=0;
+ 	virtual void setPosition( const sf::Vector2f & )=0;
+-	virtual const sf::Vector2f &getSize() const=0;
++	virtual sf::Vector2f getSize() const=0;
+ 	virtual void setSize( const sf::Vector2f & )=0;
+-	virtual float getRotation() const=0;
+-	virtual void setRotation( float )=0;
+-	virtual const sf::Color &getColor() const=0;
++	virtual sf::Angle getRotation() const=0;
++	virtual void setRotation( sf::Angle )=0;
++	virtual sf::Color getColor() const=0;
+ 	virtual void setColor( const sf::Color & )=0;
+ 	virtual int getIndexOffset() const=0;
+ 	virtual void setIndexOffset( int io )=0;
+diff --git a/src/fe_romlist.cpp b/src/fe_romlist.cpp
+index b7159cd..5671531 100644
+--- a/src/fe_romlist.cpp
++++ b/src/fe_romlist.cpp
+@@ -31,6 +31,7 @@
+ #include <sqstdstring.h>
+
+ #include <SFML/System/Clock.hpp>
++#include <SFML/System/Time.hpp>
+
+ const char *FE_ROMLIST_FILE_EXTENSION	= ".txt";
+ const char *FE_FAVOURITE_FILE_EXTENSION = ".tag";
+diff --git a/src/fe_settings.cpp b/src/fe_settings.cpp
+index 403adbd..d8679fc 100644
+--- a/src/fe_settings.cpp
++++ b/src/fe_settings.cpp
+@@ -850,7 +850,7 @@ void FeSettings::load_state()
+ 	}
+ }
+
+-FeInputMap::Command FeSettings::map_input( const sf::Event &e )
++FeInputMap::Command FeSettings::map_input( const std::optional<sf::Event> &e )
+ {
+ 	return m_inputmap.map_input( e, m_mousecap_rect, m_joy_thresh );
+ }
+@@ -887,15 +887,15 @@ void FeSettings::init_mouse_capture( int window_x, int window_y )
+ 	int centre_x = window_x / 2;
+ 	int centre_y = window_y / 2;
+
+-	m_mousecap_rect.left = centre_x - radius;
+-	m_mousecap_rect.top = centre_y - radius;
+-	m_mousecap_rect.width = radius * 2;
+-	m_mousecap_rect.height = radius * 2;
++	m_mousecap_rect.position.x = centre_x - radius;
++	m_mousecap_rect.position.y = centre_y - radius;
++	m_mousecap_rect.size.x = radius * 2;
++	m_mousecap_rect.size.y = radius * 2;
+ }
+
+ bool FeSettings::test_mouse_reset( int mouse_x, int mouse_y ) const
+ {
+-	return (( m_inputmap.has_mouse_moves() ) && ( !m_mousecap_rect.contains( mouse_x, mouse_y ) ));
++	return (( m_inputmap.has_mouse_moves() ) && ( !m_mousecap_rect.contains( { mouse_x, mouse_y } ) ));
+ }
+
+ int FeSettings::get_filter_index_from_offset( int offset ) const
+diff --git a/src/fe_settings.hpp b/src/fe_settings.hpp
+index 190f802..521a8ce 100644
+--- a/src/fe_settings.hpp
++++ b/src/fe_settings.hpp
+@@ -295,7 +295,7 @@ public:
+ 	void load();
+ 	void save_state();
+
+-	FeInputMap::Command map_input( const sf::Event &e );
++	FeInputMap::Command map_input( const std::optional<sf::Event> &e );
+
+ 	void get_input_config_metrics( sf::IntRect &mousecap_rect, int &joy_thresh );
+ 	FeInputMap::Command input_conflict_check( const FeInputMapEntry &e );
+diff --git a/src/fe_shader.cpp b/src/fe_shader.cpp
+index ff1a5fb..267f3f2 100644
+--- a/src/fe_shader.cpp
++++ b/src/fe_shader.cpp
+@@ -51,7 +51,7 @@ bool FeShader::load( sf::InputStream &sh,
+
+ 	m_type = t;
+ 	return m_shader.loadFromStream( sh,
+-		(t == Fragment) ? sf::Shader::Fragment : sf::Shader::Vertex );
++		(t == Fragment) ? sf::Shader::Type::Fragment : sf::Shader::Type::Vertex );
+ }
+
+ bool FeShader::load( const std::string &vert_shader,
+@@ -74,7 +74,7 @@ bool FeShader::load( const std::string &sh,
+
+ 	m_type = t;
+ 	return m_shader.loadFromFile( sh,
+-		(t == Fragment) ? sf::Shader::Fragment : sf::Shader::Vertex );
++		(t == Fragment) ? sf::Shader::Type::Fragment : sf::Shader::Type::Vertex );
+ }
+
+ void FeShader::set_param( const char *name, float x )
+diff --git a/src/fe_text.cpp b/src/fe_text.cpp
+index 538615c..3000bf7 100644
+--- a/src/fe_text.cpp
++++ b/src/fe_text.cpp
+@@ -45,7 +45,7 @@ void FeText::setFont( const sf::Font &f )
+ 	m_draw_text.setFont( f );
+ }
+
+-const sf::Vector2f &FeText::getPosition() const
++sf::Vector2f FeText::getPosition() const
+ {
+ 	return m_position;
+ }
+@@ -56,7 +56,7 @@ void FeText::setPosition( const sf::Vector2f &p )
+ 	FePresent::script_do_update( this );
+ }
+
+-const sf::Vector2f &FeText::getSize() const
++sf::Vector2f FeText::getSize() const
+ {
+ 	return m_size;
+ }
+@@ -67,12 +67,12 @@ void FeText::setSize( const sf::Vector2f &s )
+ 	FePresent::script_do_update( this );
+ }
+
+-float FeText::getRotation() const
++sf::Angle FeText::getRotation() const
+ {
+ 	return m_draw_text.getRotation();
+ }
+
+-void FeText::setRotation( float r )
++void FeText::setRotation( sf::Angle r )
+ {
+ 	m_draw_text.setRotation( r );
+ 	FePresent::script_do_update( this );
+@@ -87,7 +87,7 @@ void FeText::setColor( const sf::Color &c )
+ 	}
+ }
+
+-const sf::Color &FeText::getColor() const
++sf::Color FeText::getColor() const
+ {
+ 	return m_draw_text.getColor();
+ }
+diff --git a/src/fe_text.hpp b/src/fe_text.hpp
+index 8a18ed0..cab299e 100644
+--- a/src/fe_text.hpp
++++ b/src/fe_text.hpp
+@@ -39,15 +39,15 @@ public:
+ 		const std::string &str, int x, int y, int w, int h );
+
+ 	void setFont( const sf::Font & );
+-	const sf::Vector2f &getPosition() const;
++	sf::Vector2f getPosition() const;
+ 	void setPosition( const sf::Vector2f & );
+ 	void setPosition( int x, int y ) {return setPosition(sf::Vector2f(x,y));};
+-	const sf::Vector2f &getSize() const;
++	sf::Vector2f getSize() const;
+ 	void setSize( const sf::Vector2f & );
+ 	void setSize( int w, int h ) {return setSize(sf::Vector2f(w,h));};
+-	float getRotation() const;
+-	void setRotation( float );
+-	const sf::Color &getColor() const;
++	sf::Angle getRotation() const;
++	void setRotation( sf::Angle );
++	sf::Color getColor() const;
+ 	void setColor( const sf::Color & );
+
+ 	// Overrides from base class:
+diff --git a/src/fe_util.cpp b/src/fe_util.cpp
+index b4d4c3d..8e19a46 100644
+--- a/src/fe_util.cpp
++++ b/src/fe_util.cpp
+@@ -38,10 +38,12 @@
+ #include <sys/stat.h>
+ #include <sys/types.h>
+ #include <dirent.h>
++#include <cstdint>
+
+ #include <SFML/Config.hpp>
+ #include <SFML/System/Sleep.hpp>
+ #include <SFML/System/Clock.hpp>
++#include <SFML/System/Time.hpp>
+
+ #ifdef USE_LIBARCHIVE
+ #include <zlib.h>
+@@ -1403,9 +1405,9 @@ std::string name_with_brackets_stripped( const std::string &name )
+ }
+
+
+-std::basic_string<sf::Uint32> clipboard_get_content()
++std::basic_string<std::uint32_t> clipboard_get_content()
+ {
+-	std::basic_string<sf::Uint32> retval;
++	std::basic_string<std::uint32_t> retval;
+
+ #ifdef SFML_SYSTEM_MACOS
+ 	retval = osx_clipboard_get_content();
+diff --git a/src/fe_util.hpp b/src/fe_util.hpp
+index d9ac5fc..d391941 100644
+--- a/src/fe_util.hpp
++++ b/src/fe_util.hpp
+@@ -26,6 +26,7 @@
+ #include <vector>
+ #include <string>
+ #include <SFML/Config.hpp>
++#include <cstdint>
+
+ #ifdef FE_DEBUG
+ #include <cassert>
+@@ -280,7 +281,7 @@ const char *get_OS_string();
+ //
+ // return the contents of the clipboard (if implemented for OS)
+ //
+-std::basic_string<sf::Uint32> clipboard_get_content();
++std::basic_string<std::uint32_t> clipboard_get_content();
+
+ //
+ // We use this in fe_window but implement it here because the XWindows
+diff --git a/src/fe_vm.cpp b/src/fe_vm.cpp
+index b5df535..cc6ade4 100644
+--- a/src/fe_vm.cpp
++++ b/src/fe_vm.cpp
+@@ -50,6 +50,7 @@
+ #include <stdio.h>
+ #include <ctime>
+ #include <stdarg.h>
++#include <algorithm>
+
+ const char *FE_SCRIPT_NV_FILE = "script.nv";
+
+@@ -122,15 +123,19 @@ namespace
+ 				// while CompileFile (below) doesn't seem to have the same
+ 				// problem...
+ 				//
+-				int i=0;
+-				while (( i < zip.getSize() ) && ( d[i] < 32 ))
+-					i++;
++				std::optional<std::size_t> size = zip.getSize();
++				if (size.has_value())
++				{
++					int i=0;
++					while (( i < size.value() ) && ( d[i] < 32 ))
++						i++;
+
+-				if ( i == zip.getSize() )
+-					return false;
++					if ( i == size.value() )
++						return false;
+
+-				std::string str( &(d[i]), zip.getSize()-i );
+-				sc.CompileString( str );
++					std::string str( &(d[i]), size.value()-i );
++					sc.CompileString( str );
++				}
+ 			}
+ 			else
+ 			{
+@@ -373,7 +378,7 @@ void FeVM::set_overlay( FeOverlay *feo )
+ 	m_overlay = feo;
+ }
+
+-bool FeVM::poll_command( FeInputMap::Command &c, sf::Event &ev, bool &from_ui )
++bool FeVM::poll_command( FeInputMap::Command &c, std::optional<sf::Event> &ev, bool &from_ui )
+ {
+ 	from_ui=false;
+
+@@ -381,7 +386,7 @@ bool FeVM::poll_command( FeInputMap::Command &c, sf::Event &ev, bool &from_ui )
+ 	{
+ 		c = (FeInputMap::Command)m_posted_commands.front();
+ 		m_posted_commands.pop();
+-		ev.type = sf::Event::Count;
++		ev.reset();
+
+ 		return true;
+ 	}
+@@ -1291,7 +1296,7 @@ void FeVM::on_transition(
+ 			// TODO: It is probably a good idea to do this for
+ 			// every platform... needs investigation.
+ 			//
+-			sf::Event ev;
++			std::optional<sf::Event> ev;
+ 			while (m_window.pollEvent(ev))
+ 			{
+ 				//sf::sleep( sf::milliseconds( 10 ) );
+diff --git a/src/fe_vm.hpp b/src/fe_vm.hpp
+index e3a0ab6..b745771 100644
+--- a/src/fe_vm.hpp
++++ b/src/fe_vm.hpp
+@@ -116,7 +116,7 @@ public:
+ 	void set_overlay( FeOverlay *feo );
+
+ 	void flag_redraw() { m_redraw_triggered = true; };
+-	bool poll_command( FeInputMap::Command &c, sf::Event &ev, bool &from_ui );
++	bool poll_command( FeInputMap::Command &c, std::optional<sf::Event> &ev, bool &from_ui );
+ 	void clear(); // override of base class clear()
+
+ 	void update_to_new_list( int var=0, bool reset_display=false, bool suppress_transition=false ); // NOTE: override virtual function from FePresent
+diff --git a/src/fe_window.cpp b/src/fe_window.cpp
+index 51f9bb1..4aa8cba 100644
+--- a/src/fe_window.cpp
++++ b/src/fe_window.cpp
+@@ -164,7 +164,7 @@ void FeWindow::initial_create()
+ #if defined(SFML_SYSTEM_WINDOWS) && !defined(WINDOWS_XP)
+ 		sf::Style::None,       // FeSettings::Fullscreen
+ #else
+-		sf::Style::Fullscreen, // FeSettings::Fullscreen
++		// sf::Style::Fullscreen, // FeSettings::Fullscreen
+ #endif
+ 		sf::Style::Default,    // FeSettings::Window
+ 		sf::Style::None        // FeSettings::WindowNoBorder
+@@ -193,7 +193,7 @@ void FeWindow::initial_create()
+ 		// (it is positioned to accomodate window decoration that isn't there).  setPosition()
+ 		// doesn't work
+ 		//
+-		get_x11_primary_screen_size( vm.width, vm.height );
++		get_x11_primary_screen_size( vm.size.x, vm.size.y );
+ 	}
+ 	else
+ 	{
+@@ -202,7 +202,7 @@ void FeWindow::initial_create()
+ 		// keeping it though because it has been needed historically (earlier versions of SFML,
+ 		// other window managers etc) and it seems to lead to the same results
+ 		//
+-		get_x11_multimon_geometry( wpos.x, wpos.y, vm.width, vm.height );
++		get_x11_multimon_geometry( wpos.x, wpos.y, vm.size.x, vm.size.y );
+ 	}
+
+ #elif defined(SFML_SYSTEM_WINDOWS)
+@@ -251,8 +251,8 @@ void FeWindow::initial_create()
+ 		wpos.x = GetSystemMetrics( SM_XVIRTUALSCREEN );
+ 		wpos.y = GetSystemMetrics( SM_YVIRTUALSCREEN );
+
+-		vm.width = GetSystemMetrics( SM_CXVIRTUALSCREEN );
+-		vm.height = GetSystemMetrics( SM_CYVIRTUALSCREEN );
++		vm.size.x = GetSystemMetrics( SM_CXVIRTUALSCREEN );
++		vm.size.y = GetSystemMetrics( SM_CYVIRTUALSCREEN );
+ 	}
+
+ 	// Some Windows users are reporting emulators hanging/failing to get focus when launched
+@@ -270,8 +270,8 @@ void FeWindow::initial_create()
+ 	{
+ 		wpos.x -= 1;
+ 		wpos.y -= 1;
+-		vm.width += 2;
+-		vm.height += 2;
++		vm.size.x += 2;
++		vm.size.y += 2;
+ 	}
+
+ #endif
+@@ -288,11 +288,11 @@ void FeWindow::initial_create()
+ 		win_pos.load_from_file( m_fes.get_config_dir() + FeWindowPosition::FILENAME );
+
+ 		wpos = win_pos.m_pos;
+-		vm.width = win_pos.m_size.x;
+-		vm.height = win_pos.m_size.y;
++		vm.size.x = win_pos.m_size.x;
++		vm.size.y = win_pos.m_size.y;
+ 	}
+
+-	sf::Vector2u wsize( vm.width, vm.height );
++	sf::Vector2u wsize( vm.size.x, vm.size.y );
+
+ #if defined(SFML_SYSTEM_WINDOWS)
+ 	// To avoid problems with black screen on launching games when window mode is set to Fullscreen
+@@ -303,7 +303,7 @@ void FeWindow::initial_create()
+ 	if ( m_win_mode == FeSettings::Fullscreen )
+ 	{
+ 		m_blackout.create(sf::VideoMode(16, 16, 24), "", sf::Style::None);
+-		m_blackout.setSize( sf::Vector2u( vm.width + 2, vm.height + 2 ));
++		m_blackout.setSize( sf::Vector2u( vm.size.x + 2, vm.size.y + 2 ));
+ 		m_blackout.setPosition( sf::Vector2i( -1, -1 ));
+ 		m_blackout.setVerticalSyncEnabled(true);
+ 		m_blackout.setKeyRepeatEnabled(false);
+@@ -350,7 +350,7 @@ void FeWindow::initial_create()
+
+ #if defined(USE_XLIB)
+ 	if ( m_win_mode == FeSettings::Default )
+-		set_x11_fullscreen_state( m_window->getSystemHandle() );
++		set_x11_fullscreen_state( m_window->getNativeHandle() );
+ #endif
+
+ 	// Known issue: Linux Mint 18.3 Cinnamon w/ SFML 2.5.1, position isn't being set
+@@ -359,7 +359,7 @@ void FeWindow::initial_create()
+
+ 	FeDebug() << "Created Attract-Mode Window: " << wsize.x << "x" << wsize.y << " @ "
+ 		<< wpos.x << "," << wpos.y << " [OpenGL surface: "
+-		<< vm.width << "x" << vm.height << " bpp=" << vm.bitsPerPixel << "]" << std::endl;
++		<< vm.size.x << "x" << vm.size.y << " bpp=" << vm.bitsPerPixel << "]" << std::endl;
+
+ #if defined(SFML_SYSTEM_WINDOWS)
+
+@@ -372,8 +372,8 @@ void FeWindow::initial_create()
+ 	if (( m_win_mode == FeSettings::WindowNoBorder )
+ 		&& ( wpos.x == 0 )
+ 		&& ( wpos.y == 0 )
+-		&& ( vm.width == wsize.x )
+-		&& ( vm.height == wsize.y ))
++		&& ( vm.size.x == wsize.x )
++		&& ( vm.size.y == wsize.y ))
+ 		m_win_mode = FeSettings::Fullscreen;
+ #endif
+ 	set_win32_foreground_window( m_window->getSystemHandle(), HWND_TOP );
+@@ -411,10 +411,10 @@ void wait_callback( void *o )
+
+ 	if ( win->isOpen() )
+ 	{
+-		sf::Event ev;
++		std::optional<sf::Event> ev;
+ 		while ( win->pollEvent( ev ) )
+ 		{
+-			if ( ev.type == sf::Event::Closed )
++			if ( ev && ev->is<sf::Event::Closed>() )
+ 				return;
+ 		}
+ 	}
+@@ -552,12 +552,12 @@ bool FeWindow::run()
+
+ 		while ( !done_wait && isOpen() )
+ 		{
+-			sf::Event ev;
++			std::optional<sf::Event> ev;
+
+ #if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 2, 0 ))
+ 			while (pollEvent(ev))
+ 			{
+-				if ( ev.type == sf::Event::Closed )
++				if ( ev &&  ev->is<sf::Event::Closed>() )
+ 					return false;
+ 			}
+
+@@ -635,7 +635,7 @@ bool FeWindow::run()
+  #endif
+ 	}
+  #if defined(USE_XLIB)
+-	set_x11_foreground_window( m_window->getSystemHandle() );
++	set_x11_foreground_window( m_window->getNativeHandle() );
+  #endif
+
+ #elif defined(SFML_SYSTEM_MACOS)
+@@ -654,10 +654,10 @@ bool FeWindow::run()
+ 			clear();
+ 			display();
+ 		}
+-		set_win32_foreground_window( m_window->getSystemHandle(), HWND_TOP );
++		set_win32_foreground_window( m_window->getNativeHandle(), HWND_TOP );
+ 	}
+ 	else
+-		set_win32_foreground_window( m_window->getSystemHandle(), HWND_TOP );
++		set_win32_foreground_window( m_window->getNativeHandle(), HWND_TOP );
+ #endif
+
+ 	if ( m_fes.get_info_bool( FeSettings::MoveMouseOnLaunch ) )
+@@ -665,11 +665,11 @@ bool FeWindow::run()
+
+ 	// Empty the window event queue, so we don't go triggering other
+ 	// right away after running an emulator
+-	sf::Event ev;
++	std::optional<sf::Event> ev;
+
+ 	while (isOpen() && pollEvent(ev))
+ 	{
+-		if ( ev.type == sf::Event::Closed )
++		if ( ev->is<sf::Event::Closed>() )
+ 			return false;
+ 	}
+
+@@ -738,10 +738,13 @@ void FeWindow::draw( const sf::Drawable &d, const sf::RenderStates &r )
+ 		m_window->draw( d, r );
+ }
+
+-bool FeWindow::pollEvent( sf::Event &e )
++bool FeWindow::pollEvent( std::optional<sf::Event> &e )
+ {
+ 	if ( m_window )
+-		return m_window->pollEvent( e );
++	{
++		e = m_window->pollEvent();
++		return e.has_value();
++	}
+
+ 	return false;
+ }
+diff --git a/src/fe_window.hpp b/src/fe_window.hpp
+index 2710589..473b714 100644
+--- a/src/fe_window.hpp
++++ b/src/fe_window.hpp
+@@ -62,7 +62,7 @@ public:
+
+ 	void clear();
+ 	void draw( const sf::Drawable &d, const sf::RenderStates &t=sf::RenderStates::Default );
+-	bool pollEvent( sf::Event &e );
++	bool pollEvent( std::optional<sf::Event> &e );
+
+ 	sf::RenderWindow &get_win();
+ };
+diff --git a/src/image_loader.cpp b/src/image_loader.cpp
+index e5e4c1b..a9324bc 100644
+--- a/src/image_loader.cpp
++++ b/src/image_loader.cpp
+@@ -49,12 +49,12 @@ namespace
+ 	int read(void* user, char* data, int size)
+ 	{
+ 		sf::InputStream* stream = static_cast<sf::InputStream*>(user);
+-		return static_cast<int>(stream->read(data, size));
++		return static_cast<int>(stream->read(data, size).value_or(0));
+ 	}
+ 	void skip(void* user, int size)
+ 	{
+ 		sf::InputStream* stream = static_cast<sf::InputStream*>(user);
+-		stream->seek(stream->tell() + size);
++		stream->seek(stream->tell().value_or(0) + size);
+ 	}
+ 	int eof(void* user)
+ 	{
+diff --git a/src/main.cpp b/src/main.cpp
+index 7127a04..d91b230 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -187,7 +187,7 @@ int main(int argc, char *argv[])
+ 	FeInputMap::Command move_state( FeInputMap::LAST_COMMAND ); // command mapped to the move
+ 	FeInputMap::Command move_triggered( FeInputMap::LAST_COMMAND ); // "repeatable" command triggered on move (if any)
+ 	sf::Clock move_timer;
+-	sf::Event move_event;
++	std::optional<sf::Event> move_event;
+ 	int move_last_triggered( 0 );
+
+ 	// go straight into config mode if there are no lists configured for
+@@ -344,21 +344,20 @@ int main(int argc, char *argv[])
+ 		}
+
+ 		FeInputMap::Command c;
+-		sf::Event ev;
++		std::optional<sf::Event> ev;
+ 		bool from_ui;
+ 		while ( feVM.poll_command( c, ev, from_ui ) )
+ 		{
+ 			//
+ 			// Special case handling based on event type
+ 			//
+-			switch ( ev.type )
++			if (ev)
+ 			{
+-				case sf::Event::Closed:
++				if(ev->is<sf::Event::Closed>())
+ 					exit_selected = true;
+-					break;
+-
+-				case sf::Event::MouseMoved:
+-					if ( feSettings.test_mouse_reset( ev.mouseMove.x, ev.mouseMove.y ))
++				else if (const auto *mouseMove = ev->getIf<sf::Event::MouseMoved>())
++				{
++					if ( feSettings.test_mouse_reset( mouseMove->position.x, mouseMove->position.y ))
+ 					{
+ 						// We reset the mouse if we are capturing it and it has moved
+ 						// outside of its bounding box
+@@ -366,11 +365,11 @@ int main(int argc, char *argv[])
+ 						sf::Vector2u s = window.get_win().getSize();
+ 						sf::Mouse::setPosition( sf::Vector2i( s.x / 2, s.y / 2 ), window.get_win() );
+ 					}
+-					break;
+-
+-				case sf::Event::KeyReleased:
+-				case sf::Event::MouseButtonReleased:
+-				case sf::Event::JoystickButtonReleased:
++				}
++				else if (ev->is<sf::Event::KeyReleased>() ||
++						ev->is<sf::Event::MouseButtonReleased>() ||
++						ev->is<sf::Event::JoystickButtonReleased>())
++				{
+ 					//
+ 					// We always want to reset the screen saver on these events,
+ 					// even if they aren't mapped otherwise (mapped events cause
+@@ -379,15 +378,14 @@ int main(int argc, char *argv[])
+ 					if (( c == FeInputMap::LAST_COMMAND )
+ 							&& ( feVM.reset_screen_saver() ))
+ 						redraw = true;
+-					break;
+-
+-				case sf::Event::GainedFocus:
+-				case sf::Event::Resized:
++				}
++				else if (ev->is<sf::Event::FocusGained>() ||
++						ev->is<sf::Event::Resized>())
++				{
+ 					redraw = true;
+-					break;
+-
+-
+-				case sf::Event::JoystickMoved:
++				}
++				else if (const auto *joy = ev->getIf<sf::Event::JoystickMoved>())
++				{
+ 					if ( c != FeInputMap::LAST_COMMAND )
+ 					{
+ 						// Only allow one mapped "Joystick Moved" input through at a time
+@@ -395,19 +393,15 @@ int main(int argc, char *argv[])
+ 						if ( guard_joyid != -1 )
+ 							continue;
+
+-						guard_joyid = ev.joystickMove.joystickId;
+-						guard_axis = ev.joystickMove.axis;
++						guard_joyid = joy->joystickId;
++						guard_axis = (int)joy->axis;
+ 					}
+-					break;
+-
+-				case sf::Event::JoystickConnected:
+-				case sf::Event::JoystickDisconnected:
++				}
++				else if (ev->is<sf::Event::JoystickConnected>() ||
++						ev->is<sf::Event::JoystickDisconnected>())
++				{
+ 					feSettings.on_joystick_connect();
+-					break;
+-
+-				case sf::Event::Count:
+-				default:
+-					break;
++				}
+ 			}
+
+ 			// Test if we need to keep the joystick axis guard up
+@@ -648,8 +642,7 @@ int main(int argc, char *argv[])
+
+ 						sf::RenderWindow &w = window.get_win();
+ #if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 4, 0 ) )
+-						sf::Texture texture;
+-						texture.create( w.getSize().x, w.getSize().y );
++						sf::Texture texture({ w.getSize().x, w.getSize().y });
+ 						texture.update( w );
+ 						sf::Image sshot_img = texture.copyToImage();
+ #else
+@@ -910,39 +903,32 @@ int main(int argc, char *argv[])
+ 		{
+ 			bool cont=false;
+
+-			switch ( move_event.type )
++			if (const auto *key = move_event->getIf<sf::Event::KeyPressed>())
+ 			{
+-			case sf::Event::KeyPressed:
+-				if ( sf::Keyboard::isKeyPressed( move_event.key.code ) )
++				if ( sf::Keyboard::isKeyPressed( key->code ) )
+ 					cont=true;
+-				break;
+-
+-			case sf::Event::MouseButtonPressed:
+-				if ( sf::Mouse::isButtonPressed( move_event.mouseButton.button ) )
++			}
++			else if (const auto *mouse = move_event->getIf<sf::Event::MouseButtonPressed>())
++			{
++				if ( sf::Mouse::isButtonPressed( mouse->button ) )
+ 					cont=true;
+-				break;
+-
+-			case sf::Event::JoystickButtonPressed:
++			}
++			else if (const auto *joy = move_event->getIf<sf::Event::JoystickButtonPressed>())
++			{
+ 				if ( sf::Joystick::isButtonPressed(
+-						move_event.joystickButton.joystickId,
+-						move_event.joystickButton.button ) )
++						joy->joystickId,
++						joy->button ) )
+ 					cont=true;
+-				break;
+-
+-			case sf::Event::JoystickMoved:
+-				{
+-					sf::Joystick::update();
+-
+-					float pos = sf::Joystick::getAxisPosition(
+-							move_event.joystickMove.joystickId,
+-							move_event.joystickMove.axis );
+-					if ( std::abs( pos ) > feSettings.get_joy_thresh() )
+-						cont=true;
+-				}
+-				break;
++			}
++			else if (const auto *joy = move_event->getIf<sf::Event::JoystickMoved>())
++			{
++				sf::Joystick::update();
+
+-			default:
+-				break;
++				float pos = sf::Joystick::getAxisPosition(
++						joy->joystickId,
++						joy->axis );
++				if ( std::abs( pos ) > feSettings.get_joy_thresh() )
++					cont=true;
+ 			}
+
+ 			if ( cont )
+diff --git a/src/media.cpp b/src/media.cpp
+index 8cf1369..cf63abe 100644
+--- a/src/media.cpp
++++ b/src/media.cpp
+@@ -48,6 +48,7 @@ extern "C"
+ #include <thread>
+ #include <mutex>
+ #include <atomic>
++#include <algorithm>
+
+ #if (LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT( 59, 0, 100 ))
+ typedef const AVCodec FeAVCodec;
+@@ -151,7 +152,7 @@ class FeAudioImp : public FeBaseStream
+ {
+ public:
+ 	SwrContext *resample_ctx;
+-	sf::Int16 *audio_buff;
++	std::int16_t *audio_buff;
+ 	std::recursive_mutex audio_buff_mutex;
+
+ 	FeAudioImp();
+@@ -173,7 +174,7 @@ private:
+ 	//
+ 	std::thread m_video_thread;
+ 	FeMedia *m_parent;
+-	sf::Uint8 *rgba_buffer[4];
++	std::uint8_t *rgba_buffer[4];
+ 	int rgba_linesize[4];
+
+ #if FE_HWACCEL
+@@ -195,7 +196,7 @@ public:
+ 	// The main thread then copies the image into the corresponding sf::Texture.
+ 	//
+ 	std::recursive_mutex image_swap_mutex;
+-	sf::Uint8 *display_frame;
++	std::uint8_t *display_frame;
+
+ 	FeVideoImp( FeMedia *parent );
+ 	~FeVideoImp();
+@@ -332,8 +333,8 @@ bool FeAudioImp::process_frame( AVFrame *frame, sf::SoundStream::Chunk &data, in
+ 		std::lock_guard<std::recursive_mutex> l( audio_buff_mutex );
+
+ 		memcpy( (audio_buff + offset), frame->data[0], data_size );
+-		offset += data_size / sizeof( sf::Int16 );
+-		data.sampleCount += data_size / sizeof(sf::Int16);
++		offset += data_size / sizeof( std::int16_t );
++		data.sampleCount += data_size / sizeof(std::int16_t);
+ 		data.samples = audio_buff;
+ 	}
+ 	else
+@@ -618,7 +619,7 @@ void FeVideoImp::video_thread()
+ 		//
+ 		if ( detached_frame )
+ 		{
+-			wait_time = (sf::Int64)detached_frame->pts * time_base
++			wait_time = (std::int64_t)detached_frame->pts * time_base
+ 					- m_parent->get_video_time();
+
+ 			if ( wait_time < max_sleep )
+@@ -934,7 +935,7 @@ int fe_media_read( void *opaque, uint8_t *buff, int buff_size )
+ {
+ 	sf::InputStream *z = (sf::InputStream *)opaque;
+
+-	sf::Int64 bytes_read = z->read( buff, buff_size );
++	std::int64_t bytes_read = z->read( buff, buff_size ).value();
+
+ 	if ( bytes_read == 0 )
+ 		return AVERROR_EOF;
+@@ -950,17 +951,17 @@ int64_t fe_media_seek( void *opaque, int64_t offset, int whence )
+ 	switch ( whence )
+ 	{
+ 	case AVSEEK_SIZE:
+-		return z->getSize();
++		return z->getSize().value();
+
+ 	case SEEK_CUR:
+-		return z->seek( z->tell() + offset );
++		return z->seek( z->tell().value() + offset ).value();
+
+ 	case SEEK_END:
+-		return z->seek( z->getSize() + offset );
++		return z->seek( z->getSize().value() + offset ).value();
+
+ 	case SEEK_SET:
+ 	default:
+-		return z->seek( offset );
++		return z->seek( offset ).value();
+ 	}
+ }
+
+@@ -1060,7 +1061,7 @@ bool FeMedia::open( const std::string &archive,
+ 				// TODO: Fix buffer sizing, we allocate way
+ 				// more than we use
+ 				//
+-				m_audio->audio_buff = (sf::Int16 *)av_malloc(
++				m_audio->audio_buff = (std::int16_t *)av_malloc(
+ 					MAX_AUDIO_FRAME_SIZE
+ 					+ AV_INPUT_BUFFER_PADDING_SIZE
+ 					+ codec_ctx->sample_rate );
+@@ -1166,7 +1167,7 @@ bool FeMedia::open( const std::string &archive,
+
+ 				m_video->display_texture = outt;
+ 				if ( outt->getSize() != sf::Vector2u( m_video->disptex_width, m_video->disptex_height ) )
+-					m_video->display_texture->create( m_video->disptex_width, m_video->disptex_height );
++					m_video->display_texture->resize({ m_video->disptex_width, m_video->disptex_height });
+
+ 				m_video->init_rgba_buffer();
+ 			}
+diff --git a/src/scraper_base.cpp b/src/scraper_base.cpp
+index 4dd1939..92a5676 100644
+--- a/src/scraper_base.cpp
++++ b/src/scraper_base.cpp
+@@ -128,15 +128,19 @@ std::string get_crc( const std::string &full_path,
+ 				zs.open( *itr );
+
+ 				char *buff = zs.getData();
+-				int size = zs.getSize();
+
+-				if ( size > MAX_CRC_FILE_SIZE )
+-					return "";
+-
+-				correct_buff_for_format( buff, size, *itr );
+-				std::string retval = get_crc32( buff, size );
+-				FeDebug() << "CRC: " << full_path << "=" << retval << std::endl;
+-				return retval;
++				std::optional<std::size_t> size = zs.getSize();
++				if (size.has_value())
++				{
++					int size_value = size.value();
++					if ( size_value > MAX_CRC_FILE_SIZE )
++						return "";
++
++					correct_buff_for_format( buff, size_value, *itr );
++					std::string retval = get_crc32( buff, size_value );
++					FeDebug() << "CRC: " << full_path << "=" << retval << std::endl;
++					return retval;
++				}
+ 			}
+ 		}
+
+diff --git a/src/scraper_xml.cpp b/src/scraper_xml.cpp
+index 3648ac9..61f05cc 100644
+--- a/src/scraper_xml.cpp
++++ b/src/scraper_xml.cpp
+@@ -33,6 +33,7 @@
+ #include <expat.h>
+
+ #include <SFML/System/Clock.hpp>
++#include <SFML/System/Time.hpp>
+
+ //
+ // Base XML Parser
+diff --git a/src/sprite.cpp b/src/sprite.cpp
+index ac71718..f7d3690 100644
+--- a/src/sprite.cpp
++++ b/src/sprite.cpp
+@@ -63,7 +63,7 @@
+
+ ////////////////////////////////////////////////////////////
+ FeSprite::FeSprite() :
+-m_vertices( sf::TrianglesStrip, 4 ),
++m_vertices( sf::PrimitiveType::TriangleStrip, 4 ),
+ m_texture    (NULL),
+ m_textureRect(),
+ m_pinch( 0.f, 0.f ),
+@@ -74,7 +74,7 @@ m_skew( 0.f, 0.f )
+
+ ////////////////////////////////////////////////////////////
+ FeSprite::FeSprite(const sf::Texture& texture) :
+-m_vertices( sf::TrianglesStrip, 4 ),
++m_vertices( sf::PrimitiveType::TriangleStrip, 4 ),
+ m_texture    (NULL),
+ m_textureRect(),
+ m_pinch( 0.f, 0.f ),
+@@ -86,7 +86,7 @@ m_skew( 0.f, 0.f )
+
+ ////////////////////////////////////////////////////////////
+ FeSprite::FeSprite(const sf::Texture& texture, const sf::IntRect& rectangle) :
+-m_vertices( sf::TrianglesStrip, 4 ),
++m_vertices( sf::PrimitiveType::TriangleStrip, 4 ),
+ m_texture    (NULL),
+ m_textureRect(),
+ m_pinch( 0.f, 0.f ),
+@@ -102,7 +102,7 @@ void FeSprite::setTexture(const sf::Texture& texture, bool resetRect)
+ {
+     // Recompute the texture area if requested, or if there was no valid texture & rect before
+     if (resetRect || (!m_texture && (m_textureRect == sf::IntRect())))
+-        setTextureRect(sf::IntRect(0, 0, texture.getSize().x, texture.getSize().y));
++        setTextureRect(sf::IntRect({ 0, 0 }, { (int)texture.getSize().x, (int)texture.getSize().y }));
+
+     // Assign the new texture
+     m_texture = &texture;
+@@ -153,10 +153,10 @@ const sf::Color& FeSprite::getColor() const
+ ////////////////////////////////////////////////////////////
+ sf::FloatRect FeSprite::getLocalBounds() const
+ {
+-    float width = static_cast<float>(std::abs(m_textureRect.width));
+-    float height = static_cast<float>(std::abs(m_textureRect.height));
++    float width = static_cast<float>(std::abs(m_textureRect.size.x));
++    float height = static_cast<float>(std::abs(m_textureRect.size.y));
+
+-    return sf::FloatRect(0.f, 0.f, width, height);
++    return sf::FloatRect({ 0.f, 0.f }, { width, height });
+ }
+
+
+@@ -248,10 +248,10 @@ void FeSprite::updateGeometry()
+ 	// Compute some values that we will use for applying the
+ 	// texture coordinates.
+ 	//
+-	float left   = static_cast<float>(m_textureRect.left);
+-	float right  = left + m_textureRect.width;
+-	float top    = static_cast<float>(m_textureRect.top);
+-	float bottom = top + m_textureRect.height;
++	float left   = static_cast<float>(m_textureRect.position.x);
++	float right  = left + m_textureRect.size.x;
++	float top    = static_cast<float>(m_textureRect.position.y);
++	float bottom = top + m_textureRect.size.y;
+ 	sf::Color vert_colour = m_vertices[0].color;
+
+ 	sf::Vector2f scale = getScale();
+@@ -278,19 +278,19 @@ void FeSprite::updateGeometry()
+ 		//
+ 		const int SLICES = 253;
+
+-		float bws = (float)bounds.width / SLICES;
++		float bws = (float)bounds.size.x / SLICES;
+ 		float pys = (float)spinch.y / SLICES;
+ 		float sys = (float)sskew.y / SLICES;
+ 		float bpxs = bws - (float)spinch.x * 2 / SLICES;
+
+ 		m_vertices.resize( SLICES + 3 );
+-		m_vertices.setPrimitiveType( sf::TrianglesStrip );
++		m_vertices.setPrimitiveType( sf::PrimitiveType::TriangleStrip );
+
+ 		//
+ 		// First do the vertex coordinates
+ 		//
+ 		m_vertices[0].position = sf::Vector2f(0, 0 );
+-		m_vertices[1].position = sf::Vector2f(sskew.x + spinch.x, bounds.height );
++		m_vertices[1].position = sf::Vector2f(sskew.x + spinch.x, bounds.size.y );
+
+ 		for ( int i=1; i<SLICES; i++ )
+ 		{
+@@ -302,17 +302,17 @@ void FeSprite::updateGeometry()
+ 			else
+ 			{
+ 				m_vertices[1 + i].position = sf::Vector2f(
+-						sskew.x + spinch.x + bpxs * i, bounds.height - ( pys - sys ) * i );
++						sskew.x + spinch.x + bpxs * i, bounds.size.y - ( pys - sys ) * i );
+ 			}
+ 		}
+-		m_vertices[SLICES + 1].position = sf::Vector2f( bounds.width, spinch.y + sskew.y );
++		m_vertices[SLICES + 1].position = sf::Vector2f( bounds.size.x, spinch.y + sskew.y );
+ 		m_vertices[SLICES + 2].position = sf::Vector2f(
+-						sskew.x + bounds.width - spinch.x, bounds.height - spinch.y + sskew.y );
++						sskew.x + bounds.size.x - spinch.x, bounds.size.y - spinch.y + sskew.y );
+
+ 		//
+ 		// Now do the texture coordinates
+ 		//
+-		float tws = (float)m_textureRect.width / SLICES;
++		float tws = (float)m_textureRect.size.x / SLICES;
+
+ 		m_vertices[0].texCoords = sf::Vector2f(left, top );
+ 		m_vertices[1].texCoords = sf::Vector2f(left, bottom );
+@@ -331,12 +331,12 @@ void FeSprite::updateGeometry()
+ 		// If we aren't pinching the image, then we draw it on two triangles.
+ 		//
+ 		m_vertices.resize( 4 );
+-		m_vertices.setPrimitiveType( sf::TrianglesStrip );
++		m_vertices.setPrimitiveType( sf::PrimitiveType::TriangleStrip );
+
+ 		m_vertices[0].position = sf::Vector2f(0, 0);
+-		m_vertices[1].position = sf::Vector2f(sskew.x, bounds.height);
+-		m_vertices[2].position = sf::Vector2f(bounds.width, sskew.y );
+-		m_vertices[3].position = sf::Vector2f(bounds.width + sskew.x, bounds.height + sskew.y);
++		m_vertices[1].position = sf::Vector2f(sskew.x, bounds.size.y);
++		m_vertices[2].position = sf::Vector2f(bounds.size.x, sskew.y );
++		m_vertices[3].position = sf::Vector2f(bounds.size.x + sskew.x, bounds.size.y + sskew.y);
+
+ 		m_vertices[0].texCoords = sf::Vector2f(left, top);
+ 		m_vertices[1].texCoords = sf::Vector2f(left, bottom);
+diff --git a/src/swf.cpp b/src/swf.cpp
+index 47faf6a..c98bad7 100644
+--- a/src/swf.cpp
++++ b/src/swf.cpp
+@@ -56,7 +56,7 @@ namespace
+ 	{
+ 		if ( swf_zip )
+ 			return new tu_file( tu_file::memory_buffer,
+-				swf_zip->getSize(), swf_zip->getData() );
++				swf_zip->getSize().value_or(0), swf_zip->getData() );
+ 		else
+ 			return new tu_file(url, "rb");
+ 	}
+@@ -220,10 +220,10 @@ bool FeSwf::open_from_file( const std::string &file )
+ 	if ( m_imp->root == NULL )
+ 		return false;
+
+-	m_texture.create( m_imp->root->get_movie_width(),
+-		m_imp->root->get_movie_height() );
++	m_texture = std::make_unique<sf::RenderTexture>(sf::Vector2u(m_imp->root->get_movie_width(),
++		m_imp->root->get_movie_height()));
+
+-	m_texture.setSmooth( true );
++	m_texture->setSmooth( true );
+
+ 	m_imp->root->set_display_viewport( 0, 0,
+ 		m_imp->root->get_movie_width(),
+@@ -237,12 +237,12 @@ bool FeSwf::open_from_file( const std::string &file )
+
+ const sf::Vector2u FeSwf::get_size() const
+ {
+-	return m_texture.getSize();
++	return m_texture->getSize();
+ }
+
+ const sf::Texture &FeSwf::get_texture() const
+ {
+-	return m_texture.getTexture();
++	return m_texture->getTexture();
+ }
+
+ bool FeSwf::tick()
+@@ -254,8 +254,8 @@ bool FeSwf::do_frame( bool is_tick )
+ {
+ 	swf_context->setActive( true );
+
+-	m_texture.setActive();
+-	m_texture.clear( sf::Color::Transparent );
++	m_texture->setActive();
++	m_texture->clear( sf::Color::Transparent );
+
+ 	if ( m_imp->root != NULL )
+ 	{
+@@ -274,7 +274,7 @@ bool FeSwf::do_frame( bool is_tick )
+ 		m_imp->root->display();
+ 	}
+
+-	m_texture.display();
++	m_texture->display();
+ 	swf_context->setActive( false );
+
+ 	return ( m_imp->root != NULL );
+@@ -282,5 +282,5 @@ bool FeSwf::do_frame( bool is_tick )
+
+ void FeSwf::set_smooth( bool s )
+ {
+-	m_texture.setSmooth( s );
++	m_texture->setSmooth( s );
+ }
+diff --git a/src/swf.hpp b/src/swf.hpp
+index a23387d..793db92 100644
+--- a/src/swf.hpp
++++ b/src/swf.hpp
+@@ -51,7 +51,7 @@ private:
+ 	bool do_frame( bool is_tick );
+
+ 	FeSwfState *m_imp;
+-	sf::RenderTexture m_texture;
++	std::unique_ptr<sf::RenderTexture> m_texture;
+ };
+
+ #endif
+diff --git a/src/tp.cpp b/src/tp.cpp
+index 4e15ca1..2af5db8 100644
+--- a/src/tp.cpp
++++ b/src/tp.cpp
+@@ -21,14 +21,13 @@
+  */
+
+ #include "tp.hpp"
+-#include <iostream>
+ #include <cmath>
+
+ // included for SFML_VERSION_INT macros
+ #include "fe_util.hpp"
+
+ FeTextPrimative::FeTextPrimative( )
+-	: m_texts( 1, sf::Text() ),
++	: m_texts( 1, sf::Text(m_dummyFont) ),
+ 	m_align( Centre ),
+ 	m_first_line( -1 ),
+ 	m_margin( -1 ),
+@@ -45,7 +44,7 @@ FeTextPrimative::FeTextPrimative(
+ 			const sf::Color &bgcolour,
+ 			unsigned int charactersize,
+ 			Alignment align )
+-	: m_texts( 1, sf::Text() ),
++	: m_texts( 1, sf::Text(*font) ),
+ 	m_align( align ),
+ 	m_first_line( -1 ),
+ 	m_margin( -1 ),
+@@ -82,7 +81,7 @@ void FeTextPrimative::setColor( const sf::Color &c )
+ #endif
+ }
+
+-const sf::Color &FeTextPrimative::getColor() const
++sf::Color FeTextPrimative::getColor() const
+ {
+ #if ( SFML_VERSION_INT >= FE_VERSION_INT( 2, 4, 0 ) )
+ 	return m_texts[0].getFillColor();
+@@ -96,13 +95,13 @@ void FeTextPrimative::setBgColor( const sf::Color &c )
+ 	m_bgRect.setFillColor( c );
+ }
+
+-const sf::Color &FeTextPrimative::getBgColor() const
++sf::Color FeTextPrimative::getBgColor() const
+ {
+ 	return m_bgRect.getFillColor();
+ }
+
+ void FeTextPrimative::fit_string(
+-			const std::basic_string<sf::Uint32> &s,
++			const std::basic_string<std::uint32_t> &s,
+ 			int &position,
+ 			int &first_char,
+ 			int &last_char )
+@@ -126,7 +125,7 @@ void FeTextPrimative::fit_string(
+ 	const sf::Font *font = getFont();
+ 	unsigned int charsize = m_texts[0].getCharacterSize();
+ 	unsigned int spacing = charsize;
+-	float width = m_bgRect.getLocalBounds().width / m_texts[0].getScale().x;
++	float width = m_bgRect.getLocalBounds().size.x / m_texts[0].getScale().x;
+
+ 	int running_total( 0 );
+ 	int running_width( 0 );
+@@ -143,10 +142,10 @@ void FeTextPrimative::fit_string(
+ 		width -= m_margin * 2.0;
+
+ 	if ( !edit_mode )
+-		running_total = -g->bounds.left;
++		running_total = -g->bounds.position.x;
+
+ 	// We need to adjust the width to make sure that at least one character is displayed per line
+-	width = std::max( width, (float)g->bounds.width );
++	width = std::max( width, (float)g->bounds.size.x );
+
+ 	while (( running_width <= width ) && (( i < (int)s.size() ) || (( m_first_line < 0 ) && ( j > 0 ))))
+ 	{
+@@ -159,7 +158,7 @@ void FeTextPrimative::fit_string(
+ 			}
+
+ 			g = &font->getGlyph( s[i], charsize, false );
+-			running_width = std::max( running_width, (int)( running_total + g->bounds.left + g->bounds.width ));
++			running_width = std::max( running_width, (int)( running_total + g->bounds.position.x + g->bounds.size.x ));
+ 			running_total += g->advance;
+
+ 			if ( s[i] == L' ' )
+@@ -184,7 +183,7 @@ void FeTextPrimative::fit_string(
+ 			kerning = font->getKerning( s[j], s[std::min( j + 1, (int)s.size() - 1 )], charsize );
+ 			running_total += kerning;
+ 			g = &font->getGlyph( s[j], charsize, false );
+-			running_width = std::max( running_width, (int)( running_total + g->bounds.left + g->bounds.width ));
++			running_width = std::max( running_width, (int)( running_total + g->bounds.position.x + g->bounds.size.x ));
+ 			running_total += g->advance;
+ 		}
+ 	}
+@@ -224,7 +223,7 @@ void FeTextPrimative::setString( const std::string &t )
+ 	// UTF-8 character encoding is assumed.
+ 	// Need to convert to UTF-32 before giving string to SFML
+ 	//
+-	std::basic_string<sf::Uint32> tmp;
++	std::basic_string<std::uint32_t> tmp;
+ 	sf::Utf8::toUtf32( t.begin(), t.end(), std::back_inserter( tmp ));
+
+ 	// We need to add one trailing space to the string
+@@ -236,7 +235,7 @@ void FeTextPrimative::setString( const std::string &t )
+ }
+
+ sf::Vector2f FeTextPrimative::setString(
+-			const std::basic_string<sf::Uint32> &t,
++			const std::basic_string<std::uint32_t> &t,
+ 			int position )
+ {
+ 	//
+@@ -248,8 +247,8 @@ sf::Vector2f FeTextPrimative::setString(
+ 	if ( m_first_line >= 0 )
+ 		position = -1;
+
+-	if ( m_texts.size() > 1 )
+-		m_texts.resize( 1 );
++	while ( m_texts.size() > 1 )
++		m_texts.pop_back();
+
+ 	const sf::Font *font = getFont();
+
+@@ -268,7 +267,8 @@ sf::Vector2f FeTextPrimative::setString(
+ 		}
+ 	}
+
+-	m_texts[0].setString( t.substr( first_char, last_char - first_char + 1 ));
++	auto str = sf::String::fromUtf32( t.begin() + first_char, t.begin() + last_char + 1 );
++	m_texts[0].setString(str);
+
+ 	disp_cpos -= first_char;
+
+@@ -283,7 +283,7 @@ sf::Vector2f FeTextPrimative::setString(
+ 		sf::FloatRect rectSize = m_bgRect.getLocalBounds();
+
+ 		const sf::Glyph *glyph = &font->getGlyph( L'X', m_texts[0].getCharacterSize(), false );
+-		float glyphSize = glyph->bounds.height * m_texts[0].getScale().y;
++		float glyphSize = glyph->bounds.size.y * m_texts[0].getScale().y;
+
+ 		int spacing = getLineSpacingFactored( font, floorf( m_texts[0].getCharacterSize() * m_texts[0].getScale().y ));
+ 		float default_spacing = font->getLineSpacing( m_texts[0].getCharacterSize() ) * m_texts[0].getScale().y;
+@@ -293,12 +293,12 @@ sf::Vector2f FeTextPrimative::setString(
+ 		if ( m_align & ( Top | Bottom | Middle ))
+ 		{
+ 			if ( m_margin < 0 )
+-				line_count = std::max( 1, (int)floorf(( rectSize.height + spacing - default_spacing - glyphSize ) / spacing ));
++				line_count = std::max( 1, (int)floorf(( rectSize.size.y + spacing - default_spacing - glyphSize ) / spacing ));
+ 			else
+-				line_count = std::max( 1, (int)floorf(( rectSize.height + spacing - glyphSize - m_margin * 2.0 ) / spacing ));
++				line_count = std::max( 1, (int)floorf(( rectSize.size.y + spacing - glyphSize - m_margin * 2.0 ) / spacing ));
+ 		}
+ 		else
+-			line_count = std::max( 1, (int)( rectSize.height / spacing ));
++			line_count = std::max( 1, (int)( rectSize.size.y / spacing ));
+
+ 		//
+ 		// We break the string to lines here starting from the second line
+@@ -309,7 +309,8 @@ sf::Vector2f FeTextPrimative::setString(
+ 			if ( position >= (int)t.size() ) break;
+ 			fit_string( t, position, first_char, last_char );
+ 			m_texts.push_back( m_texts[0] );
+-			m_texts.back().setString( t.substr( first_char, last_char - first_char + 1 ));
++			auto str = sf::String::fromUtf32( t.begin() + first_char, t.begin() + last_char + 1 );
++			m_texts.back().setString(str);
+ 			actual_line_count++;
+ 		}
+
+@@ -349,30 +350,30 @@ void FeTextPrimative::set_positions() const
+
+ 		// we need to account for the scaling that we have applied to our text...
+ 		sf::FloatRect textSize = m_texts[i].getLocalBounds();
+-		textSize.width *= m_texts[i].getScale().x;
+-		textSize.height *= m_texts[i].getScale().y;
+-		textSize.left *= m_texts[i].getScale().x;
++		textSize.size.x *= m_texts[i].getScale().x;
++		textSize.size.y *= m_texts[i].getScale().y;
++		textSize.position.x *= m_texts[i].getScale().x;
+
+ 		// set position x
+ 		if ( m_align & Left )
+ 			textPos.x = rectPos.x;
+ 		else if ( m_align & Right )
+-			textPos.x = rectPos.x + floorf( rectSize.width ) - textSize.width;
++			textPos.x = rectPos.x + floorf( rectSize.size.x ) - textSize.size.x;
+ 		else if ( m_align & Centre )
+-			textPos.x = rectPos.x + floorf(( rectSize.width - textSize.width ) / 2.0 );
++			textPos.x = rectPos.x + floorf(( rectSize.size.x - textSize.size.x ) / 2.0 );
+
+ 		if ( m_align & ( Top | Bottom | Middle ))
+-			textPos.x -= textSize.left;
++			textPos.x -= textSize.position.x;
+
+ 		// set position y
+ 		if ( m_align & Top )
+ 			textPos.y = rectPos.y + ceilf( spacing * i - charSize + glyphSize );
+ 		else if ( m_align & Bottom )
+-			textPos.y = rectPos.y + floorf( rectSize.height  - charSize - spacing * ( m_texts.size() - i - 1 ));
++			textPos.y = rectPos.y + floorf( rectSize.size.y  - charSize - spacing * ( m_texts.size() - i - 1 ));
+ 		else if ( m_align & Middle )
+-			textPos.y = rectPos.y + ceilf( spacing * i + ( rectSize.height + glyphSize - charSize * 2 - spacing * ( m_texts.size() - 1 )) / 2.0 );
++			textPos.y = rectPos.y + ceilf( spacing * i + ( rectSize.size.y + glyphSize - charSize * 2 - spacing * ( m_texts.size() - 1 )) / 2.0 );
+ 		else
+-			textPos.y = rectPos.y + ceilf( spacing * i + ( rectSize.height - ( spacing * m_texts.size() )) / 2.0 );
++			textPos.y = rectPos.y + ceilf( spacing * i + ( rectSize.size.y - ( spacing * m_texts.size() )) / 2.0 );
+
+ 		if ( m_align & Top ) textPos.y += margin;
+ 		if ( m_align & Bottom ) textPos.y -= margin;
+@@ -380,7 +381,7 @@ void FeTextPrimative::set_positions() const
+ 		if ( m_align & Right ) textPos.x -= margin;
+
+ 		sf::Transform trans;
+-		trans.rotate( m_bgRect.getRotation(), rectPos.x, rectPos.y );
++		trans.rotate( m_bgRect.getRotation(), { rectPos.x, rectPos.y });
+ 		m_texts[i].setPosition( trans.transformPoint( textPos ) );
+ 		m_texts[i].setRotation( m_bgRect.getRotation() );
+ 	}
+@@ -395,10 +396,10 @@ int FeTextPrimative::getActualWidth()
+ 	for ( unsigned int i=0; i < m_texts.size(); i++ )
+ 	{
+ 		sf::FloatRect textSize = m_texts[i].getLocalBounds();
+-		textSize.width = ceilf( textSize.width * m_texts[i].getScale().x );
++		textSize.size.x = ceilf( textSize.size.x * m_texts[i].getScale().x );
+
+-		if ( textSize.width > w )
+-			w = textSize.width;
++		if ( textSize.size.x > w )
++			w = textSize.size.x;
+ 	}
+
+ 	return (int)w;
+@@ -406,6 +407,9 @@ int FeTextPrimative::getActualWidth()
+
+ void FeTextPrimative::setFont( const sf::Font &font )
+ {
++	// if (m_texts.size() == 0)
++	// 	m_texts.emplace_back(font);
++
+ 	for ( unsigned int i=0; i < m_texts.size(); i++ )
+ 		m_texts[i].setFont( font );
+
+@@ -414,7 +418,7 @@ void FeTextPrimative::setFont( const sf::Font &font )
+
+ const sf::Font *FeTextPrimative::getFont() const
+ {
+-	return m_texts[0].getFont();
++	return &m_texts[0].getFont();
+ }
+
+ void FeTextPrimative::setCharacterSize( unsigned int size )
+@@ -435,7 +439,7 @@ unsigned int FeTextPrimative::getGlyphSize() const
+ 	const sf::Font *font = getFont();
+ 	const int charSize = m_texts[0].getCharacterSize();
+ 	const sf::Glyph *glyph = &font->getGlyph( L'X', charSize, false );
+-	return floorf(glyph->bounds.height * m_texts[0].getScale().y);
++	return floorf(glyph->bounds.size.y * m_texts[0].getScale().y);
+ }
+
+ void FeTextPrimative::setCharacterSpacing( float factor )
+@@ -475,12 +479,12 @@ int FeTextPrimative::getLineSpacingFactored( const sf::Font *font, int charsize
+ 	return std::max( 1, (int)ceilf( font->getLineSpacing( charsize ) * m_line_spacing ));
+ }
+
+-const sf::Vector2f &FeTextPrimative::getPosition() const
++sf::Vector2f FeTextPrimative::getPosition() const
+ {
+ 	return m_bgRect.getPosition();
+ }
+
+-const sf::Vector2f &FeTextPrimative::getSize() const
++sf::Vector2f FeTextPrimative::getSize() const
+ {
+ 	return m_bgRect.getSize();
+ }
+@@ -524,13 +528,13 @@ void FeTextPrimative::setOutlineThickness( int i )
+ 	m_bgRect.setOutlineThickness( i );
+ }
+
+-void FeTextPrimative::setRotation( float r )
++void FeTextPrimative::setRotation( sf::Angle r )
+ {
+ 	m_bgRect.setRotation( r );
+ 	m_needs_pos_set = true;
+ }
+
+-float FeTextPrimative::getRotation() const
++sf::Angle FeTextPrimative::getRotation() const
+ {
+ 	return m_bgRect.getRotation();
+ }
+@@ -578,7 +582,7 @@ void FeTextPrimative::setTextScale( const sf::Vector2f &s )
+ 	m_needs_pos_set = true;
+ }
+
+-const sf::Vector2f &FeTextPrimative::getTextScale() const
++sf::Vector2f FeTextPrimative::getTextScale() const
+ {
+ 		return m_texts[0].getScale();
+ }
+diff --git a/src/tp.hpp b/src/tp.hpp
+index 50774e2..45adc5b 100644
+--- a/src/tp.hpp
++++ b/src/tp.hpp
+@@ -25,6 +25,7 @@
+
+ #include <SFML/Graphics.hpp>
+ #include <vector>
++#include <cstdint>
+
+ class FeTextPrimative : public sf::Drawable
+ {
+@@ -60,7 +61,7 @@ public:
+ 	// that WordWrap is set to false (cursor positioning is not supported
+ 	// with // wordwrapping on)
+ 	//
+-	sf::Vector2f setString( const std::basic_string<sf::Uint32> &t,
++	sf::Vector2f setString( const std::basic_string<std::uint32_t> &t,
+ 					int cursor_string_pos=-1 ); // no utf-8 conversion
+
+ 	void setFont( const sf::Font & );
+@@ -73,7 +74,7 @@ public:
+ 	void setSize( int w, int h ) {return setSize(sf::Vector2f(w,h));};
+ 	void setSize( const sf::Vector2f & );
+ 	void setStyle( int );
+-	void setRotation( float );
++	void setRotation( sf::Angle );
+ 	void setOutlineColor( const sf::Color & );
+ 	void setOutlineThickness( int );
+ 	void setFirstLineHint( int );
+@@ -85,26 +86,28 @@ public:
+ 	void setTextScale( const sf::Vector2f & );
+
+ 	const sf::Font *getFont() const;
+-	const sf::Color &getColor() const;
+-	const sf::Color &getBgColor() const;
++	sf::Color getColor() const;
++	sf::Color getBgColor() const;
+ 	unsigned int getCharacterSize() const;
+ 	unsigned int getGlyphSize() const;
+ 	float getCharacterSpacing() const;
+ 	float getLineSpacing() const;
+ 	int getLineSpacingFactored( const sf::Font *, int ) const;
+ 	Alignment getAlignment() const;
+-	const sf::Vector2f &getPosition() const;
+-	const sf::Vector2f &getSize() const;
+-	float getRotation() const;
++	sf::Vector2f getPosition() const;
++	sf::Vector2f getSize() const;
++	sf::Angle getRotation() const;
+ 	int getStyle() const;
+ 	int getFirstLineHint() const;
+-	const sf::Vector2f &getTextScale() const;
++	sf::Vector2f getTextScale() const;
+ 	const char *getStringWrapped();
+
+ 	int getActualWidth(); // return the width of the actual text
+
+ private:
+ 	sf::RectangleShape m_bgRect;
++	// Dummy font to allow for construction without font
++	sf::Font m_dummyFont;
+ 	mutable std::vector<sf::Text> m_texts;
+ 	Alignment m_align;
+
+@@ -130,7 +133,7 @@ private:
+ 	//		[out] last_char		- position of the last character to display
+ 	//
+ 	void fit_string(
+-			const std::basic_string<sf::Uint32> &s,
++			const std::basic_string<std::uint32_t> &s,
+ 			int &position,
+ 			int &first_char,
+ 			int &last_char );
+diff --git a/src/zip.cpp b/src/zip.cpp
+index 3b9c088..ad9ee5f 100644
+--- a/src/zip.cpp
++++ b/src/zip.cpp
+@@ -365,13 +365,13 @@ bool FeZipStream::open( const std::string &filename )
+ 		m_data );
+ }
+
+-sf::Int64 FeZipStream::read( void *data, sf::Int64 size )
++std::optional<std::size_t> FeZipStream::read( void *data, std::size_t size )
+ {
+ 	if ( m_data.empty() )
+-		return -1;
++		return std::nullopt;
+
+-	sf::Int64 end_pos = m_pos + size;
+-	size_t count = ( end_pos <= (sf::Int64)m_data.size() )
++	std::size_t end_pos = m_pos + size;
++	size_t count = ( end_pos <= (std::size_t)m_data.size() )
+ 		? size : ( m_data.size() - m_pos );
+
+ 	if ( count > 0 )
+@@ -383,27 +383,27 @@ sf::Int64 FeZipStream::read( void *data, sf::Int64 size )
+ 	return count;
+ }
+
+-sf::Int64 FeZipStream::seek( sf::Int64 position )
++std::optional<std::size_t> FeZipStream::seek( std::size_t position )
+ {
+ 	if ( m_data.empty() )
+ 		return -1;
+
+-	m_pos = ( position < (sf::Int64)m_data.size() ) ? position : m_data.size();
++	m_pos = ( position < (std::size_t)m_data.size() ) ? position : m_data.size();
+ 	return m_pos;
+ }
+
+-sf::Int64 FeZipStream::tell()
++std::optional<std::size_t> FeZipStream::tell()
+ {
+ 	if ( m_data.empty() )
+-		return -1;
++		return std::nullopt;
+
+ 	return m_pos;
+ }
+
+-sf::Int64 FeZipStream::getSize()
++std::optional<std::size_t> FeZipStream::getSize()
+ {
+ 	if ( m_data.empty() )
+-		return -1;
++		return std::nullopt;
+
+ 	return m_data.size();
+ }
+diff --git a/src/zip.hpp b/src/zip.hpp
+index 9b5389c..dfdc4ff 100644
+--- a/src/zip.hpp
++++ b/src/zip.hpp
+@@ -26,7 +26,6 @@
+ #include <string>
+ #include <vector>
+ #include <SFML/System/InputStream.hpp>
+-#include <SFML/System/NonCopyable.hpp>
+
+ typedef void *(*FE_ZIP_ALLOC_CALLBACK) ( size_t );
+ bool fe_zip_open_to_buff(
+@@ -64,20 +63,23 @@ bool get_archive_filename_with_base(
+ extern const char *FE_ARCHIVE_EXT[];
+ bool is_supported_archive( const std::string & );
+
+-class FeZipStream : public sf::InputStream, sf::NonCopyable
++class FeZipStream : public sf::InputStream
+ {
+ public:
+ 	FeZipStream();
+ 	FeZipStream( const std::string &archive );
++	FeZipStream( FeZipStream& ) = delete;
++	FeZipStream( const FeZipStream& ) = delete;
++	FeZipStream operator=( FeZipStream& ) = delete;
++	FeZipStream operator=( const FeZipStream& ) = delete;
+
+ 	~FeZipStream();
+
+ 	bool open( const std::string &filename );
+-	sf::Int64 read( void *data, sf::Int64 size ); // virtual
+-
+-	sf::Int64 seek( sf::Int64 position );
+-	sf::Int64 tell();
+-	sf::Int64 getSize();
++	std::optional<std::size_t> read( void *data, std::size_t size ); // virtual
++	std::optional<std::size_t> seek( std::size_t position );
++	std::optional<std::size_t> tell();
++	std::optional<std::size_t> getSize();
+ 	void setArchive( const std::string &archive );
+ 	char *getData();
+
+@@ -86,7 +88,7 @@ private:
+
+ 	std::string m_archive;
+ 	std::vector < char > m_data;
+-	sf::Int64 m_pos;
++	std::size_t m_pos;
+ };
+
+ #endif
