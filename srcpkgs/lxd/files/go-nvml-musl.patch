@@ -1,0 +1,44 @@
+--- a/pkg/dl/dl_linux.go
++++ b/pkg/dl/dl_linux.go
+@@ -21,9 +21,12 @@
+ // #include <dlfcn.h>
+ // #include <stdlib.h>
+ // #include <linux/limits.h>
++// #include <link.h>
++// #ifndef RTLD_DEEPBIND
++// #define RTLD_DEEPBIND 0
++// #endif
+ import "C"
+ import (
+ 	"fmt"
+-	"path/filepath"
+ 	"unsafe"
+ )
+@@ -39,8 +42,7 @@
+ 		return "", fmt.Errorf("%v not opened", dl.Name)
+ 	}
+ 
+-	libParentPathBuffer := C.CBytes(make([]byte, C.PATH_MAX))
+-	defer C.free(unsafe.Pointer(libParentPathBuffer))
++	var linkMap *C.struct_link_map
+ 
+ 	var libPath string
+ 	if err := withOSLock(func() error {
+@@ -50,12 +52,15 @@
+ 		}
+ 		// Call dlError() to clear out any previous errors.
+ 		_ = dlError()
+-		ret := C.dlinfo(dl.handle, C.RTLD_DI_ORIGIN, libParentPathBuffer)
++		ret := C.dlinfo(dl.handle, C.RTLD_DI_LINKMAP, unsafe.Pointer(&linkMap))
+ 		if ret == -1 {
+ 			return fmt.Errorf("dlinfo call failed: %w", dlError())
+ 		}
++		if linkMap == nil || linkMap.l_name == nil {
++			return fmt.Errorf("dlinfo returned no library path for %q", dl.Name)
++		}
+ 
+-		libPath = filepath.Join(C.GoString((*C.char)(libParentPathBuffer)), dl.Name)
++		libPath = C.GoString(linkMap.l_name)
+ 		dl.path = libPath
+ 
+ 		return nil
