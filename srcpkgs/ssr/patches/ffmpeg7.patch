@@ -1,0 +1,84 @@
+Patch-Source: https://github.com/MaartenBaert/ssr/pull/1035
+---
+From f8988d9f8b48ddfb48079b1a7552c979cff6a912 Mon Sep 17 00:00:00 2001
+From: Jordan Bucklin <jordan.bucklin@gmail.com>
+Date: Sun, 23 Jun 2024 14:21:28 -0700
+Subject: [PATCH] Update references to AVChannelLayout for compatibility with
+ FFmpeg 7
+
+---
+ src/AV/Output/AudioEncoder.cpp | 14 +++++++++-----
+ src/AV/Output/BaseEncoder.cpp  |  2 +-
+ src/AV/Output/Synchronizer.cpp |  2 +-
+ 3 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/src/AV/Output/AudioEncoder.cpp b/src/AV/Output/AudioEncoder.cpp
+index 3efde703..3a38a619 100644
+--- a/src/AV/Output/AudioEncoder.cpp
++++ b/src/AV/Output/AudioEncoder.cpp
+@@ -42,7 +42,7 @@ AudioEncoder::AudioEncoder(Muxer* muxer, AVStream* stream, AVCodecContext *codec
+ 	if(GetCodecContext()->frame_size <= 1) {
+ 		// This is really weird, the old API uses the size of the *output* buffer to determine the number of
+ 		// input samples if the number of input samples (i.e. frame_size) is not fixed (i.e. frame_size <= 1).
+-		m_temp_buffer.resize(DEFAULT_FRAME_SAMPLES * GetCodecContext()->channels * av_get_bits_per_sample(GetCodecContext()->codec_id) / 8);
++		m_temp_buffer.resize(DEFAULT_FRAME_SAMPLES * GetCodecContext()->ch_layout.nb_channels * av_get_bits_per_sample(GetCodecContext()->codec_id) / 8);
+ 	} else {
+ 		m_temp_buffer.resize(std::max(FF_MIN_BUFFER_SIZE, 256 * 1024));
+ 	}
+@@ -53,6 +53,7 @@ AudioEncoder::AudioEncoder(Muxer* muxer, AVStream* stream, AVCodecContext *codec
+ }
+
+ AudioEncoder::~AudioEncoder() {
++    av_channel_layout_uninit(&GetCodecContext()->ch_layout);
+ 	StopThread();
+ }
+
+@@ -69,7 +70,7 @@ AVSampleFormat AudioEncoder::GetSampleFormat() {
+ }
+
+ unsigned int AudioEncoder::GetChannels() {
+-	return GetCodecContext()->channels;
++	return GetCodecContext()->ch_layout.nb_channels;
+ }
+
+ unsigned int AudioEncoder::GetSampleRate() {
+@@ -107,8 +108,11 @@ void AudioEncoder::PrepareStream(AVStream* stream, AVCodecContext* codec_context
+ 	}
+
+ 	codec_context->bit_rate = bit_rate;
+-	codec_context->channels = channels;
+-	codec_context->channel_layout = (channels == 1)? AV_CH_LAYOUT_MONO : AV_CH_LAYOUT_STEREO;
++    if(channels == 1) {
++        av_channel_layout_from_mask(&codec_context->ch_layout, AV_CH_LAYOUT_MONO);
++    } else {
++        av_channel_layout_from_mask(&codec_context->ch_layout, AV_CH_LAYOUT_STEREO);
++    }
+ 	codec_context->sample_rate = sample_rate;
+ 	codec_context->time_base.num = 1;
+ 	codec_context->time_base.den = sample_rate;
+diff --git a/src/AV/Output/BaseEncoder.cpp b/src/AV/Output/BaseEncoder.cpp
+index 7c01ef30..6fa8bbca 100644
+--- a/src/AV/Output/BaseEncoder.cpp
++++ b/src/AV/Output/BaseEncoder.cpp
+@@ -176,7 +176,7 @@ void BaseEncoder::Init(AVCodec* codec, AVDictionary** options) {
+
+ void BaseEncoder::Free() {
+ 	if(m_codec_opened) {
+-		avcodec_close(m_codec_context);
++		avcodec_free_context(&m_codec_context);
+ 		m_codec_opened = false;
+ 	}
+ }
+diff --git a/src/AV/Output/Synchronizer.cpp b/src/AV/Output/Synchronizer.cpp
+index b109dc67..0faa28d7 100644
+--- a/src/AV/Output/Synchronizer.cpp
++++ b/src/AV/Output/Synchronizer.cpp
+@@ -180,7 +180,7 @@ static std::unique_ptr<AVFrameWrapper> CreateAudioFrame(unsigned int channels, u
+ 	frame->GetFrame()->nb_samples = samples;
+ #endif
+ #if SSR_USE_AVFRAME_CHANNELS
+-	frame->GetFrame()->channels = channels;
++	frame->GetFrame()->ch_layout.nb_channels = channels;
+ #endif
+ #if SSR_USE_AVFRAME_SAMPLE_RATE
+ 	frame->GetFrame()->sample_rate = sample_rate;
