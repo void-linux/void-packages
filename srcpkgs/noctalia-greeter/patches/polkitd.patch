@@ -1,0 +1,51 @@
+diff --git a/src/tools/passwordless_sync_policy.cpp b/src/tools/passwordless_sync_policy.cpp
+--- a/src/tools/passwordless_sync_policy.cpp
++++ b/src/tools/passwordless_sync_policy.cpp
+@@ -46,6 +46,10 @@ namespace greeter::passwordless_sync {
+     constexpr std::size_t kMaximumUsers = 256;
+     constexpr std::size_t kMaximumUserNameLength = 256;
+     constexpr std::size_t kMaximumPathLength = 4096;
++    const uid_t kPolkitdUid = [] {
++      if (const struct passwd* pw = ::getpwnam("polkitd")) return pw->pw_uid;
++      return static_cast<uid_t>(-1);
++    }();
+ 
+     class UniqueFd {
+     public:
+@@ -199,7 +203,7 @@ namespace greeter::passwordless_sync {
+     }
+ 
+     [[nodiscard]] bool validateTrustedDirectoryChain(
+-        const std::filesystem::path& directory, std::string_view description, std::string& errorOut
++        const std::filesystem::path& directory, std::string_view description, std::string& errorOut, uid_t directoryOwner = 0
+     ) {
+       if (!directory.is_absolute()) {
+         errorOut = std::string(description) + " path is not absolute";
+@@ -212,7 +216,8 @@ namespace greeter::passwordless_sync {
+         if (::stat(current.c_str(), &state) != 0) {
+           return setErrnoError(std::string("failed to inspect ") + std::string(description) + " directory", errorOut);
+         }
+-        if (!S_ISDIR(state.st_mode) || state.st_uid != 0 || (state.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
++        if (!S_ISDIR(state.st_mode) || (state.st_uid != 0 && (current != directory || state.st_uid != directoryOwner))
++            || (state.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+           errorOut = std::string(description) + " must use a root-owned, non-user-writable directory chain";
+           return false;
+         }
+@@ -423,7 +428,7 @@ namespace greeter::passwordless_sync {
+             + ec.message();
+         return false;
+       }
+-      if (!validateTrustedDirectoryChain(canonical, "Polkit rules", errorOut)) {
++      if (!validateTrustedDirectoryChain(canonical, "Polkit rules", errorOut, kPolkitdUid)) {
+         return false;
+       }
+ 
+@@ -432,7 +437,7 @@ namespace greeter::passwordless_sync {
+       if (::fstat(directory.get(), &state) != 0) {
+         return setErrnoError("failed to inspect the Polkit rules directory", errorOut);
+       }
+-      if (!S_ISDIR(state.st_mode) || state.st_uid != 0 || (state.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
++      if (!S_ISDIR(state.st_mode) || (state.st_uid != 0 && state.st_uid != kPolkitdUid) || (state.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+         errorOut = "the Polkit rules directory has unsafe ownership or permissions";
+         return false;
+       }
