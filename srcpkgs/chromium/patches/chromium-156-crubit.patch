@@ -1,5 +1,18 @@
-Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
-
+Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/4003
+--- a/chrome/browser/devtools/chrome_devtools_session.cc
++++ b/chrome/browser/devtools/chrome_devtools_session.cc
+@@ -78,11 +78,6 @@ ChromeDevToolsSession::ChromeDevToolsSes
+       cast_handler_ = std::make_unique<CastHandler>(
+           agent_host->GetWebContents(), dispatcher());
+     }
+-    if (IsDomainAvailableToUntrustedClient<StorageHandler>() ||
+-        channel->GetClient()->IsTrusted()) {
+-      storage_handler_ = std::make_unique<StorageHandler>(
+-          agent_host->GetWebContents(), dispatcher());
+-    }
+   }
+   if (agent_host->GetWebContents() &&
+       (agent_host->GetType() == content::DevToolsAgentHost::kTypePage ||
 --- a/components/cbor/BUILD.gn
 +++ b/components/cbor/BUILD.gn
 @@ -12,7 +12,7 @@ buildflag_header("buildflags") {
@@ -10,17 +23,17 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
 +  flags = [ "USE_CBOR_RUST=$enable_cpp_api_from_rust" ]
  }
  
- component("cbor") {
-@@ -35,7 +35,7 @@ component("cbor") {
+ source_set("cbor_headers") {
+@@ -48,7 +48,7 @@ source_set("cbor_rust_impl") {
      "//base",
    ]
  
 -  if (!is_cronet_build) {
 +  if (enable_cpp_api_from_rust) {
-     public_deps = [
+     deps += [
        "//build/rust/crubit",
        "//components/cbor/rust:cbor_rust_bindings",
-@@ -62,7 +62,7 @@ source_set("unit_tests") {
+@@ -91,7 +91,7 @@ source_set("unit_tests") {
      "//testing/gtest",
      "//third_party/fuzztest",
    ]
@@ -31,26 +44,41 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
        "//components/cbor/rust:cbor_rust_unittests",
 --- a/components/web_package/BUILD.gn
 +++ b/components/web_package/BUILD.gn
-@@ -40,7 +40,6 @@ static_library("web_package") {
-     "//base",
+@@ -51,8 +51,6 @@ source_set("web_package_rust_impl") {
      "//components/base32",
      "//components/cbor",
+     "//components/web_package/mojom",
+-    "//components/web_package/rust:web_package_rust_bindings",
 -    "//components/web_package/signed_web_bundles/rust:signed_web_bundles_rust_bindings",
      "//mojo/public/cpp/bindings",
      "//net",
      "//services/network/public/mojom",
-@@ -70,7 +69,6 @@ source_set("mojom_mapped_types") {
+@@ -67,12 +65,10 @@ static_library("web_package") {
+     "signed_web_bundles/signed_web_bundle_signature_stack.cc",
+     "signed_web_bundles/signed_web_bundle_signature_stack_entry.cc",
+     "web_bundle_builder.cc",
+-    "web_bundle_parser_factory.cc",
+     "web_bundle_utils.cc",
+   ]
  
    deps = [
+-    ":web_package_rust_impl",
+     "//base",
+     "//components/base32",
+     "//components/cbor",
+@@ -115,7 +111,6 @@ source_set("mojom_mapped_types_rust_impl
+   deps = [
+     ":mojom_mapped_types_headers",
      "//base",
 -    "//components/web_package/signed_web_bundles/rust:signed_web_bundles_rust_bindings",
      "//crypto",
      "//mojo/public/cpp/bindings",
    ]
-@@ -98,7 +96,6 @@ source_set("unit_tests") {
+@@ -159,8 +154,6 @@ source_set("unit_tests") {
      ":web_package",
      "//base/test:test_support",
      "//components/cbor",
+-    "//components/web_package/rust:web_package_rust_unittests",
 -    "//components/web_package/signed_web_bundles/rust:signed_web_bundles_rust_unittests",
      "//components/web_package/test_support",
      "//mojo/public/cpp/bindings",
@@ -572,6 +600,210 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
  }
  
  }  // namespace web_package
+--- a/components/webapps/isolated_web_apps/bundle_operations/bundle_operations.cc
++++ b/components/webapps/isolated_web_apps/bundle_operations/bundle_operations.cc
+@@ -79,16 +79,7 @@ void ReadSignedWebBundleIdInsecurely(
+     const base::FilePath& path,
+     base::OnceCallback<void(base::expected<web_package::SignedWebBundleId,
+                                            std::string>)> callback) {
+-  UnsecureSignedWebBundleIdReader::GetWebBundleId(
+-      path,
+-      base::BindOnce([](base::expected<web_package::SignedWebBundleId,
+-                                       UnusableSwbnFileError> result) {
+-        return result.transform_error([](const UnusableSwbnFileError& error) {
+-          return "Failed to read the integrity block of the "
+-                 "signed web bundle: " +
+-                 error.message();
+-        });
+-      }).Then(std::move(callback)));
++    std::move(callback);
+ }
+ 
+ void ValidateSignedWebBundleSignatures(
+@@ -96,20 +87,6 @@ void ValidateSignedWebBundleSignatures(
+     const base::FilePath& path,
+     const web_package::SignedWebBundleId& expected_web_bundle_id,
+     base::OnceCallback<void(IntegrityBlockResult)> callback) {
+-  auto create_reader = base::BindOnce(
+-      &SignedWebBundleReader::Create, path,
+-      IwaOrigin(expected_web_bundle_id).origin().GetURL(),
+-      /*verify_signatures=*/true,
+-      base::BindOnce(&OnTrustAndSignaturesOfBundleChecked,
+-                     browser_context->GetWeakPtr(), expected_web_bundle_id,
+-                     std::move(callback)));
+-
+-  if (auto* provider = IwaClient::GetInstance()->GetRuntimeDataProvider()) {
+-    provider->OnBestEffortRuntimeDataReady().Post(FROM_HERE,
+-                                                  std::move(create_reader));
+-  } else {
+-    std::move(create_reader).Run();
+-  }
+ }
+ 
+ void CloseBundle(content::BrowserContext* browser_context,
+--- a/components/webapps/isolated_web_apps/reading/BUILD.gn
++++ b/components/webapps/isolated_web_apps/reading/BUILD.gn
+@@ -14,8 +14,6 @@ source_set("reading") {
+     "response_reader_registry.h",
+     "response_reader_registry_factory.cc",
+     "response_reader_registry_factory.h",
+-    "signed_web_bundle_reader.cc",
+-    "signed_web_bundle_reader.h",
+     "validator.cc",
+     "validator.h",
+   ]
+--- a/components/webapps/isolated_web_apps/reading/response_reader_factory.cc
++++ b/components/webapps/isolated_web_apps/reading/response_reader_factory.cc
+@@ -45,19 +45,6 @@ void IsolatedWebAppResponseReaderFactory
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+   DCHECK(!web_bundle_id.is_for_proxy_mode());
+ 
+-  auto create_reader = base::BindOnce(
+-      &SignedWebBundleReader::Create, web_bundle_path,
+-      IwaOrigin(web_bundle_id).origin().GetURL(), verify_signatures,
+-      base::BindOnce(&IsolatedWebAppResponseReaderFactory::OnReaderCreated,
+-                     weak_ptr_factory_.GetWeakPtr(), web_bundle_path,
+-                     web_bundle_id, std::move(callback)));
+-
+-  if (auto* provider = IwaClient::GetInstance()->GetRuntimeDataProvider()) {
+-    provider->OnBestEffortRuntimeDataReady().Post(FROM_HERE,
+-                                                  std::move(create_reader));
+-  } else {
+-    std::move(create_reader).Run();
+-  }
+ }
+ 
+ void IsolatedWebAppResponseReaderFactory::OnReaderCreated(
+--- a/services/data_decoder/data_decoder_service.cc
++++ b/services/data_decoder/data_decoder_service.cc
+@@ -63,9 +63,6 @@ void DataDecoderService::BindXmlParser(
+ void DataDecoderService::BindWebBundleParserFactory(
+     mojo::PendingReceiver<web_package::mojom::WebBundleParserFactory>
+         receiver) {
+-  mojo::MakeSelfOwnedReceiver(
+-      std::make_unique<web_package::WebBundleParserFactory>(),
+-      std::move(receiver));
+ }
+ 
+ void DataDecoderService::BindGzipper(
+--- a/services/network/web_bundle/web_bundle_url_loader_factory.cc
++++ b/services/network/web_bundle/web_bundle_url_loader_factory.cc
+@@ -586,25 +586,6 @@ bool WebBundleURLLoaderFactory::HasError
+ 
+ void WebBundleURLLoaderFactory::SetBundleStream(
+     mojo::ScopedDataPipeConsumerHandle body) {
+-  if (HasError())
+-    return;
+-  mojo::PendingRemote<web_package::mojom::BundleDataSource> data_source;
+-  source_ = std::make_unique<BundleDataSource>(
+-      data_source.InitWithNewPipeAndPassReceiver(), std::move(body),
+-      std::move(web_bundle_memory_quota_consumer_),
+-      base::BindOnce(&WebBundleURLLoaderFactory::OnMemoryQuotaExceeded,
+-                     weak_ptr_factory_.GetWeakPtr()),
+-      base::BindOnce(&WebBundleURLLoaderFactory::OnDataCompleted,
+-                     weak_ptr_factory_.GetWeakPtr()));
+-
+-  mojo::MakeSelfOwnedReceiver(std::make_unique<web_package::WebBundleParser>(
+-                                  std::move(data_source), bundle_url_),
+-                              parser_.BindNewPipeAndPassReceiver());
+-
+-  parser_->ParseMetadata(
+-      /*offset=*/std::nullopt,
+-      base::BindOnce(&WebBundleURLLoaderFactory::OnMetadataParsed,
+-                     weak_ptr_factory_.GetWeakPtr()));
+ }
+ 
+ mojo::PendingRemote<mojom::URLLoaderClient>
+--- a/third_party/blink/renderer/core/loader/resource/font_resource.cc
++++ b/third_party/blink/renderer/core/loader/resource/font_resource.cc
+@@ -44,7 +44,6 @@
+ #include "third_party/blink/public/mojom/loader/request_context_frame_type.mojom-blink.h"
+ #include "third_party/blink/renderer/platform/fonts/font_custom_platform_data.h"
+ #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
+-#include "third_party/blink/renderer/platform/fonts/ift/ift_patcher.h"
+ #include "third_party/blink/renderer/platform/fonts/web_font_decoder.h"
+ #include "third_party/blink/renderer/platform/heap/cross_thread_handle.h"
+ #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
+@@ -85,7 +84,8 @@ base::expected<DecodedWebFont, String> D
+     return base::unexpected("");
+   }
+   auto decode_start_time = base::TimeTicks::Now();
+-  base::expected<DecodedWebFont, String> result = DecodeWebFont(buffer);
++  base::expected<DecodedWebFont, String> result =
++      DecodedWebFont::Create(buffer);
+   base::UmaHistogramMicrosecondsTimes(
+       "Blink.Fonts.BackgroundDecodeTime",
+       base::TimeTicks::Now() - decode_start_time);
+@@ -316,22 +316,13 @@ const FontCustomPlatformData* FontResour
+         font_data_ = FontCustomPlatformData::Create(
+             std::move(background_decode_result_->sk_typeface),
+             background_decode_result_->decoded_size);
+-        ift_patcher_ = std::move(background_decode_result_->ift_patcher);
+       } else {
+         auto decode_start_time = base::TimeTicks::Now();
+-        base::expected<DecodedWebFont, String> decode_result =
+-            DecodeWebFont(Data());
++        font_data_ =
++            FontCustomPlatformData::Create(Data(), ots_parsing_message_);
+         base::UmaHistogramMicrosecondsTimes(
+             "Blink.Fonts.DecodeTime",
+             base::TimeTicks::Now() - decode_start_time);
+-        if (decode_result.has_value()) {
+-          font_data_ = FontCustomPlatformData::Create(
+-              std::move(decode_result->sk_typeface),
+-              decode_result->decoded_size);
+-          ift_patcher_ = std::move(decode_result->ift_patcher);
+-        } else {
+-          ots_parsing_message_ = std::move(decode_result).error();
+-        }
+       }
+     } else {
+       ots_parsing_message_ = background_decode_result_.error();
+@@ -340,7 +331,6 @@ const FontCustomPlatformData* FontResour
+ 
+   if (!font_data_) {
+     SetStatus(ResourceStatus::kDecodeError);
+-    ift_patcher_.reset();
+   } else {
+     // Call observers once and remove them.
+     HeapHashSet<WeakMember<FontResourceClearDataObserver>> observers;
+@@ -353,10 +343,6 @@ const FontCustomPlatformData* FontResour
+   return font_data_;
+ }
+ 
+-std::unique_ptr<IftPatcher> FontResource::TakeIftPatcher() {
+-  return std::move(ift_patcher_);
+-}
+-
+ void FontResource::WillReloadAfterDiskCacheMiss() {
+   DCHECK(IsLoading());
+   DCHECK(Loader()->IsCacheAwareLoadingActivated());
+--- a/third_party/blink/renderer/core/loader/resource/font_resource.h
++++ b/third_party/blink/renderer/core/loader/resource/font_resource.h
+@@ -47,7 +47,6 @@ class FetchParameters;
+ class ResourceFetcher;
+ class FontCustomPlatformData;
+ class FontResourceClient;
+-class IftPatcher;
+ 
+ // An observer that will be notified when original data is cleared
+ // from the resource. Inspector may collect this data and store it for
+@@ -78,7 +77,6 @@ class CORE_EXPORT FontResource final : p
+   String OtsParsingMessage() const { return ots_parsing_message_; }
+ 
+   const FontCustomPlatformData* GetCustomFontData();
+-  std::unique_ptr<IftPatcher> TakeIftPatcher();
+ 
+   // Returns true if the loading priority of the remote font resource can be
+   // lowered. The loading priority of the font can be lowered only if the
+@@ -127,7 +125,6 @@ class CORE_EXPORT FontResource final : p
+   };
+ 
+   Member<FontCustomPlatformData> font_data_;
+-  std::unique_ptr<IftPatcher> ift_patcher_;
+   String ots_parsing_message_;
+   LoadLimitState load_limit_state_;
+   bool cors_failed_;
 --- a/third_party/blink/renderer/platform/BUILD.gn
 +++ b/third_party/blink/renderer/platform/BUILD.gn
 @@ -186,6 +186,18 @@ group("make_platform_generated") {
@@ -593,7 +825,15 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
  rust_static_library("rustfft_ffi") {
    allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
    crate_root = "audio/rustfft_ffi.rs"
-@@ -712,8 +724,6 @@ component("platform") {
+@@ -253,7 +265,6 @@ group("blink_platform_public_deps") {
+     "//third_party/boringssl",
+     "//third_party/libwebp",
+     "//third_party/ots",
+-    "//third_party/woff2:woff2_dec",
+     "//ui/gfx/animation/keyframe",
+     "//url",
+     "//v8",
+@@ -713,8 +724,6 @@ component("platform") {
      "fonts/generic_font_family_settings.cc",
      "fonts/generic_font_family_settings.h",
      "fonts/glyph_metrics_map.h",
@@ -602,7 +842,7 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
      "fonts/opentype/color_table_lookup.cc",
      "fonts/opentype/color_table_lookup.h",
      "fonts/opentype/font_format_check.cc",
-@@ -1792,7 +1802,6 @@ component("platform") {
+@@ -1795,7 +1804,6 @@ component("platform") {
      ":allow_discouraged_type",
      ":blink_platform_public_deps",
      ":platform_export",
@@ -610,7 +850,7 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
      "//components/language_detection/core",
      "//gpu/command_buffer/client:raster_interface",
      "//media/capture:capture_lib",
-@@ -1819,9 +1828,8 @@ component("platform") {
+@@ -1822,9 +1830,8 @@ component("platform") {
      "//ui/native_theme/features",
    ]
    deps = [
@@ -621,6 +861,18 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
      "//base:base_static",
      "//base/allocator:buildflags",
      "//build:chromecast_buildflags",
+--- a/third_party/blink/renderer/platform/fonts/font_custom_platform_data.cc
++++ b/third_party/blink/renderer/platform/fonts/font_custom_platform_data.cc
+@@ -328,7 +328,8 @@ FontCustomPlatformData* FontCustomPlatfo
+     SharedBuffer* buffer,
+     String& ots_parse_message) {
+   DCHECK(buffer);
+-  base::expected<DecodedWebFont, String> decode_result = DecodeWebFont(buffer);
++  base::expected<DecodedWebFont, String> decode_result =
++      DecodedWebFont::Create(buffer);
+   if (!decode_result.has_value()) {
+     ots_parse_message = std::move(decode_result).error();
+     return nullptr;
 --- a/third_party/blink/renderer/platform/fonts/opentype/font_format_check.cc
 +++ b/third_party/blink/renderer/platform/fonts/opentype/font_format_check.cc
 @@ -7,6 +7,7 @@
@@ -754,16 +1006,16 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
      matches!(&format_info.format_flags, Some(FontFormatFlags { color_version: Some(0), .. }),)
  }
  
-@@ -56,7 +56,7 @@ fn get_avar_version(font_ref: &FontRef)
-     Some((version.major, version.minor))
- }
+@@ -58,7 +58,7 @@ fn get_avar_version(font_ref: &FontRef)
  
+ // https://crbug.com/513446410: For safety we want to pass unknown avar2
+ // versions through fontations, too.
 -pub fn is_avar2(format_info: &FontFormatInfo) -> bool {
 +fn is_avar2(format_info: &FontFormatInfo) -> bool {
-     matches!(&format_info.format_flags, Some(FontFormatFlags { avar_version: Some((2, _)), .. }),)
- }
- 
-@@ -69,22 +69,39 @@ fn has_tags(format_info: &FontFormatInfo
+     matches!(
+         &format_info.format_flags,
+         Some(FontFormatFlags {
+@@ -77,22 +77,39 @@ fn has_tags(format_info: &FontFormatInfo
      }
  }
  
@@ -808,3 +1060,233 @@ Source: https://github.com/ungoogled-software/ungoogled-chromium/pull/3983
 +        fn is_avar2(format_info: &FontFormatInfo) -> bool;
 +    }
 +}
+--- a/third_party/blink/renderer/platform/fonts/web_font_decoder.cc
++++ b/third_party/blink/renderer/platform/fonts/web_font_decoder.cc
+@@ -33,27 +33,19 @@
+ #include <hb.h>
+ #include <stdarg.h>
+ 
+-#include <string>
+-
+ #include "base/compiler_specific.h"
+-#include "base/containers/span.h"
+-#include "base/numerics/byte_conversions.h"
+ #include "base/numerics/safe_conversions.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+-#include "third_party/blink/renderer/platform/fonts/ift/ift_patcher.h"
+ #include "third_party/blink/renderer/platform/fonts/web_font_typeface_factory.h"
+ #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/wtf/shared_buffer.h"
+ #include "third_party/blink/renderer/platform/wtf/text/format.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ #include "third_party/ots/src/include/ots-memory-stream.h"
+ #include "third_party/skia/include/core/SkStream.h"
+-#include "third_party/woff2/include/woff2/decode.h"
+-#include "third_party/woff2/include/woff2/output.h"
+ 
+ namespace blink {
+ 
+@@ -65,11 +57,6 @@ const size_t kMaxDecompressedSizeMb = 30
+ const size_t kMaxDecompressedSizeMb = 128;
+ #endif
+ 
+-constexpr size_t kMaxDecompressedSize = kMaxDecompressedSizeMb * 1024 * 1024;
+-
+-constexpr uint32_t kWoffTag = OTS_TAG('w', 'O', 'F', 'F');
+-constexpr uint32_t kWoff2Tag = OTS_TAG('w', 'O', 'F', '2');
+-
+ class BlinkOTSContext final : public ots::OTSContext {
+   DISALLOW_NEW();
+ 
+@@ -189,94 +176,17 @@ ots::TableAction BlinkOTSContext::GetTab
+   }
+ }
+ 
+-struct FontDecodeResult {
+-  std::unique_ptr<IftPatcher> ift_patcher;
+-};
+-
+-// Decompresses and sanitizes `font_data` into an output stream using
+-// `ots_context`, and initializes `ift_patcher` if `font_data` is an IFT-enabled
+-// font. Returns whether decoding succeeded. On failure, the error string can be
+-// retrieved from `ots_context`.
+-bool DecodeFontWithIft(BlinkOTSContext& ots_context,
+-                       base::span<const uint8_t> font_data,
+-                       ots::ExpandingMemoryStream* output,
+-                       std::unique_ptr<IftPatcher>& ift_patcher) {
+-  TRACE_EVENT("blink", "DecodeFont");
+-
+-  uint32_t magic = 0;
+-  if (font_data.size() >= 4) {
+-    magic = base::U32FromBigEndian(font_data.first<4u>());
+-  }
+-
+-  switch (magic) {
+-    case kWoff2Tag: {
+-      size_t decompressed_size =
+-          woff2::ComputeWOFF2FinalSize(font_data.data(), font_data.size());
+-      if (decompressed_size == 0) {
+-        ots_context.Message(0, "Size of decompressed WOFF 2.0 is set to 0");
+-        return false;
+-      }
+-      if (decompressed_size < font_data.size()) {
+-        ots_context.Message(
+-            0, "Size of decompressed WOFF 2.0 is less than compressed size");
+-        return false;
+-      }
+-      if (decompressed_size > kMaxDecompressedSize) {
+-        ots_context.Message(0,
+-                            "Size of decompressed WOFF 2.0 font exceeds %gMB",
+-                            kMaxDecompressedSize / (1024.0 * 1024.0));
+-        return false;
+-      }
+-
+-      std::string buf(decompressed_size, 0);
+-      woff2::WOFF2StringOut out(&buf);
+-      if (!woff2::ConvertWOFF2ToTTF(font_data.data(), font_data.size(), &out)) {
+-        ots_context.Message(0, "Failed to convert WOFF 2.0 font to SFNT");
+-        return false;
+-      }
+-
+-      base::span<const uint8_t> decompressed_span =
+-          base::as_byte_span(buf).first(out.Size());
+-      if (!ots_context.Process(output, decompressed_span.data(),
+-                               decompressed_span.size())) {
+-        return false;
+-      }
+-      ift_patcher = IftPatcher::Create(decompressed_span);
+-      break;
+-    }
+-    case kWoffTag: {
+-      // The IFT (Incremental Font Transfer) specification recommends using
+-      // WOFF2. OTS handles WOFF decompression directly, so we do not extract
+-      // unsanitized font data or create an IftPatcher for the WOFF format.
+-      if (!ots_context.Process(output, font_data.data(), font_data.size())) {
+-        return false;
+-      }
+-      break;
+-    }
+-    default: {
+-      if (!ots_context.Process(output, font_data.data(), font_data.size())) {
+-        return false;
+-      }
+-      ift_patcher = IftPatcher::Create(font_data);
+-      break;
+-    }
+-  }
+-
+-  return true;
+-}
+-
+ }  // namespace
+ 
+-DecodedWebFont::DecodedWebFont() = default;
+-DecodedWebFont::DecodedWebFont(DecodedWebFont&&) noexcept = default;
+-DecodedWebFont& DecodedWebFont::operator=(DecodedWebFont&&) noexcept = default;
+-DecodedWebFont::~DecodedWebFont() = default;
+-
+-base::expected<DecodedWebFont, String> DecodeWebFont(SegmentedBuffer* buffer) {
++base::expected<DecodedWebFont, String> DecodedWebFont::Create(
++    SegmentedBuffer* buffer) {
+   if (!buffer) {
+     return base::unexpected("Empty Buffer");
+   }
+ 
++  // This is the largest web font size which we'll try to transcode.
++  static const size_t kMaxDecompressedSize =
++      kMaxDecompressedSizeMb * 1024 * 1024;
+   if (buffer->size() > kMaxDecompressedSize) {
+     return base::unexpected(
+         Format("Web font size more than {}MB", kMaxDecompressedSizeMb));
+@@ -291,11 +201,7 @@ base::expected<DecodedWebFont, String> D
+   SegmentedBuffer::DeprecatedFlatData flattened_buffer(buffer);
+ 
+   bool ok;
+-  std::unique_ptr<IftPatcher> ift_patcher;
+-  if (RuntimeEnabledFeatures::IncrementalFontTransferEnabled()) {
+-    ok = DecodeFontWithIft(ots_context, base::as_byte_span(flattened_buffer),
+-                           output.get(), ift_patcher);
+-  } else {
++  {
+     TRACE_EVENT("blink", "DecodeFont");
+     ok = ots_context.Process(
+         output.get(), reinterpret_cast<const uint8_t*>(flattened_buffer.data()),
+@@ -307,9 +213,9 @@ base::expected<DecodedWebFont, String> D
+   }
+ 
+   const void* decoded_data = output->get();
+-  DecodedWebFont result;
+-  result.ift_patcher = std::move(ift_patcher);
+-  result.decoded_size = base::checked_cast<size_t>(output->Tell());
++  DecodedWebFont result{
++      .decoded_size = base::checked_cast<size_t>(output->Tell()),
++  };
+   sk_sp<SkData> sk_data = SkData::MakeWithProc(
+       decoded_data, result.decoded_size,
+       [](const void*, void* output) {
+--- a/third_party/blink/renderer/platform/fonts/web_font_decoder.h
++++ b/third_party/blink/renderer/platform/fonts/web_font_decoder.h
+@@ -31,8 +31,6 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_WEB_FONT_DECODER_H_
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_WEB_FONT_DECODER_H_
+ 
+-#include <memory>
+-
+ #include "base/types/expected.h"
+ #include "third_party/blink/renderer/platform/platform_export.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+@@ -42,7 +40,6 @@ class SkTypeface;
+ 
+ namespace blink {
+ 
+-class IftPatcher;
+ class SegmentedBuffer;
+ 
+ // Represents a font that has been successfully decoded and sanitized.
+@@ -56,32 +53,18 @@ struct PLATFORM_EXPORT DecodedWebFont {
+   // The size of the font after decoding and sanitizing.
+   size_t decoded_size = 0;
+ 
+-  // Used to discover and apply patches to fonts. `nullptr` if the font is not
+-  // IFT-encoded or if Incremental Font Transfer is disabled.
+-  std::unique_ptr<IftPatcher> ift_patcher;
+-
+-  // Defined out of line so that `IftPatcher` only needs to be forward declared
+-  // here.
+-  DecodedWebFont();
+-  DecodedWebFont(DecodedWebFont&&) noexcept;
+-  DecodedWebFont& operator=(DecodedWebFont&&) noexcept;
+-  DecodedWebFont(const DecodedWebFont&) = delete;
+-  DecodedWebFont& operator=(const DecodedWebFont&) = delete;
+-  ~DecodedWebFont();
++  // Decodes, decompresses, and sanitizes the raw font data from the provided
++  // `buffer` (which typically contains WOFF, WOFF2, or TTF data).
++  //
++  // Returns:
++  // - On success: A `DecodedWebFont` containing the successfully created
++  //   font.
++  // - On failure: A `String` containing a descriptive error message (e.g., if
++  //   the buffer is empty, the decompressed size exceeds limits, or OTS
++  //   validation fails).
++  static base::expected<DecodedWebFont, String> Create(SegmentedBuffer*);
+ };
+ 
+-// Decodes, decompresses, and sanitizes the raw font data from the provided
+-// `buffer` (which typically contains WOFF, WOFF2, or TTF data).
+-//
+-// Returns:
+-// - On success: A `DecodedWebFont` containing the successfully created
+-//   font.
+-// - On failure: A `String` containing a descriptive error message (e.g., if
+-//   the buffer is empty, the decompressed size exceeds limits, or OTS
+-//   validation fails).
+-PLATFORM_EXPORT base::expected<DecodedWebFont, String> DecodeWebFont(
+-    SegmentedBuffer* buffer);
+-
+ }  // namespace blink
+ 
+ #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_WEB_FONT_DECODER_H_

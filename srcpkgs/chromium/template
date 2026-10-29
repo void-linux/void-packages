@@ -1,14 +1,16 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See https://chromiumdash.appspot.com/releases?platform=Linux for the latest version
-version=155.0.8059.39
+version=156.0.8078.73
 revision=1
 archs="i686* x86_64* aarch64* armv7l*"
-_llvmver=22
+_llvmver=23
+# grep 'CRUBIT_REVISION =' masterdir-*/builddir/chromium-*/tools/rust/update_rust.py
+_crubit_rev=a355b02da81bc9f350925c73ec0322ce4d5140f1
 hostmakedepends="
- $(vopt_if clang "clang${_llvmver} lld${_llvmver} llvm${_llvmver} compiler-rt${_llvmver}")
+ $(vopt_if clang "clang${_llvmver} lld${_llvmver} llvm${_llvmver} clang${_llvmver}-headers compiler-rt${_llvmver}")
  bison git gperf hwids ninja nodejs perl pkg-config python3
- libepoxy-devel libglib-devel rust rust-bindgen esbuild
+ libepoxy-devel libglib-devel cargo rust rust-src rust-bindgen esbuild
  go gn $(vopt_if qt6 qt6-base)"
 makedepends="
  alsa-lib-devel libdav1d-devel brotli-devel cups-devel elfutils-devel
@@ -33,8 +35,12 @@ homepage="https://www.chromium.org/"
 # distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/chromium-${version}.tar.xz"
 # distfiles="https://chromium-tarballs.distfiles.gentoo.org/chromium-${version}.tar.xz"
 # distfiles="https://chromium.googlesource.com/chromium/src.git/+archive/refs/tags/${version}.tar.gz"
-distfiles="https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/${version}/chromium-${version}-linux.tar.xz"
-checksum="b84bbab0eef2dd4abd73544a95f15dd2c3c815980c4fa47496f3d0ce4f8a2aa7"
+distfiles="https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/${version}/chromium-${version}-linux.tar.xz
+ https://github.com/google/crubit/archive/${_crubit_rev}.tar.gz>crubit-${_crubit_rev}.tar.gz"
+checksum="bb701465f0d3991e7266d24add8b0d39e202a1f209a5b169387785326b0d079a
+ a7d9149cdbe49a4ca49074d5b80ca3afd572bb5f7aa45b1eb15a5bd424ba292d"
+
+skip_extraction="crubit-${_crubit_rev}.tar.gz"
 
 lib32disabled=yes
 
@@ -82,6 +88,10 @@ if [ "$build_option_qt6" ]; then
 	subpackages+=" chromium-qt6"
 fi
 
+post_extract() {
+	vsrcextract -C third_party/rust-toolchain-intermediate/crubit "crubit-${_crubit_rev}.tar.gz"
+}
+
 post_patch() {
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		for f in "${FILESDIR}"/musl-patches/*.patch; do
@@ -115,6 +125,17 @@ post_patch() {
 	ln -sv /usr/bin/gperf third_party/gperf/cipd/bin/gperf
 
 	rm -v buildtools/linux64/gn
+
+	# mkdir -p third_party/rust-toolchain/lib/third_party
+	# ln -rsv third_party/rust-toolchain-intermediate/crubit third_party/rust-toolchain/lib/third_party/crubit
+
+	mkdir -p third_party/rust-toolchain/bin
+	ln -sv /usr/bin/cargo third_party/rust-toolchain/bin/
+	ln -sv /usr/bin/rustc third_party/rust-toolchain/bin/
+	ln -sv /usr/bin/rustfmt third_party/rust-toolchain/bin/
+
+	mkdir -p third_party/rust-toolchain/lib/rustlib
+	ln -rsv /usr/lib/rustlib third_party/rust-toolchain/lib/rustlib
 }
 
 _setup_clang() {
@@ -171,6 +192,19 @@ do_configure() {
 		AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
 			CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
 			tools/gn/bootstrap/bootstrap.py ${makejobs} --skip-generate-buildfiles
+	fi
+	if false; then
+		RUSTC_BOOTSTRAP=1 python3 ./tools/rust/build_crubit.py --skip-checkout
+
+		rustc -V >third_party/rust-toolchain/VERSION
+		rustc -V >third_party/rust-toolchain/INSTALLED_VERSION
+
+		(
+			cd tools/crates/gnrt
+			cargo build --locked --release
+		)
+
+		./tools/crates/gnrt/target/release/gnrt gen --for-std third_party/rust-toolchain/lib/rustlib/src/rust
 	fi
 
 	# Use system-provided libraries.
@@ -229,7 +263,7 @@ do_configure() {
 		"use_lld=$(vopt_if clang true false)"
 		'clang_use_chrome_plugins=false'
 		'clang_base_path="/usr"'
-		"clang_cross_path=\"${XBPS_CROSS_BASE}\""
+		"clang_cross_path=\"${XBPS_CROSS_BASE}/usr/lib/llvm/${_llvmver}\""
 		"clang_version=\"${clang_version%%.*}\""
 		'use_clang_modules=false' # not yet supported with void's libcxx
 
