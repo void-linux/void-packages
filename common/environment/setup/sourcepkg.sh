@@ -25,7 +25,7 @@ for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 		;;
 	DISTCC_HOSTS | DISTCC_DIR)
 		;;
-	CCACHE_DIR | CCACHE_COMPRESS)
+	CCACHE_DIR | CCACHE_COMPRESS | CCACHE_PREFIX)
 		;;
 	HTTP_PROXY | HTTPS_PROXY | SOCKS_PROXY | NO_PROXY | HTTP_PROXY_AUTH)
 		;;

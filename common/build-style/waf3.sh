@@ -19,7 +19,7 @@ do_configure() {
 do_build() {
 	: ${configure_script:=waf}
 
-	PYTHON=/usr/bin/python3 python3 ${configure_script} build ${make_build_args}
+	PYTHON=/usr/bin/python3 python3 ${configure_script} ${makejobs} build ${make_build_args}
 }
 
 do_install() {

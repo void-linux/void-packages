@@ -1,16 +1,17 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See https://chromiumdash.appspot.com/releases?platform=Linux for the latest version
-version=148.0.7778.178
+version=156.0.8078.79
 revision=1
-_rollup=4.22.4
 archs="i686* x86_64* aarch64* armv7l*"
-_llvmver=22
+_llvmver=23
+# grep 'CRUBIT_REVISION =' masterdir-*/builddir/chromium-*/tools/rust/update_rust.py
+_crubit_rev=a355b02da81bc9f350925c73ec0322ce4d5140f1
 hostmakedepends="
- $(vopt_if clang "clang${_llvmver} lld${_llvmver} llvm${_llvmver} compiler-rt${_llvmver}")
+ $(vopt_if clang "clang${_llvmver} lld${_llvmver} llvm${_llvmver} clang${_llvmver}-headers compiler-rt${_llvmver}")
  bison git gperf hwids ninja nodejs perl pkg-config python3
- libepoxy-devel libglib-devel rust rust-bindgen esbuild
- gn $(vopt_if qt6 qt6-base)"
+ libepoxy-devel libglib-devel cargo rust rust-src rust-bindgen esbuild
+ go gn $(vopt_if qt6 qt6-base)"
 makedepends="
  alsa-lib-devel libdav1d-devel brotli-devel cups-devel elfutils-devel
  fontconfig-devel freetype-devel gtk+3-devel libXScrnSaver-devel
@@ -21,7 +22,7 @@ makedepends="
  libxslt-devel minizip-devel mit-krb5-devel nss-devel opus-devel
  pciutils-devel snappy-devel speech-dispatcher-devel speex-devel
  xcb-proto zlib-devel libaom-devel libffi-devel libevdev-devel
- compiler-rt${_llvmver} rust-std
+ compiler-rt${_llvmver} rust-std clang${_llvmver}
  $(vopt_if pipewire pipewire-devel)
  $(vopt_if pulseaudio pulseaudio-devel)
  $(vopt_if sndio sndio-devel)
@@ -35,11 +36,11 @@ homepage="https://www.chromium.org/"
 # distfiles="https://chromium-tarballs.distfiles.gentoo.org/chromium-${version}.tar.xz"
 # distfiles="https://chromium.googlesource.com/chromium/src.git/+archive/refs/tags/${version}.tar.gz"
 distfiles="https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/${version}/chromium-${version}-linux.tar.xz
- https://registry.npmjs.org/@rollup/wasm-node/-/wasm-node-${_rollup}.tgz"
-checksum="e98de6a40890ae63b070d498e36bde272b99cfa85fe174c72b1994fa8fe0dc4d
- ee49bf67bd9bee869405af78162d028e2af0fcfca80497404f56b1b99f272717"
+ https://github.com/google/crubit/archive/${_crubit_rev}.tar.gz>crubit-${_crubit_rev}.tar.gz"
+checksum="362f7f0f21e69431540757b69044c4581146f23c9afec8e6b0a6abe1037bd351
+ a7d9149cdbe49a4ca49074d5b80ca3afd572bb5f7aa45b1eb15a5bd424ba292d"
 
-skip_extraction="wasm-node-${_rollup}.tgz"
+skip_extraction="crubit-${_crubit_rev}.tar.gz"
 
 lib32disabled=yes
 
@@ -87,6 +88,10 @@ if [ "$build_option_qt6" ]; then
 	subpackages+=" chromium-qt6"
 fi
 
+post_extract() {
+	vsrcextract -C third_party/rust-toolchain-intermediate/crubit "crubit-${_crubit_rev}.tar.gz"
+}
+
 post_patch() {
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		for f in "${FILESDIR}"/musl-patches/*.patch; do
@@ -105,11 +110,11 @@ post_patch() {
 
 	mkdir -p third_party/node/linux/node-linux-x64/bin
 	rm -f third_party/node/linux/node-linux-x64/bin/node
-	ln -s /usr/bin/node third_party/node/linux/node-linux-x64/bin/
+	ln -s /usr/bin/node third_party/node/linux/node-linux-x64/bin/node
 
-	rm -rv third_party/devtools-frontend/src/node_modules/rollup
-	mkdir third_party/devtools-frontend/src/node_modules/rollup
-	vsrcextract -C third_party/devtools-frontend/src/node_modules/rollup --strip-components=1 "wasm-node-${_rollup}.tgz"
+	mkdir -p third_party/dawn/tools/golang/linux-amd64/bin
+	rm -f third_party/dawn/tools/golang/linux-amd64/bin/go
+	ln -s /usr/bin/go third_party/dawn/tools/golang/linux-amd64/bin/go
 
 	rm -vf third_party/devtools-frontend/src/third_party/esbuild/esbuild
 	ln -sv /usr/bin/esbuild third_party/devtools-frontend/src/third_party/esbuild/esbuild
@@ -118,6 +123,19 @@ post_patch() {
 
 	rm -vf third_party/gperf/cipd/bin/gperf
 	ln -sv /usr/bin/gperf third_party/gperf/cipd/bin/gperf
+
+	rm -v buildtools/linux64/gn
+
+	# mkdir -p third_party/rust-toolchain/lib/third_party
+	# ln -rsv third_party/rust-toolchain-intermediate/crubit third_party/rust-toolchain/lib/third_party/crubit
+
+	mkdir -p third_party/rust-toolchain/bin
+	ln -sv /usr/bin/cargo third_party/rust-toolchain/bin/
+	ln -sv /usr/bin/rustc third_party/rust-toolchain/bin/
+	ln -sv /usr/bin/rustfmt third_party/rust-toolchain/bin/
+
+	mkdir -p third_party/rust-toolchain/lib/rustlib
+	ln -rsv /usr/lib/rustlib third_party/rust-toolchain/lib/rustlib
 }
 
 _setup_clang() {
@@ -175,6 +193,19 @@ do_configure() {
 			CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
 			tools/gn/bootstrap/bootstrap.py ${makejobs} --skip-generate-buildfiles
 	fi
+	if false; then
+		RUSTC_BOOTSTRAP=1 python3 ./tools/rust/build_crubit.py --skip-checkout
+
+		rustc -V >third_party/rust-toolchain/VERSION
+		rustc -V >third_party/rust-toolchain/INSTALLED_VERSION
+
+		(
+			cd tools/crates/gnrt
+			cargo build --locked --release
+		)
+
+		./tools/crates/gnrt/target/release/gnrt gen --for-std third_party/rust-toolchain/lib/rustlib/src/rust
+	fi
 
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
@@ -191,13 +222,13 @@ do_configure() {
 	# snappy
 	# ffmpeg: system ffmpeg is too old and makes the ffmpeg update not require
 	#  rebuilding chromium
+	# libpng
 	system=(
 		flac
 		fontconfig
 		freetype
 		libdrm
 		libjpeg
-		libpng
 		libwebp
 		libxml
 		libxslt
@@ -232,7 +263,7 @@ do_configure() {
 		"use_lld=$(vopt_if clang true false)"
 		'clang_use_chrome_plugins=false'
 		'clang_base_path="/usr"'
-		"clang_cross_path=\"${XBPS_CROSS_BASE}\""
+		"clang_cross_path=\"${XBPS_CROSS_BASE}/usr/lib/llvm/${_llvmver}\""
 		"clang_version=\"${clang_version%%.*}\""
 		'use_clang_modules=false' # not yet supported with void's libcxx
 
@@ -275,6 +306,7 @@ do_configure() {
 		"use_sndio=$(vopt_if sndio true false)"
 
 		"v8_enable_drumbrake=$(vopt_if drumbrake true false)"
+		'v8_use_metagen_instance_types=false' # XXX: broken with musl due to binary libclang being used
 
 		# Always support proprietary codecs.
 		# Enable H.264 support in bundled ffmpeg.
@@ -389,15 +421,22 @@ do_install() {
 	vinstall chrome/installer/linux/common/desktop.template 644 usr/share/applications chromium.desktop
 	vman chrome/app/resources/manpage.1.in chromium.1
 
-	sed -i \
+	vsed -i \
+		-e 's/@@MENUNAME/Chromium/g' \
+		-e 's/@@desktop_exec/chromium/g' \
+		-e 's/@@desktop_icon/chromium/g' \
+		-e 's/@@uri_scheme/x-scheme-handler\/chromium;/g' \
+		-e 's/@@startup_wm_class/chromium/g' \
+		-e '/@@extra_desktop_entries/d' \
+		"${DESTDIR}/usr/share/applications/chromium.desktop"
+	if grep '@@' "${DESTDIR}/usr/share/applications/chromium.desktop"; then
+		msg_error "missing substitution"
+	fi
+	vsed -i \
 		-e 's/@@MENUNAME/Chromium/g' \
 		-e 's/@@PACKAGE/chromium/g' \
-		-e 's/@@usr_bin_symlink_name/chromium/g' \
-		-e 's/@@uri_scheme/x-scheme-handler\/chromium;/g' \
-		-e '/@@extra_desktop_entries/d' \
-		${DESTDIR}/usr/share/man/man1/chromium.1 \
-		${DESTDIR}/usr/share/applications/chromium.desktop
-	if grep '@@' "${DESTDIR}/usr/share/applications/chromium.desktop"; then
+		"${DESTDIR}/usr/share/man/man1/chromium.1"
+	if grep '@@' "${DESTDIR}/usr/share/man/man1/chromium.1"; then
 		msg_error "missing substitution"
 	fi
 }

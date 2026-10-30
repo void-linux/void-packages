@@ -1,0 +1,42 @@
+flang currently does not actually check whether the cross-compilation target
+supports native 128-bit floats in `long double`, resulting in them always being
+disabled when built on an x86_64 machine, since they are not supported there.
+
+But when building flang-rt for the target architecture, it checks the target at
+build time and will set `HAVE_LDBL_MANT_DIG_113=1` during AArch64 builds, which
+results in flang-rt being built with `-DFORTRAN_SUPPORTS_REAL16=1`.
+This causes `ieee_arithmetic.f90` to enable `REAL(16)` types that are disabled
+in the cross compiler.
+
+This patch just removes the check for whether 128-bit floats are enabled, going
+back to the previous behavior of simply not supporting them as a temporary
+workaround. aarch64 is the only architecture affected, and there is no better
+solution until flang checks the target rather than the build host.
+
+* https://github.com/llvm/llvm-project/issues/160060
+* https://github.com/llvm/llvm-project/blob/48c8c4547584cf3b389bafb52a10ce8781d473dc/flang/include/flang/Tools/TargetSetup.h#L61-L75
+* https://discourse.llvm.org/t/cross-compilation-of-real-kind-16/89161
+
+--- a/flang/cmake/modules/FlangCommon.cmake
++++ b/flang/cmake/modules/FlangCommon.cmake
+@@ -28,20 +28,6 @@
+   add_compile_definitions(FLANG_RUNTIME_F128_MATH_LIB="${FLANG_RUNTIME_F128_MATH_LIB}")
+ endif()
+ 
+-# Check if 128-bit float computations can be done via long double
+-# Note that '-nostdinc++' might be implied when this code kicks in
+-# (see 'runtimes/CMakeLists.txt'), so we cannot use 'cfloat' C++ header
+-# file in the test below.
+-# Compile it as C.
+-check_c_source_compiles(
+-  "#include <float.h>
+-   #if LDBL_MANT_DIG != 113
+-   #error LDBL_MANT_DIG != 113
+-   #endif
+-   int main() { return 0; }
+-  "
+-  HAVE_LDBL_MANT_DIG_113)
+-
+ # Discover the GCC installation, when the build compiler is Clang,
+ # and try to find quadmath.h there. Set FLANG_INCLUDE_QUADMATH_H
+ # to the path to quadmath.h, if found.

@@ -1,0 +1,28 @@
+From 6789cd5148b60ad6588c37c56ec658793848c40f Mon Sep 17 00:00:00 2001
+From: Sam Demeulemeester <github@x86-secret.com>
+Date: Sun, 19 Jul 2026 17:16:21 +0200
+Subject: [PATCH] Fix random SMP hangs in x2APIC mode by fencing the ICR write
+ WRMSR to the x2APIC MSRs is not serializing, so an IPI could be sent before
+ older stores (eg: the barrier wakeup flags) are globally visible, deadlocking
+ the woken CPU on stale data.
+
+Insert MFENCE;LFENCE before the ICR write, as required by the
+Intel SDM (vol 3A, 11.12.3) and matching the linux kernerl
+weak_wrmsr_fence(). The need for lfence is mostly black magic...
+---
+ system/smp.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/system/smp.c b/system/smp.c
+index 78351fa7..8a9120cd 100644
+--- a/system/smp.c
++++ b/system/smp.c
+@@ -911,6 +911,8 @@ static inline void send_ipi(int apic_id, int trigger __attribute__((unused)), in
+ #if defined(__i386__) || defined(__x86_64__)
+     if (apic_x2apic) {
+         uint64_t icr = ((uint64_t)apic_id << 32) | (uint32_t)(trigger << 15 | level << 14 | mode << 8 | vector);
++        // The x2APIC ICR WRMSR is not serializing; fence so older stores are visible first (SDM vol 3A 11.12.3).
++        __asm__ __volatile__ ("mfence; lfence" : : : "memory");
+         wrmsr(MSR_IA32_X2APIC_BASE + APIC_REG_ICRLO, (uint32_t)icr, (uint32_t)(icr >> 32));
+         return;
+     }

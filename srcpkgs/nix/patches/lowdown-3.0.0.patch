@@ -1,0 +1,88 @@
+From da8759bb419b453a88df9f16c3d9e08d22965e90 Mon Sep 17 00:00:00 2001
+From: Sergei Zimmerman <sergei@zimmerman.foo>
+Date: Sun, 17 Aug 2025 20:31:34 +0300
+Subject: [PATCH] libcmd: Fix rendering of absolute URLs in markdown
+
+lowdown >= 1.4.0 supports LOWDOWN_TERM_NORELLINK to render
+absolute urls. This is useful, since we want to keep links to
+web resources and such intact.
+---
+ src/libcmd/markdown.cc | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/src/libcmd/markdown.cc b/src/libcmd/markdown.cc
+index 09cd9c1fb546..c3341da73a26 100644
+--- a/src/libcmd/markdown.cc
++++ b/src/libcmd/markdown.cc
+@@ -37,9 +37,17 @@ static std::string doRenderMarkdownToTerminal(std::string_view markdown)
+         .vmargin = 0,
+ #  endif
+         .feat = LOWDOWN_COMMONMARK | LOWDOWN_FENCED | LOWDOWN_DEFLIST | LOWDOWN_TABLES,
+-        .oflags = LOWDOWN_TERM_NOLINK,
++        .oflags =
++#  if HAVE_LOWDOWN_1_4
++            LOWDOWN_TERM_NORELLINK // To render full links while skipping relative ones
++#  else
++            LOWDOWN_TERM_NOLINK
++#  endif
+     };
+ 
++    if (!isTTY())
++        opts.oflags |= LOWDOWN_TERM_NOANSI;
++
+     auto doc = lowdown_doc_new(&opts);
+     if (!doc)
+         throw Error("cannot allocate Markdown document");
+@@ -65,7 +73,7 @@ static std::string doRenderMarkdownToTerminal(std::string_view markdown)
+     if (!rndr_res)
+         throw Error("allocation error while rendering Markdown");
+ 
+-    return filterANSIEscapes(std::string(buf->data, buf->size), !isTTY());
++    return std::string(buf->data, buf->size);
+ }
+ 
+ std::string renderMarkdownToTerminal(std::string_view markdown)
+
+From 342faaa1fa0aa3accc3027081b66c7c2ca36670b Mon Sep 17 00:00:00 2001
+From: Lisanna Dettwyler <lisanna.dettwyler@gmail.com>
+Date: Sat, 14 Mar 2026 17:16:01 -0400
+Subject: [PATCH] Fix compatibility with lowdown 3
+
+Resolves #15420
+
+Signed-off-by: Lisanna Dettwyler <lisanna.dettwyler@gmail.com>
+---
+ src/libcmd/markdown.cc | 4 +++-
+ src/libcmd/meson.build | 4 ++++
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/libcmd/markdown.cc b/src/libcmd/markdown.cc
+index c3341da73a26..2cdc8e38c234 100644
+--- a/src/libcmd/markdown.cc
++++ b/src/libcmd/markdown.cc
+@@ -38,7 +38,9 @@ static std::string doRenderMarkdownToTerminal(std::string_view markdown)
+ #  endif
+         .feat = LOWDOWN_COMMONMARK | LOWDOWN_FENCED | LOWDOWN_DEFLIST | LOWDOWN_TABLES,
+         .oflags =
+-#  if HAVE_LOWDOWN_1_4
++#  if HAVE_LOWDOWN_3
++            LOWDOWN_NORELLINK
++#  elif HAVE_LOWDOWN_1_4
+             LOWDOWN_TERM_NORELLINK // To render full links while skipping relative ones
+ #  else
+             LOWDOWN_TERM_NOLINK
+diff --git a/src/libcmd/meson.build b/src/libcmd/meson.build
+index ced5f0d9773d..d970a8e4b066 100644
+--- a/src/libcmd/meson.build
++++ b/src/libcmd/meson.build
+@@ -44,6 +44,10 @@ configdata.set(
+   'HAVE_LOWDOWN_1_4',
+   lowdown.version().version_compare('>= 1.4.0').to_int(),
+ )
++configdata.set(
++  'HAVE_LOWDOWN_3',
++  lowdown.version().version_compare('>= 3.0.0').to_int(),
++)
+ 
+ readline_flavor = get_option('readline-flavor')
+ if readline_flavor == 'editline'

@@ -79,7 +79,11 @@ install_pkg_from_repos() {
 
     cmd=$XBPS_INSTALL_CMD
     [[ $cross ]] && cmd=$XBPS_INSTALL_XCMD
-    $cmd -Ay "$@" >$tmplogf 2>&1
+    if [ -n "$XBPS_VERBOSE" ]; then
+        $cmd -Ay "$@" 2>&1 | tee "$tmplogf"
+    else
+        $cmd -Ay "$@" >"$tmplogf" 2>&1
+    fi
     rval=$?
 
     case "$rval" in

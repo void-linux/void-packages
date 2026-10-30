@@ -21,11 +21,11 @@ fi
 if [ -z "$XBPS_TEMP_MASTERDIR" ]; then
 	exec bwrap --bind "$MASTERDIR" / \
 		--ro-bind "$DISTDIR" /void-packages \
-		--dev /dev --tmpfs /tmp --proc /proc \
+		--dev /dev --tmpfs /tmp --proc /proc --ro-bind /sys /sys \
 		${HOSTDIR:+--bind "$HOSTDIR" /host} ${EXTRA_ARGS} "$@"
 else
 	exec bwrap --overlay-src "$MASTERDIR" --tmp-overlay / \
 		--ro-bind "$DISTDIR" /void-packages \
-		--dev /dev --tmpfs /tmp --proc /proc \
+		--dev /dev --tmpfs /tmp --proc /proc --ro-bind /sys /sys \
 		${HOSTDIR:+--bind "$HOSTDIR" /host} ${EXTRA_ARGS} "$@"
 fi

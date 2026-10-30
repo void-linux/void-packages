@@ -554,9 +554,9 @@ setup_pkg() {
         XBPS_MAKEJOBS=1
     fi
     makejobs="-j$XBPS_MAKEJOBS"
-    if [ -n "$XBPS_BINPKG_EXISTS" ]; then
+    if [ -n "$XBPS_BINPKG_EXISTS" ] || [ -n "$XBPS_BINPKG_EXISTS_LOCAL" ]; then
         local extraflags=""
-        if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
+        if [ -n "$XBPS_SKIP_REMOTEREPOS" ] || [ -n "XBPS_BINPKG_EXISTS_LOCAL" ]; then
             extraflags="-i"
             # filter out remote repositories
             for repo in $(xbps-query -L | awk '{ print $2 }' | grep '^/host/'); do
