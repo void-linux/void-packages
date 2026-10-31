@@ -1,131 +1,73 @@
-name: Check build
+name: Build portablemc-cli on musl
 
 on:
-  pull_request:
-    paths:
-      - 'srcpkgs/**'
   push:
     branches:
-      - 'ci-**'
-    paths:
-      - 'srcpkgs/**'
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+      - portablemc-cli
+  workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
-  # Lint changed templates.
-  xlint:
-    name: Lint templates
+  build:
     runs-on: ubuntu-latest
-
     container:
       image: ghcr.io/void-linux/void-musl-full
-      env:
-        LICENSE_LIST: common/travis/license.lst
-
-    steps:
-      - name: Prepare container
-        run: |
-          # switch to repo-ci mirror
-          mkdir -p /etc/xbps.d && cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
-          sed -i 's|repo-default|repo-ci|g' /etc/xbps.d/*-repository-*.conf
-          # install dependencies
-          xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash grep curl git
-          # create non-root user
-          useradd -G xbuilder -M builder
-
-      - name: Clone and checkout
-        uses: classabbyamp/treeless-checkout-action@v1
-
-      - name: Prepare masterdir
-        run: |
-          chown -R builder:builder . &&
-          sudo -Eu builder common/travis/set_mirror.sh &&
-          common/travis/fetch-xtools.sh
-
-      - name: Find changed templates
-        run: sudo -Eu builder common/travis/changed_templates.sh
-
-      - name: Run lints
-        run: |
-          sudo -Eu builder common/travis/verify-update-check.sh || rv=1
-          sudo -Eu builder common/travis/xlint.sh || rv=1
-          exit "${rv:-0}"
-
-  # Build changed packages.
-  build:
-    name: Build packages
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.pull_request.title, '[ci skip]') && !contains(github.event.pull_request.body, '[ci skip]')"
-
-    container:
-      image: ghcr.io/void-linux/void-${{ matrix.config.libc }}-full
-      options: --platform ${{ matrix.config.platform }} --privileged
+      options: --privileged
       volumes:
         - /dev:/dev
-      env:
-        ARCH: '${{ matrix.config.arch }}'
-        BOOTSTRAP: '${{ matrix.config.host }}'
-        TEST: '${{ matrix.config.test }}'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - { arch: x86_64,       host: x86_64,      libc: glibc, platform: linux/amd64, test: 1 }
-          - { arch: i686,         host: i686,        libc: glibc, platform: linux/386,   test: 1 }
-          - { arch: aarch64,      host: x86_64,      libc: glibc, platform: linux/amd64, test: 0 }
-          - { arch: armv7l,       host: x86_64,      libc: glibc, platform: linux/amd64, test: 0 }
-          - { arch: x86_64-musl,  host: x86_64-musl, libc: musl,  platform: linux/amd64, test: 1 }
-          - { arch: armv6l-musl,  host: x86_64-musl, libc: musl,  platform: linux/amd64, test: 0 }
-          - { arch: aarch64-musl, host: x86_64-musl, libc: musl,  platform: linux/amd64, test: 0 }
 
     steps:
       - name: Prepare container
         run: |
-          # switch to repo-ci mirror
           mkdir -p /etc/xbps.d && cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
           sed -i 's|repo-default|repo-ci|g' /etc/xbps.d/*-repository-*.conf
-          # install dependencies
-          xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash curl git
-          # create non-root user
+          xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash curl git git-lfs
           useradd -G xbuilder -M builder
 
-      - name: Clone and checkout
+      - name: Checkout
         uses: classabbyamp/treeless-checkout-action@v1
 
       - name: Prepare masterdir
         run: |
-          chown -R builder:builder . &&
-          sudo -Eu builder common/travis/set_mirror.sh &&
-          sudo -Eu builder common/travis/prepare.sh &&
+          chown -R builder:builder .
+          sudo -Eu builder common/travis/set_mirror.sh
+          sudo -Eu builder common/travis/prepare.sh
           common/travis/fetch-xtools.sh
 
-      - name: Find changed templates
-        run: sudo -Eu builder common/travis/changed_templates.sh
-
-      - name: Build and check packages
-        run: sudo -Eu builder common/travis/build.sh "$BOOTSTRAP" "$ARCH" "$TEST"
-
-      - name: Show files
-        run: sudo -Eu builder common/travis/show_files.sh "$BOOTSTRAP" "$ARCH"
-
-      - name: Compare to previous
-        run: sudo -Eu builder common/travis/xpkgdiff.sh "$BOOTSTRAP" "$ARCH"
-
-      - name: Check file conflicts
-        if: matrix.config.arch == 'x86_64' # the arch indexed in xlocate
+      - name: Build portablemc-cli
         run: |
-          if [ -s /tmp/templates ]; then
-              export XDG_CACHE_HOME="$PWD/.cache"
-              sudo -Eu builder xlocate -S &&
-              sudo -Eu builder common/scripts/lint-conflicts
+          sudo -Eu builder ./xbps-src pkg portablemc-cli
+
+      - name: Find and set XBPS package path
+        id: verify_xbps
+        run: |
+          XBPS_FILE=$(find hostdir/binpkgs -name "portablemc-cli-*.xbps" | head -n 1)
+          if [ -z "$XBPS_FILE" ]; then
+            echo "No portablemc-cli xbps package found!"
+            exit 1
           fi
+          echo "xbps_path=$XBPS_FILE" >> $GITHUB_OUTPUT
+          echo "Found XBPS package at: $XBPS_FILE"
 
-      - name: Verify repository state
+      - name: Upload to Git LFS with PAT
         run: |
-          mkdir -p /check-install &&
-          chown builder:builder /check-install &&
-          sudo -Eu builder common/travis/check-install.sh "$BOOTSTRAP" "$ARCH"
+
+          # clone my github repository
+          git clone https://x-access-token:${{ secrets.PERSONAL_PAT}}@github.com/kpnc0/void-packages-binaries.git binary-repo
+
+          git lfs install
+          git lfs track "*.xbps"
+          cd binary-repo
+
+          mkdir -p packages
+          cp ../${{ steps.verify_xbps.outputs.xbps_path }} packages/
+
+          git config user.email "bot@voidlinux.org"
+          git config user.name "Void Bot"
+
+          git add -f packages/*.xbps
+          git commit -m "Add portablemc-cli package from ${{ github.sha }}"
+          git push -f origin master
+        env:
+          PERSONAL_PAT: ${{ secrets.PERSONAL_PAT}}
