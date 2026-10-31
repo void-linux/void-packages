@@ -1,0 +1,70 @@
+From 3c4bff73592e8fba5ffc56f8857ea6231405b73b Mon Sep 17 00:00:00 2001
+From: Michael Forney <mforney@mforney.org>
+Date: Tue, 2 Jun 2026 10:57:06 -0700
+Subject: [PATCH] rv64: use pc-relative addressing for globals
+
+When extern was added, the rv64 code switched regular globals from
+using la (a pseudo-instruction that uses pc-relative addressing
+with auipc + addi) to lui + addi (absolute addressing). Presumably,
+this was done to match gcc's output with -fPIC and -fno-PIC
+respectively.  However, the key difference here is actually the
+directive `%option pic` vs `%option nopic`, which determines whether
+la uses the GOT or not.
+
+This broke linking as PIE (for instance in compilers with
+--enable-default-pie), even when there are no global references
+outside the executable. The other architectures always use pc-relative
+addressing, so rv64 should do the same.
+
+It turns out there are more specific pseudo-instructions lla and
+lga we can use instead. lla uses auipc+addi, and lga uses auipc+ld
+from the GOT.
+
+lga does not allow an offset. If you try to use one, it will assemble
+without error, but fail at link time with
+
+(.text+0x10): dangerous relocation: The addend isn't allowed for R_RISCV_GOT_HI20
+
+For now, just add a check for this. A proper fix involves some
+changes to rv64/isel like is done for amd64.
+---
+ rv64/emit.c | 14 ++++++--------
+ 1 file changed, 6 insertions(+), 8 deletions(-)
+
+diff --git a/rv64/emit.c b/rv64/emit.c
+index f4b3236..f82a1e2 100644
+--- a/rv64/emit.c
++++ b/rv64/emit.c
+@@ -133,8 +133,12 @@ emitaddr(Con *c, FILE *f)
+ {
+ 	assert((c->sym.type & ~SExt) == SGlo);
+ 	fputs(str(c->sym.id), f);
+-	if (c->bits.i)
++	if (c->bits.i) {
++		/* TODO: fix isel to ensure no offset for SGlo */
++		if (c->sym.type & SExt)
++			die("extern with offset is not supported");
+ 		fprintf(f, "+%"PRIi64, c->bits.i);
++	}
+ }
+
+ static void
+@@ -233,14 +237,8 @@ loadaddr(Con *c, char *rn, FILE *f)
+
+ 	switch (c->sym.type) {
+ 	case SGlo:
+-		fprintf(f, "\tlui %s, %%hi(", rn);
+-		emitaddr(c, f);
+-		fprintf(f, ")\n\taddi %s, %s, %%lo(", rn, rn);
+-		emitaddr(c, f);
+-		fputs(")\n", f);
+-		break;
+ 	case SExt:
+-		fprintf(f, "\tla %s, ", rn);
++		fprintf(f, "\t%s %s, ", c->sym.type == SExt ? "lga" : "lla", rn);
+ 		emitaddr(c, f);
+ 		fputc('\n', f);
+ 		break;
+--
+2.55.0
+
