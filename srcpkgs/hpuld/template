@@ -1,0 +1,150 @@
+# Template file for 'hpuld'
+pkgname=hpuld
+# xbps forbids '_' in versions
+_pkgver=1.00.39.17_00.33
+version=${_pkgver//_/.}
+revision=1
+archs="x86_64 i686"
+wrksrc=uld
+hostmakedepends="tar"
+depends="cups sane libusb libxml2"
+short_desc="HP Unified Linux Driver (printer and scanner, Samsung-based SMFP)"
+maintainer="tema5002 <tema5002@tuta.io>"
+license="custom:Proprietary"
+homepage="https://support.hp.com/"
+_base=https://ftp.hp.com/pub/softlib/software13/printers
+# the two extra tarballs only provide additional .ppd/.cts/locale files
+distfiles="${_base}/laserMFP100/uld-hp_V${_pkgver}.tar.gz
+ ${_base}/MFP170/uld-hp_V1.00.39.12_00.15.tar.gz>uld-hp-mfp170.tar.gz
+ ${_base}/IPG/M433/uld-hp.tar.gz>uld-hp-m433.tar.gz"
+skip_extraction="uld-hp-mfp170.tar.gz uld-hp-m433.tar.gz"
+# NOTE: the M433 URL is unversioned so its checksum breaks whenever HP updates it
+checksum="5c460ae34eea5b6e32fa737762856da1dec1f8766848b2959409b04cedf6c0d9
+ cebb9b7b6125e7406634bb9c2a98b01477d1e11d66c7c90474669de9927bc91d
+ 2757c5db7f10bc8109043950ab864b00fb122d82ed81efde3acac18389218a36"
+
+repository=nonfree
+restricted=yes
+nostrip=yes
+noshlibprovides=yes
+
+_udev_rule_number=48
+
+post_extract() {
+	local d
+	for d in mfp170 m433; do
+		mkdir -p "${wrksrc}/alt-${d}"
+		tar -xzf "${XBPS_SRCDISTDIR}/${pkgname}-${version}/uld-hp-${d}.tar.gz" \
+			-C "${wrksrc}/alt-${d}"
+	done
+}
+
+do_install() {
+	local alt1="${wrksrc}/alt-mfp170/uld/noarch"
+	local alt2="${wrksrc}/alt-m433/uld/noarch"
+	local main="${wrksrc}/noarch"
+	local arch
+	case "${XBPS_TARGET_MACHINE}" in
+		x86_64*) arch="${wrksrc}/x86_64" ;;
+		i686*) arch="${wrksrc}/i386" ;;
+		*) msg_error "unsupported machine: '${XBPS_TARGET_MACHINE}'\n" ;;
+	esac
+	local ppd="${DESTDIR}/opt/hp/printer/share/ppd"
+	local l d vendor_lc
+
+	vendor_lc="$(grep '^VENDOR=' "${main}/oem.conf" | sed 's/VENDOR=\(.*\)/\1/' | tr A-Z a-z)"
+
+	## /opt/hp/printer
+	for d in "${alt2}" "${alt1}" "${main}"; do
+		install -Dm644 -t "${ppd}" "${d}"/share/ppd/*.ppd
+		install -Dm644 -t "${ppd}/cms" "${d}"/share/ppd/cms/*.cts
+	done
+	vinstall "${main}/.version-printer-script" 644 opt/hp/printer .version
+
+	vmkdir usr/share/cups/model
+	vmkdir usr/share/ppd
+	ln -s /opt/hp/printer/share/ppd "${DESTDIR}/usr/share/cups/model/uld-hp"
+	ln -s /opt/hp/printer/share/ppd "${DESTDIR}/usr/share/ppd/uld-hp"
+
+	## /opt/hp/scanner
+	vmkdir etc/sane.d/dll.d
+	echo smfp > "${DESTDIR}/etc/sane.d/dll.d/hpuld"
+	vinstall "${main}/oem.conf" 644 opt/hp/scanner/share
+	vinstall "${main}/.version-scanner-script" 644 opt/hp/scanner .version
+	vinstall "${main}/etc/smfp.conf" 644 etc/sane.d smfp-hp.conf
+
+	vmkdir usr/lib/udev/rules.d
+	# Inlined from the AUR's hpuld package fulfill_template.sh
+	local VID PIDS line rules
+	_oem_field() {
+		grep "^${1}=" "${main}/oem.conf" | sed 's/"//g' | sed "s/${1}=\(.*\)/\1/" |
+			tr '[:upper:]' '[:lower:]'
+	}
+	tab() {
+		local i
+		for i in $(seq 1 "${1:-1}"); do echo -n "    "; done
+	}
+	VID="$(_oem_field VID)"
+	PIDS="$(_oem_field PIDS)"
+	rules="${DESTDIR}/usr/lib/udev/rules.d/${_udev_rule_number}-smfp_${vendor_lc}.rules"
+	while read line; do
+		eval echo \"${line}\"
+	done < "${main}/etc/smfp.rules.in" > "${rules}"
+	chmod 644 "${rules}"
+	# The HAL .fdi file from the AUR package is dropped: HAL does not exist on Void
+
+	## /opt/smfp-common/{legacy_compat,security}
+	vmkdir opt/smfp-common/legacy_compat/.usedby
+	echo 0.1 > "${DESTDIR}/opt/smfp-common/legacy_compat/.version"
+	vmkdir opt/smfp-common/security/.usedby
+	touch "${DESTDIR}/opt/smfp-common/security/.firewall"
+	echo 0.1 > "${DESTDIR}/opt/smfp-common/security/.version"
+	ln -s /opt/smfp-common/security "${DESTDIR}/opt/smfp-common/legacy_compat/.usedby/security"
+
+	## /opt/smfp-common/printer
+	vmkdir opt/smfp-common/printer/.usedby
+	vmkdir usr/lib/cups/backend
+	vmkdir usr/lib/cups/filter
+	vinstall "${arch}/libscmssc.so" 644 opt/smfp-common/printer/lib
+	for f in smfpnetdiscovery rastertospl pstosecps; do
+		vinstall "${arch}/${f}" 755 opt/smfp-common/printer/bin
+	done
+	vinstall "${main}/.version-printer" 644 opt/smfp-common/printer .version
+	ln -s /opt/smfp-common/printer/bin/smfpnetdiscovery "${DESTDIR}/usr/lib/cups/backend/smfpnetdiscovery"
+	ln -s /opt/smfp-common/printer/bin/rastertospl "${DESTDIR}/usr/lib/cups/filter/rastertospl"
+	ln -s /opt/smfp-common/printer/bin/pstosecps "${DESTDIR}/usr/lib/cups/filter/pstosecps"
+	ln -s /opt/hp/printer "${DESTDIR}/opt/smfp-common/printer/.usedby/hp"
+	ln -s /opt/smfp-common/printer "${DESTDIR}/opt/smfp-common/legacy_compat/.usedby/printer"
+	ln -s /opt/smfp-common/printer "${DESTDIR}/opt/smfp-common/security/.usedby/printer"
+
+	## /opt/smfp-common/scanner
+	vmkdir opt/smfp-common/scanner/.usedby
+	vmkdir usr/lib/sane
+	vinstall "${arch}/libsane-smfp.so.1.0.1" 644 opt/smfp-common/scanner/lib
+
+	# Locale files come from the alternative (M433) package
+	for d in "${alt2}"/share/locale/*/; do
+		l="${d%/}"; l="${l##*/}"
+		vinstall "${d}LC_MESSAGES/sane-smfp.mo" 644 "opt/smfp-common/scanner/share/locale/${l}"
+		vmkdir "usr/share/locale/${l}/LC_MESSAGES"
+		ln -s "/opt/smfp-common/scanner/share/locale/${l}/sane-smfp.mo" \
+			"${DESTDIR}/usr/share/locale/${l}/LC_MESSAGES/sane-smfp.mo"
+	done
+
+	vinstall "${main}/pagesize.xml" 644 opt/smfp-common/scanner/share
+	vinstall "${main}/libsane-smfp.cfg" 644 opt/smfp-common/scanner/share
+	vinstall "${main}/.version-scanner" 644 opt/smfp-common/scanner .version
+	ln -s /opt/smfp-common/scanner/lib/libsane-smfp.so.1.0.1 "${DESTDIR}/usr/lib/sane/libsane-smfp.so.1.0.1"
+	ln -s /opt/smfp-common/scanner/lib/libsane-smfp.so.1.0.1 "${DESTDIR}/usr/lib/sane/libsane-smfp.so.1"
+	ln -s /opt/smfp-common/scanner/lib/libsane-smfp.so.1.0.1 "${DESTDIR}/usr/lib/sane/libsane-smfp.so"
+	ln -s /opt/hp/scanner "${DESTDIR}/opt/smfp-common/scanner/.usedby/hp"
+	ln -s /opt/smfp-common/scanner "${DESTDIR}/opt/smfp-common/legacy_compat/.usedby/scanner"
+	ln -s /opt/smfp-common/scanner "${DESTDIR}/opt/smfp-common/security/.usedby/scanner"
+
+	vmkdir opt/smfp-common/mfp/uninstall
+	touch "${DESTDIR}/opt/smfp-common/mfp/uninstall/guiuninstall"
+
+	for f in "${main}"/license/*; do
+		vlicense "$f"
+	done
+}
