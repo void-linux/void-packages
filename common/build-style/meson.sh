@@ -5,10 +5,13 @@
 do_configure() {
 	: ${meson_cmd:=meson}
 	: ${meson_builddir:=build}
+	: ${meson_nativefile:="${XBPS_WRAPPERDIR}/meson/xbps_meson.native"}
 	: ${meson_crossfile:="${XBPS_WRAPPERDIR}/meson/xbps_meson.cross"}
 
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
+	else
+		configure_args+=" --native-file=${meson_nativefile}"
 	fi
 
 	# binutils ar needs a plugin when LTO is used on static libraries, so we
@@ -19,28 +22,7 @@ do_configure() {
 	# We also force gcc-ar usage in the crossfile above.
 	export AR="gcc-ar"
 
-	# unbuffered output for continuous logging
-	${meson_cmd} setup \
-		--prefix=/usr \
-		--libdir=/usr/lib${XBPS_TARGET_WORDSIZE} \
-		--libexecdir=/usr/libexec \
-		--bindir=/usr/bin \
-		--sbindir=/usr/bin \
-		--includedir=/usr/include \
-		--datadir=/usr/share \
-		--mandir=/usr/share/man \
-		--infodir=/usr/share/info \
-		--localedir=/usr/share/locale \
-		--sysconfdir=/etc \
-		--localstatedir=/var \
-		--sharedstatedir=/var/lib \
-		--buildtype=plain \
-		--auto-features=auto \
-		--wrap-mode=nodownload \
-		-Db_lto=true -Db_ndebug=true \
-		-Db_staticpic=true \
-		-Dpkgconfig.relocatable=false \
-		${configure_args} . ${meson_builddir}
+	${meson_cmd} setup ${configure_args} . ${meson_builddir}
 }
 
 do_build() {
