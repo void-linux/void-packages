@@ -1,0 +1,59 @@
+See https://github.com/void-linux/void-packages/issues/57735
+See https://github.com/void-linux/void-packages/pull/62739
+
+This is a quick hack to make thin-provisioning-tools-1.0.4 compile for musl
+
+Note: the patches/fix-musl.patch file is applied regardless of the libc and has
+what appear to be rust conditionals within the source files to choose the right
+code, since I don't use rust I'm not confident of getting this right and I have
+elected to create my patch under files/ and apply it from the post-patch hook,
+then we don't have to worry about conditionals, as it's only applied for musl
+
+diff --unified --recursive thin-provisioning-tools-1.0.4.orig/src/file_utils.rs thin-provisioning-tools-1.0.4/src/file_utils.rs
+--- thin-provisioning-tools-1.0.4.orig/src/file_utils.rs	2026-11-10 00:12:30.876002570 +1100
++++ thin-provisioning-tools-1.0.4/src/file_utils.rs	2026-11-10 00:17:33.923998484 +1100
+@@ -11,18 +11,18 @@
+     (mode & libc::S_IFMT) == flag
+ }
+ 
+-fn is_file_or_blk_(info: &libc::stat64) -> bool {
++fn is_file_or_blk_(info: &libc::stat) -> bool {
+     test_bit(info.st_mode, libc::S_IFBLK) || test_bit(info.st_mode, libc::S_IFREG)
+ }
+ 
+-// wrapper of libc::stat64
+-fn libc_stat64(path: &Path) -> io::Result<libc::stat64> {
++// wrapper of libc::stat
++fn libc_stat64(path: &Path) -> io::Result<libc::stat> {
+     let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())
+         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+ 
+     unsafe {
+-        let mut st: libc::stat64 = std::mem::zeroed();
+-        let r = libc::stat64(c_path.as_ptr(), &mut st);
++        let mut st: libc::stat = std::mem::zeroed();
++        let r = libc::stat(c_path.as_ptr(), &mut st);
+         if r == 0 {
+             Ok(st)
+         } else {
+diff --unified --recursive thin-provisioning-tools-1.0.4.old/src/io_engine/base.rs thin-provisioning-tools-1.0.4/src/io_engine/base.rs
+--- thin-provisioning-tools-1.0.4.old/src/io_engine/base.rs	2026-11-10 00:05:17.976008406 +1100
++++ thin-provisioning-tools-1.0.4/src/io_engine/base.rs	2026-11-10 00:07:32.804006588 +1100
+@@ -115,7 +115,7 @@
+ 
+ fn read_vectored_at(file: &File, bufs: &mut [libc::iovec], pos: u64) -> io::Result<usize> {
+     let ptr = bufs.as_ptr();
+-    let ret = match unsafe { libc::preadv64(file.as_raw_fd(), ptr, bufs.len() as i32, pos as i64) }
++    let ret = match unsafe { libc::preadv(file.as_raw_fd(), ptr, bufs.len() as i32, pos as i64) }
+     {
+         -1 => return Err(io::Error::last_os_error()),
+         n => n,
+@@ -125,7 +125,7 @@
+ 
+ fn write_vectored_at(file: &File, bufs: &[libc::iovec], pos: u64) -> io::Result<usize> {
+     let ptr = bufs.as_ptr();
+-    let ret = match unsafe { libc::pwritev64(file.as_raw_fd(), ptr, bufs.len() as i32, pos as i64) }
++    let ret = match unsafe { libc::pwritev(file.as_raw_fd(), ptr, bufs.len() as i32, pos as i64) }
+     {
+         -1 => return Err(io::Error::last_os_error()),
+         n => n,
