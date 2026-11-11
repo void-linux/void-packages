@@ -1,0 +1,132 @@
+#!/bin/sh
+# System kernel post-install hook for veyron-mickey-kernel-hooks
+#
+# Builds a signed vboot kernel image and writes it to the ChromeOS kernel
+# partition.  Nothing is written to the device unless the image was built and
+# verified successfully and the target partition is a ChromeOS kernel
+# partition large enough to hold it.
+
+PKGNAME="$1"
+VERSION="$2"
+
+# Target kernel partition; override from the environment if needed.
+TARGET_DISK="${VBOOT_TARGET_DISK:-/dev/mmcblk0}"
+TARGET_PART="${VBOOT_TARGET_PART:-1}"
+
+# GPT partition type GUID of a ChromeOS kernel partition.
+CROS_KERNEL_GUID="FE3A2A5D-4F32-41A7-B725-ACCC3285A309"
+
+DEVKEYS="/usr/share/vboot/devkeys"
+KERNEL_IMAGE="/boot/zImage-${VERSION}"
+DTB_SOURCE="/boot/dtbs/dtbs-${VERSION}/rk3288-veyron-mickey.dtb"
+CONFIG_LINE="noinitrd gpt console=tty1 console=ttyS2,115200n8 root=PARTUUID=%U/PARTNROFF=1 rootwait rw loglevel=7 panic=5"
+
+log() { echo "=> veyron-vboot: $*"; }
+err() { echo "=> veyron-vboot: [ERROR] $*" >&2; }
+
+if [ ! -f "${KERNEL_IMAGE}" ]; then
+    err "Kernel zImage file not found at ${KERNEL_IMAGE}. Skipping."
+    exit 0
+fi
+
+if [ ! -f "${DTB_SOURCE}" ]; then
+    err "Device tree blob missing at ${DTB_SOURCE}"
+    exit 1
+fi
+
+STAGING_DIR=$(mktemp -d /tmp/vboot-build.XXXXXX) || {
+    err "Unable to create staging directory."
+    exit 1
+}
+trap 'rm -rf "${STAGING_DIR}"' EXIT
+trap 'exit 1' HUP INT TERM
+
+BUNDLE="${STAGING_DIR}/vboot-kernel.vblock"
+
+log "Packaging zImage via kernel_noload rules for version ${VERSION}..."
+
+# 1. Map paths into the dynamic ITS profile template
+cp /etc/kernel.d/veyron-fit.its "${STAGING_DIR}/fit.its" || exit 1
+sed -i "s|@KERNEL_PATH@|${KERNEL_IMAGE}|g" "${STAGING_DIR}/fit.its" || exit 1
+sed -i "s|@DTB_PATH@|${DTB_SOURCE}|g" "${STAGING_DIR}/fit.its" || exit 1
+
+# 2. Build the FIT image container (.itb)
+if ! mkimage -f "${STAGING_DIR}/fit.its" "${STAGING_DIR}/vmlinuz.itb" >/dev/null; then
+    err "mkimage failed; not touching the kernel partition."
+    exit 1
+fi
+
+# 3. Create a 512-byte sector-aligned padding block for Depthcharge
+dd if=/dev/zero of="${STAGING_DIR}/dummy_bootloader" bs=512 count=1 status=none || exit 1
+echo "${CONFIG_LINE}" > "${STAGING_DIR}/cmdline.txt" || exit 1
+
+# 4. Sign the vboot bundle using the developer keys
+if ! vbutil_kernel \
+    --pack "${BUNDLE}" \
+    --keyblock "${DEVKEYS}/kernel.keyblock" \
+    --signprivate "${DEVKEYS}/kernel_data_key.vbprivk" \
+    --version 1 \
+    --config "${STAGING_DIR}/cmdline.txt" \
+    --bootloader "${STAGING_DIR}/dummy_bootloader" \
+    --vmlinuz "${STAGING_DIR}/vmlinuz.itb" \
+    --arch arm; then
+    err "vbutil_kernel failed to pack the bundle; not touching the kernel partition."
+    exit 1
+fi
+
+# 5. Make sure what we built is non-empty and verifies against the keys
+if [ ! -s "${BUNDLE}" ]; then
+    err "Bundle is missing or empty; not touching the kernel partition."
+    exit 1
+fi
+
+if ! vbutil_kernel --verify "${BUNDLE}" \
+    --signpubkey "${DEVKEYS}/kernel_subkey.vbpubk" >/dev/null; then
+    err "Bundle failed signature verification; not touching the kernel partition."
+    exit 1
+fi
+
+# 6. Write it out
+TARGET="${TARGET_DISK}p${TARGET_PART}"
+
+if [ ! -b "${TARGET}" ]; then
+    log "Target ${TARGET} unavailable. Staging bundle to /boot/vboot.img..."
+    cp "${BUNDLE}" /boot/vboot.img || exit 1
+    exit 0
+fi
+
+# 6a. The partition must be a ChromeOS kernel partition
+if command -v cgpt >/dev/null 2>&1; then
+    PART_TYPE=$(cgpt show -i "${TARGET_PART}" -t "${TARGET_DISK}" 2>/dev/null)
+else
+    PART_TYPE=$(blkid -p -s PART_ENTRY_TYPE -o value "${TARGET}" 2>/dev/null)
+fi
+PART_TYPE=$(echo "${PART_TYPE}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+
+if [ "${PART_TYPE}" != "${CROS_KERNEL_GUID}" ]; then
+    err "${TARGET} is not a ChromeOS kernel partition (type '${PART_TYPE:-unknown}', expected ${CROS_KERNEL_GUID}). Refusing to write."
+    exit 1
+fi
+
+# 6b. The bundle must fit in the partition
+BUNDLE_SIZE=$(wc -c < "${BUNDLE}")
+PART_SIZE=$(blockdev --getsize64 "${TARGET}" 2>/dev/null)
+if [ -z "${PART_SIZE}" ] || [ "${BUNDLE_SIZE}" -gt "${PART_SIZE}" ]; then
+    err "Bundle (${BUNDLE_SIZE} bytes) does not fit in ${TARGET} (${PART_SIZE:-unknown} bytes). Refusing to write."
+    exit 1
+fi
+
+# 6c. Write, flush, and read back to confirm
+log "Flashing ${BUNDLE_SIZE} bytes to ${TARGET}..."
+if ! dd if="${BUNDLE}" of="${TARGET}" conv=notrunc,fsync status=none; then
+    err "Write to ${TARGET} failed. The partition may be in an inconsistent state."
+    exit 1
+fi
+
+if ! cmp -n "${BUNDLE_SIZE}" "${BUNDLE}" "${TARGET}"; then
+    err "Read-back verification of ${TARGET} failed. The partition may be in an inconsistent state."
+    exit 1
+fi
+
+log "Kernel ${VERSION} written and verified on ${TARGET}."
+exit 0
