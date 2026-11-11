@@ -1,0 +1,271 @@
+From 497612796be6c3ce53e4b6f0a059199762a3f740 Mon Sep 17 00:00:00 2001
+From: Lukasz Anforowicz <lukasza@chromium.org>
+Date: Tue, 13 Oct 2026 18:47:13 -0700
+Subject: [PATCH] [crubit] Add `rust_crubit_root` GN arg for system-provided
+ Crubit.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Before this CL, the GN build always took Crubit tools
+(`cc_bindings_from_rs`, `rs_bindings_from_cc`) and Crubit support
+libraries from //third_party/rust-toolchain.  This does not work for
+builds that use a custom Rust toolchain via `rust_sysroot_absolute`,
+because Crubit has to be built from the same Rust compiler sources as
+`rustc`.
+
+After this CL, a new `rust_crubit_root` GN arg (similar to
+`rust_bindgen_root`) tells the build where to find Crubit.  It defaults
+to //third_party/rust-toolchain when using the Chromium toolchain.  When
+using a custom toolchain, it has to be set explicitly, and GN reports a
+clear error message if Crubit is needed but the arg is not set.
+
+Crubit-generated code is formatted (with `rustfmt` and `clang-format`)
+only when using Crubit from //third_party/rust-toolchain.  Formatting
+only makes the generated code easier to read, and the formatting tools
+may not be available when using a system-provided Crubit.
+
+There is no change in the default configuration (`gn gen` produces
+identical `.ninja` files).
+
+Bug: 562039310
+Change-Id: I6e937d9d19ce6fc7192190227f91ac483258dde8
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/8559360
+Reviewed-by: Devon Loehr <dloehr@google.com>
+Commit-Queue: Łukasz Anforowicz <lukasza@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#1718215}
+---
+ build/config/rust.gni                      | 27 ++++++++++++++++
+ build/rust/crubit/BUILD.gn                 |  2 +-
+ build/rust/gni_impl/cpp_api_from_rust.gni  | 24 ++++++++++-----
+ build/rust/gni_impl/crubit_shared_args.gni | 36 ++++++++++++++--------
+ build/rust/rust_api_from_cpp.gni           | 22 +++++++------
+ build_overrides/crubit.gni                 |  6 +++-
+ 6 files changed, 86 insertions(+), 31 deletions(-)
+
+diff --git a/build/config/rust.gni b/build/config/rust.gni
+index 3df7506c344caa..4574f979d5a893 100644
+--- a/build/config/rust.gni
++++ b/build/config/rust.gni
+@@ -63,6 +63,21 @@ declare_args() {
+   # the bindgen exectuable).
+   rust_bindgen_root = "//third_party/rust-toolchain"
+ 
++  # Directory under which to find Crubit tools and support libraries:
++  # * `bin/cc_bindings_from_rs` and `bin/rs_bindings_from_cc`
++  # * `lib/third_party/crubit` (support libraries and their `BUILD.gn` files)
++  #
++  # Unlike `rust_bindgen_root` we don't set `rust_crubit_root` to
++  # `"//third_party/rust-toolchain"` by default, because `cc_bindings_from_rs`
++  # has to be built from the same Rust compiler sources as `rustc` (see
++  # https://github.com/google/crubit/blob/89417b58802e20a6a11db7fea7c31692fef25276/docs/design/design.md?plain=1#L599-L602).
++  # Because of the above `rust_crubit_root` has to be explicitly set when using
++  # a custom toolchain via `rust_sysroot_absolute`.  OTOH, when
++  # `use_chromium_rust_toolchain` is set then defaulting to
++  # `"//third_party/rust-toolchain"` is ok (see the `if (rust_crubit_root...
++  # use_chromium_rust_toolchain` code below).
++  rust_crubit_root = ""
++
+   # If you're using a Rust toolchain as specified by rust_sysroot_absolute,
+   # set this to the output of `rustc -V`. Changing this string will cause all
+   # Rust targets to be rebuilt, which allows you to update your toolchain and
+@@ -188,6 +203,18 @@ if (enable_rust) {
+   }
+ }
+ 
++if (rust_crubit_root == "" && use_chromium_rust_toolchain) {
++  rust_crubit_root = "//third_party/rust-toolchain"
++}
++
++# Message for `assert(rust_crubit_root != "", rust_crubit_root_missing_message)`
++# in places that need Crubit.
++rust_crubit_root_missing_message =
++    "Crubit is required, but `rust_crubit_root` GN arg is not set.  It has " +
++    "to be set when using a custom Rust toolchain via " +
++    "`rust_sysroot_absolute`.  See `rust_crubit_root` in " +
++    "//build/config/rust.gni for more details."
++
+ # Figure out the Rust target triple (aka 'rust_abi_target')
+ #
+ # This is here rather than in the toolchain files because it's used also by
+diff --git a/build/rust/crubit/BUILD.gn b/build/rust/crubit/BUILD.gn
+index f11f7b24c29df4..0a99b7af264d75 100644
+--- a/build/rust/crubit/BUILD.gn
++++ b/build/rust/crubit/BUILD.gn
+@@ -22,7 +22,7 @@ config("public_config") {
+   # `include_dirs` below help ensure that Chromium can use the same
+   # `#include` paths as other Crubit clients like google3 - e.g.
+   # `#include "third_party/crubit/support/rs_std/slice_ref.h"`.
+-  include_dirs = [ "//third_party/rust-toolchain/lib" ]
++  include_dirs = [ "${rust_crubit_root}/lib" ]
+ }
+ 
+ # The `cref` crate provides `CRef<T>` and `CMut<T>` - Rust types that represent
+diff --git a/build/rust/gni_impl/cpp_api_from_rust.gni b/build/rust/gni_impl/cpp_api_from_rust.gni
+index 2728f1f1461f03..164b2e0d539db6 100644
+--- a/build/rust/gni_impl/cpp_api_from_rust.gni
++++ b/build/rust/gni_impl/cpp_api_from_rust.gni
+@@ -50,6 +50,8 @@ _globally_enabled_crubit_features = [
+ #
+ #
+ template("cpp_api_from_rust") {
++  assert(rust_crubit_root != "", rust_crubit_root_missing_message)
++
+   # `enable_rust` and `use_chromium_rust_toolchain` enforce that `rustc` and
+   # `cpp_api_from_rust` use the same version of Rust compiler sources - this is
+   # required (e.g. to see the same memory layout of repr-Rusts structs) as
+@@ -165,8 +167,6 @@ template("cpp_api_from_rust") {
+     inputs += [
+       _action_rsp_path,
+       cpp_api_from_rust_exe_path,
+-      rustfmt_exe_path,
+-      rustfmt_config_path,
+     ]
+     outputs = [
+       _h_out,
+@@ -204,13 +204,21 @@ template("cpp_api_from_rust") {
+ 
+       "--crubit-support-path-format",
+       crubit_support_path_format,
++    ]
++    if (defined(rustfmt_exe_path)) {
++      inputs += [
++        rustfmt_exe_path,
++        rustfmt_config_path,
++      ]
++      args += [
++        "--rustfmt-exe-path",
++        rebase_path(rustfmt_exe_path, root_build_dir),
+ 
+-      "--rustfmt-exe-path",
+-      rebase_path(rustfmt_exe_path, root_build_dir),
+-
+-      "--rustfmt-config-path",
+-      rebase_path(rustfmt_config_path, root_build_dir),
+-
++        "--rustfmt-config-path",
++        rebase_path(rustfmt_config_path, root_build_dir),
++      ]
++    }
++    args += [
+       "--crate-namespace",
+       "self=${_cpp_namespace}",
+     ]
+diff --git a/build/rust/gni_impl/crubit_shared_args.gni b/build/rust/gni_impl/crubit_shared_args.gni
+index 99756c29077a07..e0880945758aa8 100644
+--- a/build/rust/gni_impl/crubit_shared_args.gni
++++ b/build/rust/gni_impl/crubit_shared_args.gni
+@@ -5,24 +5,36 @@
+ # This `.gni` file defines constants that are shared / reused across
+ # `cpp_api_from_rust.gni` and `rust_api_from_cpp.gni`.
+ 
++import("//build/config/rust.gni")
++
+ crubit_support_path_format = "\"third_party/crubit/support/{header}\""
+ rustfmt_config_path = "//.rustfmt.toml"
+ 
+-_toolchain_bin_path = "//third_party/rust-toolchain/bin"
+-cpp_api_from_rust_exe_path = "${_toolchain_bin_path}/cc_bindings_from_rs"
+-rust_api_from_cpp_exe_path = "${_toolchain_bin_path}/rs_bindings_from_cc"
+-rustfmt_exe_path = "${_toolchain_bin_path}/rustfmt"
++_crubit_bin_path = "${rust_crubit_root}/bin"
++cpp_api_from_rust_exe_path = "${_crubit_bin_path}/cc_bindings_from_rs"
++rust_api_from_cpp_exe_path = "${_crubit_bin_path}/rs_bindings_from_cc"
+ if (host_os == "win") {
+   cpp_api_from_rust_exe_path += ".exe"
+   rust_api_from_cpp_exe_path += ".exe"
+-  rustfmt_exe_path += ".exe"
+ }
+ 
+-# TODO(lukasza): Make this also work on other host platforms.  (Possibly
+-# hoisting this Crubit-agnostic functionality into some other, reusable
+-# location elsewhere.)
+-if (host_os == "linux") {
+-  clang_format_exe_path = "//buildtools/linux64-format/clang-format"
+-} else if (host_os == "win") {
+-  clang_format_exe_path = "//buildtools/win-format/clang-format.exe"
++# Code generated by Crubit is only formatted when using Crubit from
++# //third_party/rust-toolchain.  Formatting only makes the generated code easier
++# to read, and the formatting tools may not be available when using a
++# system-provided Crubit.  Therefore `rustfmt_exe_path` and
++# `clang_format_exe_path` may be undefined.
++if (rust_crubit_root == "//third_party/rust-toolchain") {
++  rustfmt_exe_path = "//third_party/rust-toolchain/bin/rustfmt"
++  if (host_os == "win") {
++    rustfmt_exe_path += ".exe"
++  }
++
++  # TODO(lukasza): Make this also work on other host platforms.  (Possibly
++  # hoisting this Crubit-agnostic functionality into some other, reusable
++  # location elsewhere.)
++  if (host_os == "linux") {
++    clang_format_exe_path = "//buildtools/linux64-format/clang-format"
++  } else if (host_os == "win") {
++    clang_format_exe_path = "//buildtools/win-format/clang-format.exe"
++  }
+ }
+diff --git a/build/rust/rust_api_from_cpp.gni b/build/rust/rust_api_from_cpp.gni
+index b9b0908f3231c4..920837a120b15b 100644
+--- a/build/rust/rust_api_from_cpp.gni
++++ b/build/rust/rust_api_from_cpp.gni
+@@ -65,10 +65,8 @@ _globally_enabled_crubit_features = [
+ #     targets that generate bindings for types from these other targets.
+ template("rust_api_from_cpp") {
+   assert(enable_rust_api_from_cpp)
+-
+-  # At this point `rs_bindings_from_cc` is only distributed with the Chromium
+-  # Rust toolchain.
+-  assert(enable_rust && use_chromium_rust_toolchain)
++  assert(enable_rust)
++  assert(rust_crubit_root != "", rust_crubit_root_missing_message)
+ 
+   # PDFium, V8 and other "2nd-party" Chromium projects don't yet have their own
+   # `//build_overrides/crubit.gni` build file.  Until this is fixed, we assert
+@@ -254,8 +252,6 @@ template("rust_api_from_cpp") {
+       "//build/rust/gni_impl/filter_clang_args.py",
+       _metadata_path,
+       rust_api_from_cpp_exe_path,
+-      rustfmt_exe_path,
+-      rustfmt_config_path,
+     ]
+ 
+     # Public headers are inputs to this action rather than sources,
+@@ -301,10 +297,18 @@ template("rust_api_from_cpp") {
+       "--public_headers=" + string_join(",", _rebased_public_headers),
+       "--target=${_current_lib_target_full_label}",
+       "--crubit_support_path_format=${crubit_support_path_format}",
+-      "--rustfmt_exe_path=" + rebase_path(rustfmt_exe_path, root_build_dir),
+-      "--rustfmt_config_path=" +
+-          rebase_path(rustfmt_config_path, root_build_dir),
+     ]
++    if (defined(rustfmt_exe_path)) {
++      inputs += [
++        rustfmt_exe_path,
++        rustfmt_config_path,
++      ]
++      args += [
++        "--rustfmt_exe_path=" + rebase_path(rustfmt_exe_path, root_build_dir),
++        "--rustfmt_config_path=" +
++            rebase_path(rustfmt_config_path, root_build_dir),
++      ]
++    }
+ 
+     # TODO(https://crbug.com/40226863): Use
+     # `rust_enable_generated_code_formatting` (see https://crrev.com/c/8494684)
+diff --git a/build_overrides/crubit.gni b/build_overrides/crubit.gni
+index dc9ecad83bc4db..88e0a5a3d918c8 100644
+--- a/build_overrides/crubit.gni
++++ b/build_overrides/crubit.gni
+@@ -2,7 +2,11 @@
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
+-crubit_src_dir = "//third_party/rust-toolchain/lib/third_party/crubit"
++import("//build/config/rust.gni")
++
++assert(rust_crubit_root != "", rust_crubit_root_missing_message)
++
++crubit_src_dir = "${rust_crubit_root}/lib/third_party/crubit"
+ crubit_absl_dep_target = "//third_party/abseil-cpp:absl"
+ crubit_gn_configs_to_remove = [
+   "//build/config/compiler:chromium_code",

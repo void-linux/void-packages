@@ -1,20 +1,20 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See https://chromiumdash.appspot.com/releases?platform=Linux for the latest version
-version=156.0.8078.79
+version=157.0.8103.50
 revision=1
 archs="i686* x86_64* aarch64* armv7l*"
 _llvmver=23
 # grep 'CRUBIT_REVISION =' masterdir-*/builddir/chromium-*/tools/rust/update_rust.py
-_crubit_rev=a355b02da81bc9f350925c73ec0322ce4d5140f1
+_crubit_rev=20dc640430bd60ff2f7f8dbf69c311c5f807adde
 hostmakedepends="
- $(vopt_if clang "clang${_llvmver} lld${_llvmver} llvm${_llvmver} clang${_llvmver}-headers compiler-rt${_llvmver}")
+ $(vopt_if clang "clang${_llvmver} lld${_llvmver} llvm${_llvmver} clang${_llvmver}-headers compiler-rt${_llvmver} clang-tools-extra${_llvmver}")
  bison git gperf hwids ninja nodejs perl pkg-config python3
- libepoxy-devel libglib-devel cargo rust rust-src rust-bindgen esbuild
- go gn $(vopt_if qt6 qt6-base)"
+ libepoxy-devel libglib-devel cargo rust rust-src rust-std rust-bindgen esbuild
+ go gn $(vopt_if qt6 qt6-base) openssl-devel"
 makedepends="
  alsa-lib-devel libdav1d-devel brotli-devel cups-devel elfutils-devel
- fontconfig-devel freetype-devel gtk+3-devel libXScrnSaver-devel
+ fontconfig-devel freetype-devel gtk4-devel libXScrnSaver-devel
  libXcomposite-devel libXcursor-devel libXdamage-devel libXi-devel libXrandr-devel
  libavif-devel libcap-devel libcurl-devel libdrm-devel
  libexif-devel libflac-devel libgcrypt-devel libjpeg-turbo-devel libmtp-devel
@@ -37,8 +37,8 @@ homepage="https://www.chromium.org/"
 # distfiles="https://chromium.googlesource.com/chromium/src.git/+archive/refs/tags/${version}.tar.gz"
 distfiles="https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/${version}/chromium-${version}-linux.tar.xz
  https://github.com/google/crubit/archive/${_crubit_rev}.tar.gz>crubit-${_crubit_rev}.tar.gz"
-checksum="362f7f0f21e69431540757b69044c4581146f23c9afec8e6b0a6abe1037bd351
- a7d9149cdbe49a4ca49074d5b80ca3afd572bb5f7aa45b1eb15a5bd424ba292d"
+checksum="a216ef754a1528d6df863a0033379f11d21565c04ab9328d83c4f29c4d16a0c6
+ bb8ae2268825a73c0a79e65e9fda3329f38371ee36a7c1d63d92c194cc505ecf"
 
 skip_extraction="crubit-${_crubit_rev}.tar.gz"
 
@@ -126,6 +126,9 @@ post_patch() {
 
 	rm -v buildtools/linux64/gn
 
+	rm -v buildtools/linux64-format/clang-format
+	ln -s /usr/bin/clang-format buildtools/linux64-format/clang-format
+
 	# mkdir -p third_party/rust-toolchain/lib/third_party
 	# ln -rsv third_party/rust-toolchain-intermediate/crubit third_party/rust-toolchain/lib/third_party/crubit
 
@@ -193,18 +196,24 @@ do_configure() {
 			CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
 			tools/gn/bootstrap/bootstrap.py ${makejobs} --skip-generate-buildfiles
 	fi
-	if false; then
-		RUSTC_BOOTSTRAP=1 python3 ./tools/rust/build_crubit.py --skip-checkout
+	if true; then
+		AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
+			CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
+			RUSTC_BOOTSTRAP=1 RUSTFLAGS= \
+			python3 ./tools/rust/build_crubit.py --skip-checkout
 
 		rustc -V >third_party/rust-toolchain/VERSION
 		rustc -V >third_party/rust-toolchain/INSTALLED_VERSION
 
 		(
 			cd tools/crates/gnrt
-			cargo build --locked --release
+			RUSTFLAGS= PKG_CONFIG=/usr/bin/pkg-config \
+				CC=$CC_FOR_BUILD CFLAGS=$CFLAGS_FOR_BUILD \
+				cargo build --locked --release
 		)
 
-		./tools/crates/gnrt/target/release/gnrt gen --for-std third_party/rust-toolchain/lib/rustlib/src/rust
+		RUST_SRC_ROOT=/usr/lib/rustlib/rustc-src/rust/library \
+			./tools/crates/gnrt/target/release/gnrt gen
 	fi
 
 	# Use system-provided libraries.
@@ -270,10 +279,11 @@ do_configure() {
 		"use_custom_libcxx=$(vopt_if libcxx true false)" # https://github.com/llvm/llvm-project/issues/61705
 
 		'enable_rust=true'
+		"rustc_version=\"$(rustc --version | cut -d' ' -f2)\""
 		'rust_sysroot_absolute="/usr"'
 		"rust_cross_sysroot_absolute=\"${XBPS_CROSS_BASE}\""
 		'rust_bindgen_root="/usr"'
-		"rustc_version=\"$(rustc --version | cut -d' ' -f2)\""
+		'rust_crubit_root="//third_party/rust-toolchain"'
 
 		'node_version_check=false'
 
@@ -291,6 +301,8 @@ do_configure() {
 		'use_system_harfbuzz=false'
 		'use_system_libffi=true'
 
+		'gtk_version=4'
+
 		'use_qt5=false'
 		"use_qt6=$(vopt_if qt6 true false)"
 
@@ -306,7 +318,7 @@ do_configure() {
 		"use_sndio=$(vopt_if sndio true false)"
 
 		"v8_enable_drumbrake=$(vopt_if drumbrake true false)"
-		'v8_use_metagen_instance_types=false' # XXX: broken with musl due to binary libclang being used
+		'v8_use_metagen=false' # XXX: broken with musl due to binary libclang being used
 
 		# Always support proprietary codecs.
 		# Enable H.264 support in bundled ffmpeg.

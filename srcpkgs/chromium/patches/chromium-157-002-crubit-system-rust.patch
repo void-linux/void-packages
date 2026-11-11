@@ -1,0 +1,387 @@
+From e65a87e428e2e1a2ea3aeab692ab3d7dce396eca Mon Sep 17 00:00:00 2001
+From: Lukasz Anforowicz <lukasza@chromium.org>
+Date: Tue, 13 Oct 2026 18:56:52 -0700
+Subject: [PATCH] [crubit] Support `cpp_api_from_rust` with a prebuilt Rust std library.
+
+Before this CL, `cpp_api_from_rust` (Crubit's `cc_bindings_from_rs`)
+required the in-tree build of the Rust standard library, because the
+C++ bindings of the stdlib (`rs_core.h`, `rs_alloc.h`, `rs_std.h`) were
+generated only from the stdlib sources in //build/rust/std/rules.  This
+meant that:
+
+* `gn gen` failed for builds with a custom Rust toolchain (set via
+  `rust_sysroot_absolute`), because //components/cbor, Blink fonts,
+  //components/web_package and other code unconditionally depend on
+  Crubit-generated bindings.
+* `cpp_api_from_rust` could not be used in the toolchain for Rust host
+  build tools.
+
+After this CL, the C++ bindings of a prebuilt stdlib are generated
+from the `.rmeta` files in the sysroot, using the rmeta interface of
+`cc_bindings_from_rs` (via a new `use_rmeta_interface` parameter of
+the `cpp_api_from_rust.gni` template).  `enable_cpp_api_from_rust` no
+longer depends on `use_chromium_rust_toolchain` nor on
+`rust_prebuilt_stdlib`.
+
+`//build/rust/tests` now also generates and compiles (but does not link
+or run) C++ bindings in the toolchain for Rust host build tools, which
+always uses a prebuilt stdlib.  This provides lightweight test coverage
+of the new code path on regular bots.
+
+Tested:
+* Default config: `build/rust/tests:deps` builds (including the new
+  host-toolchain test), and `base_unittests
+  --gtest_filter=RustCcBindingsFromRs.*` passes.
+* `rust_crubit_root` pointing at a copy of Crubit from
+  //third_party/rust-toolchain, and `enable_rust_api_from_cpp = true`,
+  both with the Chromium toolchain and with a custom toolchain
+  (`rust_sysroot_absolute` pointing at //third_party/rust-toolchain,
+  `is_component_build = false`): `base_unittests
+  --gtest_filter='RustCcBindingsFromRs.*:TestRustApiFromCpp.*'` passes.
+
+Bug: 549864599
+Bug: 562039310
+Change-Id: I3195d5df9ab97b35b25f6664b4a1a92d30fd4f53
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/8560244
+Reviewed-by: Devon Loehr <dloehr@google.com>
+Commit-Queue: Łukasz Anforowicz <lukasza@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#1718223}
+---
+
+diff --git a/build/config/rust.gni b/build/config/rust.gni
+index 4574f97..d9a1b6603 100644
+--- a/build/config/rust.gni
++++ b/build/config/rust.gni
+@@ -449,8 +449,7 @@
+ #
+ # See the `assert` comments in `cpp_api_from_rust.gni` for explanation of
+ # the conditions used here.
+-enable_cpp_api_from_rust = enable_rust && use_chromium_rust_toolchain &&
+-                           !rust_prebuilt_stdlib && build_with_chromium
++enable_cpp_api_from_rust = enable_rust && build_with_chromium
+ 
+ declare_args() {
+   # Whether it is okay to use `rust_api_from_cpp.gni`.  The default is `false`,
+@@ -459,9 +458,8 @@
+   # `true` in `args.gn` for local experimentation.
+   #
+   # TODO(crbug.com/40226863): After officially supporting `rust_api_from_cpp`:
+-  # * Introduce `_enable_crubit = enable_rust && use_chromium_rust_toolchain &&
+-  #   build_with_chromium`
+-  # * Set `enable_cpp_api_from_rust = _enable_crubit && !rust_prebuilt_stdlib`
++  # * Introduce `_enable_crubit = enable_rust && build_with_chromium`
++  # * Set `enable_cpp_api_from_rust = _enable_crubit`
+   # * Set `enable_rust_api_from_cpp = _enable_crubit`
+   #   (and it should just be a variable, not an `args.gn` setting / not in
+   #   `declare_args`)
+diff --git a/build/rust/crubit/BUILD.gn b/build/rust/crubit/BUILD.gn
+index 0a99b7af..b7ada4e4 100644
+--- a/build/rust/crubit/BUILD.gn
++++ b/build/rust/crubit/BUILD.gn
+@@ -10,9 +10,7 @@
+   public_deps = [
+     "$crubit_src_dir/support:support_cpp",
+     "$crubit_src_dir/support/rs_std:rs_std_cpp",
+-    "//build/rust/std/rules:alloc_bindings",
+-    "//build/rust/std/rules:core_bindings",
+-    "//build/rust/std/rules:std_bindings",
++    "//build/rust/std:std_bindings",
+   ]
+ }
+ 
+diff --git a/build/rust/gni_impl/cpp_api_from_rust.gni b/build/rust/gni_impl/cpp_api_from_rust.gni
+index 164b2e0d..67e156f 100644
+--- a/build/rust/gni_impl/cpp_api_from_rust.gni
++++ b/build/rust/gni_impl/cpp_api_from_rust.gni
+@@ -27,7 +27,20 @@
+ #   rust_target
+ #     Label of the Rust library to generate the bindings for.
+ #
+-#   rustc_env_and_flags
++#   use_rmeta_interface (optional, default = false)
++#     When `false`, Crubit compiles the crate from its sources, using the same
++#     arguments as `rustc` (see `rustc_env_and_flags` and `sources`).
++#
++#     When `true`, Crubit reads the crate metadata from an `.rmeta` file
++#     instead.  Currently this mode only supports crates that `rustc` can find
++#     on its own (e.g. crates from a prebuilt Rust standard library in the
++#     sysroot).
++#
++#     TODO(https://crbug.com/549864599,
++#     https://gn.issues.chromium.org/490160737): Use this mode also for crates
++#     built by GN, once we can get paths to rmeta files in GN.
++#
++#   rustc_env_and_flags (required if `use_rmeta_interface` is `false`)
+ #     Path to the `.rustflags.json` file generated by an earlier invocation
+ #     of `rustc`.  (`cpp_api_from_rust` needs to be invoked with the same
+ #     arguments, target platform, etc. as `rust_target`.)
+@@ -56,23 +56,9 @@
+ #
+ #
+ template("cpp_api_from_rust") {
++  assert(enable_rust)
+   assert(rust_crubit_root != "", rust_crubit_root_missing_message)
+ 
+-  # `enable_rust` and `use_chromium_rust_toolchain` enforce that `rustc` and
+-  # `cpp_api_from_rust` use the same version of Rust compiler sources - this is
+-  # required (e.g. to see the same memory layout of repr-Rusts structs) as
+-  # explained in
+-  # https://github.com/google/crubit/blob/89417b58802e20a6a11db7fea7c31692fef25276/docs/design/design.md?plain=1#L599-L602
+-  assert(enable_rust && use_chromium_rust_toolchain)
+-
+-  # TODO(https://crbug.com/549864599): `cpp_api_from_rust`-generated bindings
+-  # may depend on C++ bindings of Rust standard library. Currently Chromium is
+-  # only able to invoke Crubit in `.rs`-consuming mode (rather than
+-  # `.rlib`-consuming mode). Together, these two constraints mean that
+-  # `cpp_api_from_rust` only works for the target platform and doesn't yet work
+-  # for the host platform.
+-  assert(!rust_prebuilt_stdlib)
+-
+   # PDFium, V8 and other "2nd-party" Chromium projects don't yet have their own
+   # `//build_overrides/crubit.gni` build file.  Until this is fixed, we assert
+   # that `cpp_api_from_rust` template can only be used in Chromium builds.
+@@ -78,16 +83,19 @@
+   _h_target_name = target_name
+   _metadata_target_name = "${target_name}_crubit_metadata"
+ 
++  _use_rmeta_interface =
++      defined(invoker.use_rmeta_interface) && invoker.use_rmeta_interface
++  if (!_use_rmeta_interface) {
++    assert(defined(invoker.rustc_env_and_flags))
++  }
+   assert(defined(invoker.deps))
+   assert(defined(invoker.sources))
+-  assert(defined(invoker.rustc_env_and_flags))
+   assert(defined(invoker.rust_target))
+   assert(defined(invoker.original_attributes))
+   assert(defined(invoker.crate_name))
+   assert(defined(invoker.h_out))
+   _crate_name = invoker.crate_name
+   _rust_target = invoker.rust_target
+-  _rust_target_name = get_label_info(_rust_target, "name")
+   _rust_target_dir = get_label_info(_rust_target, "dir")
+   _h_out = invoker.h_out
+   _rs_out = "${_h_out}.impl.rs"
+@@ -99,7 +107,8 @@
+   if (!defined(_original_attributes.deps)) {
+     _original_attributes.deps = []
+   }
+-  _is_rust_stdlib_target = _rust_target_dir == "//build/rust/std/rules"
++  _is_rust_stdlib_target = _rust_target_dir == "//build/rust/std/rules" ||
++                           _rust_target_dir == "//build/rust/std"
+   if (!_is_rust_stdlib_target) {
+     _original_attributes.deps += [ "//build/rust/std:std_bindings" ]
+   }
+@@ -177,20 +186,46 @@
+     args = [
+       "--cpp-api-from-rust-exe-path",
+       rebase_path(cpp_api_from_rust_exe_path, root_build_dir),
+-
+-      "--rustc-env-and-flags",
+-      rebase_path(invoker.rustc_env_and_flags, root_build_dir),
+-      "@" + rebase_path(_action_rsp_path, root_build_dir),
+     ]
++    if (!_use_rmeta_interface) {
++      args += [
++        "--rustc-env-and-flags",
++        rebase_path(invoker.rustc_env_and_flags, root_build_dir),
++      ]
++
++      # With a prebuilt stdlib, `rustc` uses its default sysroot (and
++      # therefore `rustc_env_and_flags` don't contain `--sysroot`).  The
++      # default sysroot of Crubit may be different (e.g. when `rust_crubit_root`
++      # and `rust_sysroot` point to different directories), so it has to be
++      # passed explicitly.
++      if (rust_prebuilt_stdlib) {
++        args += [ "--extra-rustc-flag=--sysroot=" +
++                  rebase_path(rust_sysroot, root_build_dir) ]
++      }
++    }
++    args += [ "@" + rebase_path(_action_rsp_path, root_build_dir) ]
+ 
+     # `cpp_api_from_rust` flags:
++    args += [ "--" ]
++    if (_use_rmeta_interface) {
++      args += [
++        "--enable-rmeta-interface=true",
++        "--source-crate-name",
++        _crate_name,
++        "--sysroot",
++        rebase_path(rust_sysroot, root_build_dir),
++        "--target",
++        rust_abi_target,
++      ]
++    } else {
++      args += [
++        # TODO(https://crbug.com/549864599,
++        # https://gn.issues.chromium.org/490160737): Enable this interface once
++        # we can get paths to rmeta files in GN.
++        "--enable-rmeta-interface=false",
++      ]
++    }
+     args += [
+-      "--",
+-
+-      # TODO(https://gn.issues.chromium.org/490160737): Enable this interface
+-      # once we can get paths to rmeta files in GN.
+-      "--enable-rmeta-interface=false",
+-
+       "--h-out",
+       rebase_path(_h_out, root_build_dir),
+ 
+@@ -269,10 +304,15 @@
+     # of this crate is `_h_target_name`, which only consumes C ABI top-level
+     # entrypoints - this means that the crate name isn't used / doesn't leak
+     # anywhere.  And therefore it doesn't matter what kind of mangling we do,
+-    # as long as we ensure that it is globally unique.
++    # as long as we ensure that it is globally unique.  (Note that
++    # `_rust_target` is not necessarily unique - e.g. with
++    # `use_rmeta_interface`, `//build/rust/std:std` is shared by all the
++    # crates of a prebuilt Rust standard library.  This is why
++    # `_h_target_name` is used as `_crate_name_base` below.)
++    _crate_name_base = _h_target_name
+     _crate_name_suffix =
+-        string_hash(get_label_info(_rust_target_name, "label_with_toolchain"))
+-    crate_name = "${_rust_target_name}_crubit_${_crate_name_suffix}"
++        string_hash(get_label_info(_crate_name_base, "label_with_toolchain"))
++    crate_name = "${_crate_name_base}_crubit_${_crate_name_suffix}"
+     output_name = crate_name
+ 
+     crate_root = _rs_out
+diff --git a/build/rust/gni_impl/cpp_api_from_rust_wrapper.py b/build/rust/gni_impl/cpp_api_from_rust_wrapper.py
+index 75d79e8b..2acfcdf 100755
+--- a/build/rust/gni_impl/cpp_api_from_rust_wrapper.py
++++ b/build/rust/gni_impl/cpp_api_from_rust_wrapper.py
+@@ -22,16 +22,25 @@
+     parser.add_argument(
+         '--cpp-api-from-rust-exe-path', required=True, type=pathlib.Path
+     )
++    # `--rustc-env-and-flags` is not used when generating bindings from
++    # `.rmeta` files (i.e. with `--enable-rmeta-interface=true`).
++    parser.add_argument('--rustc-env-and-flags', type=pathlib.Path)
+     parser.add_argument(
+-        '--rustc-env-and-flags', type=pathlib.Path, required=True
++        '--extra-rustc-flag',
++        action='append',
++        default=[],
++        help='Appended to the `rustc` flags from `--rustc-env-and-flags`.',
+     )
+     parser.add_argument('args', metavar='ARG', nargs='+')
+     args = parser.parse_args()
+ 
+-    (rustenv, rustflags) = LoadRustEnvAndFlags(args.rustc_env_and_flags)
+-    PrepareRustEnvForExecution(rustenv)
++    rustenv = None
++    rustflags = []
++    if args.rustc_env_and_flags:
++        (rustenv, rustflags) = LoadRustEnvAndFlags(args.rustc_env_and_flags)
++        PrepareRustEnvForExecution(rustenv)
+ 
+-    rustflags = [*args.args, "--", *rustflags]
++    rustflags = [*args.args, "--", *rustflags, *args.extra_rustc_flag]
+ 
+     # `cpp_api_from_rust` should not write any files into the build directory
+     # (e.g. into `out/`).
+diff --git a/build/rust/std/BUILD.gn b/build/rust/std/BUILD.gn
+index 0bc9545..9ecaa39 100644
+--- a/build/rust/std/BUILD.gn
++++ b/build/rust/std/BUILD.gn
+@@ -19,6 +19,7 @@
+ import("//build/config/coverage/coverage.gni")
+ import("//build/config/rust.gni")
+ import("//build/config/sanitizers/sanitizers.gni")
++import("//build/rust/gni_impl/cpp_api_from_rust.gni")
+ 
+ if (toolchain_has_rust) {
+   # List of Rust stdlib rlibs which are present in the official Rust toolchain
+@@ -425,5 +426,66 @@
+     group("test_support") {
+       deps = [ ":std" ]
+     }
++
++    if (enable_cpp_api_from_rust) {
++      # C++ bindings of the prebuilt Rust standard library.  The in-tree stdlib
++      # build generates the bindings from the stdlib sources (see
++      # `//build/rust/std/rules`), but here Crubit reads the crate metadata
++      # from the `.rmeta` files in the sysroot.
++      _prebuilt_stdlib_bindings = [
++        {
++          crate_name = "core"
++          deps = []
++        },
++        {
++          crate_name = "alloc"
++          deps = [ ":prebuilt_core_bindings" ]
++        },
++        {
++          crate_name = "std"
++          deps = [
++            ":prebuilt_alloc_bindings",
++            ":prebuilt_core_bindings",
++          ]
++        },
++      ]
++      foreach(_bindings, _prebuilt_stdlib_bindings) {
++        cpp_api_from_rust("prebuilt_${_bindings.crate_name}_bindings") {
++          use_rmeta_interface = true
++          rust_target = ":std"
++          crate_name = _bindings.crate_name
++          h_out = "$root_gen_dir/third_party/crubit/support/rs_std/" +
++                  "rs_${_bindings.crate_name}.h"
++          original_attributes = {
++            cpp_namespace = "rs::${_bindings.crate_name}"
++            deps = _bindings.deps
++          }
++
++          # Crubit reads the `.rmeta` files from `rust_sysroot`.  The copies
++          # made by `:find_stdlib` change together with these files.
++          sources = get_target_outputs(":find_stdlib")
++          deps = [ ":find_stdlib" ]
++
++          visibility = [ ":*" ]
++        }
++      }
++
++      group("std_bindings") {
++        deps = [ ":std" ]
++        public_deps = [
++          ":prebuilt_alloc_bindings",
++          ":prebuilt_core_bindings",
++          ":prebuilt_std_bindings",
++        ]
++      }
++
++      group("std_bindings_crubit_metadata") {
++        public_deps = [
++          ":prebuilt_alloc_bindings_crubit_metadata",
++          ":prebuilt_core_bindings_crubit_metadata",
++          ":prebuilt_std_bindings_crubit_metadata",
++        ]
++      }
++    }
+   }
+ }
+diff --git a/build/rust/tests/BUILD.gn b/build/rust/tests/BUILD.gn
+index 17cb708..aaf3dca 100644
+--- a/build/rust/tests/BUILD.gn
++++ b/build/rust/tests/BUILD.gn
+@@ -75,6 +75,19 @@
+ 
+     if (enable_cpp_api_from_rust) {
+       deps += [ "//build/rust/tests/test_cpp_api_from_rust" ]
++
++      # The `data_deps` below provides light test coverage for using
++      # `cpp_api_from_rust` when building for the host platform (rather than
++      # the target platform).  This is a bit of a hack that shouldn't really be
++      # replicated/used elsewhere.
++      #
++      # `data_deps` (rather than `deps`) are needed because this is a
++      # dependency on a `source_set` from *another* toolchain - `deps` would
++      # undesirably link the host toolchain objects into the (target toolchain)
++      # executables that depend on this group (e.g. into `base_unittests`).
++      if (!toolchain_for_rust_host_build_tools) {
++        data_deps += [ "//build/rust/tests/test_cpp_api_from_rust:target_depending_only_on_bindings($rust_macro_toolchain)" ]
++      }
+     }
+     if (enable_rust_api_from_cpp) {
+       deps += [ "//build/rust/tests/test_rust_api_from_cpp" ]
