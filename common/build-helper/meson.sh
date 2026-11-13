@@ -29,7 +29,7 @@ if [ -z "$CROSS_BUILD" ]; then
 		wrap_mode = 'nodownload'
 
 		b_lto = true
-		b_ndebug = true
+		b_ndebug = 'true'
 		b_staticpic = true
 
 		pkgconfig.relocatable = false
@@ -139,7 +139,7 @@ cat > "${XBPS_WRAPPERDIR}/meson/xbps_meson.cross" <<-EOF
 	wrap_mode = 'nodownload'
 
 	b_lto = true
-	b_ndebug = true
+	b_ndebug = 'true'
 	b_staticpic = true
 
 	pkgconfig.relocatable = false
