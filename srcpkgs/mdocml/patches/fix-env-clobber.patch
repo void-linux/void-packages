@@ -1,0 +1,66 @@
+Bugfix: defp is passed to manpath_parseline, which calls strtok on defp.
+This causes MANPATH env var to be clobbered for the current process.
+When using a MANPAGER that uses MANPATH for navigation, like vim or nvim,
+this bug breaks their MANPATH and thus navigation.
+The fix is to make a copy of the env var and pass that to manpath_parseline().
+
+--- a/manpath.c
++++ b/manpath.c
+@@ -41,6 +41,7 @@ manconf_parse(struct manconf *conf, const char *file,
+ 		char *defp, char *auxp)
+ {
+ 	char		*insert;
++	char		*env_manpath = NULL;
+ 
+ 	/* Always prepend -m. */
+ 	manpath_parseline(&conf->manpath, auxp, 'm');
+@@ -52,28 +53,30 @@ manconf_parse(struct manconf *conf, const char *file,
+ 	}
+ 
+ 	/* MANPATH and man.conf(5) cooperate. */
+-	defp = getenv("MANPATH");
++	env_manpath = getenv("MANPATH");
++	env_manpath = env_manpath != NULL ? mandoc_strdup(env_manpath) : NULL;
++	defp = env_manpath;
+ 	if (NULL == file)
+ 		file = MAN_CONF_FILE;
+ 
+ 	/* No MANPATH; use man.conf(5) only. */
+ 	if (NULL == defp || '\0' == defp[0]) {
+ 		manconf_file(conf, file);
+-		return;
++		goto end;
+ 	}
+ 
+ 	/* Prepend man.conf(5) to MANPATH. */
+ 	if (':' == defp[0]) {
+ 		manconf_file(conf, file);
+ 		manpath_parseline(&conf->manpath, defp, '\0');
+-		return;
++		goto end;
+ 	}
+ 
+ 	/* Append man.conf(5) to MANPATH. */
+ 	if (':' == defp[strlen(defp) - 1]) {
+ 		manpath_parseline(&conf->manpath, defp, '\0');
+ 		manconf_file(conf, file);
+-		return;
++		goto end;
+ 	}
+ 
+ 	/* Insert man.conf(5) into MANPATH. */
+@@ -83,11 +86,13 @@ manconf_parse(struct manconf *conf, const char *file,
+ 		manpath_parseline(&conf->manpath, defp, '\0');
+ 		manconf_file(conf, file);
+ 		manpath_parseline(&conf->manpath, insert + 1, '\0');
+-		return;
++		goto end;
+ 	}
+ 
+ 	/* MANPATH overrides man.conf(5) completely. */
+ 	manpath_parseline(&conf->manpath, defp, '\0');
++end:
++	free(env_manpath);
+ }
+ 
+ void

@@ -1,0 +1,62 @@
+From 40acb04b2c1291f7d3091c61080109da11eea48b Mon Sep 17 00:00:00 2001
+From: Szabolcs Nagy <nsz@port70.net>
+Date: Mon, 23 Mar 2026 17:33:20 +0000
+Subject: regex: reject invalid \digit back reference in BRE
+
+in BRE \n matches the nth subexpression, but regcomp did not check if
+the nth subexpression was complete or not, only that there were more
+subexpressions overall than the largest backref.
+
+fix regcomp to error if the referenced subexpression is incomplete.
+the bug could cause an infinite loop in regexec:
+
+ regcomp(&re, "\\(^a*\\1\\)*", 0);
+ regexec(&re, "aa", 0, 0, 0);
+
+since BRE has backreferences, any application accepting a BRE from
+untrusted sources is already vulnerable to an attacker-controlled
+near-infinite (exponential-time) loop, but this particular case where
+the loop is actually infinite can and should be avoided.
+
+ERE is not affected since the language an ERE describes is actually
+regular.
+
+Reported-by: Simon Resch <simon.resch@code-intelligence.com>
+---
+ src/regex/regcomp.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/regex/regcomp.c b/src/regex/regcomp.c
+index fb24556e..b4b81968 100644
+--- a/src/regex/regcomp.c
++++ b/src/regex/regcomp.c
+@@ -409,6 +409,8 @@ typedef struct {
+ 	int position;
+ 	/* The highest back reference or -1 if none seen so far. */
+ 	int max_backref;
++	/* Bit mask of submatch IDs that can be back referenced. */
++	int backref_ok;
+ 	/* Compilation flags. */
+ 	int cflags;
+ } tre_parse_ctx_t;
+@@ -769,6 +771,8 @@ static reg_errcode_t marksub(tre_parse_ctx_t *ctx, tre_ast_node_t *node, int sub
+ 	node->submatch_id = subid;
+ 	node->num_submatches++;
+ 	ctx->n = node;
++	if (subid < 10)
++		ctx->backref_ok |= 1<<subid;
+ 	return REG_OK;
+ }
+ 
+@@ -864,6 +868,8 @@ static reg_errcode_t parse_atom(tre_parse_ctx_t *ctx, const char *s)
+ 			if (!ere && (unsigned)*s-'1' < 9) {
+ 				/* back reference */
+ 				int val = *s - '0';
++				if (!(ctx->backref_ok & 1<<val))
++					return REG_ESUBREG;
+ 				node = tre_ast_new_literal(ctx->mem, BACKREF, val, ctx->position++);
+ 				ctx->max_backref = MAX(val, ctx->max_backref);
+ 			} else {
+-- 
+cgit v1.2.1
+

@@ -3,13 +3,16 @@
 case "$1" in
    pre)
        logger -t nvidia-sleep "Entering $2 mode (invoked by $SYSTEMD_SLEEP_ACTION)"
-       /usr/bin/nvidia-sleep.sh "hibernate"
+       case "$2" in
+          suspend) mode=suspend ;;
+          *) mode=hibernate ;;
+       esac
+       /usr/bin/nvidia-sleep.sh "$mode"
        ret=$?
        if [ $ret -ne 0 ]; then
                logger -t nvidia-sleep "Failed to enter $2 mode (exit code $ret)"
                exit $ret
        fi
-       sleep 5
        logger -t nvidia-sleep "Entered $2 mode (invoked by $SYSTEMD_SLEEP_ACTION)"
        ;;
    post)

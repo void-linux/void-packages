@@ -1,0 +1,165 @@
+From a9474c485116f243c8bb221b008a740da1b989a9 Mon Sep 17 00:00:00 2001
+From: loqs <loqs@users.noreply.github.com>
+Date: Tue, 15 Apr 2025 16:40:22 +0000
+Subject: [PATCH] WIP Switch to libsoup3
+
+---
+ configure.ac                              |   6 +-
+ plugins/acoustid/pragha-acoustid-plugin.c |  26 +++--
+ plugins/koel/pragha-koel-plugin.c         | 120 +++++++++++++++-------
+ plugins/tunein/pragha-tunein-plugin.c     |  27 +++--
+ 4 files changed, 123 insertions(+), 56 deletions(-)
+
+--- a/configure.ac
++++ b/configure.ac
+@@ -148,9 +148,9 @@ dnl Check libpsuop
+ LIBSOUP_FOUND="no"
+ if test x"$LIBPEAS_FOUND" = x"yes"; then
+ XDT_CHECK_OPTIONAL_PACKAGE([LIBSOUP],
+-                           [libsoup-2.4], [2.38],
+-                           [libsoup-2.4],
+-                           [libsoup-2.4 library], [yes])
++                           [libsoup-3.0], [3.0],
++                           [libsoup-3.0],
++                           [libsoup-3.0 library], [yes])
+ else
+ AM_CONDITIONAL([HAVE_LIBSOUP], 0)
+ fi
+--- a/plugins/acoustid/pragha-acoustid-plugin.c
++++ b/plugins/acoustid/pragha-acoustid-plugin.c
+@@ -184,9 +184,9 @@ pragha_acoustid_dialog_response (GtkWidg
+ }
+ 
+ static void
+-pragha_acoustid_plugin_get_metadata_done (SoupSession *session,
+-                                          SoupMessage *msg,
+-                                          gpointer     user_data)
++pragha_acoustid_plugin_get_metadata_done (GObject      *source,
++                                          GAsyncResult *res,
++                                          gpointer      user_data)
+ {
+ 	GtkWidget *dialog;
+ 	GtkWidget *window;
+@@ -194,7 +194,14 @@ pragha_acoustid_plugin_get_metadata_done
+ 	XMLNode *xml = NULL, *xi;
+ 	gchar *otitle = NULL, *oartist = NULL, *oalbum = NULL;
+ 	gchar *ntitle = NULL, *nartist = NULL, *nalbum = NULL;
++	gchar *data;
+ 	gint prechanged = 0;
++	g_autoptr(GBytes) response = NULL;
++	g_autoptr(GError) error = NULL;
++	gsize length = 0;
++	SoupSession *session;
++	SoupMessage *msg;
++	SoupStatus status_code;
+ 
+ 	PraghaAcoustidPlugin *plugin = user_data;
+ 	PraghaAcoustidPluginPrivate *priv = plugin->priv;
+@@ -202,7 +209,10 @@ pragha_acoustid_plugin_get_metadata_done
+ 	window = pragha_application_get_window (priv->pragha);
+ 	remove_watch_cursor (window);
+ 
+-	if (!SOUP_STATUS_IS_SUCCESSFUL (msg->status_code))
++	session = SOUP_SESSION (source);
++	msg = soup_session_get_async_result_message (session, res);
++	status_code = soup_message_get_status (msg);
++	if (!SOUP_STATUS_IS_SUCCESSFUL (status_code))
+ 		return;
+ 
+ 	g_object_get (priv->mobj,
+@@ -211,7 +221,9 @@ pragha_acoustid_plugin_get_metadata_done
+ 	              "album", &oalbum,
+ 	              NULL);
+ 
+-	xml = tinycxml_parse ((gchar *)msg->response_body->data);
++	response = soup_session_send_and_read_finish (session, res, &error);
++	data = (gchar *)g_bytes_get_data (response, &length);
++	xml = tinycxml_parse (data);
+ 
+ 	xi = xmlnode_get (xml, CCA{"response", "results", "result", "recordings", "recording", "title", NULL }, NULL, NULL);
+ 	if (xi && string_is_not_empty(xi->content)) {
+@@ -280,11 +292,11 @@ pragha_acoustid_plugin_get_metadata (Pra
+ 	query = g_strdup_printf ("http://api.acoustid.org/v2/lookup?client=%s&meta=%s&format=%s&duration=%d&fingerprint=%s",
+ 	                         "yPvUXBmO", "recordings+releasegroups+compress", "xml", duration, fingerprint);
+ 
+-	session = soup_session_sync_new ();
++	session = soup_session_new ();
+ 
+ 	msg = soup_message_new ("GET", query);
+-	soup_session_queue_message (session, msg,
+-	                            pragha_acoustid_plugin_get_metadata_done, plugin);
++	soup_session_send_and_read_async (session, msg, G_PRIORITY_DEFAULT, NULL,
++	                                  pragha_acoustid_plugin_get_metadata_done, plugin);
+ 
+ 	g_free (query);
+ }
+@@ -457,4 +469,4 @@ pragha_plugin_deactivate (PeasActivatabl
+ 	priv->merge_id_main_menu = 0;
+ 
+ 	pragha_menubar_remove_action (priv->pragha, "pragha-plugins-placeholder", "search-metadata");
+-}
+\ No newline at end of file
++}
+--- a/plugins/tunein/pragha-tunein-plugin.c
++++ b/plugins/tunein/pragha-tunein-plugin.c
+@@ -121,9 +121,9 @@ tunein_helper_get_atribute (XMLNode *xml
+ }
+ 
+ static void
+-pragha_tunein_plugin_get_radio_done (SoupSession *session,
+-                                     SoupMessage *msg,
+-                                     gpointer     user_data)
++pragha_tunein_plugin_get_radio_done (GObject      *source,
++                                     GAsyncResult *res,
++                                     gpointer      user_data)
+ {
+ 	GtkWidget *window;
+ 	PraghaPlaylist *playlist;
+@@ -132,6 +132,14 @@ pragha_tunein_plugin_get_radio_done (Sou
+ 	XMLNode *xml = NULL, *xi;
+ 	const gchar *type = NULL, *name = NULL, *url = NULL;
+ 	gchar *uri_parsed, *name_fixed = NULL;
++	gchar *data;
++	g_autoptr(GBytes) response = NULL;
++	g_autoptr(GError) error = NULL;
++	gsize length = 0;
++	SoupSession *session;
++	SoupMessage *msg;
++	SoupStatus status_code;
++
+ 
+ 	PraghaTuneinPlugin *plugin = user_data;
+ 	PraghaTuneinPluginPrivate *priv = plugin->priv;
+@@ -139,10 +147,15 @@ pragha_tunein_plugin_get_radio_done (Sou
+ 	window = pragha_application_get_window (priv->pragha);
+ 	remove_watch_cursor (window);
+ 
+-	if (!SOUP_STATUS_IS_SUCCESSFUL (msg->status_code))
++	session = SOUP_SESSION (source);
++	msg = soup_session_get_async_result_message (session, res);
++	status_code = soup_message_get_status (msg);
++	if (!SOUP_STATUS_IS_SUCCESSFUL (status_code))
+ 		return;
+ 
+-	xml = tinycxml_parse ((gchar *)msg->response_body->data);
++	response = soup_session_send_and_read_finish (session, res, &error);
++	data = (gchar *)g_bytes_get_data (response, &length);
++	xml = tinycxml_parse (data);
+ 	xi = xmlnode_get (xml, CCA{"opml", "body", "outline", NULL }, NULL, NULL);
+ 	for(;xi;xi= xi->next) {
+ 		type = tunein_helper_get_atribute (xi, "type");
+@@ -197,11 +210,11 @@ pragha_tunein_plugin_get_radio (PraghaTu
+ 	escaped_field = g_uri_escape_string (field, NULL, TRUE);
+ 	query = g_strdup_printf ("%s%s", "http://opml.radiotime.com/Search.aspx?query=", escaped_field);
+ 
+-	session = soup_session_sync_new ();
++	session = soup_session_new ();
+ 
+ 	msg = soup_message_new ("GET", query);
+-	soup_session_queue_message (session, msg,
+-	                            pragha_tunein_plugin_get_radio_done, plugin);
++	soup_session_send_and_read_async (session, msg, G_PRIORITY_DEFAULT, NULL,
++	                                  pragha_tunein_plugin_get_radio_done, plugin);
+ 
+ 	g_free (escaped_field);
+ 	g_free (query);

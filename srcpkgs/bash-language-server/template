@@ -1,33 +1,46 @@
 # Template file for 'bash-language-server'
 pkgname=bash-language-server
-version=5.6.0
+version=5.8.1
 revision=1
-hostmakedepends="pnpm"
+hostmakedepends="nodejs"
 depends="nodejs"
 short_desc="Bash language server"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="MIT"
 homepage="https://github.com/bash-lsp/bash-language-server"
 distfiles="https://github.com/bash-lsp/bash-language-server/archive/refs/tags/server-${version}.tar.gz"
-checksum=54025af2243bcb7a08300662ad919847c084abfa1913dee2151b2ff7ca0cf8c9
+checksum=217561dd9ba4eec4e73b4a89ce8ec4259d78d0dfb5966caf55b86a7765b84eb7
 
 do_build() {
-	pnpm install --frozen-lockfile
-	pnpm run compile
+	# Upstream builds the server + vscode-client with a pnpm workspace
+	# The server alone only needs its own dependencies plus the typescript toolchain
+	local _typescript=$(node -p 'require("./package.json").devDependencies.typescript')
+	local _types_node=$(node -p 'require("./package.json").devDependencies["@types/node"]')
+
+	cd server
+	npm install --ignore-scripts
+	npm install --ignore-scripts --no-save "typescript@${_typescript}" "@types/node@${_types_node}"
+	npm exec --no -- tsc -p tsconfig.json
+
+	# Runtime dependency called by server.ts
+	cp src/get-options.sh out/
 }
 
 do_install() {
 	TARGET_PATH="usr/lib/${pkgname}"
 	cd server
 
-	rm -r node_modules
-	npm install --omit=dev
+	npm prune --omit=dev --ignore-scripts
+	find node_modules -type d -empty -delete
 
 	vmkdir ${TARGET_PATH}
 	vcopy node_modules ${TARGET_PATH}
 	vcopy out ${TARGET_PATH}
 	vcopy package.json ${TARGET_PATH}
 	vcopy tree-sitter-bash.wasm ${TARGET_PATH}
+
+	# Delete JS SourceMaps
+	find "${DESTDIR}/${TARGET_PATH}" -depth -name '*.map' -delete
 
 	vmkdir usr/bin
 	ln -sf /${TARGET_PATH}/out/cli.js ${DESTDIR}/usr/bin/${pkgname}

@@ -1,5 +1,8 @@
 # Contributing to void-packages
 
+> [!IMPORTANT]
+> Void's [global contributing policy](https://github.com/void-linux/.github/blob/master/CONTRIBUTING.md) applies to this repository
+
 void-packages is the backbone of the Void Linux distribution. It contains all the definitions to build packages from source.
 
 This document describes how you, as a contributor, can help with adding packages, correcting bugs and adding features to void-packages.

@@ -113,11 +113,6 @@ int main(void)
       tmp += 39;
       if (!strcmp(tmp, "TRUSTED_DELEGATOR\n")) trust |= 1;
       else if (!strcmp(tmp, "NOT_TRUSTED\n")) trust |= 2;
-    } else if (!memcmp(line,
-                       "CKA_TRUST_EMAIL_PROTECTION CK_TRUST CKT_NSS_", 44)) {
-      tmp += 44;
-      if (!strcmp(tmp, "TRUSTED_DELEGATOR\n")) trust |= 1;
-      else if (!strcmp(tmp, "NOT_TRUSTED\n")) trust |= 2;
       if (!trust) printf("Ignoring %s\n", label);
       if (trust == 1) {
         FILE *out;

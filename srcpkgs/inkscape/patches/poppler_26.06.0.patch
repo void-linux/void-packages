@@ -1,4 +1,50 @@
-Heavily modified patch in https://gitlab.com/inkscape/inkscape/-/merge_requests/7968
+From 1ad89c941bad5e42a3378cd8644a4c4cd3b6ea71 Mon Sep 17 00:00:00 2001
+From: KrIr17 <elendil.krir17@gmail.com>
+Date: Mon, 8 Jun 2026 20:16:32 +0200
+Subject: [PATCH] Fix Building with Poppler 26.06.0
+
+- pdfparser: Some `const PDFRectangle *` to `const PDFRectangle &` [1]
+- pdfparser: Some `const GfxColor *` to `const GfxColor &` [2]
+- pdf-utils: Add a `getRect(const PDFRectangle &)` alongside `getRect(const
+  PDFRectangle *)`
+- poppler-cairo-font-engine: `getKey()` now returns std::string and not
+  char[], so change `strcmp` to `std::string(...).compare(...)` [3]
+- poppler-utils: `obj->dictGetKey()` etc. were removed; use
+  `obj->dict()->getKey()` instead (these have also existed in poppler
+  since the beginning, so shouldn't break any old poppler) [4,5]
+- svg-builder: `convertGfxColor` now takes `const GfxColor &` as input.
+  A convenience function taking `const GfxColor *` (for older poppler)
+  now calls the new one after confirming `color` is a valid pointer
+- svg-builder: `_addStopToGradient` now  takes `const GfxColor &` as
+  input. This was used only in `convertGfxColor` and therefore doesn't
+  need a helper function for compatibility
+- testfiles pdf-utils-test: `<poppler/*.h>` to `<*.h>` (see e3eb1210)
+- testfiles pdf-utils-test: Some `const PDFRectangle *`
+  to `const PDFRectangle &` [1]
+
+Fixes https://gitlab.com/inkscape/inkscape/-/work_items/6210
+
+Upstream Commits:
+
+[1] https://gitlab.freedesktop.org/poppler/poppler/-/commit/d50a4510
+[2] https://gitlab.freedesktop.org/poppler/poppler/-/commit/0f94f530
+[3] https://gitlab.freedesktop.org/poppler/poppler/-/commit/a3de7f8a
+[4] https://gitlab.freedesktop.org/poppler/poppler/-/commit/bb13b0f5
+[5] https://gitlab.freedesktop.org/poppler/poppler/-/commit/8ae0f8e7
+---
+ src/extension/internal/pdfinput/pdf-input.cpp | 14 +++++-
+ .../internal/pdfinput/pdf-parser.cpp          | 45 ++++++++++---------
+ src/extension/internal/pdfinput/pdf-parser.h  |  4 +-
+ src/extension/internal/pdfinput/pdf-utils.cpp |  7 ++-
+ src/extension/internal/pdfinput/pdf-utils.h   |  1 +
+ .../pdfinput/poppler-cairo-font-engine.cpp    |  2 +-
+ .../pdfinput/poppler-transition-api.h         | 16 +++++++
+ .../internal/pdfinput/poppler-utils.cpp       | 20 +++++----
+ .../internal/pdfinput/svg-builder.cpp         | 36 +++++++++------
+ src/extension/internal/pdfinput/svg-builder.h |  3 +-
+ testfiles/src/pdf-utils-test.cpp              |  7 +--
+ 11 files changed, 101 insertions(+), 54 deletions(-)
+
 --- a/src/extension/internal/pdfinput/pdf-input.cpp
 +++ b/src/extension/internal/pdfinput/pdf-input.cpp
 @@ -808,7 +808,11 @@ PdfInput::add_builder_page(std::shared_p
@@ -242,7 +288,7 @@ Heavily modified patch in https://gitlab.com/inkscape/inkscape/-/merge_requests/
      return Geom::Rect(box->x1, box->y1, box->x2, box->y2);
  }
  
-+Geom::Rect getRect(const PDFRectangle& box)
++Geom::Rect getRect(_POPPLER_CONST PDFRectangle &box)
 +{
 +    return Geom::Rect(box.x1, box.y1, box.x2, box.y2);
 +}
@@ -256,7 +302,7 @@ Heavily modified patch in https://gitlab.com/inkscape/inkscape/-/merge_requests/
  };
  
  Geom::Rect getRect(_POPPLER_CONST PDFRectangle *box);
-+Geom::Rect getRect(const PDFRectangle& box);
++Geom::Rect getRect(_POPPLER_CONST PDFRectangle &box);
  Geom::PathVector getPathV(GfxPath *gPath);
  
  #endif /* PDF_UTILS_H */
@@ -327,38 +373,105 @@ Heavily modified patch in https://gitlab.com/inkscape/inkscape/-/merge_requests/
          case objStream:
 --- a/src/extension/internal/pdfinput/svg-builder.cpp
 +++ b/src/extension/internal/pdfinput/svg-builder.cpp
-@@ -392,6 +392,11 @@ static std::string svgConvertGfxRGB(GfxR
-     return svgConvertRGBToText(r, g, b);
- }
+@@ -394,6 +394,14 @@ static std::string svgConvertGfxRGB(GfxR
  
-+std::string SvgBuilder::convertGfxColor(const GfxColor& color, GfxColorSpace *space)
-+{
-+    return convertGfxColor(&color, space);
-+}
-+
  std::string SvgBuilder::convertGfxColor(const GfxColor *color, GfxColorSpace *space)
  {
++    if (!color) {
++        return "";
++    }
++    return convertGfxColor(*color, space);
++}
++
++std::string SvgBuilder::convertGfxColor(const GfxColor &color, GfxColorSpace *space)
++{
      std::string icc = "";
-@@ -412,7 +417,7 @@ std::string SvgBuilder::convertGfxColor(
+     switch (space->getMode()) {
+         case csDeviceGray:
+@@ -412,14 +420,14 @@ std::string SvgBuilder::convertGfxColor(
      }
  
      GfxRGB rgb;
 -    space->getRGB(color, &rgb);
-+    space->_POPPLER_GET_RGB(*color, &rgb);
++    space->_POPPLER_GET_RGB(color, &rgb);
      auto rgb_color = svgConvertGfxRGB(&rgb);
  
      if (!icc.empty()) {
-@@ -1214,7 +1219,7 @@ void SvgBuilder::_addStopToGradient(Inks
+         Inkscape::CSSOStringStream icc_color;
+         icc_color << rgb_color << " icc-color(" << icc;
+         for (int i = 0; i < space->getNComps(); ++i) {
+-            icc_color << ", " << colToDbl((*color).c[i]);
++            icc_color << ", " << colToDbl((color).c[i]);
+         }
+         icc_color << ");";
+         return icc_color.str();
+@@ -1204,7 +1212,7 @@ gchar *SvgBuilder::_createGradient(GfxSh
+ /**
+  * \brief Adds a stop with the given properties to the gradient's representation
+  */
+-void SvgBuilder::_addStopToGradient(Inkscape::XML::Node *gradient, double offset, GfxColor *color, GfxColorSpace *space,
++void SvgBuilder::_addStopToGradient(Inkscape::XML::Node *gradient, double offset, GfxColor &color, GfxColorSpace *space,
+                                     double opacity)
+ {
+     Inkscape::XML::Node *stop = _xml_doc->createElement("svg:stop");
+@@ -1214,7 +1222,7 @@ void SvgBuilder::_addStopToGradient(Inks
      if (space->getMode() == csDeviceGray) {
          // This is a transparency mask.
          GfxRGB rgb;
 -        space->getRGB(color, &rgb);
-+        space->_POPPLER_GET_RGB(*color, &rgb);
++        space->_POPPLER_GET_RGB(color, &rgb);
          double gray = (double)rgb.r / 65535.0;
          gray = CLAMP(gray, 0.0, 1.0);
          os_opacity << gray;
+@@ -1255,8 +1263,8 @@ bool SvgBuilder::_addGradientStops(Inksc
+         if (!svgGetShadingColor(shading, 0.0, &stop1) || !svgGetShadingColor(shading, 1.0, &stop2)) {
+             return false;
+         } else {
+-            _addStopToGradient(gradient, 0.0, &stop1, space, 1.0);
+-            _addStopToGradient(gradient, 1.0, &stop2, space, 1.0);
++            _addStopToGradient(gradient, 0.0, stop1, space, 1.0);
++            _addStopToGradient(gradient, 1.0, stop2, space, 1.0);
+         }
+     } else if (type == _POPPLER_FUNCTION_TYPE_STITCHING) {
+         auto stitchingFunc = static_cast<_POPPLER_CONST StitchingFunction*>(func);
+@@ -1269,7 +1277,7 @@ bool SvgBuilder::_addGradientStops(Inksc
+         // Add stops from all the stitched functions
+         GfxColor prev_color, color;
+         svgGetShadingColor(shading, bounds[0], &prev_color);
+-        _addStopToGradient(gradient, bounds[0], &prev_color, space, 1.0);
++        _addStopToGradient(gradient, bounds[0], prev_color, space, 1.0);
+         for ( int i = 0 ; i < num_funcs ; i++ ) {
+             svgGetShadingColor(shading, bounds[i + 1], &color);
+             // Add stops
+@@ -1279,14 +1287,14 @@ bool SvgBuilder::_addGradientStops(Inksc
+                     expE = (bounds[i + 1] - bounds[i])/expE;    // approximate exponential as a single straight line at x=1
+                     if (encode[2*i] == 0) {    // normal sequence
+                         auto offset = (bounds[i + 1] - expE) / max_bound;
+-                        _addStopToGradient(gradient, offset, &prev_color, space, 1.0);
++                        _addStopToGradient(gradient, offset, prev_color, space, 1.0);
+                     } else {                   // reflected sequence
+                         auto offset = (bounds[i] + expE) / max_bound;
+-                        _addStopToGradient(gradient, offset, &color, space, 1.0);
++                        _addStopToGradient(gradient, offset, color, space, 1.0);
+                     }
+                 }
+             }
+-            _addStopToGradient(gradient, bounds[i + 1] / max_bound, &color, space, 1.0);
++            _addStopToGradient(gradient, bounds[i + 1] / max_bound, color, space, 1.0);
+             prev_color = color;
+         }
+     } else { // Unsupported function type
 --- a/src/extension/internal/pdfinput/svg-builder.h
 +++ b/src/extension/internal/pdfinput/svg-builder.h
+@@ -186,7 +186,7 @@ private:
+     // Pattern creation
+     gchar *_createPattern(GfxPattern *pattern, GfxState *state, bool is_stroke=false);
+     gchar *_createGradient(GfxShading *shading, const Geom::Affine pat_matrix, bool for_shading = false);
+-    void _addStopToGradient(Inkscape::XML::Node *gradient, double offset, GfxColor *color, GfxColorSpace *space,
++    void _addStopToGradient(Inkscape::XML::Node *gradient, double offset, GfxColor &color, GfxColorSpace *space,
+                             double opacity);
+     bool _addGradientStops(Inkscape::XML::Node *gradient, GfxShading *shading,
+                            _POPPLER_CONST Function *func);
 @@ -240,6 +240,7 @@ private:
  
      // Colors

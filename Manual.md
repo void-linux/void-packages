@@ -1106,6 +1106,10 @@ additional paths to be searched when linking target binaries to be introspected.
 `qemu-<target_arch>-static` when running the target binary. You can for example specify
 `GIR_EXTRA_OPTIONS="-strace"` to see a trace of what happens when running that binary.
 
+- `go` specifies environment variables necessary for native and cross builds of go programs.
+This is specified automatically for packages with the `go` build style, but can be used for
+packages with go components but otherwise use another build style.
+
 - `meson` creates a cross file, `${XBPS_WRAPPERDIR}/meson/xbps_meson.cross`, which configures
 meson for cross builds. This is particularly useful for building packages that wrap meson
 invocations (e.g., `python3-pep517` packages that use a meson backend) and is added by default
