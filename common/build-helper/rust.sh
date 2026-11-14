@@ -53,6 +53,11 @@ export SODIUM_USE_PKG_CONFIG=1
 
 # openssl-sys
 export OPENSSL_NO_VENDOR=1
+if [ "$CROSS_BUILD" ]; then
+	_RUST_BUILD_ENV="${RUST_BUILD^^}"
+	_RUST_BUILD_ENV="${_RUST_BUILD_ENV//-/_}"
+	export ${_RUST_BUILD_ENV}_OPENSSL_DIR="/usr"
+fi
 
 # pcre2-sys, only necessary for musl targets
 export PCRE2_SYS_STATIC=0
