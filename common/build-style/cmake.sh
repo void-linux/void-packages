@@ -59,12 +59,22 @@ _EOF
 	cmake_args+=" -DCMAKE_INSTALL_SYSCONFDIR:PATH=/etc"
 
 	if [ "$CROSS_BUILD" ]; then
-		cmake_args+=" -DQT_HOST_PATH=/usr"
-		# QT_HOST_PATH isn't enough in my system,
-		# which have binfmts support on and off
-		cmake_args+=" -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake"
-		cmake_args+=" -DKF6_HOST_TOOLING=/usr/lib/cmake"
+		cmake_args+="
+		 -DQT_HOST_PATH=/usr
+		 -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake
+		 -DKF6_HOST_TOOLING=/usr/lib/cmake
+		 -DKDE_INSTALL_QMLDIR=lib/qt6/qml
+		 -DKDE_INSTALL_QTPLUGINDIR=lib/qt6/plugins
+		 -DKDE_INSTALL_QTMETATYPESDIR=lib/qt6/metatypes
+		 -DECM_MKSPECS_INSTALL_DIR=/usr/lib/qt6/mkspecs/modules
+		 -DECM_SHIBOKEN_ARCH=$XBPS_CROSS_RUST_TARGET
+		 -DSYSROOT_INCLUDE_DIRS=$XBPS_CROSS_BASE/usr/include
+		"
 	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+		arm*) cmake_args+=" -DSHIBOKEN_GENERATOR_EXTRA_FLAGS=--clang-option=-mfloat-abi=hard"
+	esac
 
 	if [[ $build_helper = *"qemu"* ]]; then
 		echo "SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)" \
