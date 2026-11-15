@@ -1,0 +1,136 @@
+diff -ur a/project.py b/project.py
+--- a/project.py	2026-03-24 13:25:28.848577000 -0400
++++ b/project.py	2026-11-27 21:58:36.187095049 -0500
+@@ -105,6 +105,9 @@
+ 
+         return dunder_init
+ 
++    def get_limited_abi_version(self):
++        return (3, 13, 0)
++
+     def get_options(self):
+         """ Return the sequence of configurable options. """
+ 
+diff -ur a/qpy/QtCore/qpycore_pyqtproperty.cpp b/qpy/QtCore/qpycore_pyqtproperty.cpp
+--- a/qpy/QtCore/qpycore_pyqtproperty.cpp	2026-03-24 13:25:28.732108000 -0400
++++ b/qpy/QtCore/qpycore_pyqtproperty.cpp	2026-11-27 21:59:41.164320102 -0500
+@@ -511,7 +511,7 @@
+ static qpycore_pyqtProperty *clone(qpycore_pyqtProperty *orig)
+ {
+     qpycore_pyqtProperty *pp = (qpycore_pyqtProperty *)PyType_GenericNew(
+-            Py_TYPE(orig), 0, 0);
++            Py_TYPE((PyObject *)orig), 0, 0);
+ 
+     if (pp)
+     {
+diff -ur a/qpy/QtCore/qpycore_pyqtslot.cpp b/qpy/QtCore/qpycore_pyqtslot.cpp
+--- a/qpy/QtCore/qpycore_pyqtslot.cpp	2026-03-24 13:25:28.741840800 -0400
++++ b/qpy/QtCore/qpycore_pyqtslot.cpp	2026-11-27 21:58:36.187095049 -0500
+@@ -97,8 +97,8 @@
+     else
+     {
+         // Use the value we have if one wasn't supplied.
+-        if (!self)
+-            self = instance();
++        if (self) Py_INCREF(self);
++        else self = instance();
+ 
+         // If self is NULL then we didn't have a method in the first place.
+         // Instead we had a callable that has been cleared during garbage
+@@ -107,13 +107,17 @@
+             return PyQtSlot::Ignored;
+ 
+         // See if the instance has gone (which isn't an error).
+-        if (self == Py_None)
++        if (self == Py_None) {
++            Py_DECREF(self);
+             return PyQtSlot::Ignored;
+-
++        }
++        
+         // If the receiver wraps a C++ object then ignore the call if it no
+         // longer exists.
+-        if (!no_receiver_check && PyObject_TypeCheck(self, sipSimpleWrapper_Type) && !sipGetAddress((sipSimpleWrapper *)self))
++        if (!no_receiver_check && PyObject_TypeCheck(self, sipSimpleWrapper_Type) && !sipGetAddress((sipSimpleWrapper *)self)) {
++            Py_DECREF(self);
+             return PyQtSlot::Ignored;
++        }
+ 
+         sipMethodDef callable_m;
+ 
+@@ -121,6 +125,7 @@
+         callable_m.pm_self = self;
+ 
+         callable = sipFromMethod(&callable_m);
++        Py_DECREF(self);
+     }
+ 
+     // Convert the C++ arguments to Python objects.
+@@ -181,7 +186,11 @@
+         if (other)
+             return false;
+ 
+-        return (mfunc == callable_m.pm_function && instance() == callable_m.pm_self);
++        PyObject *instance_obj = instance();
++        bool res = (mfunc == callable_m.pm_function && instance_obj == callable_m.pm_self);
++        Py_XDECREF(instance_obj);
++
++        return res;
+     }
+ 
+     if (!other)
+@@ -205,11 +214,18 @@
+ // Get the instance object.
+ PyObject *PyQtSlot::instance() const
+ {
++    PyObject *instance_obj;
++
+     // Use the weak reference if possible.
+-    if (mself_wr)
+-        return PyWeakref_GetObject(mself_wr);
++    if (mself_wr) {
++        if (PyWeakref_GetRef(mself_wr, &instance_obj) < 0)
++            instance_obj = NULL;
++    } else {
++        instance_obj = mself;
++        Py_XINCREF(instance_obj);
++    }
+ 
+-    return mself;
++    return instance_obj;
+ }
+ 
+ 
+diff -ur a/qpy/QtCore/qpycore_qobject_helpers.cpp b/qpy/QtCore/qpycore_qobject_helpers.cpp
+--- a/qpy/QtCore/qpycore_qobject_helpers.cpp	2026-03-24 13:25:28.751430500 -0400
++++ b/qpy/QtCore/qpycore_qobject_helpers.cpp	2026-11-27 21:59:24.134261118 -0500
+@@ -50,7 +50,7 @@
+ const QMetaObject *qpycore_qobject_metaobject(sipSimpleWrapper *pySelf,
+         sipTypeDef *base)
+ {
+-    sipWrapperType *wt = (pySelf ? (sipWrapperType *)Py_TYPE(pySelf) : 0);
++    sipWrapperType *wt = (pySelf ? (sipWrapperType *)Py_TYPE((PyObject *)pySelf) : 0);
+ 
+     return qpycore_get_qmetaobject(wt, base);
+ }
+@@ -64,7 +64,7 @@
+     if (!pySelf)
+         return -1;
+ 
+-    return qt_metacall_worker(pySelf, Py_TYPE(pySelf), base, _c, _id, _a);
++    return qt_metacall_worker(pySelf, Py_TYPE((PyObject *)pySelf), base, _c, _id, _a);
+ }
+ 
+ 
+@@ -220,9 +220,9 @@
+ 
+     // We only need to look at the MRO if the object is a wrapped type (rather
+     // than a user sub-class).
+-    if (base_pytype != Py_TYPE(pySelf))
++    if (base_pytype != Py_TYPE((PyObject *)pySelf))
+     {
+-        PyObject *mro = PyObject_GetAttr((PyObject *)Py_TYPE(pySelf),
++        PyObject *mro = PyObject_GetAttr((PyObject *)Py_TYPE((PyObject *)pySelf),
+                 qpycore_dunder_mro);
+         Q_ASSERT(mro);
+ 
