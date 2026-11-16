@@ -3,31 +3,31 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-esr-i18n".
 #
 pkgname=firefox-esr
-version=140.17.0
+version=153.7.0
 revision=1
-_llvmver=22 # needs to match rust (for pgo profiling) and wasi
+_llvmver=23
 build_helper="rust"
-hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust
- cargo llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which
- tar xz $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')
- $(vopt_if wasi wasi-sdk)"
-makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel icu-devel
- pixman-devel libevent-devel libnotify-devel libvpx-devel libwebp-devel
+hostmakedepends="unzip zip pkg-config perl python3
+ yasm rust cargo llvm${_llvmver} clang${_llvmver} lld${_llvmver} libclang${_llvmver}
+ nodejs cbindgen nasm which tar xz $(vopt_if wasi wasi-sdk)
+ $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')"
+makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
+ pixman-devel libevent-devel libnotify-devel libwebp-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
  libXdamage-devel freetype-devel $(vopt_if wasi wasi-sdk)
  $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
  $(vopt_if pulseaudio pulseaudio-devel) $(vopt_if xscreensaver libXScrnSaver-devel)
  $(vopt_if sndio sndio-devel) $(vopt_if jack jack-devel)"
-depends="nss>=3.72 nspr>=4.32 desktop-file-utils hicolor-icon-theme pciutils"
+depends="nss>=3.129 nspr>=4.39 desktop-file-utils hicolor-icon-theme pciutils libavcodec6"
 short_desc="Mozilla Firefox web browser - Extended Support Release"
 maintainer="Orphaned <orphan@voidlinux.org>"
-license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
+license="GPL-3.0-only AND LGPL-2.1-only AND LGPL-3.0-only AND MPL-2.0"
 homepage="https://www.mozilla.org/firefox/"
+changelog="https://www.mozilla.org/en-US/firefox/${version}/releasenotes/"
 distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz"
-checksum=4d6ed3b18b2069c55bab12d8ba95da6013ac0b036d8a031df8b9f39a25d05c33
+checksum=7f8715ee7de2cf36a156216a9b1c7f26d1653010e65793bb2fce66e12edb6ea0
 
 lib32disabled=yes
-
 conflicts="firefox>=0"
 replaces="firefox>=0"
 provides="firefox-${version}_${revision}"
@@ -74,25 +74,34 @@ post_extract() {
 }
 
 post_patch() {
-	: # _clear_vendor_checksums num-traits
+	_clear_vendor_checksums audio_thread_priority
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		vsed -e '\;sys/single_threaded.h;d' -i config/system-headers.mozbuild
+	fi
 }
 
 do_build() {
 	export AS="${CC}"
 	export CFLAGS="-O2"
 	export CXXFLAGS="-O2"
-	export HOST_CFLAGS=""
-	export HOST_CXXFLAGS=""
+	# unset HOST_C{,XX}FLAGS since the firefox build system uses them internally and
+	# if they are exported they end up in the cargo environment, where they are not
+	# supposed to be.
+	unset HOST_CFLAGS
+	unset HOST_CXXFLAGS
 	export LDFLAGS="-Wl,-rpath=/usr/lib/firefox"
 	# export LDFLAGS+="-Wl,--threads=${XBPS_MAKEJOBS}"
 
 	if [ "$build_option_clang" ]; then
 		export CC=clang
 		export CXX=clang++
+		export AS=clang
 		export AR=llvm-ar
 		export NM=llvm-nm
 		export HOST_CC=clang
 		export HOST_CXX=clang++
+
+		export ASFLAGS="--target=${XBPS_CROSS_TRIPLET:-${XBPS_TRIPLET}}"
 	fi
 
 	disable_jemalloc() {
@@ -142,6 +151,7 @@ do_build() {
 	ac_add_options --host=${XBPS_TRIPLET}
 	ac_add_options --target=${XBPS_CROSS_TRIPLET:-${XBPS_TRIPLET}}
 	ac_add_options --enable-linker=$(vopt_if clang lld bfd)
+	ac_add_options --disable-bootstrap
 	$(vopt_if lto 'ac_add_options --enable-lto=cross')
 	$(vopt_if clang 'ac_add_options --with-libclang-path=/usr/lib')
 
@@ -151,6 +161,8 @@ do_build() {
 	ac_add_options --enable-hardening
 	ac_add_options --enable-optimize="\${CFLAGS}"
 	ac_add_options --enable-path-remapping=c,rust
+	ac_add_options --enable-packed-relative-relocs
+	ac_add_options --disable-cargo-incremental
 	ac_add_options --disable-tests
 	ac_add_options --disable-crashreporter
 	ac_add_options --disable-updater
@@ -167,10 +179,9 @@ do_build() {
 
 	ac_add_options --enable-system-pixman
 	ac_add_options --with-system-ffi
-	ac_add_options --with-system-icu
 	ac_add_options --with-system-jpeg
 	ac_add_options --with-system-libevent
-	ac_add_options --with-system-libvpx
+	# ac_add_options --with-system-libvpx
 	ac_add_options --with-system-nspr
 	ac_add_options --with-system-nss
 	ac_add_options --with-system-webp
@@ -192,9 +203,11 @@ do_build() {
 
 	mk_add_options MOZ_OBJDIR="${wrksrc}/obj"
 
-	MOZ_APP_REMOTINGNAME=Firefox
+	MOZ_APP_REMOTINGNAME=firefox
 	!
 
+	# XXX: setting --enable-debug/--enable-debug-symbols explicitly
+	# seems to result in a laggy/crashy firefox.
 	if [ -z "$build_option_debug" ]; then
 		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
 		echo "ac_add_options --disable-debug" >>.mozconfig
@@ -253,19 +266,28 @@ do_install() {
 	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
 	DESTDIR="$DESTDIR" ./mach install
 
+	touch "${DESTDIR}/usr/lib/firefox/is-packaged-app"
+
 	vinstall "${FILESDIR}/vendor.js" 644 usr/lib/firefox/browser/defaults/preferences
 	vinstall "${FILESDIR}/firefox.desktop" 644 usr/share/applications
+	vinstall "${FILESDIR}/firefox.search-provider.ini" 644 usr/share/gnome-shell/search-providers
 
-	for i in 16x16 22x22 24x24 32x32 48x48 128x128 256x256; do
-		vinstall ${wrksrc}/browser/branding/official/default${i%x*}.png 644 \
-			usr/share/icons/hicolor/${i}/apps firefox.png
+	for i in 16 22 24 32 48 128 256; do
+		vinstall "browser/branding/official/default${i}.png" 644 \
+			"usr/share/icons/hicolor/${i}x${i}/apps" firefox.png
 	done
+	vinstall browser/branding/official/content/about-logo.png 644 usr/share/icons/hicolor/192x192/apps firefox.png
+	vinstall browser/branding/official/content/about-logo@2x.png 644 usr/share/icons/hicolor/384x384/apps firefox.png
+	vinstall browser/branding/official/content/about-logo.svg 644 usr/share/icons/hicolor/scalable/apps firefox.svg
+	vinstall browser/installer/linux/app/flatpak/files/share/icons/hicolor/symbolic/apps/org.mozilla.firefox-symbolic.svg \
+		644 usr/share/icons/hicolor/symbolic/apps firefox-symbolic.svg
 
 	# We don't want the development stuff
-	rm -rf ${DESTDIR}/usr/{include,lib/firefox-devel,share/idl}
+	rm -rf "${DESTDIR}/usr/"{include,lib/firefox-devel,share/idl}
 
 	# https://bugzilla.mozilla.org/show_bug.cgi?id=658850
-	ln -sf firefox ${DESTDIR}/usr/lib/firefox/firefox-bin
+	ln -sf firefox "${DESTDIR}/usr/lib/firefox/firefox-bin"
 
-	vbin ${FILESDIR}/firefox-wayland
+	# backwards compatibility with old firefox-wayland wrapper
+	ln -sf firefox "${DESTDIR}/usr/bin/firefox-wayland"
 }
