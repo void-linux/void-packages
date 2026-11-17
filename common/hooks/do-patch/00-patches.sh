@@ -11,7 +11,7 @@ _process_patch() {
 	elif [ -n "$patch_args" ]; then
 		_args=$patch_args
 	fi
-	cp -f "$i" "$wrksrc"
+	cp -f "$i" .
 
 	# Try to guess if its a compressed patch.
 	if [[ $i =~ .gz$ ]]; then
@@ -29,7 +29,6 @@ _process_patch() {
 		return 0
 	fi
 
-	cd "$wrksrc"
 	msg_normal "$pkgver: patching: ${_patch}.\n"
 	if [ -n "$XBPS_VERBOSE" ]; then
 		patch --verbose -s ${_args} <"${_patch}"
