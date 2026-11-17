@@ -67,6 +67,7 @@ my %distmods = (
     'PathTools' => 'Cwd',
     'Scalar-List-Utils' => 'List::Util',
     'IO-Compress' => 'IO::Compress::Gzip',
+    'podlators' => 'Pod::Man',
 );
 sub dist_srcpath
 {
@@ -98,7 +99,7 @@ sub scrape_verln
     my($srcpath) = @_;
     open my $fh, '<', $srcpath or die "open: $!";
     while(my $ln = <$fh>){
-        if($ln =~ s/^.*VERSION *=>? *// or $ln =~ s/^package .*? \K[\d.]+//){
+        if($ln =~ s/^.*VERSION *=>? *// or $ln =~ s/^package\s+[\w:]+\s+v?(?=\d)//){
             close $fh;
             return $ln;
         }
