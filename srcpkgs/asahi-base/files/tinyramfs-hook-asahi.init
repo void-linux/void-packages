@@ -3,10 +3,21 @@ modprobe nvme-apple
 modprobe vfat
 modprobe xhci-plat-hcd
 
+esp_uuid="$(tr -d '\0' < /proc/device-tree/chosen/asahi,efi-system-partition)"
+esp_dev="/dev/disk/by-partuuid/$esp_uuid"
+set +f
 for i in $(seq 0 50); do
-	[ -e /sys/bus/platform/drivers/nvme-apple/*.nvme/nvme/nvme*/nvme*n1/ ] && break
+	[ -b "$esp_dev" ] && break
+	for part in /sys/class/block/nvme*n*p*; do
+		[ -r "$part/partition" ] && [ -b "/dev/${part##*/}" ] || continue
+		if grep -Fxiq "PARTUUID=$esp_uuid" "$part/uevent"; then
+			esp_dev="/dev/${part##*/}"
+			break 2
+		fi
+	done
 	sleep 0.1
 done
+set -f
 
 print 'asahi: mounting ESP'
 mountpoint=/run/.system-efi
@@ -14,8 +25,7 @@ mkdir -p "$mountpoint"
 while grep -q "$mountpoint" /proc/mounts; do
 	umount "$mountpoint"
 done
-esp_uuid="$(cat /proc/device-tree/chosen/asahi,efi-system-partition 2> /dev/null | tr -d '\0')"
-mount -t vfat "/dev/disk/by-partuuid/$esp_uuid" "$mountpoint"
+mount -t vfat -o ro "$esp_dev" "$mountpoint"
 
 print 'asahi: unpacking vendor firmware into initramfs'
 cpio -i < "$mountpoint/vendorfw/firmware.cpio"
