@@ -1,13 +1,13 @@
 # Template file for 'samba'
 pkgname=samba
-version=4.20.1
-revision=4
+version=4.25.1
+revision=1
 build_style=waf3
 build_helper="qemu"
 configure_script="buildtools/bin/waf"
 _idmap_modules="idmap_ad,idmap_rid,idmap_ldap,idmap_hash,idmap_tdb2"
-_pdb_modules="pdb_tdbsam,pdb_ldap,pdb_smbpasswd,pdb_wbc_sam,pdb_samba4"
-_auth_modules="auth_unix,auth_wbc,auth_server,auth_samba4,auth_skel"
+_pdb_modules="pdb_tdbsam,pdb_ldap,pdb_smbpasswd"
+_auth_modules="auth_unix,auth_server,auth_samba4"
 _vfs_modules="vfs_io_uring"
 configure_args="--enable-fhs --sysconfdir=/etc --localstatedir=/var
  --sbindir=/usr/bin --with-privatelibdir=/usr/lib
@@ -16,26 +16,27 @@ configure_args="--enable-fhs --sysconfdir=/etc --localstatedir=/var
  --disable-rpath --disable-rpath-install --nopyc --nopyo
  --without-gettext --without-systemd --without-gpgme
  --with-cluster-support --with-system-mitkrb5 --with-experimental-mit-ad-dc
- --bundled-libraries=NONE --builtin-libraries=NONE
+ --bundled-libraries=NONE,libquic,libngtcp2,libngtcp2_crypto_gnutls --builtin-libraries=NONE
+ --private-libraries=!ldb --vendor-suffix=Void
  --with-shared-modules=${_idmap_modules},${_pdb_modules},${_auth_modules},${_vfs_modules}"
 hostmakedepends="pkg-config perl-Parse-Yapp rpcsvc-proto docbook-xsl libxslt
- libtasn1-tools tdb-python3 tevent-python3 talloc-python3 ldb-python3 flex
+ libtasn1-tools tdb-python3 tevent-python3 talloc-python3 flex
  bison mit-krb5 python3-Markdown python3-dnspython"
 makedepends="python3-devel libtirpc-devel popt-devel e2fsprogs-devel
  mit-krb5-devel pam-devel acl-devel cups-devel avahi-libs-devel tdb-devel
- talloc-devel tevent-devel ldb-devel cmocka-devel gnutls-devel zlib-devel
+ talloc-devel tevent-devel lmdb-devel cmocka-devel gnutls-devel zlib-devel
  ncurses-devel libldap-devel libarchive-devel jansson-devel liburing-devel"
 short_desc="SMB/CIFS file, print, and login server for Unix"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="GPL-3.0-or-later"
 homepage="http://www.samba.org"
 distfiles="https://download.samba.org/pub/samba/stable/${pkgname}-${version}.tar.gz"
-checksum=f93c3af5295340d08106c7c0dcfb85e4f85057dfd14587aa8817beb31aff88f7
+checksum=7f367545bca69aa96897628f82f0f04d4b66b3bcb36cb978b9bb952c4b4c428d
 lib32disabled=yes
 conf_files="/etc/pam.d/samba /etc/samba/smb.conf"
 make_dirs="/etc/samba/private 0750 root root"
-subpackages="smbclient samba-ctdb samba-cups samba-devel samba-libs
- samba-python3 samba-dc"
+subpackages="ldb ldb-devel ldb-python3 smbclient samba-ctdb samba-cups
+ samba-devel samba-libs samba-python3 samba-dc"
 
 if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 	makedepends+=" musl-legacy-compat musl-nscd-devel libexecinfo-devel"
@@ -45,6 +46,7 @@ else
 
 	if [ "$XBPS_CHECK_PKGS" ]; then
 		configure_args+=" --enable-selftest"
+		configure_args="${configure_args/libngtcp2_crypto_gnutls/libngtcp2_crypto_gnutls,socket_wrapper,uid_wrapper,pam_wrapper,nss_wrapper,resolv_wrapper}"
 		hostmakedepends+=" python3-cryptography python3-iso8601
 		 python3-pyasn1"
 		makedepends+=" nss_wrapper pam_wrapper resolv_wrapper
@@ -70,8 +72,8 @@ post_patch() {
 	# can't handle that.
 	cat >>wscript_configure_system_mitkrb5 <<_EOF
 if ("db" in conf.env["LIB_KDB5"]
-      and not conf.check_cfg(package="db", mandatory=False)):
-    krb5_define_syslib(conf, "db", [])
+	 and not conf.check_cfg(package="db", mandatory=False)):
+	 krb5_define_syslib(conf, "db", [])
 _EOF
 
 	# Fix log and spool locations in conf file
@@ -178,42 +180,16 @@ samba-libs_package() {
 	provides="libsmbclient-${version}_${revision}"
 	replaces="libsmbclient>=0"
 	pkg_install() {
-		local _libs _privlibs _lib
-		_libs="dcerpc dcerpc-binding dcerpc-samr dcerpc-server
-		 dcerpc-server-core ndr ndr-krb5pac ndr-nbt ndr-standard netapi
-		 nss_winbind nss_wins samba-credentials samba-errors
-		 samba-hostconfig samba-passdb samba-policy samba-util samdb
-		 smbclient smbconf smbldap tevent-util wbclient"
-		_privlibs="CHARSET3 LIBWBCLIENT-OLD MESSAGING MESSAGING-SEND
-		 REG-FULL RPC-SERVER-LOOP RPC-WORKER ad-claims addns ads
-		 asn1util auth auth-unix-token auth4 authkrb5 authn-policy-util
-		 cli-cldap cli-ldap cli-ldap-common cli-nbt cli-smb-common
-		 cli-spoolss cliauth clidns cluster cmdline cmdline-contexts
-		 common-auth ctdb-event-client db-glue dbwrap dcerpc-pkt-auth
-		 dcerpc-samba dcerpc-samba4 dfs-server-ad dlz-bind9-for-torture
-		 dnsserver-common dsdb-garbage-collect-tombstones dsdb-module
-		 events flag-mapping genrand gensec gpext gpo gse http idmap
-		 interfaces iov-buf krb5samba ldbsamba libcli-lsa3
-		 libcli-netlogon3 libsmb messages-dgm messages-util mscat
-		 msghdr msrpc3 ndr-samba ndr-samba4 net-keytab netif
-		 npa-tstream nss-info pac posix-eadb printer-driver
-		 printing-migrate process-model registry replace
-		 samba-cluster-support samba-debug samba-modules samba-net
-		 samba-python samba-security samba-sockets samba3-util
-		 samdb-common scavenge-dns-records secrets3 server-id-db
-		 server-role service shares smb-transport smbclient-raw
-		 smbd-base smbd-shim smbldaphelper smbpasswdparser
-		 socket-blocking stable-sort sys-rw talloc-report
-		 talloc-report-printf tdb-wrap time-basic torture trusts-util
-		 util-reg util-setid util-tdb xattr-tdb"
+		local _libs _lib
+		_libs="dcerpc-binding dcerpc-server-core ndr ndr-krb5pac ndr-nbt
+		 ndr-standard netapi nss_winbind nss_wins samba-errors
+		 samba-passdb samba-util smbclient smbconf smbldap wbclient"
 
 		for _lib in ${_libs}; do
 			vmove "usr/lib/lib${_lib}.so.*"
 		done
 
-		for _lib in ${_privlibs}; do
-			vmove "usr/lib/lib${_lib}-private-samba.so"
-		done
+		vmove "usr/lib/lib*-private-samba.so"
 
 		vmove usr/share/man/man7/libsmbclient.7
 	}
@@ -238,8 +214,8 @@ samba-devel_package() {
 }
 
 samba-python3_package() {
-	depends="ldb-python3 talloc-python3 tdb-python3 tevent-python3
-	 python3-cryptography python3-dnspython python3-Markdown
+	depends="ldb-python3>=${version}_${revision} talloc-python3 tdb-python3
+	 tevent-python3 python3-cryptography python3-dnspython python3-Markdown
 	 python3-requests"
 	short_desc+=" - Python3 bindings"
 	pkg_install() {
@@ -261,5 +237,36 @@ samba-dc_package() {
 	pkg_install() {
 		vmove "usr/bin/samba*"
 		vmove usr/share/samba
+	}
+}
+
+ldb_package() {
+	short_desc="LDAP-like database from samba"
+	pkg_install() {
+		vmove "usr/bin/ldb*"
+		vmove "usr/share/man/man1/ldb*.1"
+		vmove "usr/lib/libldb.so.*"
+		vmove "usr/lib/libldb-*-private-samba.so"
+		vmove usr/lib/samba/ldb
+	}
+}
+
+ldb-devel_package() {
+	short_desc="LDAP-like database from samba - development files"
+	depends="ldb>=${version}_${revision}"
+	pkg_install() {
+		vmove "usr/include/samba-4.0/ldb*.h"
+		vmove usr/lib/pkgconfig/ldb.pc
+		vmove usr/lib/libldb.so
+		vmove usr/share/man/man3
+	}
+}
+
+ldb-python3_package() {
+	short_desc="LDAP-like database from samba - Python3 bindings"
+	depends="ldb>=${version}_${revision} python3"
+	pkg_install() {
+		vmove "${py3_sitelib}/ldb*.so"
+		vmove "${py3_sitelib}/_ldb_text.py"
 	}
 }
