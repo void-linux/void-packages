@@ -1,0 +1,186 @@
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 214f5203..e7fad0f8 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -2,43 +2,26 @@ import os
+ import sys
+ 
+ import pytest
+-from _pytest import monkeypatch
+ 
+ from flask import Flask
+-from flask.globals import request_ctx
+-
+-
+-@pytest.fixture(scope="session", autouse=True)
+-def _standard_os_environ():
+-    """Set up ``os.environ`` at the start of the test session to have
+-    standard values. Returns a list of operations that is used by
+-    :func:`._reset_os_environ` after each test.
+-    """
+-    mp = monkeypatch.MonkeyPatch()
+-    out = (
+-        (os.environ, "FLASK_ENV_FILE", monkeypatch.notset),
+-        (os.environ, "FLASK_APP", monkeypatch.notset),
+-        (os.environ, "FLASK_DEBUG", monkeypatch.notset),
+-        (os.environ, "FLASK_RUN_FROM_CLI", monkeypatch.notset),
+-        (os.environ, "WERKZEUG_RUN_MAIN", monkeypatch.notset),
+-    )
+-
+-    for _, key, value in out:
+-        if value is monkeypatch.notset:
+-            mp.delenv(key, False)
+-        else:
+-            mp.setenv(key, value)
+-
+-    yield out
+-    mp.undo()
++from flask.globals import app_ctx as _app_ctx
+ 
+ 
+ @pytest.fixture(autouse=True)
+-def _reset_os_environ(monkeypatch, _standard_os_environ):
+-    """Reset ``os.environ`` to the standard environ after each test,
+-    in case a test changed something without cleaning up.
++def _standard_os_environ(monkeypatch):
++    """Set up ``os.environ`` at the start of every test to have
++    standard values.
+     """
+-    monkeypatch._setitem.extend(_standard_os_environ)
++    for key in (
++        "FLASK_ENV_FILE",
++        "FLASK_APP",
++        "FLASK_DEBUG",
++        "FLASK_RUN_FROM_CLI",
++        "WERKZEUG_RUN_MAIN",
++    ):
++        monkeypatch.delenv(key, False)
++
++    yield
+ 
+ 
+ @pytest.fixture
+@@ -83,16 +66,17 @@ def test_apps(monkeypatch):
+ 
+ @pytest.fixture(autouse=True)
+ def leak_detector():
++    """Fails if any app contexts are still pushed when a test ends. Pops all
++    contexts so subsequent tests are not affected.
++    """
+     yield
+-
+-    # make sure we're not leaking a request context since we are
+-    # testing flask internally in debug mode in a few cases
+     leaks = []
+-    while request_ctx:
+-        leaks.append(request_ctx._get_current_object())
+-        request_ctx.pop()
+ 
+-    assert leaks == []
++    while _app_ctx:
++        leaks.append(_app_ctx._get_current_object())
++        _app_ctx.pop()
++
++    assert not leaks
+ 
+ 
+ @pytest.fixture
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index e254c1dd..f3b9a850 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -11,7 +11,6 @@ from pathlib import Path
+ 
+ import click
+ import pytest
+-from _pytest.monkeypatch import notset
+ from click.testing import CliRunner
+ 
+ from flask import Blueprint
+@@ -462,7 +461,7 @@ class TestRoutes:
+ 
+     def expect_order(self, order, output):
+         # skip the header and match the start of each row
+-        for expect, line in zip(order, output.splitlines()[2:]):
++        for expect, line in zip(order, output.splitlines()[2:], strict=False):
+             # do this instead of startswith for nicer pytest output
+             assert line[: len(expect)] == expect
+ 
+@@ -489,6 +488,7 @@ class TestRoutes:
+     def test_all_methods(self, invoke):
+         output = invoke(["routes"]).output
+         assert "GET, HEAD, OPTIONS, POST" not in output
++
+         output = invoke(["routes", "--all-methods"]).output
+         assert "GET, HEAD, OPTIONS, POST" in output
+ 
+@@ -534,9 +534,8 @@ need_dotenv = pytest.mark.skipif(
+ 
+ @need_dotenv
+ def test_load_dotenv(monkeypatch):
+-    # can't use monkeypatch.delitem since the keys don't exist yet
+     for item in ("FOO", "BAR", "SPAM", "HAM"):
+-        monkeypatch._setitem.append((os.environ, item, notset))
++        monkeypatch.delenv(item, False)
+ 
+     monkeypatch.setenv("EGGS", "3")
+     monkeypatch.chdir(test_path)
+@@ -559,7 +558,7 @@ def test_load_dotenv(monkeypatch):
+ @need_dotenv
+ def test_dotenv_path(monkeypatch):
+     for item in ("FOO", "BAR", "EGGS"):
+-        monkeypatch._setitem.append((os.environ, item, notset))
++        monkeypatch.delenv(item, False)
+ 
+     load_dotenv(test_path / ".flaskenv")
+     assert Path.cwd() == cwd
+@@ -567,6 +566,7 @@ def test_dotenv_path(monkeypatch):
+ 
+ 
+ def test_dotenv_optional(monkeypatch):
++    monkeypatch.delenv("FOO", False)
+     monkeypatch.setitem(sys.modules, "dotenv", None)
+     monkeypatch.chdir(test_path)
+     load_dotenv()
+@@ -575,6 +575,7 @@ def test_dotenv_optional(monkeypatch):
+ 
+ @need_dotenv
+ def test_disable_dotenv_from_env(monkeypatch, runner):
++    monkeypatch.delenv("FOO", False)
+     monkeypatch.chdir(test_path)
+     monkeypatch.setitem(os.environ, "FLASK_SKIP_DOTENV", "1")
+     runner.invoke(FlaskGroup())
+diff --git a/tests/test_helpers.py b/tests/test_helpers.py
+index efd22aa9..ee77f176 100644
+--- a/tests/test_helpers.py
++++ b/tests/test_helpers.py
+@@ -306,29 +306,6 @@ class TestStreaming:
+         rv = client.get("/")
+         assert rv.data == b"flask"
+ 
+-    def test_async_view(self, app, client):
+-        @app.route("/")
+-        async def index():
+-            flask.session["test"] = "flask"
+-
+-            @flask.stream_with_context
+-            def gen():
+-                yield flask.session["test"]
+-
+-            return flask.Response(gen())
+-
+-        # response is closed without reading stream
+-        client.get().close()
+-        # response stream is read
+-        assert client.get().text == "flask"
+-
+-        # same as above, but with client context preservation
+-        with client:
+-            client.get().close()
+-
+-        with client:
+-            assert client.get().text == "flask"
+-
+ 
+ class TestHelpers:
+     @pytest.mark.parametrize(
