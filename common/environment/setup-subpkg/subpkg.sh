@@ -11,6 +11,9 @@ unset -v nostrip nostrip_files
 # hooks/post-install/14-fix-permissions
 unset -v nocheckperms nofixperms
 
+# hooks/post-install/02-python-bytecode-files
+unset -v pycompile_dirs pycompile_module
+
 # hooks/pre-pkg/04-generate-provides
 unset -v nopyprovides
 
@@ -34,9 +37,6 @@ unset -v font_dirs
 
 # xbps-triggers: xml-catalog
 unset -v xml_entries sgml_entries xml_catalogs sgml_catalogs
-
-# xbps-triggers: pycompile
-unset -v pycompile_dirs pycompile_module
 
 # xbps-triggers: dkms
 unset -v dkms_modules
