@@ -1,0 +1,68 @@
+# Template file for 'mission-center'
+pkgname=mission-center
+version=1.2.0
+revision=1
+_magpie_rev=a5272b3c1d853caa4044b737cf49257bfc4c86f2
+_rummage_rev=26b93b8c6f0de6912f0a17022f7ece76bad87612
+build_style=meson
+build_helper=rust
+# magpie subproject supports LTO only with clang+lld
+configure_args="-Db_lto=false"
+hostmakedepends="blueprint-compiler cargo cmake desktop-file-utils gettext
+ glib-devel pkg-config protobuf python3"
+makedepends="dbus-devel gtk4-devel libadwaita-devel libdrm-devel libgbm-devel
+ libudev-devel rust-std"
+short_desc="Monitor your CPU, Memory, Disk, Network and GPU usage"
+maintainer="John Mitrich <johnmitrich@gmail.com>"
+license="GPL-3.0-or-later"
+homepage="https://missioncenter.io/"
+distfiles="https://gitlab.com/mission-center-devs/mission-center/-/archive/v${version}/mission-center-v${version}.tar.gz
+ https://gitlab.com/mission-center-devs/gng/-/archive/${_magpie_rev}/gng-${_magpie_rev}.tar.gz
+ https://gitlab.com/mission-center-devs/app-detection/-/archive/${_rummage_rev}/app-detection-${_rummage_rev}.tar.gz"
+checksum="a02483259ebcc8d7dd535bf5aebc689a00d071bcb4bb72e62f643c935485d109
+ e487986e7b1f165d92280e44b02ad57113fe44e7969483951cd10027feab7e81
+ 074cbd4898a104de43835299f5c5c0edc6f901ad00ff89a469a66d4fab8353de"
+
+skip_extraction="gng-${_magpie_rev}.tar.gz
+ app-detection-${_rummage_rev}.tar.gz"
+
+# magpie subproject does not compile on 32-bit
+archs="~i686* ~arm*"
+
+post_extract() {
+	vsrcextract -C subprojects/magpie "gng-${_magpie_rev}.tar.gz"
+	vsrcextract -C subprojects/magpie/platform-linux/crates/app-rummage \
+		"app-detection-${_rummage_rev}.tar.gz"
+}
+
+post_patch() {
+	[ -z "$CROSS_BUILD" ] && return 0
+	# drop meson's RUSTFLAGS override so cargo honors the rust helper's
+	# RUSTFLAGS/CARGO_BUILD_TARGET (binaries go to src/<triple>/<profile>/)
+	vsed -i -e "/cargo_env += \['RUSTFLAGS/d" \
+		-e "s%'/src/' + rust_target%'/src/${RUST_TARGET}/' + rust_target%" \
+		src/meson.build
+	vsed -i -e "/cargo_env += \['RUSTFLAGS/d" subprojects/magpie/meson.build
+	vsed -i -e "s%'/src' + '/' + build_opt%'/src/${RUST_TARGET}/' + build_opt%" \
+		subprojects/magpie/src/meson.build
+}
+
+pre_build() {
+	if [ -n "$CROSS_BUILD" ]; then
+		export GI_TYPELIB_PATH="${XBPS_CROSS_BASE}/usr/lib/girepository-1.0"
+	fi
+	# workaround the cc-rs mixing CFLAGS for host and target.
+	# https://github.com/rust-lang/cc-rs/issues/1469
+	export CFLAGS_${RUST_BUILD//-/_}="${CFLAGS_host}" \
+		CXXFLAGS_${RUST_BUILD//-/_}="${CXXFLAGS_host}" \
+		LDFLAGS_${RUST_BUILD//-/_}="${LDFLAGS_host}" \
+		CFLAGS_${RUST_TARGET//-/_}="${CFLAGS}" \
+		CXXFLAGS_${RUST_TARGET//-/_}="${CXXFLAGS}" \
+		LDFLAGS_${RUST_TARGET//-/_}="${LDFLAGS}" \
+		CFLAGS="" CXXFLAGS="" LDFLAGS=""
+}
+
+# cargo targets are build_always_stale, so ninja rebuilds them at install too
+pre_install() {
+	pre_build
+}
