@@ -4,9 +4,10 @@
 # See comments in mime-types template
 pkgname=nginx
 version=1.30.7
-revision=1
-_tests_commit=c0b7894063022fb86d5b5ad732c08507ea03aa78
+revision=2
+_tests_commit=cf2b5bf5f98f578a0a3da13c8c507c996f5f74fe
 _njs_version=1.0.2
+_quickjs_version=2026-06-04
 build_style=gnu-makefile
 _cfgdir=/etc/nginx
 _tmpdir=/var/lib/nginx/tmp
@@ -52,7 +53,7 @@ configure_args="--prefix=${_cfgdir}
  --with-pcre-jit
  --with-threads
  --add-dynamic-module=njs/nginx"
-hostmakedepends="perl geoip-devel openssl-devel pcre2-devel libxslt-devel"
+hostmakedepends="perl geoip-devel openssl-devel pcre2-devel libxslt-devel extrace"
 makedepends="${hostmakedepends}"
 checkdepends="perl perl-IO-Socket-SSL perl-GD perl-FCGI perl-CryptX which uwsgi uwsgi-python3"
 short_desc="High performance web and reverse proxy server"
@@ -62,12 +63,14 @@ homepage="https://nginx.org"
 changelog="https://nginx.org/en/CHANGES-${version%.*}"
 distfiles="https://nginx.org/download/nginx-${version}.tar.gz
  https://github.com/nginx/nginx-tests/archive/${_tests_commit}.tar.gz>nginx-tests-${_tests_commit}.tar.gz
- https://github.com/nginx/njs/archive/refs/tags/${_njs_version}.tar.gz>njs-${_njs_version}.tar.gz"
+ https://github.com/nginx/njs/archive/refs/tags/${_njs_version}.tar.gz>njs-${_njs_version}.tar.gz
+ https://bellard.org/quickjs/quickjs-${_quickjs_version}.tar.xz"
 checksum="2565b5c837050e958f70fb0f73c48e2bca4542ad349fd356f46fb0c72610bc6e
- f8e2257dde6586568937a20f1b45407ac2f3bb21300b5f0eeb22e4fc5b086830
- 84a114499fa6878d3ec52b99c1cf2874a91eb0d915408f418a2b1279519f09ae"
+ 1555dad9e93eb55711dc4ea42b52f62b326ecd72c55add966ff71277d937070c
+ 84a114499fa6878d3ec52b99c1cf2874a91eb0d915408f418a2b1279519f09ae
+ b376e839b322978313d929fd20663b11ba58b75df5a46c126dd19ea2fa70ad2a"
 
-skip_extraction="nginx-tests-${_tests_commit}.tar.gz njs-${_njs_version}.tar.gz"
+skip_extraction="nginx-tests-${_tests_commit}.tar.gz njs-${_njs_version}.tar.gz quickjs-${_quickjs_version}.tar.xz"
 
 # Tests fail when nginx run as root and there is no nginx user
 make_check=ci-skip
@@ -99,9 +102,17 @@ make_dirs="/var/log/nginx 0750 root root
 post_extract() {
 	vsrcextract -C tests "nginx-tests-${_tests_commit}.tar.gz"
 	vsrcextract -C njs "njs-${_njs_version}.tar.gz"
+	vsrcextract -C quickjs "quickjs-${_quickjs_version}.tar.xz"
 }
 
 do_configure() {
+	cat <<-EOF >>quickjs/Makefile
+	CFLAGS += ${CFLAGS} -fPIC
+	LDFLAGS += ${LDFLAGS}
+	BUILD_CFLAGS += \$(DEFINES) ${BUILD_CFLAGS}
+	EOF
+	make -C quickjs libquickjs.a CC=$CC LD=$LD
+
 	if [ "$CROSS_BUILD" ]; then
 		# fake configure run on host
 		unset CC CPP LD CFLAGS CPPFLAGS LDFLAGS
@@ -122,8 +133,15 @@ do_configure() {
 		export PERL5LIB=$perlprefix
 	fi
 
-	./configure ${configure_args}
-	( cd njs && ./configure )
+	./configure ${configure_args} --with-cc-opt="-I${wrksrc}/quickjs" --with-ld-opt="-L${wrksrc}/quickjs"
+
+	# match njs/nginx/config.make configure flags which disables the external dependencies
+	# that are already loaded into the nginx process, linking them twice breaks the
+	# javascript vm.
+	(
+		cd njs
+		./configure --no-openssl --no-libxml2 --no-zlib --no-pcre --cc-opt="$CFLAGS -I${wrksrc}/quickjs" --ld-opt="-L${wrksrc}/quickjs"
+	)
 }
 
 pre_build() {
@@ -150,10 +168,12 @@ pre_build() {
 	sed -i 's/-lcrypt/$(LDFLAGS) &/' objs/Makefile
 
 	export LD="$CC"
+	CFLAGS+=" -I${wrksrc}/quickjs"
+	LDFLAGS+=" -L${wrksrc}/quickjs"
 
 	(
 		cd njs
-		make ${makejobs} NJS_CC="$CC" NJS_CFLAGS="$CFLAGS -fPIC" \
+		make ${makejobs} libnjs libqjs NJS_CC="$CC" NJS_CFLAGS="$CFLAGS -fPIC" \
 			NJS_STATIC_LINK="$AR -r -c" NJS_LINK="$CC -O"
 	)
 }
