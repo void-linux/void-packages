@@ -1,0 +1,72 @@
+From cbbd9920468babb62155aaa6aa6b8e467da78aff Mon Sep 17 00:00:00 2001
+From: Richard Moch <richard@richardmoch.xyz>
+Date: Tue, 11 Aug 2026 22:54:53 -0500
+Subject: [PATCH] Fix build with FFmpeg 9 (avcodec_get_supported_config)
+
+AVCodec::pix_fmts and AVCodec::sample_fmts were deprecated in libavcodec
+61.13.100 (FFmpeg 7.1) and removed in libavcodec 63 (FFmpeg 9), which breaks
+AVCodecSupportsPixelFormat and AVCodecSupportsSampleFormat:
+
+    error: 'const AVCodec' has no member named 'pix_fmts'
+    error: 'const AVCodec' has no member named 'sample_fmts'
+
+Query the format lists with avcodec_get_supported_config instead when it is
+available. It returns the same NONE-terminated arrays, and a NULL list still
+means 'any', so the existing lookup loops are unchanged. Older libavcodec
+keeps using the struct fields via the SSR_USE_AVCODEC_GET_SUPPORTED_CONFIG
+guard.
+
+Fixes #1090
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ src/AV/AVWrapper.cpp | 12 ++++++++++++
+ src/Global.h         |  3 +++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/src/AV/AVWrapper.cpp b/src/AV/AVWrapper.cpp
+index f8e00942..0f670f53 100644
+--- a/src/AV/AVWrapper.cpp
++++ b/src/AV/AVWrapper.cpp
+@@ -145,7 +145,13 @@ bool AVCodecIsInstalled(const QString& codec_name) {
+ }
+
+ bool AVCodecSupportsPixelFormat(const AVCodec* codec, AVPixelFormat pixel_fmt) {
++#if SSR_USE_AVCODEC_GET_SUPPORTED_CONFIG
++	const AVPixelFormat *p = NULL;
++	if(avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, (const void**) &p, NULL) < 0)
++		return true; // the query failed, assume it is supported
++#else
+ 	const AVPixelFormat *p = codec->pix_fmts;
++#endif
+ 	if(p == NULL)
+ 		return true; // NULL means 'unknown' or 'any', assume it is supported
+ 	while(*p != AV_PIX_FMT_NONE) {
+@@ -157,7 +163,13 @@ bool AVCodecSupportsPixelFormat(const AVCodec* codec, AVPixelFormat pixel_fmt) {
+ }
+
+ bool AVCodecSupportsSampleFormat(const AVCodec* codec, AVSampleFormat sample_fmt) {
++#if SSR_USE_AVCODEC_GET_SUPPORTED_CONFIG
++	const AVSampleFormat *p = NULL;
++	if(avcodec_get_supported_config(NULL, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, (const void**) &p, NULL) < 0)
++		return true; // the query failed, assume it is supported
++#else
+ 	const AVSampleFormat *p = codec->sample_fmts;
++#endif
+ 	if(p == NULL)
+ 		return true; // NULL means 'unknown' or 'any', assume it is supported
+ 	while(*p != AV_SAMPLE_FMT_NONE) {
+diff --git a/src/Global.h b/src/Global.h
+index 4882b7ee..edd83f61 100644
+--- a/src/Global.h
++++ b/src/Global.h
+@@ -282,6 +282,9 @@ inline void atomic_thread_fence_replacement(memory_order) {
+ // avformat_free_context: lavf 52.96.0 / 52.96.0
+ #define SSR_USE_AVFORMAT_FREE_CONTEXT              TEST_AV_VERSION(LIBAVFORMAT, 52, 96, 52, 96)
+
++// avcodec_get_supported_config: lavc 61.13.100 / ???
++// AVCodec::pix_fmts and AVCodec::sample_fmts were deprecated at the same time and removed in lavc 63
++#define SSR_USE_AVCODEC_GET_SUPPORTED_CONFIG       TEST_AV_VERSION(LIBAVCODEC, 61, 13, 999, 999)
+ // avcodec_close deprecated: lavc 60.39.100 / ???
+ // - ffmpeg: missing, commit: https://github.com/FFmpeg/FFmpeg/commit/1cc24d749569a42510399a29b034f7a77bdec34e
+ #define SSR_USE_AVCODEC_CLOSE_DEPRECATED           TEST_AV_VERSION(LIBAVCODEC, 60, 39, 999, 999)
