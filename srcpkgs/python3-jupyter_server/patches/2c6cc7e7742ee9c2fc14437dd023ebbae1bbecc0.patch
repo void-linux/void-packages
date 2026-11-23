@@ -1,0 +1,303 @@
+From 2c6cc7e7742ee9c2fc14437dd023ebbae1bbecc0 Mon Sep 17 00:00:00 2001
+From: Zach Sailer <zsailer@apple.com>
+Date: Wed, 28 Oct 2026 14:04:21 -0700
+Subject: [PATCH] Build test requests with an explicit start line
+
+Tornado 6.6 deprecates passing method, uri and version to
+HTTPServerRequest, and 6.7 will require start_line. With warnings turned
+into errors, every test that builds a request that way fails.
+
+- Add an http_request helper in tests/utils.py that builds the request with
+  a RequestStartLine
+- Use it in the base handler, websocket and allow-origin tests, the kernel
+  connection tests and the gateway tests
+---
+ tests/base/test_allow_origin_pat.py       |  8 ++++----
+ tests/base/test_handlers.py               | 22 +++++++++++-----------
+ tests/base/test_websocket.py              |  4 ++--
+ tests/services/kernels/test_connection.py |  6 +++---
+ tests/test_gateway.py                     |  8 ++++----
+ tests/utils.py                            | 10 ++++++++++
+ 6 files changed, 34 insertions(+), 24 deletions(-)
+
+diff --git a/tests/base/test_allow_origin_pat.py b/tests/base/test_allow_origin_pat.py
+index 388be8b12a..89656cbeb1 100644
+--- a/tests/base/test_allow_origin_pat.py
++++ b/tests/base/test_allow_origin_pat.py
+@@ -11,12 +11,12 @@
+ from unittest.mock import MagicMock
+ 
+ import pytest
+-from tornado.httpserver import HTTPRequest
+ from tornado.httputil import HTTPHeaders
+ 
+ from jupyter_server.auth.login import LoginHandler
+ from jupyter_server.base.handlers import JupyterHandler
+ from jupyter_server.base.websocket import WebSocketMixin
++from tests.utils import http_request
+ 
+ TRUSTED_PAT = r"https://trusted\.example\.com"
+ TRUSTED_ORIGIN = "https://trusted.example.com"
+@@ -34,7 +34,7 @@ def _make_handler(jp_serverapp, origin=None, host="localhost:8888", referer=None
+         headers["Origin"] = origin
+     if referer:
+         headers["Referer"] = referer
+-    request = HTTPRequest("GET", headers=HTTPHeaders(headers))
++    request = http_request("GET", headers=HTTPHeaders(headers))
+     request.connection = MagicMock()
+     handler = JupyterHandler(jp_serverapp.web_app, request)
+     handler.settings["allow_origin"] = ""
+@@ -71,7 +71,7 @@ def test_set_cors_headers_rejects_bypass(jp_serverapp, origin):
+ 
+ @pytest.mark.parametrize("attacker_origin", BYPASS_ORIGINS)
+ def test_login_redirect_safe_rejects_bypass(jp_serverapp, attacker_origin):
+-    request = HTTPRequest("GET", headers=HTTPHeaders({"Host": "localhost:8888"}))
++    request = http_request("GET", headers=HTTPHeaders({"Host": "localhost:8888"}))
+     request.connection = MagicMock()
+     with pytest.warns(UserWarning, match="allow_origin_pat.*"):
+         handler = LoginHandler(jp_serverapp.web_app, request)
+@@ -87,7 +87,7 @@ def test_login_redirect_safe_rejects_bypass(jp_serverapp, attacker_origin):
+ 
+ @pytest.mark.parametrize("attacker_origin", BYPASS_ORIGINS)
+ def test_websocket_check_origin_rejects_bypass(jp_serverapp, attacker_origin):
+-    request = HTTPRequest(
++    request = http_request(
+         "GET",
+         headers=HTTPHeaders({"Origin": attacker_origin, "Host": "other.host:8888"}),
+     )
+diff --git a/tests/base/test_handlers.py b/tests/base/test_handlers.py
+index 792c200586..bb321f6a48 100644
+--- a/tests/base/test_handlers.py
++++ b/tests/base/test_handlers.py
+@@ -7,7 +7,6 @@
+ import pytest
+ import tornado
+ from tornado.httpclient import HTTPClientError
+-from tornado.httpserver import HTTPRequest
+ from tornado.httputil import HTTPHeaders
+ from tornado.web import HTTPError
+ 
+@@ -25,11 +24,12 @@
+ )
+ from jupyter_server.serverapp import ServerApp
+ from jupyter_server.utils import url_path_join
++from tests.utils import http_request
+ 
+ 
+ def test_authenticated_handler(jp_serverapp):
+     app: ServerApp = jp_serverapp
+-    request = HTTPRequest("OPTIONS")
++    request = http_request("OPTIONS")
+     request.connection = MagicMock()
+     handler = AuthenticatedHandler(app.web_app, request)
+     for key in list(handler.settings):
+@@ -48,7 +48,7 @@ def test_authenticated_handler(jp_serverapp):
+ def test_jupyter_handler(jp_serverapp):
+     app: ServerApp = jp_serverapp
+     headers = HTTPHeaders({"Origin": "foo"})
+-    request = HTTPRequest("OPTIONS", headers=headers)
++    request = http_request("OPTIONS", headers=headers)
+     request.connection = MagicMock()
+     handler = JupyterHandler(app.web_app, request)
+     for key in list(handler.settings):
+@@ -226,7 +226,7 @@ def check_xsrf_cookie(self):
+             return None
+ 
+     # Set up the request
+-    request = HTTPRequest(method)
++    request = http_request(method)
+     request.connection = MagicMock()
+     request.headers = {}
+ 
+@@ -305,7 +305,7 @@ def fetch():
+ def test_api_handler(jp_serverapp):
+     app: ServerApp = jp_serverapp
+     headers = HTTPHeaders({"Origin": "foo"})
+-    request = HTTPRequest("OPTIONS", headers=headers)
++    request = http_request("OPTIONS", headers=headers)
+     request.connection = MagicMock()
+     handler = APIHandler(app.web_app, request)
+     for key in list(handler.settings):
+@@ -316,7 +316,7 @@ def test_api_handler(jp_serverapp):
+ async def test_authenticated_file_handler(jp_serverapp, tmpdir):
+     app: ServerApp = jp_serverapp
+     headers = HTTPHeaders({"Origin": "foo"})
+-    request = HTTPRequest("HEAD", headers=headers)
++    request = http_request("HEAD", headers=headers)
+     request.connection = MagicMock()
+     test_file = tmpdir / "foo"
+     with open(test_file, "w") as fid:
+@@ -338,7 +338,7 @@ async def test_authenticated_file_handler(jp_serverapp, tmpdir):
+ 
+ async def test_api_version_handler(jp_serverapp):
+     app: ServerApp = jp_serverapp
+-    request = HTTPRequest("GET")
++    request = http_request("GET")
+     request.connection = MagicMock()
+     handler = APIVersionHandler(app.web_app, request)
+     handler._transforms = []
+@@ -348,7 +348,7 @@ async def test_api_version_handler(jp_serverapp):
+ 
+ async def test_files_redirect_handler(jp_serverapp):
+     app: ServerApp = jp_serverapp
+-    request = HTTPRequest("GET")
++    request = http_request("GET")
+     request.connection = MagicMock()
+     test_file = os.path.join(app.contents_manager.root_dir, "foo")
+     with open(test_file, "w") as fid:
+@@ -361,7 +361,7 @@ async def test_files_redirect_handler(jp_serverapp):
+ 
+ def test_redirect_with_params(jp_serverapp):
+     app: ServerApp = jp_serverapp
+-    request = HTTPRequest("GET")
++    request = http_request("GET")
+     request.connection = MagicMock()
+     request.query = "foo"
+     handler = RedirectWithParams(app.web_app, request, url="foo")
+@@ -381,7 +381,7 @@ async def async_magic():
+         fid.write("hello")
+ 
+     app: ServerApp = jp_serverapp
+-    request = HTTPRequest("GET", str(test_file))
++    request = http_request("GET", str(test_file))
+     request.connection = MagicMock()
+ 
+     handler = FileFindHandler(app.web_app, request, path=str(tmpdir))
+@@ -419,7 +419,7 @@ async def async_magic():
+     app: ServerApp = jp_serverapp
+ 
+     def handler(**kwargs):
+-        request = HTTPRequest("GET", "/")
++        request = http_request("GET", "/")
+         request.connection = MagicMock()
+         found = FileFindHandler(app.web_app, request, path=str(root), **kwargs)
+         found._transforms = []
+diff --git a/tests/base/test_websocket.py b/tests/base/test_websocket.py
+index 08af0fd111..fcd3d1dc6b 100644
+--- a/tests/base/test_websocket.py
++++ b/tests/base/test_websocket.py
+@@ -7,7 +7,6 @@
+ 
+ import pytest
+ from tornado.httpclient import HTTPClientError
+-from tornado.httpserver import HTTPRequest
+ from tornado.httputil import HTTPHeaders
+ from tornado.websocket import WebSocketClosedError, WebSocketHandler
+ 
+@@ -17,6 +16,7 @@
+ from jupyter_server.base.websocket import WebSocketMixin
+ from jupyter_server.serverapp import ServerApp
+ from jupyter_server.utils import JupyterServerAuthWarning, url_path_join
++from tests.utils import http_request
+ 
+ is_freethreaded = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
+ 
+@@ -31,7 +31,7 @@ class MockHandler(WebSocketMixin, WebSocketHandler):
+ def mixin(jp_serverapp):
+     app: ServerApp = jp_serverapp
+     headers = HTTPHeaders({"Host": "foo"})
+-    request = HTTPRequest("GET", headers=headers)
++    request = http_request("GET", headers=headers)
+     request.connection = MagicMock()
+     return MockHandler(app.web_app, request)
+ 
+diff --git a/tests/services/kernels/test_connection.py b/tests/services/kernels/test_connection.py
+index 3d166cffd9..602b72ef70 100644
+--- a/tests/services/kernels/test_connection.py
++++ b/tests/services/kernels/test_connection.py
+@@ -8,19 +8,19 @@
+ import pytest
+ from jupyter_client.jsonutil import json_clean, json_default
+ from jupyter_client.session import Session
+-from tornado.httpserver import HTTPRequest
+ from zmq.eventloop.zmqstream import ZMQStream
+ 
+ from jupyter_server.serverapp import ServerApp
+ from jupyter_server.services.kernels.connection.channels import ZMQChannelsWebsocketConnection
+ from jupyter_server.services.kernels.websocket import KernelWebsocketHandler
++from tests.utils import http_request
+ 
+ 
+ async def test_websocket_connection(jp_serverapp: ServerApp) -> None:
+     app = jp_serverapp
+     kernel_id = await app.kernel_manager.start_kernel()  # type:ignore[has-type]
+     kernel = app.kernel_manager.get_kernel(kernel_id)
+-    request = HTTPRequest("foo", "GET")
++    request = http_request("foo", "GET")
+     request.connection = MagicMock()
+     handler = KernelWebsocketHandler(app.web_app, request)
+     handler.ws_connection = MagicMock()
+@@ -52,7 +52,7 @@ async def test_websocket_connection(jp_serverapp: ServerApp) -> None:
+ 
+ def _make_connection(app, kernel, session_id=None, timeout=0.01):
+     """Build a ZMQChannelsWebsocketConnection with a mocked handler."""
+-    request = HTTPRequest("foo", "GET")
++    request = http_request("foo", "GET")
+     request.connection = MagicMock()
+     handler = KernelWebsocketHandler(app.web_app, request)
+     handler.ws_connection = MagicMock()
+diff --git a/tests/test_gateway.py b/tests/test_gateway.py
+index 20561a1d19..a15898ef89 100644
+--- a/tests/test_gateway.py
++++ b/tests/test_gateway.py
+@@ -16,7 +16,7 @@
+ from jupyter_core.utils import ensure_async
+ from tornado.concurrent import Future
+ from tornado.httpclient import HTTPRequest, HTTPResponse
+-from tornado.httputil import HTTPHeaders, HTTPServerRequest
++from tornado.httputil import HTTPHeaders
+ from tornado.queues import Queue
+ from tornado.web import HTTPError
+ from traitlets import Int, Unicode
+@@ -27,7 +27,7 @@
+ from jupyter_server.gateway.managers import ChannelQueue, GatewayClient, GatewayKernelManager
+ from jupyter_server.services.kernels.websocket import KernelWebsocketHandler
+ 
+-from .utils import expected_http_error
++from .utils import expected_http_error, http_request
+ 
+ pytest_plugins = ["jupyter_events.pytest_plugin"]
+ 
+@@ -720,7 +720,7 @@ async def test_websocket_connection_closed(init_gateway, jp_serverapp, jp_fetch,
+     km: GatewayKernelManager = jp_serverapp.kernel_manager.get_kernel(kernel_id)
+ 
+     # Create the KernelWebsocketHandler...
+-    request = HTTPServerRequest("foo", "GET")
++    request = http_request("foo", "GET")
+     request.connection = MagicMock()
+     handler = KernelWebsocketHandler(jp_serverapp.web_app, request)
+ 
+@@ -754,7 +754,7 @@ async def test_websocket_connection_with_session_id(init_gateway, jp_serverapp,
+     km: GatewayKernelManager = jp_serverapp.kernel_manager.get_kernel(kernel_id)
+ 
+     # Create the KernelWebsocketHandler...
+-    request = HTTPServerRequest("foo", "GET")
++    request = http_request("foo", "GET")
+     request.connection = MagicMock()
+     handler = KernelWebsocketHandler(jp_serverapp.web_app, request)
+     # Create the GatewayWebSocketConnection and attach it to the handler...
+diff --git a/tests/utils.py b/tests/utils.py
+index 276cefc6d3..b9f50c6ee3 100644
+--- a/tests/utils.py
++++ b/tests/utils.py
+@@ -2,6 +2,7 @@
+ from typing import NewType
+ 
+ from tornado.httpclient import HTTPClientError
++from tornado.httputil import HTTPServerRequest, RequestStartLine
+ from tornado.web import HTTPError
+ 
+ some_resource = "The very model of a modern major general"
+@@ -41,3 +42,12 @@ def expected_http_error(error, expected_code, expected_message=None):
+             if expected_message != message:
+                 return False
+         return True
++
++
++def http_request(method="GET", uri="/", **kwargs):
++    """Make a server request with an explicit start line.
++
++    Tornado 6.6 deprecates building ``HTTPServerRequest`` from ``method``/``uri``
++    and 6.7 will require ``start_line``.
++    """
++    return HTTPServerRequest(start_line=RequestStartLine(method, uri, "HTTP/1.0"), **kwargs)
