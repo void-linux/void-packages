@@ -967,6 +967,16 @@ be used to set the args passed to `patch(1)`. As an example, if `foo.patch` requ
 special arguments to be passed to `patch(1)` that can't be used when applying other
 patches, `foo.patch.args` can be created containing those args.
 
+- To apply conditional patches, store the patch in `FILESDIR` instead, and apply
+from one of the *_patch() functions. Example:
+```
+pre_patch() {
+	case "$XBPS_TARGET_MACHINE" in
+		*-musl) patch -Np1 < ${FILESDIR}/musl-foo.patch ;;
+	esac
+}
+```
+
 <a id="build_scripts"></a>
 ### build style scripts
 
