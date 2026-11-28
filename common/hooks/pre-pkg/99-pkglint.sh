@@ -2,7 +2,7 @@
 
 hook() {
 	local error=0 filename= rev= libname= conflictPkg= conflictFile=
-	local conflictRev= ignore= found= mapshlibs=$XBPS_COMMONDIR/shlibs
+	local conflictRev= ignore= found=
 	local emptypkg=yes
 
 	set +E
@@ -186,6 +186,7 @@ hook() {
 		return 0
 	fi
 
+	# XXX: ${pkgname}-shlib-provides being space instead line separated sucks
 	for filename in $(<"${XBPS_STATEDIR}/${pkgname}-shlib-provides"); do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
@@ -196,44 +197,48 @@ hook() {
 		else
 			_pattern="^${_shlib}\.so\.[0-9]+(.*)[[:blank:]]+${_pkgname}-[^-]+_[0-9]+"
 		fi
-		grep -E "${_pattern}" $mapshlibs | { \
-			while read -r conflictFile conflictPkg ignore; do
+		found=
+		while read -r conflictFile conflictPkg ignore; do
+			found=1
+			conflictRev=${conflictFile#*.so.}
+			if [[ -n "$ignore" && "$ignore" != "$XBPS_TARGET_MACHINE" ]]; then
+				continue
+			elif [[ "$rev" = "$conflictRev" ]]; then
+				continue
+			elif [[ $conflictRev =~ ${rev}.* ]]; then
+				continue
+			fi
+			msg_red "${pkgver}: SONAME bump detected: ${libname}.so.${conflictRev} -> ${libname}.so.${rev}\n"
+			msg_red "${pkgver}: please update common/shlibs with this line: \"${libname}.so.${rev} ${pkgver}\"\n"
+			msg_red "${pkgver}: all reverse dependencies should also be revbumped to be rebuilt against ${libname}.so.${rev}:\n"
+			while read -r _revdep _rest; do
+				msg_red "   ${_revdep}\n"
+			done < <($XBPS_QUERY_XCMD -Rs "${libname}.so" -p shlib-requires |cut -d ':' -f1)
+			error=1
+		done < <(grep -E "${_pattern}" "$XBPS_COMMONDIR/shlibs")
+
+		# Try to match provided shlibs in virtual packages.
+		for f in ${provides}; do
+			_vpkgname="$($XBPS_UHELPER_CMD getpkgname ${f} 2>/dev/null)"
+			_spkgname="$(grep "^${filename}" "$XBPS_COMMONDIR/shlibs" | cut -d ' ' -f2)"
+			_libpkgname="$($XBPS_UHELPER_CMD getpkgname ${_spkgname} 2>/dev/null)"
+			if [[ -z "${_spkgname}" || -z "${_libpkgname}" ]]; then
+				continue
+			fi
+			if [ "${_vpkgname}" = "${_libpkgname}" ]; then
 				found=1
-				conflictRev=${conflictFile#*.so.}
-				if [ -n "$ignore" -a "$ignore" != "$XBPS_TARGET_MACHINE" ]; then
-					continue
-				elif [ "$rev" = "$conflictRev" ]; then
-					continue
-				elif [[ ${rev}.* =~ $conflictRev ]]; then
-					continue
-				fi
-				msg_red "${pkgver}: SONAME bump detected: ${libname}.so.${conflictRev} -> ${libname}.so.${rev}\n"
-				msg_red "${pkgver}: please update common/shlibs with this line: \"${libname}.so.${rev} ${pkgver}\"\n"
-				msg_red "${pkgver}: all reverse dependencies should also be revbumped to be rebuilt against ${libname}.so.${rev}:\n"
-				_revdeps=$($XBPS_QUERY_XCMD -Rs ${libname}.so -p shlib-requires|cut -d ' ' -f1)
-				for x in ${_revdeps}; do
-					msg_red "   ${x%:}\n"
-				done
-				msg_error "${pkgver}: cannot continue with installation!\n"
-			done
-			# Try to match provided shlibs in virtual packages.
-			for f in ${provides}; do
-				_vpkgname="$($XBPS_UHELPER_CMD getpkgname ${f} 2>/dev/null)"
-				_spkgname="$(grep "^${filename}" $mapshlibs | cut -d ' ' -f2)"
-				_libpkgname="$($XBPS_UHELPER_CMD getpkgname ${_spkgname} 2>/dev/null)"
-				if [ -z "${_spkgname}" -o  -z "${_libpkgname}" ]; then
-					continue
-				fi
-				if [ "${_vpkgname}" = "${_libpkgname}" ]; then
-					found=1
-					break
-				fi
-			done;
-			if [ -z "$found" ]; then
-				_myshlib="${libname}.so"
-				[ "${_myshlib}" != "${rev}" ] && _myshlib+=".${rev}"
-				msg_normal "${pkgver}: ${_myshlib} not found in common/shlibs.\n"
-			fi;
-		}
+				break
+			fi
+		done;
+
+		if [ -z "$found" ]; then
+			_myshlib="${libname}.so"
+			[ "${_myshlib}" != "${rev}" ] && _myshlib+=".${rev}"
+			msg_normal "${pkgver}: ${_myshlib} not found in common/shlibs.\n"
+		fi;
 	done
+
+	if [ $error -gt 0 ]; then
+		msg_error "${pkgver}: cannot continue with installation!\n"
+	fi
 }
