@@ -1,39 +1,53 @@
 # Template file for 'lxd'
 pkgname=lxd
-version=5.20
-revision=3
+version=6.10.0
+revision=1
 build_style=go
+build_helper="qemu"
 go_import_path=github.com/canonical/lxd
 go_build_tags=libsqlite3
 go_package="${go_import_path}/lxd
  ${go_import_path}/lxc
- ${go_import_path}/lxc-to-lxd
+ ${go_import_path}/lxd-convert
  ${go_import_path}/fuidshift
  ${go_import_path}/lxd-benchmark
  ${go_import_path}/lxd-user"
+ make_check_target="./client/... ./lxc/... ./shared/..."
 hostmakedepends="pkg-config git"
 makedepends="lxc-devel acl-devel dqlite-devel eudev-libudev-devel"
-depends="lxc acl acl-progs rsync squashfs-tools xz dnsmasq iptables attr-progs"
+depends="lxc acl acl-progs rsync squashfs-tools xz dnsmasq iptables attr-progs dqlite>=1.18.7"
+checkdepends="xdelta3"
 short_desc="Next generation system container manager"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="Apache-2.0"
 homepage="https://linuxcontainers.org/lxd"
 changelog="https://github.com/canonical/lxd/releases"
 distfiles="https://github.com/canonical/lxd/archive/refs/tags/lxd-${version}.tar.gz"
-checksum=bddfa7b8091ab6bdb5cdaf13b6c09f5a548976cd3118e8c73c3b7881adf94307
+checksum=4ede1d19dc6980234e1d8d68c74b09fe5631d7cac1b69081937dca42995da994
 system_groups="lxd"
 
 # whitelist dqlite LDFLAGS
 export CGO_LDFLAGS_ALLOW='-Wl,-z,now'
 
+pre_build() {
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		# go-nvml uses glibc-only dlopen flags and dlinfo constants.
+		go mod download github.com/NVIDIA/go-nvml@v0.13.4-1
+		cp -a "$(go env GOMODCACHE)/github.com/!n!v!i!d!i!a/go-nvml@v0.13.4-1" go-nvml
+		chmod -R u+w go-nvml
+		patch -d go-nvml -p1 < "${FILESDIR}/go-nvml-musl.patch"
+		go mod edit -replace github.com/NVIDIA/go-nvml=./go-nvml
+	fi
+}
+
 post_build() {
-	# these need special tags and/or LDFLAGS
-	CGO_LDFLAGS="$CGO_LDFLAGS -static" go install -p "$XBPS_MAKEJOBS" -mod=readonly -x -tags "agent" -ldflags "${go_ldflags}" "${go_import_path}/lxd-agent"
-	go install -p "$XBPS_MAKEJOBS" -mod=readonly -x -tags "netgo" -ldflags "${go_ldflags}" "${go_import_path}/lxd-migrate"
+	CGO_ENABLED=0 go install -p "$XBPS_MAKEJOBS" -mod=readonly -tags "agent,netgo" -ldflags "${go_ldflags}" "${go_import_path}/lxd-agent"
+	CGO_ENABLED=0 go install -p "$XBPS_MAKEJOBS" -mod=readonly -tags "netgo" -ldflags "${go_ldflags}" "${go_import_path}/lxd-convert"
 }
 
 post_install() {
-	vinstall scripts/bash/lxd-client 644 /usr/share/bash-completion/completions lxd
+	vtargetrun "${DESTDIR}/usr/bin/lxc" completion bash > "${wrksrc}/lxc.bash"
+	vcompletion "${wrksrc}/lxc.bash" bash lxc
 	vsv lxd
 	vdoc "${FILESDIR}/README.voidlinux"
 }
