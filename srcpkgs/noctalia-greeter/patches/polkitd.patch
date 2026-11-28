@@ -1,0 +1,38 @@
+Source: polkit-org/polkit commit 0c7e27b6a806cae728ff05b10b70b5e7a1b4c6a3
+Upstream: no
+Reason: Adapted from the upstream fix for polkit-org/polkit commit 0c7e27b6.
+ Void installs /etc/polkit-1/rules.d as 0700 polkitd:polkitd, so the root-only
+ directory chain check rejects the rules directory.
+
+--- a/src/tools/passwordless_sync_policy.cpp
++++ b/src/tools/passwordless_sync_policy.cpp
+@@ -46,6 +46,10 @@ namespace greeter::passwordless_sync {
+     constexpr std::size_t kMaximumUsers = 256;
+     constexpr std::size_t kMaximumUserNameLength = 256;
+     constexpr std::size_t kMaximumPathLength = 4096;
++    const uid_t kPolkitdUid = [] {
++      if (const struct passwd* pw = ::getpwnam("polkitd")) return pw->pw_uid;
++      return static_cast<uid_t>(-1);
++    }();
+ 
+     class UniqueFd {
+     public:
+@@ -420,7 +424,8 @@ namespace greeter::passwordless_sync {
+             + ec.message();
+         return false;
+       }
+-      if (!validateTrustedDirectoryChain(canonical, "Polkit rules", errorOut)) {
++      const std::filesystem::path parent = canonical.parent_path();
++      if (!validateTrustedDirectoryChain(parent, "Polkit rules parent", errorOut)) {
+         return false;
+       }
+ 
+@@ -432,7 +437,7 @@ namespace greeter::passwordless_sync {
+       if (::fstat(directory.get(), &state) != 0) {
+         return setErrnoError("failed to inspect the Polkit rules directory", errorOut);
+       }
+-      if (!S_ISDIR(state.st_mode) || state.st_uid != 0 || (state.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
++      if (!S_ISDIR(state.st_mode) || state.st_uid != kPolkitdUid || (state.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+         errorOut = "the Polkit rules directory has unsafe ownership or permissions";
+         return false;
+       }
