@@ -1,0 +1,102 @@
+--- a/src/calibre/utils/podofo/outline.cpp
++++ b/src/calibre/utils/podofo/outline.cpp
+@@ -61,12 +61,10 @@
+             PyErr_Format(PyExc_ValueError, "Invalid page number: %u", num);
+             return NULL;
+         }
+-        auto dest = self->doc->CreateDestination();
+-        dest->SetDestination(*page, left, top, zoom);
++        auto dest = std::make_shared<PdfDestination>(*page, left, top, zoom);
+         if (PyObject_IsTrue(as_child)) {
+-            ans->item = &self->item->CreateChild(title);
+-        } else ans->item = &self->item->CreateNext(title);
+-        ans->item->SetDestination(*dest);
++            ans->item = self->item->CreateChild(title, dest);
++        } else ans->item = self->item->CreateNext(title, dest);
+     } catch (const PdfError &err) {
+         podofo_set_exception(err);
+         return NULL;
+--- a/src/calibre/utils/podofo/outlines.cpp
++++ b/src/calibre/utils/podofo/outlines.cpp
+@@ -25,16 +25,19 @@
+     try {
+         PdfString title = podofo_convert_pystring(title_buf);
+         PdfOutlines &outlines = self->doc->GetOrCreateOutlines();
+-        ans->item = &outlines.CreateRoot(title);
++        ans->item = outlines.CreateRoot(title);
++        if (ans->item == NULL) {
++            PyErr_NoMemory();
++            return NULL;
++        }
+         ans->doc = self->doc;
+         auto page = get_page(self->doc, pagenum - 1);
+         if (!page) {
+             PyErr_Format(PyExc_ValueError, "Invalid page number: %u", pagenum - 1);
+             return NULL;
+         }
+-        auto dest = self->doc->CreateDestination();
+-        dest->SetDestination(*page, left, top, zoom);
+-        ans->item->SetDestination(*dest);
++        auto dest = std::make_shared<PdfDestination>(*page, left, top, zoom);
++        ans->item->SetDestination(dest);
+     } catch (const PdfError &err) {
+         podofo_set_exception(err);
+         return NULL;
+@@ -67,7 +70,7 @@
+     if (!node) return;
+     if (PyDict_SetItemString(node.get(), "title", title.get()) != 0) return;
+     auto dest = item->GetDestination();
+-    if (dest.has_value()) {
++    if (dest) {
+         PdfPage *page = dest->GetPage();
+         long pnum = page ? page->GetPageNumber() : -1;
+         pyunique_ptr d(Py_BuildValue("{sl sd sd sd}", "page", pnum, "top", dest->GetTop(), "left", dest->GetLeft(), "zoom", dest->GetZoom()));
+--- a/src/calibre/utils/podofo/doc.cpp
++++ b/src/calibre/utils/podofo/doc.cpp
+@@ -191,7 +191,7 @@
+                 try {
+                     stream->Unwrap();
+                 } catch (PdfError &e) {
+-                    if (e.GetCode() != PdfErrorCode::FlateError) throw e;
++                    if (e.GetCode() != PdfErrorCode::Flate) throw e;
+                 }
+             } catch (PdfError &e) {
+                 if (e.GetCode() != PdfErrorCode::UnsupportedFilter) throw e;
+@@ -345,7 +345,9 @@
+     int from = 0, to = 0;
+     if (!PyArg_ParseTuple(args, "ii", &from, &to)) return NULL;
+     try {
+-        self->doc->GetPages().InsertDocumentPageAt(to - 1, *self->doc, from - 1);
++        // PoDoFo 0.10 cannot insert a page from the same document.
++        PdfMemDocument source(*self->doc);
++        self->doc->GetPages().InsertDocumentPageAt(to - 1, source, from - 1);
+     } catch (const PdfError &err) {
+         podofo_set_exception(err);
+         return NULL;
+
+--- a/src/calibre/utils/podofo/impose.cpp
++++ b/src/calibre/utils/podofo/impose.cpp
+@@ -14,19 +14,17 @@
+ static void
+ impose_page(PdfMemDocument *doc, unsigned int dest_page_num, unsigned int src_page_num) {
+     auto &src_page = doc->GetPages().GetPageAt(src_page_num);
+-    auto xobj = doc->CreateXObjectForm(src_page.GetMediaBox());
++    auto xobj = doc->CreateXObjectForm(src_page.GetMediaBox(), "HeaderFooter");
+     xobj->FillFromPage(src_page);
+     auto &dest = doc->GetPages().GetPageAt(dest_page_num);
+-    // the mutating resource operations are only exposed via the PdfCanvas/PdfResourceOperations interfaces
+-    PdfResourceOperations &resources = static_cast<PdfCanvas &>(dest).GetOrCreateResources();
+-    const PdfName xobj_name = resources.AddResource(PdfResourceType::XObject, xobj->GetObject());
++    dest.GetOrCreateResources().AddResource("XObject", xobj->GetIdentifier(), xobj->GetObject().GetIndirectReference());
+     // prepend the header footer xobject to the stream. This means header/footer is drawn first then the contents, which works
+     // since chromium does not draw in margin areas. The reverse, i.e. appending, does not work with older WebEngine before Qt 6.5.
+     PdfContents *contents = dest.GetContents();
+     std::ostringstream s;
+-    s << "q\n1 0 0 1 0 0 cm\n/" << xobj_name.GetString() << " Do\nQ\n" << contents->GetCopy();
++    s << "q\n1 0 0 1 0 0 cm\n/" << xobj->GetIdentifier().GetString() << " Do\nQ\n" << contents->GetCopy();
+     contents->Reset();
+-    contents->CreateStreamForAppending().SetData(s.str());
++    contents->GetStreamForAppending().SetData(s.str());
+ }
+
+ static PyObject *
